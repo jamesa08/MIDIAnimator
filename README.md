@@ -22,11 +22,11 @@
   <p align="center">
     Procedurally animate a MIDI file using Blender. 
     <br />
-    <!--<a href="https://github.com/imacj/MIDIAnimator"><strong>Explore the docs »</strong></a>
+    <a href="https://midianimatordocs.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
     <br />
-    <br />
+    <!-- <br />
     <a href="https://github.com/imacj/MIDIAnimator/">View Demo</a>
-    ·-->
+    · -->
     <a href="https://github.com/imacj/MIDIAnimator/issues">Report Bug</a>
     ·
     <a href="https://github.com/imacj/MIDIAnimator/issues">Request Feature</a>
@@ -63,8 +63,8 @@
 
 ### Built With
 
-- [Python](https://python.org/)
-- [Blender](https://blender.org/)
+- [Python 3.10](https://python.org/)
+- [Blender 3.1](https://www.blender.org/download/releases/3-1/)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -72,29 +72,8 @@
 
 ## Getting Started
 
-You will need to install Blender (version 2.9 or better) to use MIDI Animator.
-
-1. Download the ZIP file in the Releases pane, or click here.
-2. In Blender, go to Edit -> Preferences
-3. Next, go to Add-ons -> Install...
-4. Locate the `.zip` file
-5. Close the preferences pane.
-6. Volia! You have now successfully installed MIDI Animator.
-
-To start writing your own MIDI Animation programs, first, open a Text Editior window.
-
-```py
-from MIDIAnimator import MIDINode
-
-midi_file = "/Users/james/Desktop/twinkle.mid"
-
-node = MIDINode(midi_file)
-node.addInstrument("Piano", 1, "piano_keys")
-
-# Animate the MIDI file
-node.animate()
-```
-
+To get started, check out the [Getting Started](https://midianimatordocs.readthedocs.io/en/latest/usage.html) docs page.
+<br>
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- CONTRIBUTING -->
@@ -119,7 +98,7 @@ Don't forget to give the project a star! Thanks again!
 ## License
 
 Distributed under the GNU General Public License (GPLv3) license. <br>
-You may freely change and add to a forked repository as you wish, but you may **not** publish my software as closed source. <br>
+You may freely change and add to a forked repository as you wish, but you may **not** publish this software as closed source. <br>
 _See `LICENSE.txt` for more information._<br>
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -128,7 +107,7 @@ _See `LICENSE.txt` for more information._<br>
 
 ## Contact
 
-Your Name - [@i7_macintosh](https://twitter.com/i7_macintosh)
+James Alt - [jalt@capital.edu](mailto:jalt@capital.edu)
 
 Project Link: [https://github.com/imacj/MIDIAnimator](https://github.com/imacj/MIDIAnimator)
 
@@ -142,7 +121,8 @@ Here are some of the development tools I used to create this project.
 
 - [Visual Studio Code](https://code.visualstudio.com)
 - [Blender Development Addon](https://marketplace.visualstudio.com/items?itemName=JacquesLucke.blender-development)
-- [Fake Blender Python API Module (for code completion](https://github.com/nutti/fake-bpy-module)
+- [Fake Blender Python API Module (for code completion)](https://github.com/nutti/fake-bpy-module)
+- [Blender Python API Documentation](https://docs.blender.org/api/2.91/)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
