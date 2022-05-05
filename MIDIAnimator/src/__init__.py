@@ -3,7 +3,7 @@ if "bpy" in locals():
     importlib.reload(functions)
     importlib.reload(MIDINode)
 else:
-    from ..utils import functions
+    from .. utils import functions
     from . import MIDINode
 
 import bpy

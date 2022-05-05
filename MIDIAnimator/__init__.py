@@ -11,12 +11,30 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+bl_info = {
+    "name": "MIDI Animator",
+    "description": "Animate objects with MIDI.",
+    "author": "James Alt",
+    "version": (0, 0, 1),
+    "blender": (2, 91, 0),
+    "location": "Scripting Space",
+    "doc_url": "https://midianimatordocs.readthedocs.io/en/latest/",
+    "tracker_url": "https://github.com/imacj/MIDIAnimator/issues",
+    "warning": "",
+    "support": "TESTING",
+    "category": "Animation"
+}
+
 if "bpy" in locals():
     # Running under Blender
     import importlib
     importlib.reload(src)
     importlib.reload(utils)
     importlib.reload(ui)
+
+    classes = (TEST_OT_my_operator, TEST_PT_my_panel)
+
+    register, unregister = bpy.utils.register_classes_factory(classes)
 
 else:
     # Running under external instance
@@ -27,20 +45,4 @@ else:
     from . ui.test_op import TEST_OT_my_operator
     from . ui.test_panel import TEST_PT_my_panel
 
-import bpy
 
-bl_info = {
-    "name": "MIDI Animator",
-    "author": "iMac",
-    "description": "Animate objects with MIDI.",
-    "blender": (2, 91, 0),
-    "version": (0, 0, 1),
-    "location": "View3D",
-    "warning": "",
-    "category": "Generic"
-}
-
-
-classes = (TEST_OT_my_operator, TEST_PT_my_panel)
-
-register, unregister = bpy.utils.register_classes_factory(classes)
