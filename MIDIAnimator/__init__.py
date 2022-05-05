@@ -32,9 +32,6 @@ if "bpy" in locals():
     importlib.reload(utils)
     importlib.reload(ui)
 
-    classes = (TEST_OT_my_operator, TEST_PT_my_panel)
-
-    register, unregister = bpy.utils.register_classes_factory(classes)
 
 else:
     # Running under external instance
@@ -46,3 +43,12 @@ else:
     from . ui.test_panel import TEST_PT_my_panel
 
 
+classes = (TEST_OT_my_operator, TEST_PT_my_panel)
+
+def register():
+    for bpyClass in classes:
+        bpy.utils.register_class(bpyClass)
+
+def unregister():
+    for bpyClass in classes:
+        bpy.utils.unregister_class(bpyClass)
