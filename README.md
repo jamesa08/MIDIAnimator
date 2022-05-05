@@ -7,6 +7,7 @@
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![GNU License][license-shield]][license-url]
+[![mido version][mido-shield]][mido-url]
 
 <!-- PROJECT LOGO -->
 <br />
@@ -74,6 +75,7 @@
 
 To get started, check out the [Getting Started](https://midianimatordocs.readthedocs.io/en/latest/usage.html) docs page.
 <br>
+
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- CONTRIBUTING -->
@@ -129,9 +131,11 @@ Here are some of the development tools I used to create this project.
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 
+[mido-shield]: https://img.shields.io/pypi/v/mido?label=mido
 [contributors-shield]: https://img.shields.io/github/contributors/imacj/MIDIAnimator.svg?style=flat
 [contributors-url]: https://github.com/imacj/MIDIAnimator/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/imacj/MIDIAnimator.svg?style=flat
+[mido-url]: https://pypi.org/project/mido/
 [forks-url]: https://github.com/imacj/MIDIAnimator/network/members
 [stars-shield]: https://img.shields.io/github/stars/imacj/MIDIAnimator.svg?style=flat
 [stars-url]: https://github.com/imacj/MIDIAnimator/stargazers
