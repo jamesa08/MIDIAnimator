@@ -11,10 +11,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+if "bpy" in locals():
+    # Running under Blender
+    import importlib
+    importlib.reload(src)
+    importlib.reload(utils)
+    importlib.reload(ui)
+
+else:
+    # Running under external instance
+    import bpy
+    from . src import *
+    from . utils import *
+    from . ui import *
+    from . ui.test_op import TEST_OT_my_operator
+    from . ui.test_panel import TEST_PT_my_panel
+
 import bpy
-from . src.MIDIAnimator import MIDINode  # for use within the Python scripting space
-from . test_panel import Test_PT_Panel
-from . test_op import Test_OT_Operator
 
 bl_info = {
     "name": "MIDI Animator",
@@ -28,6 +41,6 @@ bl_info = {
 }
 
 
-classes = (Test_OT_Operator, Test_PT_Panel)
+classes = (TEST_OT_my_operator, TEST_PT_my_panel)
 
 register, unregister = bpy.utils.register_classes_factory(classes)

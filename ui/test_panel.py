@@ -1,8 +1,8 @@
 import bpy
 
 
-class Test_PT_Panel(bpy.types.Panel):
-    bl_idname = "Test_PT_Panel"
+class TEST_PT_my_panel(bpy.types.Panel):
+    bl_idname = "TEST_PT_my_panel"
     bl_label = "Test Panel"
     bl_category = "MIDIAnimator"
     bl_space_type = "VIEW_3D"
