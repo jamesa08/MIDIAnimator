@@ -1,5 +1,6 @@
 from . MIDIStructure import MIDIInstrument, MIDITrack
 from .. libs import mido
+from .. utils.functions import gmProgramToName
 
 class MIDINode:
     def __init__(self, midiFile: str):
@@ -36,77 +37,86 @@ class MIDINode:
         :param midFile: MIDI file
         :return: MIDIINstrument object
         """
+        # TODO: add type 1
+        assert midiFile.type == 0
 
-        instrument = MIDIInstrument("", 0)
-        instruments = []
-        oldInstrumentName = ""
-        instrumentIndex = 0
+        # Type 0 tracks depend on MIDI Channels for the different instruments
+        # Instance in 16 MIDI instruments
+        if midiFile.type == 0:
+            midiInstruments = [MIDIInstrument("") for _ in range(16)]
+            midiTracks = [ins.addTrack(MIDITrack("")) for ins in midiInstruments]
 
-        # 500000 ticks = 120 bpm
-        currentTempo = 500000
+        for track in midiFile.tracks:
+            time = 0
+            tempo = 500000
+            curChannel = 0
 
-        midoMidiFile = mido.MidiFile(midiFile)
+            # set inital track to the first
+            curTrack = midiTracks[curChannel]
 
-        for i, midoTrack in enumerate(midoMidiFile.tracks):
-            track = MIDITrack(midoTrack.name, i)
+            for msg in track:
+                type = msg.type
 
-            delta = 0
-            notMetaMsg = False
+                # channel messages
+                if not msg.is_meta and msg.type != "sysex":
+                    # update tracks as they are read in
+                    curTrack = midiTracks[msg.channel]
+                    curIns = midiInstruments[curChannel]
+                    curChannel = msg.channel
+                
+                # tempo message
+                if msg.type == "set_tempo":
+                    tempo = msg.tempo
 
-            for midoMsg in midoTrack:
-                delta += midoMsg.time
+                # MIDIInstrument name 
+                if msg.is_meta and msg.type == "instrument_name":
+                    if curIns.name == "":
+                        curIns.name = msg.name
+                
+                # MIDITrack name
+                if msg.is_meta and msg.type == "track_name":
+                    # since this is a type 0 track, either use program changes
+                    # or make all the track names the same name
+                    curTrack.name = msg.name
 
-                if not midoMsg.is_meta:
-                    # if we hit a non meta message, store that
-                    notMetaMsg = True
+                # velocity 0 note_on messages need to be note_off
+                if type == "note_on" and msg.velocity <= 0:
+                    type = "note_off"
 
-                if midoMsg.is_meta:
-                    if midoMsg.type == "set_tempo":
-                        currentTempo = midoMsg.tempo
+                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
 
-                    if midoMsg.type == "instrument_name":
-                        # the MIDIInstrument name
-                        # check to see if we are on a new instrument track
-                        if oldInstrumentName != midoMsg.name:
-                            # store old instrumnet:
-                            # only store the track if doesn't have just MetaMessages
-                            # otherwise, just skip and don't store
-                            if notMetaMsg:
-                                instruments.append(instrument)
-                            else:
-                                instrumentIndex -= 1
+                if type == "note_on":
+                    curTrack.addNoteOn(msg.channel, msg.note, msg.velocity, time)
+                
+                elif type == "note_off":
+                    curTrack.addNoteOff(msg.channel, msg.note, msg.velocity, time)
+                
+                elif type == "program_change":
+                    # General MIDI name
+                    gmName = gmProgramToName(msg.program) if msg.channel != 9 else "Drumset"
+                    
+                    if curIns.name == "":
+                        curIns.name = gmName
+                    
+                    if curTrack.name == "":
+                        curTrack.name = gmName
+                
+                elif type == "control_change":
+                    curTrack.addControlChange(msg.control, msg.channel, msg.value, time)
+                
+                elif type == "pitchwheel":
+                    curTrack.addPitchwheel(msg.channel, msg.pitch, time)
+                
+                elif type == "aftertouch":
+                    curTrack.addAftertouch(msg.channel, msg.value, time)
 
-                            # update instrument index
-                            instrumentIndex += 1
+            # make sure lists are of equal length
+            assert curTrack._checkIfEqual(), "NoteOn's and NoteOff's are unbalanced! Please open an issuse on GitHub."
 
-                            # make new instrument
-                            instrument = MIDIInstrument(
-                                midoMsg.name, instrumentIndex)
 
-                            # store new name as well
-                            oldInstrumentName = midoMsg.name
+        # remove empty tracks
+        for i, ins in enumerate(midiInstruments):
+            if ins._isEmpty():
+                midiInstruments[i] = None
 
-                    # EOF fix
-                    if (midoMsg.type == "end_of_track") and (i == len(midoMidiFile.tracks) - 1) and notMetaMsg:
-                        instruments.append(instrument)
-
-                if midoMsg.type == "note_on":
-                    track.timeOn.append(mido.tick2second(
-                        delta, midoMidiFile.ticks_per_beat, currentTempo))
-                    track.noteNumber.append(midoMsg.note)
-                    track.velocity.append(midoMsg.velocity)
-
-                elif midoMsg.type == "note_off":
-                    track.timeOff.append(mido.tick2second(
-                        delta, midoMidiFile.ticks_per_beat, currentTempo))
-                    # track.addNote(MIDINote(midoMsg.channel, midoMsg.note,
-                    #                        tempTimeOn, mido.tick2second(currentTime, midoMidiFile.ticks_per_beat, currentTempo), midoMsg.velocity))
-                elif midoMsg.type == "control_change":
-                    track.addControlChange(midoMsg.control, midoMsg.channel, midoMsg.value, mido.tick2second(
-                        delta, midoMidiFile.ticks_per_beat, currentTempo))
-            
-            assert track._checkIfEqual(), "lists are not equal!"
-            instrument.addTrack(track)
-        
-
-        return instruments
+        return midiInstruments

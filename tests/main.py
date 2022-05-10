@@ -7,6 +7,8 @@ import unittest
 
 class MIDIAnimatorTest(unittest.TestCase):
     def testImportingMIDI(self):
+        # TODO: fix this
+        # also test type 0 and type 1, and other edge case files
         node = MIDINode("tests/two_notes_CC_simple.mid")
 
         data = node.getMIDIData()
@@ -29,7 +31,7 @@ class MIDIAnimatorTest(unittest.TestCase):
         self.assertEqual(nameToNote("C#3"), 61)
     
     def testImportLocalMido(self):
-        from MIDIAnimator.libs import mido    
+        from MIDIAnimator.libs import mido
         self.assertEqual(mido.__file__.split("/")[-3], "libs")
 
     # Tests with animation data should be handeled elsewhere (shell scripts?)
