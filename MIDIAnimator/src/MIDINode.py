@@ -38,15 +38,16 @@ class MIDINode:
         :return: MIDIINstrument object
         """
         # TODO: add type 1
-        assert midiFile.type == 0
+        midoFile = mido.MidiFile(midiFile)
+        assert midoFile.type == 0
 
         # Type 0 tracks depend on MIDI Channels for the different instruments
         # Instance in 16 MIDI instruments
-        if midiFile.type == 0:
+        if midoFile.type == 0:
             midiInstruments = [MIDIInstrument("") for _ in range(16)]
             midiTracks = [ins.addTrack(MIDITrack("")) for ins in midiInstruments]
 
-        for track in midiFile.tracks:
+        for track in midoFile.tracks:
             time = 0
             tempo = 500000
             curChannel = 0
@@ -83,7 +84,7 @@ class MIDINode:
                 if type == "note_on" and msg.velocity <= 0:
                     type = "note_off"
 
-                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
+                time += mido.tick2second(msg.time, midoFile.ticks_per_beat, tempo)
 
                 if type == "note_on":
                     curTrack.addNoteOn(msg.channel, msg.note, msg.velocity, time)
