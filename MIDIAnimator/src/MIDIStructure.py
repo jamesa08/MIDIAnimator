@@ -1,8 +1,16 @@
-import enum
-from multiprocessing.sharedctypes import Value
-from .. utils.functions import noteToName, nameToNote
+from numpy import var
+from .. utils.functions import noteToName, nameToNote, removeDuplicates
+from typing import Tuple, Dict, List
 
 class MIDITrack:
+    name: str
+    noteOn: Tuple[int, int, int, float]
+    noteOff: Tuple[int, int, int, float]
+    controlChange: Dict[int, List[Tuple[int, int, float]]]
+    pitchwheel: Tuple[int, int, float]
+    aftertouch: Tuple[int, int, float]
+
+    
     def __init__(self, name: str):
         """intialize a MIDITrack
 
@@ -111,6 +119,14 @@ class MIDITrack:
         return len(variables) == sum([len(v) == 0 for v in variables])
         
 
+    def allUsedNotes(self) -> list:
+        """Returns a list of all used notes in a MIDI Track.
+
+        :return list: a list of all used notes
+        """
+
+        return removeDuplicates([num[1] for num in self.noteOn])
+
     def __str__(self) -> str:
         # TODO: Refactor & optimize
         # Not Pythonic!
@@ -161,82 +177,6 @@ class MIDITrack:
         return "".join(out)
 
 
-class MIDIInstrument:
-    def __init__(self, name: str):
-        # metadata
-        self.name = name
-        self.tracks = []
-    
-
-    def addTrack(self, track: MIDITrack) -> MIDITrack:
-        """adds a track to MIDIInsturment
-
-        :param MIDITrack track: the MIDITrack to add
-        """
-        self.tracks.append(track)
-        return self.tracks[-1]
-
-
-    def addTracks(self, tracks: list, overwrite=False) -> list:
-        """add tracks to MIDIInstrument.
-
-        :param list tracks: list of MIDITracks
-        :param bool overwrite: overwrite existing tracks, defaults to False
-        """
-        if overwrite:
-            self.tracks = tracks
-        else:
-            for track in tracks:
-                self.tracks.append(track)
-
-        return self.tracks
-    
-    def remove(self, element: MIDITrack):
-        """deletes a MIDITrack from a MIDIInstrument
-
-        if a MIDITrack is not in the MIDIInstrument, a ValueError is thrown
-        :param MIDITrack element: the MIDITrack to delete
-        """
-        try:
-            self.tracks.remove(element)
-        except ValueError:
-            raise ValueError(f"MIDITrack {repr(element)} was not found in MIDIInstrument {repr(self)}.")
-
-    def _isEmpty(self) -> bool:
-        """checks if the MIDIInstrument is empty.
-
-        :return bool: returns True if empty, False otheriwse
-        """
-
-        for track in self.tracks:
-            if not track._isEmpty():
-                return False
-        
-        return True
-
-    def _cleanInstruments(self):
-        """removes empty tracks in a MIDIInstrument"""
-
-        for track in self.tracks:
-            if track._isEmpty():
-                # delete the empty track
-                self.remove(track)
-
-
-    def __str__(self) -> str:
-        out = [f"MIDIInstrument(name='{self.name}', index={self.index}, tracks=["]
-        
-        for i, track in enumerate(self.tracks):
-            out.append(str(track))
-
-            if i != len(self.tracks) - 1:
-                out.append(", ")
-
-        out.append("])")
-
-        return "".join(out)
-    
-
     def __repr__(self) -> str:
         type_ = type(self)
         module = type_.__module__
@@ -244,7 +184,91 @@ class MIDIInstrument:
 
         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
 
+# TODO: MIDIInstrument not needed?
+# class MIDIInstrument:
+#     def __init__(self, name: str):
+#         # metadata
+#         self.name = name
+#         self.tracks = []
+    
 
-    def __iter__(self):
-        for track in self.tracks:
-            yield track
+#     def addTrack(self, track: MIDITrack) -> MIDITrack:
+#         """adds a track to MIDIInsturment
+
+#         :param MIDITrack track: the MIDITrack to add
+#         """
+#         self.tracks.append(track)
+#         return self.tracks[-1]
+
+
+#     def addTracks(self, tracks: list, overwrite=False) -> list:
+#         """add tracks to MIDIInstrument.
+
+#         :param list tracks: list of MIDITracks
+#         :param bool overwrite: overwrite existing tracks, defaults to False
+#         """
+#         if overwrite:
+#             self.tracks = tracks
+#         else:
+#             for track in tracks:
+#                 self.tracks.append(track)
+
+#         return self.tracks
+    
+#     def remove(self, element: MIDITrack):
+#         """deletes a MIDITrack from a MIDIInstrument
+
+#         if a MIDITrack is not in the MIDIInstrument, a ValueError is thrown
+#         :param MIDITrack element: the MIDITrack to delete
+#         """
+#         try:
+#             self.tracks.remove(element)
+#         except ValueError:
+#             raise ValueError(f"MIDITrack {repr(element)} was not found in MIDIInstrument {repr(self)}.")
+
+#     def _isEmpty(self) -> bool:
+#         """checks if the MIDIInstrument is empty.
+
+#         :return bool: returns True if empty, False otheriwse
+#         """
+
+#         for track in self.tracks:
+#             if not track._isEmpty():
+#                 return False
+        
+#         return True
+
+#     def _cleanInstruments(self):
+#         """removes empty tracks in a MIDIInstrument"""
+
+#         for track in self.tracks:
+#             if track._isEmpty():
+#                 # delete the empty track
+#                 self.remove(track)
+
+
+#     def __str__(self) -> str:
+#         out = [f"MIDIInstrument(name='{self.name}', index={self.index}, tracks=["]
+        
+#         for i, track in enumerate(self.tracks):
+#             out.append(str(track))
+
+#             if i != len(self.tracks) - 1:
+#                 out.append(", ")
+
+#         out.append("])")
+
+#         return "".join(out)
+    
+
+#     def __repr__(self) -> str:
+#         type_ = type(self)
+#         module = type_.__module__
+#         qualname = type_.__qualname__
+
+#         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
+
+
+#     def __iter__(self):
+#         for track in self.tracks:
+#             yield track

@@ -39,16 +39,51 @@ else:
     from . src import *
     from . utils import *
     from . ui import *
-    from . ui.test_op import TEST_OT_my_operator
-    from . ui.test_panel import TEST_PT_my_panel
+    from .ui.operators import SCENE_OT_quick_add_props
+    from .ui.panels import VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick
 
 
-classes = (TEST_OT_my_operator, TEST_PT_my_panel)
+classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick)
 
 def register():
+    # Edit Note Information
+    bpy.types.Object.note_number = bpy.props.StringProperty(
+        name="Note Number", 
+        description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a readable note (C3).",
+        default="C3"
+    )
+    bpy.types.Object.animation_curve = bpy.props.PointerProperty(
+        name="Animation Curve", 
+        description="The FCurve object to be read.",
+        type=bpy.types.Object
+    )
+    bpy.types.Object.animation_curve_index = bpy.props.IntProperty(
+        name="Animation Curve Index",
+        description="The FCurve index (which curve in the FCurve to use).",
+        default=0   
+    )
+    bpy.types.Scene.note_number_list = bpy.props.StringProperty(
+        name="Note Number List",
+        description="A list of note numbers. These will corespond to the objects in the selected collection.",
+        default="[]"
+    )
+
+    # Edit Notes (Quick)
+    bpy.types.Scene.quick_obj_col_prop = bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection")
+    bpy.types.Scene.quick_obj_curve_prop = bpy.props.PointerProperty(type=bpy.types.Object, name="Global Anim Curve")
+    bpy.types.Scene.quick_obj_curve_index_prop = bpy.props.IntProperty(name="Anim Curve Index", default=0)
+    
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
 
 def unregister():
+    del bpy.types.Scene.quick_obj_col_prop
+    del bpy.types.Scene.quick_obj_curve_prop
+    del bpy.types.Scene.quick_obj_curve_index_prop
+
+    del bpy.types.Object.note_number
+    del bpy.types.Object.animation_curve
+    del bpy.types.Object.animation_curve_index
+
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
