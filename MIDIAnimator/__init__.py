@@ -5,7 +5,7 @@
 #
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTIBILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 # General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
@@ -49,7 +49,8 @@ def register():
     # Edit Note Information
     bpy.types.Object.note_number = bpy.props.StringProperty(
         name="Note Number", 
-        description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a readable note (C3).",
+        description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
+                    "readable note (C3).",
         default="C3"
     )
     bpy.types.Object.animation_curve = bpy.props.PointerProperty(
@@ -62,9 +63,14 @@ def register():
         description="The FCurve index (which curve in the FCurve to use).",
         default=0   
     )
+    # add where along the curve the note hits property
+    bpy.types.Object.note_hit_time = bpy.props.IntProperty(
+        name="Note Hit Time", 
+        default=0
+    )
     bpy.types.Scene.note_number_list = bpy.props.StringProperty(
         name="Note Number List",
-        description="A list of note numbers. These will corespond to the objects in the selected collection.",
+        description="A list of note numbers. These will correspond to the objects in the selected collection.",
         default="[]"
     )
 
@@ -83,6 +89,7 @@ def unregister():
 
     del bpy.types.Object.note_number
     del bpy.types.Object.animation_curve
+    del bpy.types.Object.note_hit_time
     del bpy.types.Object.animation_curve_index
 
     for bpyClass in classes:

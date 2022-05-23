@@ -8,7 +8,7 @@ if "bpy" in locals():
     importlib.reload(Note)
 else:
     from .. utils import functions
-    from . import MIDINode
+    from . import MIDIFile
     from . import Note
 
 import bpy

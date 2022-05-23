@@ -1,21 +1,47 @@
-from numpy import var
 from .. utils.functions import noteToName, nameToNote, removeDuplicates
+from .. utils.animation import *
 from typing import Tuple, Dict, List
+import bpy
+
+class MIDINote:
+    # number
+    # structure (channel, note, velocity, time)
+
+    number: int
+    onTime: float
+    offTime: float  # ignore to start
+    velocity: int
+    channel: int
+
+    def __init__(self):
+        pass
 
 class MIDITrack:
+    # make MIDINote object?
     name: str
-    noteOn: Tuple[int, int, int, float]
-    noteOff: Tuple[int, int, int, float]
-    controlChange: Dict[int, List[Tuple[int, int, float]]]
-    pitchwheel: Tuple[int, int, float]
-    aftertouch: Tuple[int, int, float]
 
+    # structure (channel, note, velocity, time)
+
+    _notesToPlay: List[MIDINote]
+
+    noteOn: List[Tuple[int, int, int, float]]
+    noteOff: List[Tuple[int, int, int, float]]
     
+    # maps control number to control change events
+    # {control_change_number: [(channel, value, time), ...]}
+    # class?
+    controlChange: Dict[int, List[Tuple[int, float, float]]]
+    
+    # (channel, value, time)
+    pitchwheel: List[Tuple[int, float, float]]
+    
+    # (channel, value, time)
+    aftertouch: List[Tuple[int, float, float]]
+
     def __init__(self, name: str):
-        """intialize a MIDITrack
+        """initialize a MIDITrack
 
         :param str name: name of track
-        :param int index: position of track (not used, remove?)
         """
         # metadata
         self.name = name
@@ -40,6 +66,11 @@ class MIDITrack:
         # structure: (channel, value, time)
         self.aftertouch = []
 
+    # def combineNoteOnOffLists(self):
+    #     activeNotes = []
+    #     noteOnIndex = 0
+    #     noteOffIndex = 0
+    #     while noteOnIndex < len(self.noteOn):
 
     def addNoteOn(self, channel: int, noteNumber: int, velocity: int, timeOn: float) -> None:
         """adds a Note Event
@@ -51,7 +82,6 @@ class MIDITrack:
         """
         self.noteOn.append((channel, noteNumber, velocity, timeOn))
 
-
     def addNoteOff(self, channel: int, noteNumber: int, velocity: int, timeOff: float) -> None:
         """adds a Note Off event
 
@@ -61,7 +91,6 @@ class MIDITrack:
         :param float timeOff: the note time off, in seconds
         """
         self.noteOff.append((channel, noteNumber, velocity, timeOff))
-
 
     def addControlChange(self, control_number: int, channel: int, value: int, time: float):
         """add a control change value
@@ -79,7 +108,6 @@ class MIDITrack:
             # not in dict
             self.controlChange[control_number] = [(channel, value, time)]
 
-
     def addPitchwheel(self, channel: int, value: float, time: float) -> None:
         """add a pitchwheel event
 
@@ -88,7 +116,6 @@ class MIDITrack:
         :param float time: time value (in seconds)
         """
         self.pitchwheel.append((channel, value, time))
-
 
     def addAftertouch(self, channel: int, value: float, time: float) -> None:
         """add a aftertouch event
@@ -99,14 +126,12 @@ class MIDITrack:
         """
         self.aftertouch.append((channel, value, time))
 
-
     def _checkIfEqual(self) -> bool:
         """checks if timesOn, timesOff and noteNumbers are of equal length
 
         :return bool: returns True if list are of equal length, False otherwise
         """
         return len(self.noteOn) == len(self.noteOff)
-
 
     def _isEmpty(self) -> bool:
         """checks if MIDITrack is empty
@@ -117,7 +142,6 @@ class MIDITrack:
         variables = [self.noteOn, self.noteOff, self.controlChange, self.pitchwheel, self.aftertouch]
 
         return len(variables) == sum([len(v) == 0 for v in variables])
-        
 
     def allUsedNotes(self) -> list:
         """Returns a list of all used notes in a MIDI Track.
@@ -126,6 +150,12 @@ class MIDITrack:
         """
 
         return removeDuplicates([num[1] for num in self.noteOn])
+
+    def postProcess(self):
+        pass
+        # build up _notesToPlay list of MIDINote() objects and store in an instance var
+        # sorted by timeOn
+        # clear out old lists using .clear()
 
     def __str__(self) -> str:
         # TODO: Refactor & optimize
@@ -136,14 +166,14 @@ class MIDITrack:
         for i, (channel, note, velocity, time) in enumerate(self.noteOn):
             out.append(f"NoteOn(channel={channel}, note={note}, velocity={velocity}, time={time})")
             if i != len(self.noteOn) - 1:
-                    out.append(",\n\t")
+                out.append(",\n\t")
 
         out.append("],\nnoteOffs=[\n\t")
 
         for i, (channel, note, velocity, time) in enumerate(self.noteOff):
             out.append(f"NoteOff(channel={channel}, note={note}, velocity={velocity}, time={time})")
             if i != len(self.noteOff) - 1:
-                    out.append(",\n\t")
+                out.append(",\n\t")
         
         out.append("],\ncontrolChanges={\n\t")
 
@@ -156,26 +186,25 @@ class MIDITrack:
                     out.append(",\n\t\t")
         
             if i != len(self.controlChange) - 1:
-                    out.append(",\n\t")
+                out.append(",\n\t")
 
         out.append("},\nafterTouch=[\n\t")
 
-        for i, (channel, value, velocity) in enumerate(self.aftertouch):
+        for i, (channel, value, time) in enumerate(self.aftertouch):
             out.append(f"Aftertouch(channel={channel}, value={value}, time={time})")
             if i != len(self.aftertouch) - 1:
-                    out.append(",\n\t")
+                out.append(",\n\t")
 
         out.append("],\npitchwheel=[\n\t")
 
-        for i, (channel, value, velocity,) in enumerate(self.pitchwheel):
+        for i, (channel, value, time) in enumerate(self.pitchwheel):
             out.append(f"Pitchwheel(channel={channel}, value={value}, time={time})")
             if i != len(self.pitchwheel) - 1:
-                    out.append(",\n\t")
+                out.append(",\n\t")
 
         out.append("]\n)")
         
         return "".join(out)
-
 
     def __repr__(self) -> str:
         type_ = type(self)
@@ -184,91 +213,78 @@ class MIDITrack:
 
         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
 
-# TODO: MIDIInstrument not needed?
-# class MIDIInstrument:
-#     def __init__(self, name: str):
-#         # metadata
-#         self.name = name
-#         self.tracks = []
-    
 
-#     def addTrack(self, track: MIDITrack) -> MIDITrack:
-#         """adds a track to MIDIInsturment
+class BlenderTrack:
+    _midiTrack: MIDITrack
+    _noteToBlender: Dict[int, AnimatableBlenderObject] # key is the note's number
 
-#         :param MIDITrack track: the MIDITrack to add
-#         """
-#         self.tracks.append(track)
-#         return self.tracks[-1]
+    def __init__(self, midiTrack: MIDITrack):
+        pass
 
+    def setInstrument(self, instrumentType: str, objectCollection: bpy.types.Collection):
+        pass
+        # iterate over objectCollection and get the note_numbers and FCurve data
+        # build up a dictionary with the note as the key and the value will be a new AnimatableBlenderObject() or a sub-
+        # class depending on the instrumentType parameter
 
-#     def addTracks(self, tracks: list, overwrite=False) -> list:
-#         """add tracks to MIDIInstrument.
+    def computeStartEndFramesForObjects(self) -> List[Tuple[int, int, AnimatableBlenderObject]]:
+        """
+        returns: list of tuples (startFrame, endFrame, AnimatableBlenderObject)
+        """
+        pass
 
-#         :param list tracks: list of MIDITracks
-#         :param bool overwrite: overwrite existing tracks, defaults to False
-#         """
-#         if overwrite:
-#             self.tracks = tracks
-#         else:
-#             for track in tracks:
-#                 self.tracks.append(track)
+        #    make empty list
+        #    for each note in sorted order (track._notesToPlay)
+        #        animatableObject = use track dictionary that gets it for the note (using the note number as the key)
+        #        animatableObject.calculateDataForNoteHitTime(note.onTime)
+        #        add tuple (animatableObject.startFrame(), animatableObject.endFrame, animatableObject) to list
+        #     return list
 
-#         return self.tracks
-    
-#     def remove(self, element: MIDITrack):
-#         """deletes a MIDITrack from a MIDIInstrument
+class ProjectileCache:
+    pass
 
-#         if a MIDITrack is not in the MIDIInstrument, a ValueError is thrown
-#         :param MIDITrack element: the MIDITrack to delete
-#         """
-#         try:
-#             self.tracks.remove(element)
-#         except ValueError:
-#             raise ValueError(f"MIDITrack {repr(element)} was not found in MIDIInstrument {repr(self)}.")
+class AnimatableBlenderObject:
+    _blenderObject: bpy.types.Object
+    _note: MIDINote
+    _projectile: bpy.types.Object
+    _startFrame: int
+    _endFrame: int
+    _controlPoints: Tuple[float, float, float]
 
-#     def _isEmpty(self) -> bool:
-#         """checks if the MIDIInstrument is empty.
+    def __init__(self, note: MIDINote, blenderCollection: bpy.types.Collection):
+        self._note = note
+        # determine _blenderObject using bpy and the note
 
-#         :return bool: returns True if empty, False otheriwse
-#         """
-
-#         for track in self.tracks:
-#             if not track._isEmpty():
-#                 return False
-        
-#         return True
-
-#     def _cleanInstruments(self):
-#         """removes empty tracks in a MIDIInstrument"""
-
-#         for track in self.tracks:
-#             if track._isEmpty():
-#                 # delete the empty track
-#                 self.remove(track)
+    def calculateDataForNoteHitTime(self, hitTime: float):
+        pass
 
 
-#     def __str__(self) -> str:
-#         out = [f"MIDIInstrument(name='{self.name}', index={self.index}, tracks=["]
-        
-#         for i, track in enumerate(self.tracks):
-#             out.append(str(track))
+    def startFrame(self) -> int:
+        pass
 
-#             if i != len(self.tracks) - 1:
-#                 out.append(", ")
+    def endFrame(self) -> int:
+        return self._endFrame
 
-#         out.append("])")
+    def _controlPoints(self):
+        pass
 
-#         return "".join(out)
-    
-
-#     def __repr__(self) -> str:
-#         type_ = type(self)
-#         module = type_.__module__
-#         qualname = type_.__qualname__
-
-#         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
+    def positionForFrame(self, frameNumber: int) -> Tuple[float, float, float]:
+        pass
 
 
-#     def __iter__(self):
-#         for track in self.tracks:
-#             yield track
+class BlenderObjectProjectile(AnimatableBlenderObject):
+
+    def calculateDataForNoteHitTime(self, hitTime: float):
+        pass
+        # calculate other instance variables - startFrame, endFrame based on FCurve
+        # for example if the note is to be played at frame 100
+        # the FCurve stores offset at which the note is hit (metadata)
+        # so the startFrame is note.onTime minus that offset
+        # calculate the endFrame based on the last controlPoint and the startFrame
+
+
+    def _getReusableProjectile(self, cache: ProjectileCache):
+        pass
+
+class BlenderObjectString(AnimatableBlenderObject):
+    pass

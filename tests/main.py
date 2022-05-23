@@ -1,7 +1,7 @@
 import sys
 sys.path.append(".")
 
-from MIDIAnimator.src.MIDINode import *
+from MIDIAnimator.src.MIDIFile import *
 from MIDIAnimator.utils.functions import noteToName, nameToNote
 import unittest
 
@@ -9,7 +9,7 @@ class MIDIAnimatorTest(unittest.TestCase):
     def testImportingMIDI(self):
         # TODO: fix this
         # also test type 0 and type 1, and other edge case files
-        node = MIDINode("tests/two_notes_CC_simple.mid")
+        node = MIDIFile("tests/two_notes_CC_simple.mid")
 
         data = node.getMIDIData()
         for instrument in data:
