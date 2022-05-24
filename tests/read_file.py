@@ -268,7 +268,7 @@ def main():
     
     for i, track in enumerate(midiTracks):
         if track is not None:
-            print(f"{i}: {track.name}, {len(track.noteOn)=}")
+            print(f"{i}: {track.name}, {len(track.notesOn)=}")
             print(track)
 
     # for i, track in enumerate(midiTracks):

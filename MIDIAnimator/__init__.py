@@ -31,8 +31,6 @@ if "bpy" in locals():
     importlib.reload(src)
     importlib.reload(utils)
     importlib.reload(ui)
-
-
 else:
     # Running under external instance
     import bpy
@@ -65,7 +63,8 @@ def register():
     )
     # add where along the curve the note hits property
     bpy.types.Object.note_hit_time = bpy.props.IntProperty(
-        name="Note Hit Time", 
+        name="Note Hit Time",
+        description="The time in which the ball hits",
         default=0
     )
     bpy.types.Scene.note_number_list = bpy.props.StringProperty(
