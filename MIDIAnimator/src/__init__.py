@@ -4,6 +4,6 @@ if "bpy" in locals():
     importlib.reload(Blender)
 else:
     from . import MIDIStructure
-    from . import MIDIAnimation
+    from . import animation
 
 import bpy

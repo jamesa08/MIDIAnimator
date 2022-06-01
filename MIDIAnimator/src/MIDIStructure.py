@@ -5,25 +5,15 @@ from typing import List, Tuple, Dict
 
 @dataclass
 class MIDINote:
-    # number
-    # structure (channel, note, velocity, time)
 
     channel: int
     noteNumber: int
     velocity: int
     timeOn: float
-    timeOff: float  # ignore to start
-
-    # def __init__(self, channel: int, noteNumber: int, velocity: int, timeOn: float, timeOff: float):
-    #     self.channel = channel
-    #     self.noteNumber = noteNumber
-    #     self.velocity = velocity
-    #     self.timeOn = timeOn
-    #     self.timeOff = timeOff
-
+    timeOff: float
+    
     def __lt__(self, other):
         return self.timeOn < other.timeOn
-
 
 @dataclass
 class MIDIEvent:
@@ -31,18 +21,12 @@ class MIDIEvent:
     channel: int
     value: float
     time: float
-    
-    # def __init__(self, channel: int, value: float, time: float):
-    #     self.channel = channel
-    #     self.value = value
-    #     self.time = time
 
     def __lt__(self, other):
         return self.timeOn < other.timeOn
 
-
 class MIDITrack:
-    # make MIDINote object?
+
     name: str
     
     controlChange: Dict[int, List[MIDIEvent]]
@@ -56,7 +40,6 @@ class MIDITrack:
 
         :param str name: name of track
         """
-        # metadata
         self.name = name
 
         self.notes = []
@@ -94,9 +77,14 @@ class MIDITrack:
         """
 
         try:
+            # find matching note on message
             key = (channel, noteNumber)
             note = self._noteTable[key]
+
+            # assume the first note on message for this note is the one that matches with this note off
             note[0].timeOff = timeOff
+
+            # remove this note for this note number b/c we have the note off for this note
             del note[0]
         except IndexError:
             raise RuntimeError("NoteOff message has no NoteOn message! Please open an issue on GitHub.")            
@@ -205,7 +193,6 @@ class MIDITrack:
 
         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
 
-
 class MIDIFile:
     _tracks = List[MIDITrack]
 
@@ -222,10 +209,10 @@ class MIDIFile:
         self._tracks = self._parseMIDI(midiFile)
         
 
-    def getMIDIData(self):
+    def getMIDITracks(self) -> List[MIDITrack]:
         return self._tracks
 
-    def _parseMIDI(self, file: str):
+    def _parseMIDI(self, file: str) -> List[MIDITrack]:
         """helper method that takes a MIDI file (instrumentType 0 and 1) and returns a list of MIDITracks
 
         :param midFile: MIDI file
@@ -321,7 +308,11 @@ class MIDIFile:
         midiTracks = list(filter(lambda x: not x._isEmpty(), midiTracks))
 
         # make sure notes are sorted
-        [track.notes.sort() for track in midiTracks]
+        # & delete noteTable (not needed)
+        for track in midiTracks:
+            track.notes.sort()
+            del track._noteTable
+        
 
         return midiTracks
     
@@ -344,4 +335,3 @@ class MIDIFile:
             out.append(str(track))
 
         return "\n".join(out)
-

@@ -28,7 +28,7 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         col = scene.quick_obj_col_prop
 
         # make sure vars are filled
-        variables = (scene.quick_obj_col_prop, scene.quick_obj_curve_prop, scene.quick_obj_curve_index_prop)
+        variables = (scene.quick_obj_col_prop, scene.quick_obj_curve_prop, scene.quick_obj_curve_index_prop, scene.quick_note_hit_time)
 
         for v in variables:
             assert v is not None
@@ -38,7 +38,7 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         except IndexError: self.report({"ERROR"}, "FCurve does not have specified animation index!")
         except AttributeError: self.report({"ERROR"}, "Object has no animation!")
 
-        # convert String "list" into a List type=
+        # convert String "list" into a List type
         try:
             note_numbers = literal_eval(context.scene.note_number_list)
             context.scene['note_number_list'] = str(sorted(note_numbers))
@@ -49,9 +49,11 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         
         if note_numbers is not None:
             assert len(note_numbers) == len(col.all_objects), "Objects and list unbalanced!"
+            col.instrument_type = scene.quick_instrument_type
             for noteNumber, obj in zip(sorted(note_numbers), sorted(col.all_objects, key=col_sort_key)):
                 obj['note_number'] = str(noteNumber)
-                obj['animation_curve'] = context.scene.quick_obj_curve_prop
-                obj['animation_curve_index'] = context.scene.quick_obj_curve_index_prop
+                obj['animation_curve'] = scene.quick_obj_curve_prop
+                obj['animation_curve_index'] = scene.quick_obj_curve_index_prop
+                obj['note_hit_time'] = scene.quick_note_hit_time
         
         return {'FINISHED'}

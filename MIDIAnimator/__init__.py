@@ -43,6 +43,7 @@ else:
 
 classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick)
 
+
 def register():
     # Edit Note Information
     bpy.types.Object.note_number = bpy.props.StringProperty(
@@ -51,45 +52,57 @@ def register():
                     "readable note (C3).",
         default="C3"
     )
-    bpy.types.Object.animation_curve = bpy.props.PointerProperty(
+    bpy.types.Object.animation_curve = bpy.types.Scene.quick_obj_curve_prop = bpy.props.PointerProperty(
         name="Animation Curve", 
         description="The FCurve object to be read.",
         type=bpy.types.Object
     )
-    bpy.types.Object.animation_curve_index = bpy.props.IntProperty(
+    bpy.types.Object.animation_curve_index = bpy.types.Scene.quick_obj_curve_index_prop = bpy.props.IntProperty(
         name="Animation Curve Index",
         description="The FCurve index (which curve in the FCurve to use).",
         default=0   
     )
-    # add where along the curve the note hits property
-    bpy.types.Object.note_hit_time = bpy.props.IntProperty(
+    bpy.types.Object.note_hit_time = bpy.types.Scene.quick_note_hit_time = bpy.props.IntProperty(
         name="Note Hit Time",
         description="The time in which the ball hits",
         default=0
     )
+    bpy.types.Collection.instrument_type = bpy.types.Scene.quick_instrument_type = bpy.props.EnumProperty(
+        items=[
+            ("projectile", "Projectile", ""), 
+            ("string", "String", "")
+            ], 
+        name="Instrument Type", 
+        default="string"
+    )
+
+    # Edit Notes (Quick)
     bpy.types.Scene.note_number_list = bpy.props.StringProperty(
         name="Note Number List",
         description="A list of note numbers. These will correspond to the objects in the selected collection.",
         default="[]"
     )
+    bpy.types.Scene.quick_obj_col_prop = bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection to use")
+    # bpy.types.Scene.quick_obj_curve_prop = bpy.props.PointerProperty(type=bpy.types.Object, name="Anim Curve")
+    # bpy.types.Scene.quick_obj_curve_index_prop = bpy.props.IntProperty(name="Anim Curve Index", default=0)
+    # bpy.types.Scene.quick_note_hit_time = bpy.props.IntProperty(name="Note Hit Time", default=0)
 
-    # Edit Notes (Quick)
-    bpy.types.Scene.quick_obj_col_prop = bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection")
-    bpy.types.Scene.quick_obj_curve_prop = bpy.props.PointerProperty(type=bpy.types.Object, name="Global Anim Curve")
-    bpy.types.Scene.quick_obj_curve_index_prop = bpy.props.IntProperty(name="Anim Curve Index", default=0)
     
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
 
 def unregister():
+    del bpy.types.Object.note_number
+    del bpy.types.Object.animation_curve
+    del bpy.types.Object.animation_curve_index
+    del bpy.types.Object.note_hit_time
+    del bpy.types.Collection.instrument_type
+    
     del bpy.types.Scene.quick_obj_col_prop
     del bpy.types.Scene.quick_obj_curve_prop
     del bpy.types.Scene.quick_obj_curve_index_prop
-
-    del bpy.types.Object.note_number
-    del bpy.types.Object.animation_curve
-    del bpy.types.Object.note_hit_time
-    del bpy.types.Object.animation_curve_index
+    del bpy.types.Scene.quick_note_hit_time
+    del bpy.types.Scene.quick_instrument_type
 
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)

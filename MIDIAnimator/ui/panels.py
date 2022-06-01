@@ -18,13 +18,24 @@ class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
         layout.use_property_split = True
 
         obj = context.active_object
-        scene = context.scene
+        objs = context.selected_editable_objects
+        blCol = context.collection
 
-        col = layout.column(heading="Add Property")
+        col = layout.column()
 
-        col.prop(obj, "note_number")
-        col.prop(obj, "animation_curve")
-        col.prop(obj, "animation_curve_index")
+        if blCol != [] and objs == []:
+            # collection is selected
+            col.prop(blCol, "instrument_type", text="Instrument Type")
+
+        if objs != []:
+            # object is selected
+            col.prop(obj, "note_number")
+
+            row = col.row()
+            row.prop(obj, "animation_curve")
+            row.prop(obj, "animation_curve_index", text="")
+            
+            col.prop(obj, "note_hit_time")
 
 
 class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
@@ -39,14 +50,21 @@ class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
         layout.use_property_decorate = False
         layout.use_property_split = True
 
-        obj = context.active_object
         scene = context.scene
+        if scene is not None:
 
-        col = layout.column()
+            col = layout.column()
+            col.prop(scene, "quick_instrument_type")
+            col.prop(scene, "note_number_list")
+            col.prop(scene, "quick_obj_col_prop")
 
-        col.prop(scene, "note_number_list")
-        col.prop(scene, "quick_obj_col_prop")
-        col.prop(scene, "quick_obj_curve_prop")
-        col.prop(scene, "quick_obj_curve_index_prop")
-        col.operator("scene.quick_add_props")
-        col.separator_spacer()
+            row = col.row()
+            row.prop(scene, "quick_obj_curve_prop")
+            row.prop(scene, "quick_obj_curve_index_prop", text="")
+            
+            col.prop(scene, "quick_note_hit_time")
+            col.operator("scene.quick_add_props")
+            col.separator_spacer()
+        else:
+            layout.label(text="Scene does not exist!")
+
