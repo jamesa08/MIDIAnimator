@@ -37,8 +37,8 @@ else:
     from . src import *
     from . utils import *
     from . ui import *
-    from .ui.operators import SCENE_OT_quick_add_props
-    from .ui.panels import VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick
+    from . ui.operators import SCENE_OT_quick_add_props
+    from . ui.panels import VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick
 
 
 classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_note_information, VIEW3D_PT_add_notes_quick)
@@ -75,6 +75,7 @@ def register():
         name="Instrument Type", 
         default="string"
     )
+    bpy.types.Object.projectile_id = bpy.props.StringProperty(name="Projectile ID", default="")
 
     # Edit Notes (Quick)
     bpy.types.Scene.note_number_list = bpy.props.StringProperty(

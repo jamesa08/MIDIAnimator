@@ -1,25 +1,22 @@
+from inspect import Attribute
 from . MIDIStructure import MIDIFile, MIDITrack, MIDINote
 from .. utils.functions import noteToName
 from .. utils.animation import FCurvesFromObject, secToFrames
 from .. utils.algorithms import *
-from typing import Callable, List, Tuple, Dict
+from typing import Callable, List, Tuple, Dict, Optional
 import bpy
-
-import timeit
-
-class ProjectileCache:
-    pass
 
 class AnimatableBlenderObject:
     classType = "generic"
     _blenderObject: bpy.types.Object
     _note: int
-    _projectile: bpy.types.Object
+    # _projectile: bpy.types.Object
+    _projectileType: str
     _startFrame: int
     _endFrame: int
     _controlPoints: Tuple[float, float, float]
 
-    def __init__(self, obj: bpy.types.Object):
+    def __init__(self, obj: bpy.types.Object, projectileType: str = ""):
         if obj.note_number is None: raise RuntimeError(f"Object {obj} has no note number!")
         if obj.animation_curve is None: raise RuntimeError(f"Object {obj} has no animation curve!")
         
@@ -27,6 +24,7 @@ class AnimatableBlenderObject:
         self._blenderObject = obj
         self._note = int(obj.note_number)
         self._FCurve = FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index]
+        self._projectileType = projectileType
 
         self._startFrame = None
         self._endFrame = None
@@ -51,7 +49,12 @@ class AnimatableBlenderObject:
 class BlenderObjectProjectile(AnimatableBlenderObject):
 
     classType = "projectile"
+    _projectile: Optional[bpy.types.Object]
     
+    def __init__(self, obj: bpy.types.Object, projectileType: str = ""):
+        super().__init__(obj, projectileType)
+        self._projectile = None
+
     def calculateDataForNoteHitTime(self, timeOn: float):
         # calculate other instance variables - startFrame, endFrame based on FCurve
         # for example if the note is to be played at frame 100
@@ -65,14 +68,12 @@ class BlenderObjectProjectile(AnimatableBlenderObject):
         startFCurve, endFCurve = rangeVector[0], rangeVector[1]
         
         frame = secToFrames(timeOn)
-        self._startFrame = (startFCurve - hit) + frame
-        self._endFrame = (endFCurve - hit) + frame
+        self._startFrame = int(round((startFCurve - hit) + frame))
+        self._endFrame = int(round((endFCurve - hit) + frame))
 
 
-    def _getReusableProjectile(self, cache: ProjectileCache):
-        pass
-
-
+    # def _getReusableProjectile(self, cache: ProjectileCache):
+    #     pass
 
 class BlenderObjectString(AnimatableBlenderObject):
     
@@ -95,6 +96,32 @@ class BlenderObjectString(AnimatableBlenderObject):
         self._startFrame = (startFCurve - hit) + frame
         self._endFrame = (endFCurve - hit) + frame
 
+class BlenderObject:
+    _obj: bpy.types.Object
+    _animator: AnimatableBlenderObject
+
+    def __init__(self, obj: bpy.types.Object, animator: AnimatableBlenderObject) -> None:
+        self._obj = obj
+        self._animator = animator
+
+class ProjectileCache:
+    # FIXME type annotations !!!!
+
+    _cache: Dict[str, List[bpy.types.Object]]
+
+    def __init__(self):
+        self._cache = {}
+
+    def addProjectileType(self, projectileType: str, projectiles: List[BlenderObject]):
+        self._cache[projectileType] = projectiles
+
+    def reusableProjectileForType(self, projectileType: str) -> BlenderObject:
+        obj = self._cache[projectileType].pop()
+        return obj
+            # print("requested more projectiles than exist for this type: maxNumber was incorrect", e)
+
+    def returnProjectileToCache(self, projectileType: str, blenderObject: BlenderObject):
+        self._cache[projectileType].append(blenderObject)
 
 
 class BlenderTrack:
@@ -120,7 +147,7 @@ class BlenderTrack:
                 cls = BlenderObjectString(obj)
             elif col.instrument_type == "projectile":
                 if projectileCollection is None: raise ValueError("Projectile Collection for instrument type Projectile is not passed!")
-                cls = BlenderObjectProjectile(obj)
+                cls = BlenderObjectProjectile(obj, col.instrument_type)
             
             vals = (obj, cls)
             
@@ -156,10 +183,12 @@ class BlenderTrack:
 # these are the objects you would instance in
 class BlenderAnimation:
     _blenderTracks: List[BlenderTrack]
+    _projectileCache: ProjectileCache
 
     def __init__(self):
         # call MIDIFile and read in  # if we want the user to be able to access the tracks & pass them in, then they should instance MIDIFile themselves
         self._blenderTracks = []
+        self._projectileCache = ProjectileCache()
 
     def setInstrumentForTrack(self, track: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection=None, attribute: str=None, ballName: str=None):
         # make a new BlenderTrack and add to _blenderTracks
@@ -186,23 +215,29 @@ class BlenderAnimation:
             # calculate number of needed projectiles & instance the blender objects using bpy
             maxNumOfProjectiles = maxNeeded(blenderTrack.computeStartEndFramesForObjects())
 
+            projectileType = bpy.data.objects[ballName].projectile_id
+
+            projectiles = []
+
             for i in range(maxNumOfProjectiles):
                 dup = bpy.data.objects[ballName].copy()
                 dup.name = f"projectile_{i}"
                 projectileCollection.objects.link(dup)
-    
-        
+                projectiles.append(dup)
+
+            self._projectileCache.addProjectileType(projectileType, projectiles)
+
             # TEMPORAY CODE 
             # need to figure out the max amount of balls visible in any frame
             # to make some balls for testing (make 1 ball per note)
 
 
-            for key in blenderTrack._noteToBlender:  # key == note number
-                obj, cls = blenderTrack._noteToBlender[key]
-                if insType == "projectile":
-                    dup = bpy.data.objects[ballName].copy()
-                    dup.name = f"{hex(id(cls))}_{key}"
-                    projectileCollection.objects.link(dup)
+            # for key in blenderTrack._noteToBlender:  # key == note number
+            #     obj, cls = blenderTrack._noteToBlender[key]
+            #     if insType == "projectile":
+            #         dup = bpy.data.objects[ballName].copy()
+            #         dup.name = f"{hex(id(cls))}_{key}"
+            #         projectileCollection.objects.link(dup)
                     
                 
                 
@@ -243,6 +278,7 @@ class BlenderAnimation:
         # NOTE: this is the _most_ efficient way to do this. I used timeit and different algorithms to test with, see: https://pastebin.com/raw/kab98YWS
         combined = [extendResult for track in self._blenderTracks for extendResult in track.computeStartEndFramesForObjects()]
 
+        print(len(combined), combined)
         # sort by startFrame
         combined.sort(key=lambda tup: tup[0])
         combined.reverse()
@@ -251,11 +287,24 @@ class BlenderAnimation:
 
         frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
 
+        # activeObjectList: (startFrame, endFrame, BlenderObject)
+        # combined: (startFrame, endFrame, AnimatableBlenderObject)
         for frame in range(frameStart, frameEnd):
             # del objects not used only if list is not empty (otherwise will fail)
-            if len(activeObjectList) == 0:
-                # remove from list of active objects and objects whose end frame is before this frame
-                activeObjectList = list(filter(lambda data: round(data[1]) >= frame, activeObjectList))
+
+            # remove from list of active objects and objects whose end frame is before this frame
+            # activeObjectList = list(filter(lambda data: round(data[1]) >= frame, activeObjectList))
+            updatedList = []
+            for frameOn, frameOff, bObject in activeObjectList:
+                abo = bObject._animator
+                # projectile: BlenderObject()
+                if frameOff >= frame:
+                    updatedList.append((frameOn,frameOff,bObject))
+                else:
+                    print("returned object to cache")
+                    self._projectileCache.returnProjectileToCache(bObject._obj.projectile_id, bObject._obj)
+            
+            activeObjectList = updatedList
             
 
             # update the list of active objects (add any new objects from combined list whose startFrame is this frame)
@@ -264,19 +313,91 @@ class BlenderAnimation:
 
             # while we still have notes to play and the start time for this note is on or before this frame, then add it to activeObjectList
             while i >= 0 and combined[i][0] <= frame:
-                activeObjectList.append(combined[i])
-                
+                frameOn = combined[i][0]
+                frameOff = combined[i][1]
+                abo = combined[i][2]  # AnimatableBlenderObject
+
+                if abo.classType == "projectile":
+                    # animateProjectile(*args, self._projectileCache)
+
+                    # fill in x from object
+                    # get an object that is not being used (somehow)
+                    projectileType = abo._blenderObject.projectile_id
+                    print(projectileType)
+                    print("requested object from cache")
+                    if frameOn == frame:
+                        obj = self._projectileCache.reusableProjectileForType("sphere")  # bpy.types.Object
+                        # make last keyframe interpolation constant
+                        try:
+                            if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
+                                for fCrv in FCurvesFromObject(obj):
+                                    fCrv.keyframe_points[-1].interpolation = "CONSTANT"
+                        except AttributeError:
+                            pass
+
+                        bObject = BlenderObject(obj, abo)
+                        # FIXME I dont think we need _projectile in the AnimatableBlenderObject class
+                        abo._projectile = obj
+                        # x = abo._blenderObject.location[0]  # get the start pos from the funnel object
+                        # y, z = abo.positionForFrame(0)
+                    
+                        activeObjectList.append((frameOn, frameOff, bObject))
+
                 # delete this note b/c we added it to active object list & move to next note 
                 combined.pop()
                 i -= 1
             
+            
+            # newlyInsertedObjects = []
 
-            for frameOn, frameOff, cls in activeObjectList:
-                # call different algorithims with the active objects
-                args = (frame, frameOn, frameOff, cls)
-                
-                if cls.classType == "projectile":
-                    animateProjectile(*args)
-                elif cls.classType == "string":
-                    animateString(*args)
+            for frameOn, frameOff, bObject in activeObjectList:
+                obj = bObject._obj
+                abo = bObject._animator
 
+                hitTime = abo._blenderObject.note_hit_time  # get hit time from funnel
+                delta = frame - frameOn
+
+                x = abo._blenderObject.location[0]
+                y, z = abo.positionForFrame(delta)
+
+                obj.location = (x, y, z)
+                obj.keyframe_insert(data_path="location", frame=frame)
+
+                # FIXME: check if there is a less awkward way 
+                try:
+                    if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
+                        for fCrv in FCurvesFromObject(obj):
+                            fCrv.keyframe_points[-1].interpolation = "BEZIER"
+                except AttributeError:
+                    pass
+
+
+                # if bObject.classType == "projectile":
+                #     # animateProjectile(*args, self._projectileCache)
+
+                #     # fill in x from object
+                #     # get an object that is not being used (somehow)
+                #     projectileType = bObject._blenderObject.projectile_id
+                #     print(projectileType)
+                #     print("requested object from cache")
+                #     if round(frameOn) == frame:
+                #         obj = self._projectileCache.reusableProjectileForType("sphere")
+                #         bObject._projectile = obj
+                #         x = bObject._blenderObject.location[0]
+                #         y, z = bObject.positionForFrame(0)
+
+                #         newlyInsertedObjects.append((frameOn, frameOff, bObject))
+                #     else:
+                #         obj = bObject._projectile
+                #         # objName = f"{hex(id(cls))}_{cls._note}"  # TEMP
+
+                #         hitTime = bObject._blenderObject.note_hit_time
+                #         delta = frame - frameOn
+
+                #         x = bObject._blenderObject.location[0]
+                #         y, z = bObject.positionForFrame(delta)
+
+                #     obj.location = (x, y, z)
+                #     obj.keyframe_insert(data_path="location", frame=frame)
+
+            # activeObjectList.extend(newlyInsertedObjects)

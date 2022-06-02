@@ -221,7 +221,6 @@ class MIDIFile:
 
         midiFile = mido.MidiFile(file)
 
-        # make sure the file is not instrumentType 2
         assert midiFile.type in range(2), "Type 2 MIDI Files are not supported!"
 
         if midiFile.type == 0:
@@ -244,7 +243,7 @@ class MIDIFile:
                     tempo = msg.tempo
                     tempoMap.append((time, msg.tempo))
 
-        # iterate over file
+
         for track in midiFile.tracks:
             time = 0
             tempo = 500000
@@ -255,9 +254,9 @@ class MIDIFile:
             else:
                 curTrack = MIDITrack("")
 
-            # instrumentType 0 and 1
             if track.name:
                 curTrack.name = track.name
+
 
             for msg in track:
                 curType = msg.type
@@ -305,14 +304,14 @@ class MIDIFile:
                     midiTracks.append(curTrack)
 
         # remove empty tracks
-        midiTracks = list(filter(lambda x: not x._isEmpty(), midiTracks))
+        midiTracks = list(filter(lambda track: not track._isEmpty(), midiTracks))
 
         # make sure notes are sorted
         # & delete noteTable (not needed)
         for track in midiTracks:
             track.notes.sort()
             del track._noteTable
-        
+
 
         return midiTracks
     
