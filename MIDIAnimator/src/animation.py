@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from inspect import Attribute
 from . MIDIStructure import MIDIFile, MIDITrack, MIDINote
 from .. utils.functions import noteToName
@@ -6,6 +8,98 @@ from .. utils.algorithms import *
 from typing import Callable, List, Tuple, Dict, Optional
 import bpy
 
+
+class BlenderObjectFrames:
+    """
+    this stores an object that will be moving from _startFrame to _endFrame
+    """
+    _startFrame: int
+    _endFrame: int
+    _blenderObject: bpy.types.object
+    _cacheType: Optional[str] # None if not a cached object otherwise this is used to determine which cache to put it back in
+    # FIXME
+    # need some way of determining what to do if we start animating this when already is animating (such as a string being hit while it is still vibrating)
+
+    # may also need a reference back to the BlenderInstrument it goes with or at least type information
+    # so that when it's a projectile we can return it to the cache
+    # should we also have the FCurve (or list of FCurves) here or do we get them from the _blenderObject?
+
+    def locationForFrame(self, frame: int) -> Tuple[float, float, float]:
+        """
+        frame: frame number
+        returns: x, y, z location of object for the specified frame (computed using the FCurve)
+        """
+        # calculate the location for the object for the specified frame using the FCurve
+
+        # old code is this but it seems to only return two values
+        # eval FCurve
+        # TODO: VERY TEMP
+        # return ( FCurvesFromObject(self._blenderObject.animation_curve)[0].evaluate(frame),
+        #          FCurvesFromObject(self._blenderObject.animation_curve)[1].evaluate(frame)
+
+        pass
+
+    # so we can call sort() on a list of BlenderObjectFrames and have it sort them by start frame
+    def __lt__(self, other: BlenderObjectFrames):
+        return self._startFrame < other._startFrame
+
+
+class BlenderInstrument:
+    """base class for instruments that are played for notes"""
+    _noteNumber: int
+    _classType: str
+
+    _keyFrameInformation: List[BlenderObjectFrames]
+
+    def __init__(self, noteNumber: int, classType: str):
+        self._noteNumber = noteNumber
+        self._classType = classType
+
+    def processForNoteHitTime(self, timeOn: float):
+        # set _keyFrameInformation
+        raise NotImplementedError("subclass must override")
+
+    def frames(self) -> List[BlenderObjectFrames]:
+        return self._keyFrameInformation
+
+# maybe have a FunnelPlayedInstrument class that FunnelStringInstrument and FunnelCymbalInstrument subclass since
+# they are similar and may be able to share some code in the base the FunnelPlayedInstrument class
+
+class FunnelStringInstrument(BlenderInstrument):
+
+    _funnel: bpy.types.object
+    _string: bpy.types.object
+    _projectile: bpy.types.object # the ball that we get from the cache
+
+    # do we pass in the funnel and string bpy.types.object or does this class use Blender API to get via the metadata?
+    def __init__(self, noteNumber: int, classType: str):
+        super().__init__(noteNumber, classType)
+
+
+    def processForNoteHitTime(self, timeOn: float):
+        pass
+        # will put two items in the list _keyFrameInformation
+        #     BlenderObjectFrames for the funnel/ball
+        #     BlenderObjectFrames for the string (using noteOn - maybe velocity to figure out how much string should move)
+
+        # here is old code we were using to determine the frames for the ball - will use this idea
+
+        # the FCurve stores offset at which the note is hit (metadata)
+        # so the startFrame is note.timeOn minus that offset
+        # calculate the endFrame based on the last controlPoint and the startFrame
+
+        # hit = self._blenderObject.note_hit_time
+        #
+        # rangeVector = self._FCurve.range()
+        # startFCurve, endFCurve = rangeVector[0], rangeVector[1]
+        #
+        # frame = secToFrames(timeOn)
+        # self._startFrame = round(int(startFCurve - hit) + frame))
+        # self._endFrame = round(int((endFCurve - hit) + frame))
+
+
+
+# FIXME: to be removed
 class AnimatableBlenderObject:
     classType = "generic"
     _blenderObject: bpy.types.Object
@@ -46,6 +140,7 @@ class AnimatableBlenderObject:
         # TODO: VERY TEMP
         return FCurvesFromObject(self._blenderObject.animation_curve)[0].evaluate(frameNumber), FCurvesFromObject(self._blenderObject.animation_curve)[1].evaluate(frameNumber)
 
+# FIXME: to be removed
 class BlenderObjectProjectile(AnimatableBlenderObject):
 
     classType = "projectile"
@@ -75,6 +170,7 @@ class BlenderObjectProjectile(AnimatableBlenderObject):
     # def _getReusableProjectile(self, cache: ProjectileCache):
     #     pass
 
+# FIXME: to be removed
 class BlenderObjectString(AnimatableBlenderObject):
     
     classType = "string"
@@ -96,6 +192,7 @@ class BlenderObjectString(AnimatableBlenderObject):
         self._startFrame = (startFCurve - hit) + frame
         self._endFrame = (endFCurve - hit) + frame
 
+# FIXME: to be removed
 class BlenderObject:
     _obj: bpy.types.Object
     _animator: AnimatableBlenderObject
@@ -139,6 +236,11 @@ class BlenderTrack:
         # build up a dictionary with the note as the key and the value will be a new AnimatableBlenderObject() or a sub-
         # class depending on the instrumentType parameter
 
+        # in the blender object metadata, the funnel will need a way to get the corresponding string that the ball will be
+        # launched and hit
+
+
+        # REFACTOR: map each note to a subclass of BlenderInstrument depending on the instrument type - for now start with FunnelString
         for obj in col.all_objects:
             if obj.note_number is None: raise RuntimeError(f"Object {obj} has no note number!")
 
@@ -172,11 +274,16 @@ class BlenderTrack:
         for note in self._midiTrack.notes:
             assert self._noteToBlender[str(note.noteNumber)] is not None, f"Note {note.noteNumber}/{noteToName(note.noteNumber)} in MIDITrack has no Blender object to map to!"
 
-
+            # REFACTOR why is str(note.noteNumber) used here - aren't we using the int value for the note as the key
+            # we will now get back a BlenderInstrument subclass
+            # FIXME key will be an int (note.noteNumber)
             obj, cls = self._noteToBlender[str(note.noteNumber)]
             cls.calculateDataForNoteHitTime(note.timeOn)
+            # REFACTOR - this will now be out.extend and get the results of calling the frames method on the blenderInstrument for this note
             out.append((cls.startFrame(), cls.endFrame(), cls))
 
+
+        # FIX return type annotation now a list of BlenderObjectFrames
         return out
 
 
@@ -206,6 +313,7 @@ class BlenderAnimation:
 
         insType = objectCollection.instrument_type
 
+        # maybe these names should be funnelString, funnelCymbal
         if insType == "projectile":
             assert ballName is not None
             assert bpy.data.objects[ballName]
@@ -262,6 +370,61 @@ class BlenderAnimation:
 
         assert found is True, "Please provide a projectile in the collection to have cloned"
         assert len(col.all_objects) == 1
+
+    # FIXME: delete old animate method when done with this and rename it animate
+    def newAnimate(self) -> None:
+        for track in self._blenderTracks:
+            objectFrames = track.computeStartEndFramesForObjects()
+            # sort by start time and then reverse
+            objectFrames.sort(reverse=True)
+
+            frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
+
+            activeObjectList: List[BlenderObjectFrames] = []
+
+            # FIXME: make empty set of the objects that can be hit while already moving (strings, cymbals, etc.)
+
+            for frame in range(frameStart, frameEnd):
+
+                # determine which objects are no longer active
+                # maybe put this in a helper method
+                stillActiveList = []
+                for frameInfo in activeObjectList:
+                    # if the object is still be animated include it in our list
+                    if frameInfo._endFrame >= frame:
+                        stillActiveList.append(frameInfo)
+                        # if this is something that can be hit while already moving
+                            # remove from the set of those objects
+                    # we won't put it in the updated list
+                    else:
+                        pass
+                        # if this is a ball/projectile return it to the cache
+                        # use _frameInfo._cacheType (if not None call return to cache method with that value)
+                activeObjectList = stillActiveList
+
+
+                # determine which new objects to add
+                i = len(objectFrames)
+                while i >=0 and objectFrames[i]._startFrame <= frame:
+                    pass
+
+                    # determine the objects that will be moving
+                    # put it in the activeObjectList
+                    # for some instrument types, will need to get projectile from cache
+
+                    # if it is an object that can be hit while already moving (like a string)
+                        # if this object is in our set of these objects that are currently moving
+                            # then recalculate the path for it (see AnimationNodes)
+                            # will also need to update its endFrame
+                        # else
+                            # put in the set of objects that are currently
+
+                # add a key frame for each object that is moving during this frame
+                for frameInfo in activeObjectList:
+                    location = frameInfo.locationForFrame(frame)
+                    # make a keyframe for the object for this frame
+
+
 
 
     def animate(self) -> None:
