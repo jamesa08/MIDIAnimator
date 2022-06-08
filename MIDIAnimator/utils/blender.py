@@ -1,4 +1,5 @@
 import bpy
+from contextlib import suppress
 from mathutils import Vector  
 from typing import Any, Tuple, List, Union
 
@@ -46,9 +47,31 @@ def insertKeyframe(object: bpy.types.Object, dataPath: str, value: Any, frame: U
             exec(f"{object}.{dataPath}.value = {value}")
             exec(f"{object}.{dataPath}.keyframe_insert(data_path='value', frame={frame})")
         except Exception as e:
-            raise RuntimeError(f"Error caught! '{e}'")
+            raise RuntimeError(f"Error inserting keyframe! '{e}'")
     # bpy.context.active_object.data.shape_keys.key_blocks['Vibrate'].keyframe_insert(data_path="value")
 
+
+def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None) -> None:
+    """
+    Cleans a collection of old objects (to be reanimated)
+    """ 
+
+    objsToRemove = [obj for obj in col.all_objects if obj != refObject]
+
+    for obj in objsToRemove:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+def setInterpolationForLastKeyframe(obj: bpy.types.Object, interpolation: str):
+    with suppress(AttributeError):
+        if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
+            for fCrv in FCurvesFromObject(obj):
+                fCrv.keyframe_points[-1].interpolation = interpolation
+
+def delete_markers(name: str):
+    scene = bpy.context.scene
+    for marker in scene.timeline_markers:
+        if name in marker.name:
+            scene.timeline_markers.remove(marker)
 
 # This method could be useful to calculate the distance between 2 objects (think: drumsticks?)
 def distanceFromVectors(point1: Vector, point2: Vector) -> float: 

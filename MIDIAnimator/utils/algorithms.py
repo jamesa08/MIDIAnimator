@@ -1,7 +1,12 @@
 import bpy
 from typing import List, Tuple
 
-def maxNeeded(intervals: List[Tuple[int, int]]) -> int:
+def maxNeeded(intervals) -> int:
+    """_summary_
+
+    :param intervals: List[BlenderObjectFrames]
+    :return int: max number of objects that are visible at any point in time
+    """
     # keep track of maximum number of active items
     maxCount = 0
 
@@ -14,8 +19,9 @@ def maxNeeded(intervals: List[Tuple[int, int]]) -> int:
     # currentActives = []
 
     # for each (start frame, end frame) interval for objects
-    for start, end, cls in intervals:
-
+    for blenderObjectFrame in intervals:
+        start = blenderObjectFrame._startFrame
+        end = blenderObjectFrame._endFrame
         endIndex  = 0
         endTimesCount = len(endTimesForActive)
         # remove active objects whose end time is before this new interval we are processing

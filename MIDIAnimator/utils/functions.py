@@ -2,7 +2,6 @@ __all__ = [
     "noteToName",
     "nameToNote",
     "gmProgramToName",
-    "gmPercProgramToName",
     "removeDuplicates"
 ]
 

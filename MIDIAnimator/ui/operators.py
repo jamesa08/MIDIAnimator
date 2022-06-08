@@ -1,6 +1,6 @@
 from ast import literal_eval
 from ..utils.functions import nameToNote
-from ..utils.animation import FCurvesFromObject
+from ..utils.blender import FCurvesFromObject
 import bpy
 
 
@@ -25,20 +25,23 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        col = scene.quick_obj_col_prop
+        col = scene.quick_obj_col
 
-        # make sure vars are filled
-        variables = (scene.quick_obj_col_prop, scene.quick_obj_curve_prop, scene.quick_obj_curve_index_prop, scene.quick_note_hit_time)
+        # make sure essential vars are filled
+        variables = (scene.quick_obj_col, scene.quick_obj_curve, scene.quick_obj_curve_index)
 
         for v in variables:
-            assert v is not None
+            if v is None: 
+                self.report({"ERROR"}, f"One of the properties has no data! Please fill any missing data and try again.")
+                return {"CANCELLED"}
 
         # make sure Animation Curve has FCurves
-        try: FCurvesFromObject(scene.quick_obj_curve_prop)[context.scene.quick_obj_curve_index_prop]
+        try: FCurvesFromObject(scene.quick_obj_curve)[context.scene.quick_obj_curve_index]
         except IndexError: self.report({"ERROR"}, "FCurve does not have specified animation index!")
         except AttributeError: self.report({"ERROR"}, "Object has no animation!")
 
-        # convert String "list" into a List type
+        # convert String "list" into type list
+
         try:
             note_numbers = literal_eval(context.scene.note_number_list)
             context.scene['note_number_list'] = str(sorted(note_numbers))
@@ -52,8 +55,8 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
             col.instrument_type = scene.quick_instrument_type
             for noteNumber, obj in zip(sorted(note_numbers), sorted(col.all_objects, key=col_sort_key)):
                 obj['note_number'] = str(noteNumber)
-                obj['animation_curve'] = scene.quick_obj_curve_prop
-                obj['animation_curve_index'] = scene.quick_obj_curve_index_prop
+                obj['animation_curve'] = scene.quick_obj_curve
+                obj['animation_curve_index'] = scene.quick_obj_curve_index
                 obj['note_hit_time'] = scene.quick_note_hit_time
         
         return {'FINISHED'}
