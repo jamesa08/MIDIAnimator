@@ -152,7 +152,7 @@ class MIDITrack:
 
         for i, note in enumerate(self.notes):
             out.append(str(note))
-            if i != len(self.notesOn) - 1:
+            if i != len(self.notes) - 1:
                 out.append(",\n\t")
         
         out.append("],\ncontrolChanges={\n\t")
@@ -330,7 +330,7 @@ class MIDIFile:
 
     def __str__(self):
         out = []
-        for track in self.tracks:
+        for track in self._tracks:
             out.append(str(track))
 
         return "\n".join(out)

@@ -123,6 +123,8 @@ class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
         row.prop(scene, "quick_obj_curve")
         row.prop(scene, "quick_obj_curve_index", text="")
         
+        col.prop(scene, "quick_use_sorted")
+        
         if scene.quick_instrument_type == "projectile":
             col.separator_spacer()
             col.prop(scene, "quick_note_hit_time")

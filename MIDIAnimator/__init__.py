@@ -76,7 +76,8 @@ def register():
     bpy.types.Collection.instrument_type = bpy.types.Scene.quick_instrument_type = bpy.props.EnumProperty(
         items=[
             ("projectile", "Projectile", ""), 
-            ("string", "String", "")
+            ("string", "String", ""),
+            ("custom", "Custom", "")
             ], 
         name="Instrument Type", 
         default="string",
@@ -108,6 +109,12 @@ def register():
         default="[]",
         options=set()
     )
+    bpy.types.Scene.quick_use_sorted = bpy.props.BoolProperty(
+        name="Quick Sort objects",
+        description="This will use a sorted list of objects by name instead of using `name_noteNumber`",
+        default=False,
+        options=set()
+    )
     bpy.types.Scene.quick_obj_col = bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection to use")
     # bpy.types.Scene.quick_obj_curve = bpy.props.PointerProperty(type=bpy.types.Object, name="Anim Curve")
     # bpy.types.Scene.quick_obj_curve_index = bpy.props.IntProperty(name="Anim Curve Index", default=0)
@@ -133,6 +140,7 @@ def unregister():
     del bpy.types.Scene.quick_obj_curve
     del bpy.types.Scene.quick_obj_curve_index
     del bpy.types.Scene.quick_note_hit_time
+    del bpy.types.Scene.quick_use_sorted
 
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)

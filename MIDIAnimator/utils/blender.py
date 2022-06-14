@@ -1,14 +1,22 @@
 import bpy
 from contextlib import suppress
 from mathutils import Vector  
-from typing import Any, Tuple, List, Union
+from typing import Any, Tuple, List, Union, Set
 
 
 def FCurvesFromObject(obj) -> list:
     if obj.animation_data.action is None:
-        raise RuntimeError("Object has no FCurves!")  # maybe this should return an empty list instead of crashing? & soft warn?
+        print(f"WARNING: Object {obj} has no FCurves!")
+        return []
     
     return list(obj.animation_data.action.fcurves)
+
+def cleanKeyframes(obj, channels: Set={"all_channels"}):
+    fCurves = FCurvesFromObject(obj)
+    
+    for fCurve in fCurves:
+        if {fCurve.data_path, "all_channels"}.intersection(channels):
+            obj.animation_data.action.fcurves.remove(fCurve)
 
 def secToFrames(sec: float) -> float:
     bScene = bpy.context.scene
@@ -16,11 +24,9 @@ def secToFrames(sec: float) -> float:
     
     return sec * fps
     
-
 def getExactFps() -> float:
     bScene = bpy.context.scene
     return bScene.render.fps / bScene.render.fps_base
-
 
 def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
     """gets shape keys from object
@@ -38,9 +44,8 @@ def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeK
     reference = object.data.shape_keys.reference_key
     return list(object.data.shape_keys.key_blocks)[1:], reference
 
-
 def insertKeyframe(object: bpy.types.Object, dataPath: str, value: Any, frame: Union[int, float]):
-    #TODO: implement this correctly
+    # TODO: implement this correctly
     if dataPath.split(".")[1] == "shape_keys":
         try:
             assert isinstance(value, "float") or isinstance(value, "int")
@@ -49,7 +54,6 @@ def insertKeyframe(object: bpy.types.Object, dataPath: str, value: Any, frame: U
         except Exception as e:
             raise RuntimeError(f"Error inserting keyframe! '{e}'")
     # bpy.context.active_object.data.shape_keys.key_blocks['Vibrate'].keyframe_insert(data_path="value")
-
 
 def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None) -> None:
     """
@@ -67,7 +71,7 @@ def setInterpolationForLastKeyframe(obj: bpy.types.Object, interpolation: str):
             for fCrv in FCurvesFromObject(obj):
                 fCrv.keyframe_points[-1].interpolation = interpolation
 
-def delete_markers(name: str):
+def deleteMarkers(name: str):
     scene = bpy.context.scene
     for marker in scene.timeline_markers:
         if name in marker.name:
