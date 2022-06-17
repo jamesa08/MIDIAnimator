@@ -143,7 +143,7 @@ class GenericInstrument:
     def createFrameRanges(self) -> FrameRange:
         raise NotImplementedError("subclass must override")
 
-    def positionForFrame(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
+    def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
         # TODO: new name: createKeyFrame?
         # instead of returning, just make the keyframe with keyframe_insert() and return None
         raise NotImplementedError("subclass must override")
@@ -206,7 +206,7 @@ class ProjectileInstrument(GenericInstrument):
         
         return out
 
-    def positionForFrame(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
+    def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
         # new name -> applyFCurve
         fCurves = FCurvesFromObject(obj.animation_curve)
         if len(fCurves) != 2: raise(RuntimeError("Please make sure FCurve object only has 2 FCurves!"))
@@ -221,8 +221,7 @@ class ProjectileInstrument(GenericInstrument):
             
             fCurveIndexes.add(i)
             
-            offset = obj.location[i]
-            out[i] = val + offset
+            out[i] = val
         
         for el in {0, 1, 2}.difference(fCurveIndexes):
             locationMissing = el
@@ -230,26 +229,32 @@ class ProjectileInstrument(GenericInstrument):
         
         out[locationMissing] = obj.location[locationMissing]
         
+        # TODO: fix offset
+        # for i in range(len(out)):
+        #     offset = obj.location[i] - out[i]
+        #     out[i] += offset
+    
         return out
 
-    def animate(self, activeObjectList: List[FrameRange], frame: int):
-        for frameInfo in activeObjectList:
-            # variables:
-            objStartFrame = frameInfo.startFrame
-            objEndFrame = frameInfo.endFrame
-            obj = frameInfo.obj  # funnel
-            cachedObj = frameInfo.cachedObj  # ball
+    def animate(self, activeNoteDict: List[FrameRange], frame: int):
+        for noteNumber in activeNoteDict:
+            for frameInfo in activeNoteDict[noteNumber]:
+                # variables:
+                objStartFrame = frameInfo.startFrame
+                objEndFrame = frameInfo.endFrame
+                obj = frameInfo.obj  # funnel
+                cachedObj = frameInfo.cachedObj  # ball
 
-            # insert keyframe here:
-            hitTime = obj.note_hit_time  # get hit time from funnel
-            delta = frame - objStartFrame
-            # x = obj.location[0]
-            x, y, z = self.positionForFrame(obj, delta)
+                # insert keyframe here:
+                hitTime = obj.note_hit_time  # get hit time from funnel
+                delta = frame - objStartFrame
+                # x = obj.location[0]
+                x, y, z = self.applyFCurve(obj, delta)
 
-            # make a keyframe for the object for this frame
-            cachedObj.location = (x, y, z)
-            cachedObj.keyframe_insert(data_path="location", frame=frame)
-            setInterpolationForLastKeyframe(cachedObj, "BEZIER")
+                # make a keyframe for the object for this frame
+                cachedObj.location = (x, y, z)
+                cachedObj.keyframe_insert(data_path="location", frame=frame)
+                setInterpolationForLastKeyframe(cachedObj, "BEZIER")
                     
 
 class StringInstrument(GenericInstrument):
@@ -280,40 +285,42 @@ class StringInstrument(GenericInstrument):
         
         return out
 
-    def positionForFrame(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
+    def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
         # eval FCurve
         # TODO: VERY TEMP
         return FCurvesFromObject(obj.animation_curve)[0].evaluate(frameNumber), FCurvesFromObject(obj.animation_curve)[1].evaluate(frameNumber)
     
-    def animate(self, activeObjectList: List[FrameRange], frame: int):
+    def animate(self, activeNoteDict: List[FrameRange], frame: int):
         # build up temp dictionary sorted by noteNumber
-        activeNoteDict = {}
+        # activeNoteDict = {}
 
-        for frameInfo in activeObjectList:
-            note_number = frameInfo.obj.note_number
-            if note_number in activeNoteDict:
-                activeNoteDict[note_number].append(frameInfo)
-            else:
-                activeNoteDict[note_number] = [frameInfo]
+        # for frameInfo in activeNoteDict:
+        #     note_number = frameInfo.obj.note_number
+        #     if note_number in activeNoteDict:
+        #         activeNoteDict[note_number].append(frameInfo)
+        #     else:
+        #         activeNoteDict[note_number] = [frameInfo]
         
         for noteNumber in activeNoteDict:
             x, y = 0, 0
 
+            obj = None
             for frameInfo in activeNoteDict[noteNumber]:
                 objStartFrame = frameInfo.startFrame
                 obj = frameInfo.obj
                 
                 delta = frame - objStartFrame
                 
-                newX, newY = self.positionForFrame(obj, delta)
+                newX, newY = self.applyFCurve(obj, delta)
                 x += newX
                 y += newY
             
-            obj.rotation_euler[0] = x
-            obj.rotation_euler[1] = y
-        
-            obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
-            obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frame)
+            if obj is not None:
+                obj.rotation_euler[0] = x
+                obj.rotation_euler[1] = y
+            
+                obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
+                obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frame)
 
 
         # for frameInfo in activeObjectList:

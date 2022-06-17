@@ -15,6 +15,7 @@ class BlenderAnimation:
 
     def __init__(self):
         self._tracks = []
+        self._activeNoteDict = dict()
 
     def addInstrument(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=dict()):
         """ make a GenericInstrumnet subclass and add it into internal track list 
@@ -48,6 +49,7 @@ class BlenderAnimation:
         for frameInfo in activeObjectList:
             objStartFrame = frameInfo.startFrame
             objEndFrame = frameInfo.endFrame
+            obj = frameInfo.obj
             cachedObj = frameInfo.cachedObj
 
             if objEndFrame >= frame:
@@ -55,6 +57,7 @@ class BlenderAnimation:
             else:
                 # this note is no longer being played
                 # remove from activeNoteDict
+                self._activeNoteDict[obj.note_number].remove(frameInfo)
 
                 # RETURN OBJECT TO CACHE
                 if cache is not None and cachedObj is not None:
@@ -95,8 +98,12 @@ class BlenderAnimation:
                 # if objStartFrame == frame:
                 #     # Debug markers
                 #     bpy.context.scene.timeline_markers.new("debug", frame=frame)
-
+            
             # add note to activeNoteDict
+            if obj.note_number in self._activeNoteDict:
+                self._activeNoteDict[obj.note_number].append(objFrameRanges[i])
+            else:
+                self._activeNoteDict[obj.note_number] = [objFrameRanges[i]]
 
             # this note will be played next, so we shouldn't iterate over it again for the next frame
             objFrameRanges.pop()
@@ -127,6 +134,8 @@ class BlenderAnimation:
             # frameStart = objFirstFrame if objFirstFrame < 0 else frameStart
             frameStart, frameEnd = objFirstFrame - 1, objLastFrame + 1  # -1 & +1 to make sure they're within bounds
 
+            # clear out activeNoteDict
+            self._activeNoteDict = dict()
 
             # main loop
             for frame in range(frameStart, frameEnd):
@@ -137,6 +146,6 @@ class BlenderAnimation:
                 # add a keyframe for each object that is moving during this frame
                 # call animate method to insert a keyframe
                 # instead of passing activeObjectList, pass in activeNoteDict
-                track.animate(activeObjectList, frame)
+                track.animate(self._activeNoteDict, frame)
 
 

@@ -3,30 +3,34 @@ from contextlib import suppress
 from mathutils import Vector  
 from typing import Any, Tuple, List, Union, Set
 
+def split_path(data_path):
+    '''
+    Split a data_path into parts
+    '''
 
-def FCurvesFromObject(obj) -> list:
-    if obj.animation_data.action is None:
-        print(f"WARNING: Object {obj} has no FCurves!")
+    # from Jaroslav Jerryno Novotny
+    # https://blender.stackexchange.com/a/42170/23372
+    
+    if not data_path:
         return []
-    
-    return list(obj.animation_data.action.fcurves)
 
-def cleanKeyframes(obj, channels: Set={"all_channels"}):
-    fCurves = FCurvesFromObject(obj)
-    
-    for fCurve in fCurves:
-        if {fCurve.data_path, "all_channels"}.intersection(channels):
-            obj.animation_data.action.fcurves.remove(fCurve)
+    # extract names from data_path
+    names = data_path.split('"')[1::2]
+    data_path_no_names = ''.join(data_path.split('"')[0::2])
 
-def secToFrames(sec: float) -> float:
-    bScene = bpy.context.scene
-    fps = bScene.render.fps / bScene.render.fps_base
-    
-    return sec * fps
-    
-def getExactFps() -> float:
-    bScene = bpy.context.scene
-    return bScene.render.fps / bScene.render.fps_base
+    # segment into chunks
+    # ID props will be segmented by replacing ][ with ].[
+    data_chunks = data_path_no_names.replace('][', '].[').split('.')
+    # probably regex should be used here and things put into dictionary
+    # so it's clear what chunk is what
+    # depends of use case, the main idea is to extract names, segment, then put back
+
+    # put names back into chunks where [] are
+    for id, chunk in enumerate(data_chunks):
+        if chunk.find('[]') > 0:
+            data_chunks[id] = chunk.replace('[]', '["' + names.pop(0) + '"]')
+
+    return data_chunks
 
 def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
     """gets shape keys from object
@@ -44,16 +48,89 @@ def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeK
     reference = object.data.shape_keys.reference_key
     return list(object.data.shape_keys.key_blocks)[1:], reference
 
-def insertKeyframe(object: bpy.types.Object, dataPath: str, value: Any, frame: Union[int, float]):
-    # TODO: implement this correctly
-    if dataPath.split(".")[1] == "shape_keys":
-        try:
-            assert isinstance(value, "float") or isinstance(value, "int")
-            exec(f"{object}.{dataPath}.value = {value}")
-            exec(f"{object}.{dataPath}.keyframe_insert(data_path='value', frame={frame})")
-        except Exception as e:
-            raise RuntimeError(f"Error inserting keyframe! '{e}'")
-    # bpy.context.active_object.data.shape_keys.key_blocks['Vibrate'].keyframe_insert(data_path="value")
+def FCurvesFromObject(obj) -> List[bpy.types.FCurve]:
+    if obj.animation_data is None: return []
+    if obj.animation_data.action is None: return []
+    
+    return list(obj.animation_data.action.fcurves)
+
+def shapeKeyFCurvesFromObject(obj) -> List[bpy.types.FCurve]:
+    if obj.data.shape_keys is None: return []
+    if obj.data.shape_keys.animation_data.action is None: return []
+    
+    return list(obj.data.shape_keys.animation_data.action.fcurves)
+
+# XXX This function is still a WIP.
+def insertKeyframeOnObjects(keyObj, refObj, frame, value):
+    # TODO:
+    # better names for these variables
+    # maybe the actual keyframing part should be handedled by the actual animate() methods themselves?
+    # that way they can mutate the value data themselves & evaluate it however they like (such as offsetting objects with locations)
+     
+    fCurves = FCurvesFromObject(refObj)
+    
+    shapeKeyKeyObj = sorted(shapeKeysFromObject(keyObj)[0], key=lambda shapeKey: shapeKey.name)
+    shapeKeysFCurvesRef = shapeKeyFCurvesFromObject(refObj)
+    
+    if len(shapeKeyKeyObj) != 0 and len(shapeKeysFCurvesRef) != 0:
+        shapeKeysDict = dict()
+        
+        # dict that puts the name of the shape keys and then the actual shapeKey to be keyed
+        for shapeKey in shapeKeyKeyObj:
+            # always will be inserting vals
+            shapeKeysDict[shapeKey.name] = [shapeKey]
+        
+        # now get data from shapeKeysFCurves and add it's reference FCurve (to be evaled from)
+        for shapeFCrv in shapeKeysFCurvesRef:
+            name = shapeFCrv.data_path
+            name = split_path(name)[0].replace("key_blocks", "")[2:-2]
+            
+            if name in shapeKeysDict: 
+                shapeKeysDict[name].append(shapeFCrv)
+            
+        # now we have list of the object to Key and now the FCurve to eval from
+        for key in shapeKeysDict:
+            dictVal = shapeKeysDict[key]
+            if len(dictVal) != 2: continue
+            
+            objToKey = dictVal[0]
+            fCrv = dictVal[1]
+            
+            # keyframing it goes here
+            fCrvEval = fCrv.evaluate(value)
+            objToKey.value = fCrvEval
+            objToKey.keyframe_insert(data_path=fCrv.data_path.split(".")[-1], frame=frame)
+            
+
+    if len(fCurves) != 0:
+        for fCrv in fCurves:
+            fCrvEval = fCrv.evaluate(value)
+            
+            bpy.ops.wm.context_set_value(data_path=f"scene.objects['{keyObj.name}'].{fCrv.data_path}[{fCrv.array_index}]", value=f"{fCrvEval}")
+            keyObj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=frame)
+
+def cleanKeyframes(obj, channels: Set={"all_channels"}):
+    fCurves = FCurvesFromObject(obj)
+    
+    for fCurve in fCurves:
+        if {fCurve.data_path, "all_channels"}.intersection(channels):
+            obj.animation_data.action.fcurves.remove(fCurve)
+
+def secToFrames(sec: float) -> float:
+    bScene = bpy.context.scene
+    fps = bScene.render.fps / bScene.render.fps_base
+    
+    return sec * fps
+
+def framesToSec(frame: float) -> float:
+    bScene = bpy.context.scene
+    fps = bScene.render.fps / bScene.render.fps_base
+    
+    return frame / fps
+
+def getExactFps() -> float:
+    bScene = bpy.context.scene
+    return bScene.render.fps / bScene.render.fps_base
 
 def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None) -> None:
     """
