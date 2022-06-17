@@ -62,7 +62,12 @@ class BlenderAnimation:
                 # RETURN OBJECT TO CACHE
                 if cache is not None and cachedObj is not None:
                     cache.pushObject(cachedObj)
-                    # FIXME make ball invisible
+
+                    # disable cached object in viewport/render
+                    cachedObj.hide_viewport = True
+                    cachedObj.hide_render = True
+                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame)
+                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame)
         
         activeObjectList = stillActiveList
 
@@ -89,7 +94,11 @@ class BlenderAnimation:
                     # update cached object in frameIno
                     frameInfo.cachedObj = cachedObj
 
-                    # FIXME add method to turn on object
+                    # enable cached object in viewport/render 
+                    cachedObj.hide_viewport = False
+                    cachedObj.hide_render = False
+                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame)
+                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame)
 
                     activeObjectList.append(frameInfo)
             else:
