@@ -2,10 +2,13 @@ __all__ = [
     "noteToName",
     "nameToNote",
     "gmProgramToName",
-    "removeDuplicates"
+    "removeDuplicates",
+    "rotateAroundCircle"
 ]
 
 from . gmInstrumentMap import _gmInst
+from math import sin, cos
+from typing import Tuple
 
 def noteToName(nVal: int) -> str:
     """Takes a MIDI note number and returns the name
@@ -73,3 +76,11 @@ def removeDuplicates(vals: list) -> list:
     :return list: duplicates removed
     """
     return sorted([n for i, n in enumerate(vals) if n not in vals[:i]])
+
+def rotateAroundCircle(angle, radius) -> Tuple[int]:
+    """Takes an angle and a radius and returns it's X & Y.
+    """
+    x = sin(angle) * radius
+    y = cos(angle) * radius
+    
+    return x, y

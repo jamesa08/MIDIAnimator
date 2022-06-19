@@ -2,7 +2,7 @@ from __future__ import annotations
 import bpy
 from typing import List, Tuple
 from dataclasses import dataclass
-from math import sin, cos, floor, ceil
+from math import floor, ceil
 from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
 
 from .. utils.blender import *
@@ -74,12 +74,6 @@ def maxNeeded(intervals: FrameRange) -> int:
     # after processing all intervals return the computed maximum active count
     return maxCount
 
-def rotateAroundCircle(angle, radius) -> Tuple[int]:
-    x = sin(angle) * radius
-    y = cos(angle) * radius
-    
-    return x, y
-
 @dataclass
 class FrameRange:
     """
@@ -94,7 +88,6 @@ class FrameRange:
 
     def __lt__(self, other: FrameRange):
         return self.startFrame < other.startFrame
-
 
 @dataclass(init=False)
 class CacheInstance:
@@ -119,14 +112,15 @@ class CacheInstance:
 @dataclass
 class GenericInstrument: 
     """base class for instruments that are played for notes"""
-    _collection = bpy.types.Collection
-    _midiTrack: 'MIDITrack'
-    _noteToObjTable: Dict[int, bpy.types.Object]
+    collection = bpy.types.Collection
+    midiTrack: 'MIDITrack'
+    noteToObjTable: Dict[int, bpy.types.Object]
 
     def __init__(self, midiTrack: 'MIDITrack', collection: bpy.types.Collection):
-        self._collection = collection
-        self._midiTrack = midiTrack
-        self._noteToObjTable = dict()
+        self.collection = collection
+        self.midiTrack = midiTrack
+        self.noteToObjTable = dict()
+        self.override = False
 
         self.createNoteToObjTable()
 
@@ -134,11 +128,11 @@ class GenericInstrument:
         raise NotImplementedError("subclass must override")
 
     def createNoteToObjTable(self) -> None:
-        for obj in self._collection.all_objects:
+        for obj in self.collection.all_objects:
             if obj.note_number is None: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            if int(obj.note_number) in self._noteToObjTable: raise RuntimeError(f"There are two objects in the scene with duplicate note numbers.")
+            if int(obj.note_number) in self.noteToObjTable: raise RuntimeError(f"There are two objects in the scene with duplicate note numbers.")
             
-            self._noteToObjTable[int(obj.note_number)] = obj
+            self.noteToObjTable[int(obj.note_number)] = obj
 
     def createFrameRanges(self) -> FrameRange:
         raise NotImplementedError("subclass must override")
@@ -164,7 +158,7 @@ class ProjectileInstrument(GenericInstrument):
     
     def preAnimate(self):
         # delete old objects
-        objectCollection = self._collection
+        objectCollection = self.collection
 
         assert objectCollection.projectile_collection is not None, "Please define a Projectile collection for type Projectile."
         assert objectCollection.reference_projectile is not None, "Please define a reference object to be duplicated."
@@ -177,7 +171,12 @@ class ProjectileInstrument(GenericInstrument):
 
         for i in range(maxNumOfProjectiles):
             duplicate = objectCollection.reference_projectile.copy()
-            duplicate.name = f"projectile_{hex(id(self._midiTrack))}_{i}"
+            duplicate.name = f"projectile_{hex(id(self.midiTrack))}_{i}"
+            # duplicate.hide_viewport = True
+            # duplicate.hide_render = True
+            # duplicate.keyframe_insert(data_path="hide_viewport", frame=0)
+            # duplicate.keyframe_insert(data_path="hide_render", frame=0)
+
             objectCollection.projectile_collection.objects.link(duplicate)
             projectiles.append(duplicate)
         
@@ -185,13 +184,13 @@ class ProjectileInstrument(GenericInstrument):
         self._cacheInstance = CacheInstance(projectiles)
 
     def createFrameRanges(self) -> List[FrameRange]:
-        assert self._noteToObjTable is not None, "please run createNoteToObjTable first"
+        assert self.noteToObjTable is not None, "please run createNoteToObjTable first"
         
         out = []
         
-        for note in self._midiTrack.notes:
+        for note in self.midiTrack.notes:
             # lookup obj from note number
-            obj = self._noteToObjTable[note.noteNumber]
+            obj = self.noteToObjTable[note.noteNumber]
 
             hit = obj.note_hit_time
             
@@ -207,7 +206,6 @@ class ProjectileInstrument(GenericInstrument):
         return out
 
     def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
-        # new name -> applyFCurve
         fCurves = FCurvesFromObject(obj.animation_curve)
         if len(fCurves) != 2: raise(RuntimeError("Please make sure FCurve object only has 2 FCurves!"))
         if fCurves[0].data_path != "location": raise RuntimeError("FCurve data path must be location data!")
@@ -264,15 +262,15 @@ class StringInstrument(GenericInstrument):
         self.preAnimate()
 
     def preAnimate(self):
-        for obj in self._collection.all_objects:
+        for obj in self.collection.all_objects:
             cleanKeyframes(obj)
 
     def createFrameRanges(self) -> FrameRange:
-        assert self._noteToObjTable is not None, "please run createNoteToObjTable first"
+        assert self.noteToObjTable is not None, "please run createNoteToObjTable first"
         out = []
-        for note in self._midiTrack.notes:
+        for note in self.midiTrack.notes:
             # lookup obj from note number
-            obj = self._noteToObjTable[note.noteNumber]
+            obj = self.noteToObjTable[note.noteNumber]
 
             rangeVector = FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].range()
             startFCurve, endFCurve = rangeVector[0], rangeVector[1]
@@ -288,6 +286,7 @@ class StringInstrument(GenericInstrument):
     def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
         # eval FCurve
         # TODO: VERY TEMP
+        return FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].evaluate(frameNumber)
         return FCurvesFromObject(obj.animation_curve)[0].evaluate(frameNumber), FCurvesFromObject(obj.animation_curve)[1].evaluate(frameNumber)
     
     def animate(self, activeNoteDict: List[FrameRange], frame: int):
@@ -302,7 +301,7 @@ class StringInstrument(GenericInstrument):
         #         activeNoteDict[note_number] = [frameInfo]
         
         for noteNumber in activeNoteDict:
-            x, y = 0, 0
+            x, y, z = 0, 0, 0
 
             obj = None
             for frameInfo in activeNoteDict[noteNumber]:
@@ -311,16 +310,20 @@ class StringInstrument(GenericInstrument):
                 
                 delta = frame - objStartFrame
                 
-                newX, newY = self.applyFCurve(obj, delta)
-                x += newX
-                y += newY
+                # newX, newY = self.applyFCurve(obj, delta)
+                newZ = self.applyFCurve(obj, delta)
+                # x += newX
+                # y += newY
+                z += newZ
             
             if obj is not None:
-                obj.rotation_euler[0] = x
-                obj.rotation_euler[1] = y
+                # obj.rotation_euler[0] = x
+                # obj.rotation_euler[1] = y
             
-                obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
-                obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frame)
+                # obj.keyframe_insert(data_path="rotation_euler", index=0, frame=frame)
+                # obj.keyframe_insert(data_path="rotation_euler", index=1, frame=frame)
+                obj.location[2] = z
+                obj.keyframe_insert(data_path="location", index=2, frame=frame)
 
 
         # for frameInfo in activeObjectList:

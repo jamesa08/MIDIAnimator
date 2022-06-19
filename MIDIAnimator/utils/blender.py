@@ -61,7 +61,7 @@ def shapeKeyFCurvesFromObject(obj) -> List[bpy.types.FCurve]:
     return list(obj.data.shape_keys.animation_data.action.fcurves)
 
 # XXX This function is still a WIP.
-def insertKeyframeOnObjects(keyObj, refObj, frame, value):
+def insertKeyframeOnObject(keyObj, refObj, frame, value):
     # TODO:
     # better names for these variables
     # maybe the actual keyframing part should be handedled by the actual animate() methods themselves?

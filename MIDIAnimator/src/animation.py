@@ -81,7 +81,7 @@ class BlenderAnimation:
             objEndFrame = frameInfo.endFrame
             cachedObj = frameInfo.cachedObj
             obj = frameInfo.obj
-            insType = cls._collection.instrument_type
+            insType = cls.collection.instrument_type
 
             if cache is not None:
                 # this is of cache type, 
@@ -91,6 +91,7 @@ class BlenderAnimation:
 
                     # make last keyframe interpolation constant
                     setInterpolationForLastKeyframe(cachedObj, "CONSTANT")
+                    
                     # update cached object in frameIno
                     frameInfo.cachedObj = cachedObj
 
@@ -126,6 +127,10 @@ class BlenderAnimation:
         # FIXME: delete all keyframes from frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
 
         for track in self._tracks:
+            if track.override == True:
+                track.animate()
+                continue
+            
             # copy the frames to not mutate them, then sort by start time and then reverse
             objFrameRanges = track.createFrameRanges()
             objFrameRanges.sort(reverse=True)
