@@ -314,9 +314,6 @@ class Instrument:
                     # GET OBJECT FROM CACHE
                     cachedObj = cache.popObject()
 
-                    # make last keyframe interpolation constant
-                    setInterpolationForLastKeyframe(cachedObj, "CONSTANT")
-
                     # update cached object in frameIno
                     frameInfo.cachedObj = cachedObj
 
@@ -383,11 +380,6 @@ class Instrument:
 
         self._objFrameRanges = out
 
-    # def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
-    #     # TODO: new name: createKeyFrame?
-    #     # instead of returning, just make the keyframe with keyframe_insert() and return None
-    #     raise NotImplementedError("subclass must override")
-
     def animate(self, frame: int):
         for noteNumber in self._activeNoteDict:
             for frameInfo in self._activeNoteDict[noteNumber]:
@@ -442,56 +434,6 @@ class ProjectileInstrument(Instrument):
         # create CacheInstance object
         self._cacheInstance = CacheInstance(projectiles)
 
-    # def applyFCurve(self, obj: bpy.types.Object, frameNumber: int) -> Tuple[float, float, float]:
-    #     fCurves = FCurvesFromObject(obj.animation_curve)
-    #     if len(fCurves) != 2: raise(RuntimeError("Please make sure FCurve object only has 2 FCurves!"))
-    #     if fCurves[0].data_path != "location": raise RuntimeError("FCurve data path must be location data!")
-    #
-    #     out = [0] * 3
-    #     fCurveIndexes = set()
-    #     for fCurve in fCurves:
-    #
-    #         i = fCurve.array_index
-    #         val = fCurve.evaluate(frameNumber)
-    #
-    #         fCurveIndexes.add(i)
-    #
-    #         out[i] = val
-    #
-    #     for el in {0, 1, 2}.difference(fCurveIndexes):
-    #         locationMissing = el
-    #         break
-    #
-    #     out[locationMissing] = obj.location[locationMissing]
-    #
-    #     # TODO: fix offset
-    #     # for i in range(len(out)):
-    #     #     offset = obj.location[i] - out[i]
-    #     #     out[i] += offset
-    #
-    #     return out
-
-    # def animate(self, frame: int):
-    #     for noteNumber in self._activeNoteDict:
-    #         for frameInfo in self._activeNoteDict[noteNumber]:
-    #             # variables:
-    #             objStartFrame = frameInfo.startFrame
-    #             objEndFrame = frameInfo.endFrame
-    #             obj = frameInfo.obj  # funnel
-    #             cachedObj = frameInfo.cachedObj  # ball
-    #
-    #             # insert keyframe here:
-    #             hitTime = obj.note_hit_time  # get hit time from funnel
-    #             delta = frame - objStartFrame
-    #             # x = obj.location[0]
-    #             x, y, z = self.applyFCurve(obj, delta)
-    #
-    #             # make a keyframe for the object for this frame
-    #             cachedObj.location = (x, y, z)
-    #             cachedObj.keyframe_insert(data_path="location", frame=frame)
-    #             setInterpolationForLastKeyframe(cachedObj, "BEZIER")
-    #
-
 class StringInstrument(Instrument):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -507,7 +449,7 @@ class StringInstrument(Instrument):
     #     # TODO: VERY TEMP
     #     return FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].evaluate(frameNumber)
     #     return FCurvesFromObject(obj.animation_curve)[0].evaluate(frameNumber), FCurvesFromObject(obj.animation_curve)[1].evaluate(frameNumber)
-    #
+    
     # def animate(self, activeNoteDict: List[FrameRange], frame: int):
     #     # build up temp dictionary sorted by noteNumber
     #     # activeNoteDict = {}
