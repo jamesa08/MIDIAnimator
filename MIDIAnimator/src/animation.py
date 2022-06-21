@@ -37,7 +37,6 @@ class BlenderAnimation:
         
         self._tracks.append(cls)
 
-
     def animate(self) -> None:
         # FIXME: delete all keyframes from frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
 

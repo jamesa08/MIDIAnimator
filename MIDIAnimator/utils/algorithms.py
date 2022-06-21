@@ -4,17 +4,90 @@ from typing import List, Tuple
 from dataclasses import dataclass
 from math import floor, ceil
 from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
+from mathutils import Vector, Euler
 
 from .. utils.blender import *
 
 if TYPE_CHECKING:
     from .. src.MIDIStructure import MIDITrack
 
+class ObjectFCurves:
+    location: Tuple[bpy.types.FCurve]
+    rotation: Tuple[bpy.types.FCurve]
+    shapeKeys: Tuple[bpy.types.FCurve]
+    material: Tuple[bpy.types.FCurve]
+
+    def __init__(self, location = (), rotation = (), shapeKeys = (), material = ()):
+        self.location = location
+        self.rotation = rotation
+        self.shapeKeys = shapeKeys
+        self.material = material
+
+class FCurveProcessor:
+    obj: bpy.types.Object
+    locationObject: Optional[bpy.types.Object]
+    fCurves: ObjectFCurves
+    location: Optional[Vector]
+    rotation: Optional[Euler]
+
+    def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
+        self.obj = obj
+        self.fCurves = fCurves
+        self.locationObject = locationObject
+        # when None no keyframe of that type
+        self.location = None
+        self.rotation = None
+
+    def applyFCurve(self, delta: int):
+        # for fCurve in self.fCurves.location:    
+            # do the work in BlenderLocationKeyFrame and set self.location
+        if len(self.fCurves.location) != 0:
+            if self.locationObject is None:
+                location = self.obj.location.copy()
+            else:
+                location = self.locationObject.location.copy()
+
+            for fCurve in self.fCurves.location:
+                i = fCurve.array_index
+                val = fCurve.evaluate(delta)
+                location[i] = val
+            
+            # set the values on location
+            self.location = location
+
+        if len(self.fCurves.rotation) != 0:
+            # do the work in BlenderRotationKeyFrame and add to self.rotation
+            if self.rotation is None:
+                rotation = self.obj.rotation_euler.copy()
+            else:
+                rotation = self.rotation
+
+            for fCurve in self.fCurves.rotation:
+                i = fCurve.array_index
+                val = fCurve.evaluate(delta)
+                rotation[i] += val
+
+            # set the values on location
+            self.rotation = rotation
+
+    def insertKeyFrames(self, frame: int):
+        if self.location is not None:
+            # make the deta location keyframe for self.obj
+            self.obj.delta_location = self.location
+            self.obj.keyframe_insert(data_path="delta_location", frame=frame)
+        
+        if self.rotation is not None:
+            self.obj.delta_rotation_euler = self.rotation
+            self.obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
+
+
 class BlenderKeyFrameBase:
     fCurves: List[bpy.types.FCurve]
 
     def __init__(self, fCurves: List[bpy.types.FCurve]):
         self.fCurves = fCurves
+        self.keyFrameDict = {}
+
 
     def seeIfKeyframeExistsAtFrame(self, data_path, array_index, obj, frame):
         for fCrv in FCurvesFromObject(obj):
@@ -25,6 +98,8 @@ class BlenderKeyFrameBase:
             
         return 0
 
+    def updateKeyFrame(self):
+        pass
 
     def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
 
@@ -33,70 +108,54 @@ class BlenderKeyFrameBase:
         # otherwise evaluate the FCurves and make the keyframe
         raise NotImplementedError()
 
-class BlenderLocationKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+# class BlenderLocationKeyFrame(BlenderKeyFrameBase):
+#     def calculateKeyFrame(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+#         if locationObject is None:
+#             location = obj.location.copy()
+#         else:
+#             location = locationObject.location.copy()
 
-        # object == ball
-        # locationObject == funnel
+#         for fCurve in self.fCurves:
+#             i = fCurve.array_index
+#             val = fCurve.evaluate(delta)
+#             oldVal = self.seeIfKeyframeExistsAtFrame(fCurve.data_path, i, obj, frame)
+#             location[i] = val + oldVal
 
-        # see note in base class if there is already a key frame to add the values
+#     def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
 
-        # get the location of the
+#         if locationObject is None:
+#             location = obj.location.copy()
+#         else:
+#             location = locationObject.location.copy()
 
-        # process the list of fCurves
-        # location = [0] * 3
-        # offset = [0, 0, 0]
-        # if locationObject is not None:
-        #     offset = locationObject.location
-        # else:
-        #     offset = object.location
-        #
-        # fCurveIndexes = set()
-        # for fCurve in self.fCurves:
-        #     i = fCurve.array_index
-        #     val = fCurve.evaluate(delta)
-        #
-        #     fCurveIndexes.add(i)
-        #
-        #     location[i] = val + offset[i]
-        #
-        # if locationObject is not None:
-        #     for locationMissing in {0, 1, 2}.difference(fCurveIndexes):
-        #         location[locationMissing] = offset[locationMissing]
+#         for fCurve in self.fCurves:
+#             i = fCurve.array_index
+#             val = fCurve.evaluate(delta)
+#             oldVal = self.seeIfKeyframeExistsAtFrame(fCurve.data_path, i, obj, frame)
+#             location[i] = val + oldVal
         
-        if locationObject is None:
-            location = obj.location.copy()
-        else:
-            location = locationObject.location.copy()
+#         obj.delta_location = location
+#         obj.keyframe_insert(data_path="delta_location", frame=frame)
 
-        for fCurve in self.fCurves:
-            i = fCurve.array_index
-            val = fCurve.evaluate(delta)
-            oldVal = self.seeIfKeyframeExistsAtFrame(fCurve.data_path, i, obj, frame)
-            location[i] = val + oldVal
+# class BlenderRotationKeyFrame(BlenderKeyFrameBase):
+#     def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+#         if locationObject is None:
+#             rotation_euler = obj.rotation_euler.copy()
+#         else:
+#             rotation_euler = locationObject.rotation_euler.copy()
         
-        obj.delta_location = location
-        obj.keyframe_insert(data_path="delta_location", frame=frame)
+#         for fCurve in self.fCurves:
+#             i = fCurve.array_index
+#             val = fCurve.evaluate(delta)
+#             oldVal = self.seeIfKeyframeExistsAtFrame("delta_rotation_euler", i, obj, frame)
+#             rotation_euler[i] = val + oldVal
+        
+#         obj.delta_rotation_euler = rotation_euler
+#         obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
 
-class BlenderRotationKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
-        if locationObject is None:
-            rotation_euler = obj.rotation_euler.copy()
-        else:
-            rotation_euler = locationObject.rotation_euler.copy()
-        
-        for fCurve in self.fCurves:
-            i = fCurve.array_index
-            val = fCurve.evaluate(delta)
-            oldVal = self.seeIfKeyframeExistsAtFrame("delta_rotation_euler", i, obj, frame)
-            rotation_euler[i] = val + oldVal
-        
-        obj.delta_rotation_euler = rotation_euler
-        obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
-
-class BlenderShapeKeyKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
-        obj.keyframe_insert(data_path="", frame=frame)
+# class BlenderShapeKeyKeyFrame(BlenderKeyFrameBase):
+#     def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+#         obj.keyframe_insert(data_path="", frame=frame)
 
 def maxNeeded(intervals: List[FrameRange]) -> int:
     """
@@ -203,7 +262,7 @@ class Instrument:
     collection: bpy.types.Collection
     midiTrack: 'MIDITrack'
     noteToObjTable: Dict[int, bpy.types.Object]
-    _keyFrameInfo: List[BlenderKeyFrameBase]
+    _keyFrameInfo: Dict[bpy.types.Object, ObjectFCurves]
     _activeObjectList: List[FrameRange]
     _activeNoteDict: Dict[int, List[FrameRange]]
     _frameStart: int
@@ -215,7 +274,7 @@ class Instrument:
         self.midiTrack = midiTrack
         self.noteToObjTable = dict()
         self.override = False
-        self._keyFrameInfo = []
+        self._keyFrameInfo = dict()
 
         self._activeObjectList = []
         self._activeNoteDict = dict()
@@ -224,29 +283,56 @@ class Instrument:
         self._objFrameRanges = []
 
         self.createNoteToObjTable()
-        self._getKeyFrameObjects()
+        self._makeObjToFCurveDict()
+        # self._getKeyFrameObjects()
 
-    def _getKeyFrameObjects(self):
-        fCurveType = {}
+    def _makeObjToFCurveDict(self):
         for obj in self.collection.all_objects:
-            # this will be location, rotation, scale
+            location = []
+            rotation = []
+            shapeKeys = []
+            material = []
             for fCrv in FCurvesFromObject(obj.animation_curve):
-                if fCrv.data_path in fCurveType:
-                    fCurveType[fCrv.data_path].append(fCrv)
-                else:
-                    fCurveType[fCrv.data_path] = [fCrv]
+                dataPath = fCrv.data_path
+                if dataPath == "location":
+                    location.append(fCrv)
+                elif dataPath == "rotation_euler":
+                    rotation.append(fCrv)
+                # elif dataPath == "shape_key":
+                #     shapeKeys.append(fCrv)
+                # elif dataPath == "material":
+                #     material.append(fCrv)
+            
+            self._keyFrameInfo[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
 
-        for curveType in fCurveType:
-            keyFrameObj = None
-            if curveType == "location":
-                keyFrameObj = BlenderLocationKeyFrame(fCurveType[curveType])
-            elif curveType == "rotation_euler":
-                keyFrameObj = BlenderRotationKeyFrame(fCurveType[curveType])
-            # FIXME: handle others
-            if keyFrameObj is not None:
-                self._keyFrameInfo.append(keyFrameObj)
 
-        # FIXME: iterate over others (shape keys, materials) and make those
+    # def _getKeyFrameObjects(self):
+    #     # this method needs to make a dictionary mapping each object to an ObjectFCurves instance
+
+    #     fCurveType = {}
+    #     # FIXME: think we need a dictionary mapping each note to the FCurves that are for that note
+    #     for obj in self.collection.all_objects:
+    #         # this will be location, rotation, scale
+    #         # shapeKeyFCurvesFromObject(obj.animation_curve)
+    #         for fCrv in FCurvesFromObject(obj.animation_curve):
+    #             if fCrv.data_path in fCurveType:
+    #                 fCurveType[fCrv.data_path].append(fCrv)
+    #             else:
+    #                 fCurveType[fCrv.data_path] = [fCrv]
+
+    #     for curveType in fCurveType:
+    #         keyFrameObj = None
+    #         if curveType == "location":
+    #             keyFrameObj = BlenderLocationKeyFrame(fCurveType[curveType])
+    #         elif curveType == "rotation_euler":
+    #             keyFrameObj = BlenderRotationKeyFrame(fCurveType[curveType])
+    #         # FIXME: handle others
+    #         if keyFrameObj is not None:
+    #             self._keyFrameInfo.append(keyFrameObj)
+
+    #     # have a dictionary mapping each obj/note to a list of FCurves (the data_path could be different)
+
+    #     # FIXME: iterate over others (shape keys, materials) and make those
 
     def preAnimate(self):
         pass
@@ -404,22 +490,46 @@ class Instrument:
         self._objFrameRanges = out
 
     def animate(self, frame: int):
+        # each cached object needs a separate FCurveProcessor since the same note can be "in progress" more than
+        # once for a given frame
+        cacheObjectProcessors = {}
+
+        # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
+
+            if len(self._activeNoteDict[noteNumber]) <= 0:
+                continue
+        
+            frameInfo = self._activeNoteDict[noteNumber][0]
+            obj = frameInfo.obj  # funnel, doesn't change until outer loop is completed
+            objFCurve = self._keyFrameInfo[obj] # get this from our dictionary mapping obj to ObjectFCurves
+
+            processor = FCurveProcessor(obj, objFCurve)
+
+            # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
+            processorSet = set()
             for frameInfo in self._activeNoteDict[noteNumber]:
-                # variables:
-                objStartFrame = frameInfo.startFrame
-                objEndFrame = frameInfo.endFrame
-                obj = frameInfo.obj  # funnel
-                cachedObj = frameInfo.cachedObj  # ball
-
-                # insert keyframe here:
-                delta = frame - objStartFrame
-
-                for keyframe in self._keyFrameInfo:
-                    if cachedObj is None:
-                        keyframe.makeKeyFrames(obj, delta, frame)
+                # check if we are animating a cached object for this
+                cachedObj = frameInfo.cachedObj
+                if cachedObj is not None:
+                    # if not the first time we are using this cachedObject, get its FCurveProcessor
+                    if cachedObj in cacheObjectProcessors:
+                        processor = cacheObjectProcessors[cachedObj]
+                    # this is the first time this cachedObject is used so need to create its FCurveProcessor
                     else:
-                        keyframe.makeKeyFrames(cachedObj, delta, frame, obj)
+                        processor = FCurveProcessor(cachedObj, objFCurve, obj)
+                        cacheObjectProcessors[cachedObj] = processor
+                # make certain processorSet contains all FCurveProcessors being used for this note
+                processorSet.add(processor)
+
+                # accumulate the FCurve results for this object
+                objStartFrame = frameInfo.startFrame
+                delta = frame - objStartFrame
+                processor.applyFCurve(delta)
+
+            # for each object (could be multiple cached objects) insert the key frame
+            for p in processorSet:
+                p.insertKeyFrames(frame)
 
 class ProjectileInstrument(Instrument):
     _cacheInstance: Optional[CacheInstance]
