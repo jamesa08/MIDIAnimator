@@ -39,8 +39,6 @@ class BlenderAnimation:
 
 
     def animate(self) -> None:
-        # deleteMarkers("debug")
-
         # FIXME: delete all keyframes from frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
 
         for track in self._tracks:

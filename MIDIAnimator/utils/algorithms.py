@@ -16,7 +16,17 @@ class BlenderKeyFrameBase:
     def __init__(self, fCurves: List[bpy.types.FCurve]):
         self.fCurves = fCurves
 
-    def makeKeyFrames(self, object: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+    def seeIfKeyframeExistsAtFrame(self, data_path, array_index, obj, frame):
+        for fCrv in FCurvesFromObject(obj):
+            if fCrv.data_path != data_path or fCrv.array_index != array_index: continue
+            for keyframe in reversed(fCrv.keyframe_points):
+                if keyframe.co[0] == frame:
+                    return keyframe.co[1]
+            
+        return 0
+
+
+    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
 
         # if there is already a keyframe of this type (such as location), then we need to get the value
         # of the existing keyframe and add the results
@@ -24,7 +34,7 @@ class BlenderKeyFrameBase:
         raise NotImplementedError()
 
 class BlenderLocationKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, object: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
 
         # object == ball
         # locationObject == funnel
@@ -55,25 +65,38 @@ class BlenderLocationKeyFrame(BlenderKeyFrameBase):
         #         location[locationMissing] = offset[locationMissing]
         
         if locationObject is None:
-            location = object.location.copy()
+            location = obj.location.copy()
         else:
             location = locationObject.location.copy()
 
         for fCurve in self.fCurves:
             i = fCurve.array_index
             val = fCurve.evaluate(delta)
-            location[i] = val
+            oldVal = self.seeIfKeyframeExistsAtFrame(fCurve.data_path, i, obj, frame)
+            location[i] = val + oldVal
         
-        object.location = location
-        object.keyframe_insert(data_path="location", frame=frame)
+        obj.delta_location = location
+        obj.keyframe_insert(data_path="delta_location", frame=frame)
 
 class BlenderRotationKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, object: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
-        object.keyframe_insert(data_path="rotation", frame=frame)
+    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+        if locationObject is None:
+            rotation_euler = obj.rotation_euler.copy()
+        else:
+            rotation_euler = locationObject.rotation_euler.copy()
+        
+        for fCurve in self.fCurves:
+            i = fCurve.array_index
+            val = fCurve.evaluate(delta)
+            oldVal = self.seeIfKeyframeExistsAtFrame("delta_rotation_euler", i, obj, frame)
+            rotation_euler[i] = val + oldVal
+        
+        obj.delta_rotation_euler = rotation_euler
+        obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
 
 class BlenderShapeKeyKeyFrame(BlenderKeyFrameBase):
-    def makeKeyFrames(self, object: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
-        object.keyframe_insert(data_path="", frame=frame)
+    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
+        obj.keyframe_insert(data_path="", frame=frame)
 
 def maxNeeded(intervals: List[FrameRange]) -> int:
     """
@@ -423,10 +446,12 @@ class ProjectileInstrument(Instrument):
         for i in range(maxNumOfProjectiles):
             duplicate = objectCollection.reference_projectile.copy()
             duplicate.name = f"projectile_{hex(id(self.midiTrack))}_{i}"
-            # duplicate.hide_viewport = True
-            # duplicate.hide_render = True
-            # duplicate.keyframe_insert(data_path="hide_viewport", frame=0)
-            # duplicate.keyframe_insert(data_path="hide_render", frame=0)
+            
+            # hide them
+            duplicate.hide_viewport = True
+            duplicate.hide_render = True
+            duplicate.keyframe_insert(data_path="hide_viewport", frame=self._objFrameRanges[0].startFrame)
+            duplicate.keyframe_insert(data_path="hide_render", frame=self._objFrameRanges[0].startFrame)
 
             objectCollection.projectile_collection.objects.link(duplicate)
             projectiles.append(duplicate)
