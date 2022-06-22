@@ -1,6 +1,5 @@
 from __future__ import annotations
 import bpy
-from typing import List, Tuple
 from dataclasses import dataclass
 from math import floor, ceil
 from typing import Dict, List, Tuple, Optional, Union, TYPE_CHECKING
@@ -11,128 +10,7 @@ from .. utils.blender import *
 if TYPE_CHECKING:
     from .. src.MIDIStructure import MIDITrack
 
-class ObjectFCurves:
-    location: Tuple[bpy.types.FCurve]
-    rotation: Tuple[bpy.types.FCurve]
-    shapeKeys: Tuple[bpy.types.FCurve]
-    material: Tuple[bpy.types.FCurve]
-
-    def __init__(self, location = (), rotation = (), shapeKeys = (), material = ()):
-        self.location = location
-        self.rotation = rotation
-        self.shapeKeys = shapeKeys
-        self.material = material
-
-class NoteAnimator:
-    obj: bpy.types.Object
-    animators: ObjectFCurves
-
-    # compute these using min and max of each of the _animators FCurves
-    # how many frames before a note is hit does this need to start animating
-    _frameStartOffset: float
-    # how many frames after a note is hit does it continue animating
-    _frameEndOffset: float
-
-    def __init__(self, obj: bpy.types.Object, animators: AnimationProperties):
-        self.obj = obj
-        self.animators = animators
-        # temporary values until we compute in _calculateOffsets()
-        self._frameStartOffset = 0.0
-        self._frameEndOffset = 0.0
-
-        self._calculateOffsets()
-
-    def _calculateOffsets(self):
-        combined = self.animators.location + self.animators.rotation + self.animators.shapeKeys + self.animators.material
-        start, end = None, None
-        for fCrv in combined:
-            curveStart, curveEnd = fCrv.range()
-            if start is None or curveStart < start:
-                start = curveStart
-            if end is None or curveEnd > end:
-                end = curveEnd
-        self._frameStartOffset = start
-        self._frameEndOffset = end
-
-    def frameOffsets(self) -> Tuple[float, float]:
-        return self._frameStartOffset, self._frameEndOffset
-
-
-class FCurveProcessor:
-    obj: bpy.types.Object
-    locationObject: Optional[bpy.types.Object]
-    fCurves: ObjectFCurves
-    location: Optional[Vector]
-    rotation: Optional[Euler]
-    material: Dict[str, Union[int, float]]
-
-    def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
-        self.obj = obj
-        self.fCurves = fCurves
-        self.locationObject = locationObject
-        # when None no keyframe of that type
-        self.location = None
-        self.rotation = None
-        self.material = {}
-
-    def applyFCurve(self, delta: int):
-        # for fCurve in self.fCurves.location:    
-            # do the work in BlenderLocationKeyFrame and set self.location
-        if len(self.fCurves.location) != 0:
-            if self.locationObject is None:
-                location = self.obj.location.copy()
-            else:
-                location = self.locationObject.location.copy()
-
-            for fCurve in self.fCurves.location:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                location[i] = val
-            
-            # set the values on internal location
-            self.location = location
-
-        if len(self.fCurves.rotation) != 0:
-            # do the work in BlenderRotationKeyFrame and add to self.rotation
-            if self.rotation is None:
-                rotation = self.obj.rotation_euler.copy()
-            else:
-                rotation = self.rotation
-
-            for fCurve in self.fCurves.rotation:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                rotation[i] += val
-
-            # set the values on internal rotation
-            self.rotation = rotation
-
-        if len(self.fCurves.material) != 0:
-            for fCurve in self.fCurves.material:
-                val = fCurve.evaluate(delta)
-                if fCurve.data_path in self.material:
-                    self.material[fCurve.data_path] += val
-                else:
-                    self.material[fCurve.data_path] = val
-
-
-    def insertKeyFrames(self, frame: int):
-        if self.location is not None:
-            # make the deta location keyframe for self.obj
-            self.obj.delta_location = self.location
-            self.obj.keyframe_insert(data_path="delta_location", frame=frame)
-        
-        if self.rotation is not None:
-            self.obj.delta_rotation_euler = self.rotation
-            self.obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
-        
-        if self.material is not None:
-            for data_path in self.material:
-                val = self.material[data_path]
-                exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
-                self.obj.keyframe_insert(data_path=data_path, frame=frame)
-
-def maxNeeded(intervals: List[FrameRange]) -> int:
+def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
     """
     :param intervals: List[FrameRange]
     :return int: max number of objects that are visible at any point in time
@@ -195,6 +73,130 @@ def maxNeeded(intervals: List[FrameRange]) -> int:
 
     # after processing all intervals return the computed maximum active count
     return maxCount
+
+class ObjectFCurves:
+    location: Tuple[bpy.types.FCurve]
+    rotation: Tuple[bpy.types.FCurve]
+    shapeKeys: Tuple[bpy.types.FCurve]
+    material: Tuple[bpy.types.FCurve]
+
+    def __init__(self, location = (), rotation = (), shapeKeys = (), material = ()):
+        self.location = location
+        self.rotation = rotation
+        self.shapeKeys = shapeKeys
+        self.material = material
+
+class NoteAnimator:
+    obj: bpy.types.Object
+    animators: ObjectFCurves
+
+    # how many frames before a note is hit does this need to start animating
+    _frameStartOffset: float
+    # how many frames after a note is hit does it continue animating
+    _frameEndOffset: float
+
+    def __init__(self, obj: bpy.types.Object, animators: ObjectFCurves):
+        self.obj = obj
+        self.animators = animators
+        # temporary values until we compute in _calculateOffsets()
+        self._frameStartOffset = 0.0
+        self._frameEndOffset = 0.0
+
+        self._calculateOffsets()
+
+    def _calculateOffsets(self):
+        # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
+        # and the latest animation for the note
+        combined = self.animators.location + self.animators.rotation + self.animators.shapeKeys + self.animators.material
+        start, end = None, None
+        for fCrv in combined:
+            curveStart, curveEnd = fCrv.range()
+            if start is None or curveStart < start:
+                start = curveStart
+            if end is None or curveEnd > end:
+                end = curveEnd
+        self._frameStartOffset = start
+        self._frameEndOffset = end
+
+    def frameOffsets(self) -> Tuple[float, float]:
+        """
+        :return: start (probably negative) and end offsets for playing the note
+        """
+        return self._frameStartOffset, self._frameEndOffset
+
+
+class FCurveProcessor:
+    obj: bpy.types.Object
+    locationObject: Optional[bpy.types.Object]
+    fCurves: ObjectFCurves
+    location: Optional[Vector]
+    rotation: Optional[Euler]
+    material: Dict[str, Union[int, float]]
+
+    def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
+        self.obj = obj
+        self.fCurves = fCurves
+        self.locationObject = locationObject
+        # when None no keyframe of that type
+        self.location = None
+        self.rotation = None
+        self.material = {}
+
+    def applyFCurve(self, delta: int):
+        # for fCurve in self.fCurves.location:    
+            # do the work in BlenderLocationKeyFrame and set self.location
+        if len(self.fCurves.location) != 0:
+            if self.locationObject is None:
+                location = self.obj.location.copy()
+            else:
+                location = self.locationObject.location.copy()
+
+            for fCurve in self.fCurves.location:
+                i = fCurve.array_index
+                val = fCurve.evaluate(delta)
+                location[i] = val
+            
+            # set the values on internal location
+            self.location = location
+
+        if len(self.fCurves.rotation) != 0:
+            # do the work in BlenderRotationKeyFrame and add to self.rotation
+            if self.rotation is None:
+                rotation = self.obj.rotation_euler.copy()
+            else:
+                rotation = self.rotation
+
+            for fCurve in self.fCurves.rotation:
+                i = fCurve.array_index
+                val = fCurve.evaluate(delta)
+                rotation[i] += val
+
+            # set the values on internal rotation
+            self.rotation = rotation
+
+        if len(self.fCurves.material) != 0:
+            for fCurve in self.fCurves.material:
+                val = fCurve.evaluate(delta)
+                if fCurve.data_path in self.material:
+                    self.material[fCurve.data_path] += val
+                else:
+                    self.material[fCurve.data_path] = val
+
+    def insertKeyFrames(self, frame: int):
+        if self.location is not None:
+            # make the deta location keyframe for self.obj
+            self.obj.delta_location = self.location
+            self.obj.keyframe_insert(data_path="delta_location", frame=frame)
+        
+        if self.rotation is not None:
+            self.obj.delta_rotation_euler = self.rotation
+            self.obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
+        
+        if self.material is not None:
+            for data_path in self.material:
+                val = self.material[data_path]
+                exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
+                self.obj.keyframe_insert(data_path=data_path, frame=frame)
 
 @dataclass
 class FrameRange:
@@ -398,12 +400,8 @@ class Instrument:
             self._objFrameRanges.pop()
             i -= 1
 
-
-
     def createFrameRanges(self):
-
         assert self.noteToObjTable is not None, "please run createNoteToObjTable first"
-
         result = []
 
         for note in self.midiTrack.notes:
@@ -414,9 +412,8 @@ class Instrument:
 
             try:
                 hit = obj.note_hit_time
-            except Exception as e:
-                # FIXME figure out exact error type
-                print(e)
+            except AttributeError:
+                print(f"{obj.name} has no hit time!")
                 hit = 0
 
             frame = int(secToFrames(note.timeOn))
@@ -488,7 +485,7 @@ class ProjectileInstrument(Instrument):
         cleanCollection(objectCollection.projectile_collection, objectCollection.reference_projectile)
 
         # calculate number of needed projectiles & instance the blender objects using bpy
-        maxNumOfProjectiles = maxNeeded(self._objFrameRanges)
+        maxNumOfProjectiles = maxSimultaneousObjects(self._objFrameRanges)
 
         projectiles = []
 
