@@ -3,7 +3,7 @@ import bpy
 from typing import List, Tuple
 from dataclasses import dataclass
 from math import floor, ceil
-from typing import Dict, List, Tuple, Optional, TYPE_CHECKING
+from typing import Dict, List, Tuple, Optional, Union, TYPE_CHECKING
 from mathutils import Vector, Euler
 
 from .. utils.blender import *
@@ -29,6 +29,7 @@ class FCurveProcessor:
     fCurves: ObjectFCurves
     location: Optional[Vector]
     rotation: Optional[Euler]
+    material: Dict[str, Union[int, float]]
 
     def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
         self.obj = obj
@@ -37,6 +38,7 @@ class FCurveProcessor:
         # when None no keyframe of that type
         self.location = None
         self.rotation = None
+        self.material = {}
 
     def applyFCurve(self, delta: int):
         # for fCurve in self.fCurves.location:    
@@ -52,7 +54,7 @@ class FCurveProcessor:
                 val = fCurve.evaluate(delta)
                 location[i] = val
             
-            # set the values on location
+            # set the values on internal location
             self.location = location
 
         if len(self.fCurves.rotation) != 0:
@@ -67,8 +69,17 @@ class FCurveProcessor:
                 val = fCurve.evaluate(delta)
                 rotation[i] += val
 
-            # set the values on location
+            # set the values on internal rotation
             self.rotation = rotation
+
+        if len(self.fCurves.material) != 0:
+            for fCurve in self.fCurves.material:
+                val = fCurve.evaluate(delta)
+                if fCurve.data_path in self.material:
+                    self.material[fCurve.data_path] += val
+                else:
+                    self.material[fCurve.data_path] = val
+
 
     def insertKeyFrames(self, frame: int):
         if self.location is not None:
@@ -79,6 +90,12 @@ class FCurveProcessor:
         if self.rotation is not None:
             self.obj.delta_rotation_euler = self.rotation
             self.obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
+        
+        if self.material is not None:
+            for data_path in self.material:
+                val = self.material[data_path]
+                exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
+                self.obj.keyframe_insert(data_path=data_path, frame=frame)
 
 
 class BlenderKeyFrameBase:
@@ -248,10 +265,12 @@ class Instrument:
                     location.append(fCrv)
                 elif dataPath == "rotation_euler":
                     rotation.append(fCrv)
+                elif dataPath[:2] == '["' and dataPath[-2:] == '"]':  # this is a custom property that we're finding
+                    getType = eval(f"type(bpy.context.scene.objects['{obj.animation_curve.name}']{dataPath})")
+                    assert getType == float or getType == int, "Please create type `int` or type `float` custom properties"
+                    material.append(fCrv)
                 # elif dataPath == "shape_key":
                 #     shapeKeys.append(fCrv)
-                # elif dataPath == "material":
-                #     material.append(fCrv)
             
             self._keyFrameInfo[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
 
