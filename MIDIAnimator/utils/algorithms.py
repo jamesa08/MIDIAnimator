@@ -23,6 +23,41 @@ class ObjectFCurves:
         self.shapeKeys = shapeKeys
         self.material = material
 
+class NoteAnimator:
+    obj: bpy.types.Object
+    animators: ObjectFCurves
+
+    # compute these using min and max of each of the _animators FCurves
+    # how many frames before a note is hit does this need to start animating
+    _frameStartOffset: int
+    # how many frames after a note is hit does it continue animating
+    _frameEndOffset: int
+
+    def __init__(self, obj: bpy.types.Object, animators: AnimationProperties):
+        self.obj = obj
+        self.animators = animators
+        # temporary values until we compute in _calculateOffsets()
+        self._frameStartOffset = 0
+        self._frameEndOffset = 0
+
+        self._calculateOffsets()
+
+    def _calculateOffsets(self):
+        combined = self.animators.location + self.animators.rotation + self.animators.shapeKeys + self.animators.material
+        start, end = None, None
+        for fCrv in combined:
+            curveStart, curveEnd = fCrv.range()
+            if start is None or curveStart < start:
+                start = curveStart
+            if end is None or curveEnd > end:
+                end = curveEnd
+        self._frameStartOffset = int(floor(start))
+        self._frameEndOffset = int(ceil(end))
+
+    def frameOffsets(self) -> (int, int):
+        return self._frameStartOffset, self._frameEndOffset
+
+
 class FCurveProcessor:
     obj: bpy.types.Object
     locationObject: Optional[bpy.types.Object]
@@ -96,34 +131,6 @@ class FCurveProcessor:
                 val = self.material[data_path]
                 exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
                 self.obj.keyframe_insert(data_path=data_path, frame=frame)
-
-
-class BlenderKeyFrameBase:
-    fCurves: List[bpy.types.FCurve]
-
-    def __init__(self, fCurves: List[bpy.types.FCurve]):
-        self.fCurves = fCurves
-        self.keyFrameDict = {}
-
-
-    def seeIfKeyframeExistsAtFrame(self, data_path, array_index, obj, frame):
-        for fCrv in FCurvesFromObject(obj):
-            if fCrv.data_path != data_path or fCrv.array_index != array_index: continue
-            for keyframe in reversed(fCrv.keyframe_points):
-                if keyframe.co[0] == frame:
-                    return keyframe.co[1]
-            
-        return 0
-
-    def updateKeyFrame(self):
-        pass
-
-    def makeKeyFrames(self, obj: bpy.types.Object, delta: int, frame: int, locationObject: Optional[bpy.types.object] = None):
-
-        # if there is already a keyframe of this type (such as location), then we need to get the value
-        # of the existing keyframe and add the results
-        # otherwise evaluate the FCurves and make the keyframe
-        raise NotImplementedError()
 
 def maxNeeded(intervals: List[FrameRange]) -> int:
     """
@@ -250,8 +257,8 @@ class Instrument:
         self._frameEnd = 0
         self._objFrameRanges = []
 
-        self.createNoteToObjTable()
         self._makeObjToFCurveDict()
+        self.createNoteToObjTable()
 
     def _makeObjToFCurveDict(self):
         for obj in self.collection.all_objects:
@@ -273,6 +280,14 @@ class Instrument:
                 #     shapeKeys.append(fCrv)
             
             self._keyFrameInfo[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
+
+    def createNoteToObjTable(self) -> None:
+        for obj in self.collection.all_objects:
+            if obj.note_number is None: raise RuntimeError(f"Object '{obj.name}' has no note number!")
+            if int(obj.note_number) in self.noteToObjTable: raise RuntimeError(
+                f"There are two objects in the scene with duplicate note numbers.")
+            na = NoteAnimator(obj, self._keyFrameInfo[obj])
+            self.noteToObjTable[int(obj.note_number)] = na
 
     def preAnimate(self):
         pass
@@ -390,12 +405,7 @@ class Instrument:
             self._objFrameRanges.pop()
             i -= 1
 
-    def createNoteToObjTable(self) -> None:
-        for obj in self.collection.all_objects:
-            if obj.note_number is None: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            if int(obj.note_number) in self.noteToObjTable: raise RuntimeError(f"There are two objects in the scene with duplicate note numbers.")
-            
-            self.noteToObjTable[int(obj.note_number)] = obj
+
 
     def createFrameRanges(self):
 
@@ -405,7 +415,9 @@ class Instrument:
 
         for note in self.midiTrack.notes:
             # lookup obj from note number
-            obj = self.noteToObjTable[note.noteNumber]
+            noteAnimator = self.noteToObjTable[note.noteNumber]
+            obj = noteAnimator.obj
+            animators = noteAnimator.animators
 
             try:
                 hit = obj.note_hit_time
@@ -414,16 +426,21 @@ class Instrument:
                 print(e)
                 hit = 0
 
-            # FIXME: implement with self._keyframeInfo
-            # need to look at all the FCurves and compute startFrame and endFrame for each one
-            # keep track of minimum startFrame and maximum endFrame
-            # and then append that to out
-            rangeVector = FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].range()
-            startFCurve, endFCurve = rangeVector[0], rangeVector[1]
-
             frame = secToFrames(note.timeOn)
-            startFrame = int(floor((startFCurve - hit) + frame))
-            endFrame = int(ceil((endFCurve - hit) + frame))
+            offsets = animators.frameOffsets
+            startFrame = offsets[0] - hit + frame
+            endFrame = offsets[1] - hit + frame
+
+            # # FIXME: implement with self._keyframeInfo
+            # # need to look at all the FCurves and compute startFrame and endFrame for each one
+            # # keep track of minimum startFrame and maximum endFrame
+            # # and then append that to out
+            # rangeVector = FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].range()
+            # startFCurve, endFCurve = rangeVector[0], rangeVector[1]
+            #
+            # frame = secToFrames(note.timeOn)
+            # startFrame = int(floor((startFCurve - hit) + frame))
+            # endFrame = int(ceil((endFCurve - hit) + frame))
 
             out.append(FrameRange(startFrame, endFrame, obj))
 
