@@ -11,11 +11,10 @@ from .. utils.blender import FCurvesFromObject, deleteMarkers, secToFrames, clea
 
 class BlenderAnimation:
     """this class acts as a wrapper for GenericTracks/custom tracks"""
-    _tracks: List[Instrument]
+    _instruments: List[Instrument]
 
     def __init__(self):
-        self._tracks = []
-        self._activeNoteDict = dict()
+        self._instruments = []
 
     def addInstrument(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=dict()):
         """ make a GenericInstrumnet subclass and add it into internal track list 
@@ -35,16 +34,16 @@ class BlenderAnimation:
             else:
                 cls = custom(midiTrack, objectCollection)
         
-        self._tracks.append(cls)
+        self._instruments.append(cls)
 
     def animate(self) -> None:
         # FIXME: delete all keyframes from frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
 
-        for track in self._tracks:
-            if track.override:
-                track.animate()
+        for instrument in self._instruments:
+            if instrument.override:
+                instrument.animate()
                 continue
 
-            track.preFrameLoop()
-            track.animateFrames()
-            track.postFrameLoop()
+            instrument.preFrameLoop()
+            instrument.animateFrames()
+            instrument.postFrameLoop()
