@@ -161,7 +161,7 @@ class Instrument2:
                 cache = animatingNote._cache
                 # if it is a cached object, return to the cache
                 if cache is not None:
-                    cache.pushObject(obj)
+                    cache.returnObject(obj)
                     # disable cached object in viewport/render
                     obj.hide_viewport = True
                     obj.hide_render = True

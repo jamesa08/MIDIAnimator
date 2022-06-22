@@ -159,3 +159,9 @@ def distanceFromVectors(point1: Vector, point2: Vector) -> float:
     """Calculate distance between two points.""" 
     
     return (point2 - point1).length
+
+def showHideObj(obj: bpy.types.Object, hide: bool, frame: int):
+    obj.hide_viewport = hide
+    obj.hide_render = hide
+    obj.keyframe_insert(data_path="hide_viewport", frame=frame)
+    obj.keyframe_insert(data_path="hide_render", frame=frame)

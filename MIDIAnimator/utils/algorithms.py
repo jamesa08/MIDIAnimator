@@ -215,21 +215,21 @@ class FrameRange:
 
 @dataclass(init=False)
 class CacheInstance:
-    # data structure similar to a stack implementation
     _cache = List[bpy.types.Object]
 
     def __init__(self, objs: List[bpy.types.Object]) -> None:
-        """intializes a type List[bpy.types.Object] to the cache instance."""
+        """initializes a type List[bpy.types.Object] to the cache instance."""
         self._cache = objs
 
-    def pushObject(self, obj: bpy.types.Object) -> None:
-        """pushes a bpy.types.Object back to the cache. This is the method to use when you are done with the object"""
-        # self._cache[objType].append(obj)
+    def returnObject(self, obj: bpy.types.Object) -> None:
+        """returns a bpy.types.Object back to the cache. This is the method to use when you are done with the object"""
         self._cache.append(obj)
     
-    def popObject(self) -> bpy.types.Object:
-        """removes a bpy.types.Object from the cache and returns it. This is the method to use when you want to take an object out"""
-        # obj = self._cache[objType].pop()
+    def getObject(self) -> bpy.types.Object:
+        """takes out a bpy.types.Object from the cache. This is the method to use when you want to take an object out
+        
+        :return: the reusable bpy.types.Object
+        """
         obj = self._cache.pop()
         return obj
 
@@ -239,7 +239,6 @@ class Instrument:
     collection: bpy.types.Collection
     midiTrack: 'MIDITrack'
     noteToObjTable: Dict[int, bpy.types.Object]
-    _keyFrameInfo: Dict[bpy.types.Object, ObjectFCurves]
     _activeObjectList: List[FrameRange]
     _activeNoteDict: Dict[int, List[FrameRange]]
     _frameStart: int
@@ -251,18 +250,17 @@ class Instrument:
         self.midiTrack = midiTrack
         self.noteToObjTable = dict()
         self.override = False
-        self._keyFrameInfo = dict()
-
         self._activeObjectList = []
         self._activeNoteDict = dict()
         self._frameStart = 0
         self._frameEnd = 0
         self._objFrameRanges = []
 
-        self._makeObjToFCurveDict()
-        self.createNoteToObjTable()
+        result = self._makeObjToFCurveDict()
+        self.createNoteToObjTable(result)
 
-    def _makeObjToFCurveDict(self):
+    def _makeObjToFCurveDict(self) -> Dict[bpy.types.Object, ObjectFCurves]:
+        fCurveDict = {}
         for obj in self.collection.all_objects:
             location = []
             rotation = []
@@ -280,15 +278,16 @@ class Instrument:
                     material.append(fCrv)
                 # elif dataPath == "shape_key":
                 #     shapeKeys.append(fCrv)
-            
-            self._keyFrameInfo[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
 
-    def createNoteToObjTable(self) -> None:
+            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
+        return fCurveDict
+
+    def createNoteToObjTable(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
             if obj.note_number is None: raise RuntimeError(f"Object '{obj.name}' has no note number!")
             if int(obj.note_number) in self.noteToObjTable: raise RuntimeError(
                 f"There are two objects in the scene with duplicate note numbers.")
-            na = NoteAnimator(obj, self._keyFrameInfo[obj])
+            na = NoteAnimator(obj, fCurveDict[obj])
             self.noteToObjTable[int(obj.note_number)] = na
 
     def preAnimate(self):
@@ -325,14 +324,13 @@ class Instrument:
 
     def updateActiveObjectList(self, frame: int, offset: int):
         # variables
-        cache = None
+        cache: Optional[CacheInstance] = None
         if hasattr(self, '_cacheInstance'):
             cache = self._cacheInstance
 
         stillActiveList = []
         # delete/return to cache for old objects
         for frameInfo in self._activeObjectList:
-            objStartFrame = frameInfo.startFrame
             objEndFrame = frameInfo.endFrame
             obj = frameInfo.obj
             cachedObj = frameInfo.cachedObj
@@ -344,15 +342,12 @@ class Instrument:
                 # remove from activeNoteDict
                 self._activeNoteDict[obj.note_number].remove(frameInfo)
 
-                # RETURN OBJECT TO CACHE
+                # return object to cache and hide it
                 if cache is not None and cachedObj is not None:
-                    cache.pushObject(cachedObj)
+                    cache.returnObject(cachedObj)
 
                     # disable cached object in viewport/render
-                    cachedObj.hide_viewport = True
-                    cachedObj.hide_render = True
-                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame + offset)
-                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame + offset)
+                    showHideObj(cachedObj, True, frame + offset)
 
         self._activeObjectList = stillActiveList
 
@@ -361,42 +356,26 @@ class Instrument:
 
         while i >= 0 and self._objFrameRanges[i].startFrame <= frame:
             frameInfo = self._objFrameRanges[i]
-            objStartFrame = frameInfo.startFrame
-            # objEndFrame = frameInfo.endFrame
-            # cachedObj = frameInfo.cachedObj
             obj = frameInfo.obj
-            # insType = self.collection.instrument_type
 
+            # if we have a cache, get reusable object
             if cache is not None:
-                # this is of cache type,
-                if objStartFrame == frame:
-                    # GET OBJECT FROM CACHE
-                    cachedObj = cache.popObject()
+                cachedObj = cache.getObject()
+                # tell the frameInfo to use the cached object
+                frameInfo.cachedObj = cachedObj
+                # enable cached object in viewport/render
+                showHideObj(cachedObj, False, frame + offset)
 
-                    # update cached object in frameIno
-                    frameInfo.cachedObj = cachedObj
+            # this object is now being animated until we reach its end frame
+            self._activeObjectList.append(frameInfo)
 
-                    # enable cached object in viewport/render
-                    cachedObj.hide_viewport = False
-                    cachedObj.hide_render = False
-                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame + offset)
-                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame + offset)
-
-                    self._activeObjectList.append(frameInfo)
-            else:
-                # if not of cache type, just append the active frames
-                self._activeObjectList.append(frameInfo)
-                # if objStartFrame == frame:
-                #     # Debug markers
-                #     bpy.context.scene.timeline_markers.new("debug", frame=frame)
-
-            # add note to activeNoteDict
+            # update dictionary that keeps track of notes currently being animated
             if obj.note_number in self._activeNoteDict:
-                self._activeNoteDict[obj.note_number].append(self._objFrameRanges[i])
+                self._activeNoteDict[obj.note_number].append(frameInfo)
             else:
-                self._activeNoteDict[obj.note_number] = [self._objFrameRanges[i]]
+                self._activeNoteDict[obj.note_number] = [frameInfo]
 
-            # this note will be played next, so we shouldn't iterate over it again for the next frame
+            # we added it to active list so have next iteration check next frame range in reverse sorted order
             self._objFrameRanges.pop()
             i -= 1
 
@@ -408,7 +387,6 @@ class Instrument:
             # lookup obj from note number
             noteAnimator = self.noteToObjTable[note.noteNumber]
             obj = noteAnimator.obj
-            animators = noteAnimator.animators
 
             try:
                 hit = obj.note_hit_time
@@ -420,7 +398,6 @@ class Instrument:
             offsets = noteAnimator.frameOffsets()
             startFrame = int(floor(offsets[0] - hit + frame))
             endFrame = int(ceil(offsets[1] - hit + frame))
-
             result.append(FrameRange(startFrame, endFrame, obj))
 
         self._objFrameRanges = result
@@ -432,18 +409,24 @@ class Instrument:
 
         # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
-
+            # if finished playing all instances of this note, skip to next note
             if len(self._activeNoteDict[noteNumber]) <= 0:
                 continue
-        
-            frameInfo = self._activeNoteDict[noteNumber][0]
-            obj = frameInfo.obj  # funnel, doesn't change until outer loop is completed
-            objFCurve = self._keyFrameInfo[obj] # get this from our dictionary mapping obj to ObjectFCurves
 
-            processor = FCurveProcessor(obj, objFCurve)
+            # for non projectiles, this will be the same object each through the inner for loop
+            frameInfo = self._activeNoteDict[noteNumber][0]
+            obj = frameInfo.obj
 
             # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
             processorSet = set()
+
+            # get the ObjectFCurves for this note
+            objFCurve = self.noteToObjTable[int(obj.note_number)].animators
+            # make a processor for it
+            processor = FCurveProcessor(obj, objFCurve)
+            # keep track of all objects that need keyframed
+            processorSet.add(processor)
+            
             for frameInfo in self._activeNoteDict[noteNumber]:
                 # check if we are animating a cached object for this
                 cachedObj = frameInfo.cachedObj
@@ -453,12 +436,13 @@ class Instrument:
                         processor = cacheObjectProcessors[cachedObj]
                     # this is the first time this cachedObject is used so need to create its FCurveProcessor
                     else:
+                        # create a processor and include in set for keyframing
                         processor = FCurveProcessor(cachedObj, objFCurve, obj)
+                        processorSet.add(processor)
                         cacheObjectProcessors[cachedObj] = processor
-                # make certain processorSet contains all FCurveProcessors being used for this note
-                processorSet.add(processor)
 
                 # accumulate the FCurve results for this object
+                # need this step for cymbals since we need to add the FCurves for each instance of the note
                 objStartFrame = frameInfo.startFrame
                 delta = frame - objStartFrame
                 processor.applyFCurve(delta)
@@ -494,10 +478,7 @@ class ProjectileInstrument(Instrument):
             duplicate.name = f"projectile_{hex(id(self.midiTrack))}_{i}"
             
             # hide them
-            duplicate.hide_viewport = True
-            duplicate.hide_render = True
-            duplicate.keyframe_insert(data_path="hide_viewport", frame=self._objFrameRanges[0].startFrame)
-            duplicate.keyframe_insert(data_path="hide_render", frame=self._objFrameRanges[0].startFrame)
+            showHideObj(duplicate, True, self._objFrameRanges[0].startFrame)
 
             objectCollection.projectile_collection.objects.link(duplicate)
             projectiles.append(duplicate)
