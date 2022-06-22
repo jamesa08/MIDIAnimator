@@ -54,7 +54,7 @@ class NoteAnimator:
         self._frameStartOffset = start
         self._frameEndOffset = end
 
-    def frameOffsets(self) -> (float, float):
+    def frameOffsets(self) -> Tuple[float, float]:
         return self._frameStartOffset, self._frameEndOffset
 
 
@@ -292,24 +292,13 @@ class Instrument:
     def preAnimate(self):
         pass
 
-    def preFrameLoop(self) -> int:
+    def preFrameLoop(self):
         # copy the frames to not mutate them, then sort by start time and then reverse
         self.createFrameRanges()
         self.preAnimate()
         self._objFrameRanges.sort(reverse=True)
 
-        # variables
-        frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
-
-        # XXX offeset frameStart by the first objectFrame's start time if it's negative
-        # XXX discussion question, could frameStart, frameEnd be simplified by using this? we only need to animate the range between
-        # XXX objectFrames[-1]._startFrame, objectFrames[0]._endFrame
-
-        objFirstFrame, objLastFrame = self._objFrameRanges[-1].startFrame, self._objFrameRanges[0].endFrame
-        # frameStart = objFirstFrame if objFirstFrame < 0 else frameStarts
-        self._frameStart, self._frameEnd = objFirstFrame - 1, objLastFrame + 1  # -1 & +1 to make sure they're within bounds
-
-        return self._frameStart
+        self._frameStart, self._frameEnd = self._objFrameRanges[-1].startFrame, self._objFrameRanges[0].endFrame
 
     def postFrameLoop(self):
         self.noteToObjTable = dict()
@@ -317,18 +306,22 @@ class Instrument:
         self._activeNoteDict = dict()
         self._objFrameRanges = []
 
-    def animateFrames(self):
+    def animateFrames(self, offset: int):
+        """create keyframes for the animation
+
+        :param int offset: amount to add to the frame number for each keyframe (in case we have negative keyframes)
+        """
         for frame in range(self._frameStart, self._frameEnd):
-            self.updateActiveObjectList(frame)
+            self.updateActiveObjectList(frame, offset)
             
             # update activeNoteDict: the notes that are still playing
 
             # add a keyframe for each object that is moving during this frame
             # call animate method to insert a keyframe
             # instead of passing activeObjectList, pass in activeNoteDict
-            self.animate(frame)
+            self.animate(frame, offset)
 
-    def updateActiveObjectList(self, frame: int):
+    def updateActiveObjectList(self, frame: int, offset: int):
         # variables
         cache = None
         if hasattr(self, '_cacheInstance'):
@@ -356,8 +349,8 @@ class Instrument:
                     # disable cached object in viewport/render
                     cachedObj.hide_viewport = True
                     cachedObj.hide_render = True
-                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame)
-                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame)
+                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame + offset)
+                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame + offset)
 
         self._activeObjectList = stillActiveList
 
@@ -384,8 +377,8 @@ class Instrument:
                     # enable cached object in viewport/render
                     cachedObj.hide_viewport = False
                     cachedObj.hide_render = False
-                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame)
-                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame)
+                    cachedObj.keyframe_insert(data_path="hide_viewport", frame=frame + offset)
+                    cachedObj.keyframe_insert(data_path="hide_render", frame=frame + offset)
 
                     self._activeObjectList.append(frameInfo)
             else:
@@ -435,7 +428,7 @@ class Instrument:
 
         self._objFrameRanges = result
 
-    def animate(self, frame: int):
+    def animate(self, frame: int, offset: int):
         # each cached object needs a separate FCurveProcessor since the same note can be "in progress" more than
         # once for a given frame
         cacheObjectProcessors = {}
@@ -475,7 +468,7 @@ class Instrument:
 
             # for each object (could be multiple cached objects) insert the key frame
             for p in processorSet:
-                p.insertKeyFrames(frame)
+                p.insertKeyFrames(frame + offset)
 
 class ProjectileInstrument(Instrument):
     _cacheInstance: Optional[CacheInstance]

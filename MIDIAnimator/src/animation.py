@@ -36,14 +36,16 @@ class BlenderAnimation:
         
         self._instruments.append(cls)
 
-    def animate(self) -> None:
-        # FIXME: delete all keyframes from frameStart, frameEnd = bpy.context.scene.frame_start, bpy.context.scene.frame_end
+    def animate(self, offset: int = 0) -> None:
+        """animate all of the tracks
 
+        :param int offset: amount to add to the frame number for each keyframe (in case we have negative keyframes), defaults to 0
+        """
         for instrument in self._instruments:
             if instrument.override:
                 instrument.animate()
                 continue
 
             instrument.preFrameLoop()
-            instrument.animateFrames()
+            instrument.animateFrames(offset)
             instrument.postFrameLoop()
