@@ -29,16 +29,16 @@ class NoteAnimator:
 
     # compute these using min and max of each of the _animators FCurves
     # how many frames before a note is hit does this need to start animating
-    _frameStartOffset: int
+    _frameStartOffset: float
     # how many frames after a note is hit does it continue animating
-    _frameEndOffset: int
+    _frameEndOffset: float
 
     def __init__(self, obj: bpy.types.Object, animators: AnimationProperties):
         self.obj = obj
         self.animators = animators
         # temporary values until we compute in _calculateOffsets()
-        self._frameStartOffset = 0
-        self._frameEndOffset = 0
+        self._frameStartOffset = 0.0
+        self._frameEndOffset = 0.0
 
         self._calculateOffsets()
 
@@ -51,10 +51,10 @@ class NoteAnimator:
                 start = curveStart
             if end is None or curveEnd > end:
                 end = curveEnd
-        self._frameStartOffset = int(floor(start))
-        self._frameEndOffset = int(ceil(end))
+        self._frameStartOffset = start
+        self._frameEndOffset = end
 
-    def frameOffsets(self) -> (int, int):
+    def frameOffsets(self) -> (float, float):
         return self._frameStartOffset, self._frameEndOffset
 
 
@@ -411,7 +411,7 @@ class Instrument:
 
         assert self.noteToObjTable is not None, "please run createNoteToObjTable first"
 
-        out = []
+        result = []
 
         for note in self.midiTrack.notes:
             # lookup obj from note number
@@ -426,25 +426,14 @@ class Instrument:
                 print(e)
                 hit = 0
 
-            frame = secToFrames(note.timeOn)
-            offsets = animators.frameOffsets
-            startFrame = offsets[0] - hit + frame
-            endFrame = offsets[1] - hit + frame
+            frame = int(secToFrames(note.timeOn))
+            offsets = noteAnimator.frameOffsets()
+            startFrame = int(floor(offsets[0] - hit + frame))
+            endFrame = int(ceil(offsets[1] - hit + frame))
 
-            # # FIXME: implement with self._keyframeInfo
-            # # need to look at all the FCurves and compute startFrame and endFrame for each one
-            # # keep track of minimum startFrame and maximum endFrame
-            # # and then append that to out
-            # rangeVector = FCurvesFromObject(obj.animation_curve)[obj.animation_curve_index].range()
-            # startFCurve, endFCurve = rangeVector[0], rangeVector[1]
-            #
-            # frame = secToFrames(note.timeOn)
-            # startFrame = int(floor((startFCurve - hit) + frame))
-            # endFrame = int(ceil((endFCurve - hit) + frame))
+            result.append(FrameRange(startFrame, endFrame, obj))
 
-            out.append(FrameRange(startFrame, endFrame, obj))
-
-        self._objFrameRanges = out
+        self._objFrameRanges = result
 
     def animate(self, frame: int):
         # each cached object needs a separate FCurveProcessor since the same note can be "in progress" more than
