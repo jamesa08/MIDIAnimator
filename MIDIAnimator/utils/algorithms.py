@@ -74,18 +74,6 @@ def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
     # after processing all intervals return the computed maximum active count
     return maxCount
 
-class ObjectFCurves:
-    location: Tuple[bpy.types.FCurve]
-    rotation: Tuple[bpy.types.FCurve]
-    shapeKeys: Tuple[bpy.types.FCurve]
-    material: Tuple[bpy.types.FCurve]
-
-    def __init__(self, location = (), rotation = (), shapeKeys = (), material = ()):
-        self.location = location
-        self.rotation = rotation
-        self.shapeKeys = shapeKeys
-        self.material = material
-
 class NoteAnimator:
     obj: bpy.types.Object
     animators: ObjectFCurves
@@ -107,7 +95,7 @@ class NoteAnimator:
     def _calculateOffsets(self):
         # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
         # and the latest animation for the note
-        combined = self.animators.location + self.animators.rotation + self.animators.shapeKeys + self.animators.material
+        combined = self.animators.location + self.animators.rotation + self.animators.material + self.animators.shapeKeys
         start, end = None, None
         for fCrv in combined:
             curveStart, curveEnd = fCrv.range()
@@ -124,6 +112,22 @@ class NoteAnimator:
         """
         return self._frameStartOffset, self._frameEndOffset
 
+class ObjectFCurves:
+    location: Tuple[bpy.types.FCurve]
+    rotation: Tuple[bpy.types.FCurve]
+    material: Tuple[bpy.types.FCurve]
+    
+    # key= the "to keyframe" object's shape key's name, value= a list \
+    # (index 0 = reference object shape key FCurves, index 1 = the "to keyframe" object's shape key)
+    shapeKeysDict: Dict[str, List[bpy.types.FCurve, bpy.types.ShapeKey]]
+    shapeKeys: Tuple[bpy.types.FCurve]  # a list of the reference object's shape keys FCurves
+
+    def __init__(self, location = (), rotation = (), shapeKeysDict = (), shapeKeys = (), material = ()):
+        self.location = location
+        self.rotation = rotation
+        self.shapeKeysDict = shapeKeysDict
+        self.shapeKeys = shapeKeys
+        self.material = material
 
 class FCurveProcessor:
     obj: bpy.types.Object
@@ -131,7 +135,12 @@ class FCurveProcessor:
     fCurves: ObjectFCurves
     location: Optional[Vector]
     rotation: Optional[Euler]
+    
+    # key= custom property name, value=int or float (the val to be keyframed)
     material: Dict[str, Union[int, float]]
+    
+    # key= the "to keyframe" object's shape key's name, value= a float (the val to be keyframed)
+    shapeKeys: Dict[str, float]
 
     def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
         self.obj = obj
@@ -140,7 +149,8 @@ class FCurveProcessor:
         # when None no keyframe of that type
         self.location = None
         self.rotation = None
-        self.material = {}
+        self.material = None
+        self.shapeKeys = None
 
     def applyFCurve(self, delta: int):
         # for fCurve in self.fCurves.location:    
@@ -182,6 +192,15 @@ class FCurveProcessor:
                 else:
                     self.material[fCurve.data_path] = val
 
+        if len(self.fCurves.shapeKeysDict) != 0:
+            for shapeName in self.fCurves.shapeKeysDict:
+                val = self.fCurves.shapeKeysDict[shapeName][0].evaluate(delta)  # we want to get only the FCurve from the dict (index 0 is the FCurve)
+
+                if shapeName in self.shapeKeys:
+                    self.shapeKeys[shapeName] += val
+                else:
+                    self.shapeKeys[shapeName] = val
+
     def insertKeyFrames(self, frame: int):
         if self.location is not None:
             # make the deta location keyframe for self.obj
@@ -197,6 +216,13 @@ class FCurveProcessor:
                 val = self.material[data_path]
                 exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
                 self.obj.keyframe_insert(data_path=data_path, frame=frame)
+
+        if self.shapeKeys is not None:
+            for shapeName in self.fCurves.shapeKeysDict:
+                shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
+
+                shapeKey.value = self.shapeKeys[shapeName]
+                shapeKey.keyframe_insert(data_path="value", frame=frame)
 
 @dataclass
 class FrameRange:
@@ -264,6 +290,7 @@ class Instrument:
         for obj in self.collection.all_objects:
             location = []
             rotation = []
+            shapeKeysDict = {}
             shapeKeys = []
             material = []
             for fCrv in FCurvesFromObject(obj.animation_curve):
@@ -276,10 +303,33 @@ class Instrument:
                     getType = eval(f"type(bpy.context.scene.objects['{obj.animation_curve.name}']{dataPath})")
                     assert getType == float or getType == int, "Please create type `int` or type `float` custom properties"
                     material.append(fCrv)
-                # elif dataPath == "shape_key":
-                #     shapeKeys.append(fCrv)
+            
+            # first need to get all of this reference object's shape key FCurves
+            for fCrv in shapeKeyFCurvesFromObject(obj.animation_curve):
+                if fCrv.data_path[-5:] == "value":  # we only want it if they have keyframed "value"
+                    # fCrv.data_path returns 'key_blocks["name"].value'.
+                    # 'key_blocks["' will never change and so will '"].value'.
+                    # chopping those off gives us just the name
+                    
+                    name = fCrv.data_path[12:-8]
+                    shapeKeysDict[name] = [fCrv]  # always 1 FCurve for 1 shape key
 
-            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(shapeKeys), tuple(material))
+            # now get this object's shape keys so we can insert keyframes on them
+            for shpKey in shapeKeysFromObject(obj)[0]:  #only want the shape keys, not the basis, see func for more info
+                if shpKey.name in shapeKeysDict:
+                    shapeKeysDict[shpKey.name].append(shpKey)
+            
+            # delete unused shape keys (these are the keys that would be on the reference object)
+            for key in shapeKeysDict.keys():
+                val = shapeKeysDict[key]
+                if len(val) != 2: 
+                    del shapeKeysDict[key]
+                    continue
+                
+                shapeKeys.append(val[0])  # add the FCurve only to the internal list of shapeKeys
+            
+            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), shapeKeysDict, tuple(shapeKeys), tuple(material))
+
         return fCurveDict
 
     def createNoteToObjTable(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:

@@ -55,59 +55,12 @@ def FCurvesFromObject(obj) -> List[bpy.types.FCurve]:
     return list(obj.animation_data.action.fcurves)
 
 def shapeKeyFCurvesFromObject(obj) -> List[bpy.types.FCurve]:
-    if obj.data.shape_keys is None: return []
-    if obj.data.shape_keys.animation_data.action is None: return []
-    
-    return list(obj.data.shape_keys.animation_data.action.fcurves)
-
-# XXX This function is still a WIP.
-def insertKeyframeOnObject(keyObj, refObj, frame, value):
-    # TODO:
-    # better names for these variables
-    # maybe the actual keyframing part should be handedled by the actual animate() methods themselves?
-    # that way they can mutate the value data themselves & evaluate it however they like (such as offsetting objects with locations)
-     
-    fCurves = FCurvesFromObject(refObj)
-    
-    shapeKeyKeyObj = sorted(shapeKeysFromObject(keyObj)[0], key=lambda shapeKey: shapeKey.name)
-    shapeKeysFCurvesRef = shapeKeyFCurvesFromObject(refObj)
-    
-    if len(shapeKeyKeyObj) != 0 and len(shapeKeysFCurvesRef) != 0:
-        shapeKeysDict = dict()
+    with suppress(AttributeError):
+        if obj.data.shape_keys is None: return []
+        if obj.data.shape_keys.animation_data.action is None: return []
         
-        # dict that puts the name of the shape keys and then the actual shapeKey to be keyed
-        for shapeKey in shapeKeyKeyObj:
-            # always will be inserting vals
-            shapeKeysDict[shapeKey.name] = [shapeKey]
-        
-        # now get data from shapeKeysFCurves and add it's reference FCurve (to be evaled from)
-        for shapeFCrv in shapeKeysFCurvesRef:
-            name = shapeFCrv.data_path
-            name = split_path(name)[0].replace("key_blocks", "")[2:-2]
-            
-            if name in shapeKeysDict: 
-                shapeKeysDict[name].append(shapeFCrv)
-            
-        # now we have list of the object to Key and now the FCurve to eval from
-        for key in shapeKeysDict:
-            dictVal = shapeKeysDict[key]
-            if len(dictVal) != 2: continue
-            
-            objToKey = dictVal[0]
-            fCrv = dictVal[1]
-            
-            # keyframing it goes here
-            fCrvEval = fCrv.evaluate(value)
-            objToKey.value = fCrvEval
-            objToKey.keyframe_insert(data_path=fCrv.data_path.split(".")[-1], frame=frame)
-            
-
-    if len(fCurves) != 0:
-        for fCrv in fCurves:
-            fCrvEval = fCrv.evaluate(value)
-            
-            bpy.ops.wm.context_set_value(data_path=f"scene.objects['{keyObj.name}'].{fCrv.data_path}[{fCrv.array_index}]", value=f"{fCrvEval}")
-            keyObj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=frame)
+        return list(obj.data.shape_keys.animation_data.action.fcurves)
+    return []
 
 def cleanKeyframes(obj, channels: Set={"all_channels"}):
     fCurves = FCurvesFromObject(obj)
@@ -115,6 +68,9 @@ def cleanKeyframes(obj, channels: Set={"all_channels"}):
     for fCurve in fCurves:
         if {fCurve.data_path, "all_channels"}.intersection(channels):
             obj.animation_data.action.fcurves.remove(fCurve)
+    
+    for fCurve in shapeKeyFCurvesFromObject(obj):
+        obj.data.shape_keys.animation_data.action.fcurves.remove(fCurve)
 
 def secToFrames(sec: float) -> float:
     bScene = bpy.context.scene
