@@ -98,11 +98,12 @@ def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None)
     for obj in objsToRemove:
         bpy.data.objects.remove(obj, do_unlink=True)
 
-def setInterpolationForLastKeyframe(obj: bpy.types.Object, interpolation: str):
+def setInterpolationForLastKeyframe(obj: bpy.types.Object, interpolation: str, data_path=None):
     with suppress(AttributeError):
         if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
             for fCrv in FCurvesFromObject(obj):
-                fCrv.keyframe_points[-1].interpolation = interpolation
+                if data_path is None or fCrv.data_path == data_path:
+                    fCrv.keyframe_points[-1].interpolation = interpolation
 
 def deleteMarkers(name: str):
     scene = bpy.context.scene

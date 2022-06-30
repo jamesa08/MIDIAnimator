@@ -50,8 +50,13 @@ def register():
         name="Note Number", 
         description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
                     "readable note (C3).",
-        default="C3",
-        options=set()
+        default="C3"
+        # options=set()
+    )
+    bpy.types.Object.note_number_int = bpy.props.IntProperty(
+        name="Note Number Integer", 
+        description="The note number of an object. Integers only. For use elsewhere.",
+        default=60
     )
     bpy.types.Object.animation_curve = bpy.types.Scene.quick_obj_curve = bpy.props.PointerProperty(
         name="Animation Curve", 
@@ -126,6 +131,7 @@ def register():
 
 def unregister():
     del bpy.types.Object.note_number
+    del bpy.types.Object.note_number_int
     del bpy.types.Object.animation_curve
     del bpy.types.Object.animation_curve_index
     del bpy.types.Object.note_hit_time

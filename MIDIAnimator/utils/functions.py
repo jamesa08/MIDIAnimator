@@ -77,10 +77,9 @@ def removeDuplicates(vals: list) -> list:
     """
     return sorted([n for i, n in enumerate(vals) if n not in vals[:i]])
 
-def rotateAroundCircle(angle, radius) -> Tuple[int]:
-    """Takes an angle and a radius and returns it's X & Y.
-    """
-    x = sin(angle) * radius
-    y = cos(angle) * radius
+def rotateAroundCircle(radius, angle) -> Tuple[int]:
+    """Takes a radius (x) and an angle (y) and returns it's X & Y."""
+    x = cos(angle) * radius
+    y = sin(angle) * radius
     
     return x, y

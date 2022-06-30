@@ -240,7 +240,6 @@ class MIDIFile:
             for msg in mido.merge_tracks(midiFile.tracks):
                 time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
                 if msg.type == "set_tempo":
-                    tempo = msg.tempo
                     tempoMap.append((time, msg.tempo))
 
 
@@ -260,6 +259,9 @@ class MIDIFile:
 
             for msg in track:
                 curType = msg.type
+
+                if midiFile.type == 0 and msg.type == "set_tempo":
+                    tempo = msg.tempo
 
                 time += mido.tick2second(msg.time, midiFile.ticks_per_beat,
                                          tempo if midiFile.type == 0 else _closestTempo(tempoMap, time)[1])

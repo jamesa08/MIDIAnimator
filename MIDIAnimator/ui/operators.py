@@ -42,10 +42,10 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
                 self.report({"ERROR"}, f"One of the properties has no data! Please fill any missing data and try again.")
                 return {"CANCELLED"}
 
-        # make sure Animation Curve has FCurves
-        try: FCurvesFromObject(scene.quick_obj_curve)[context.scene.quick_obj_curve_index]
-        except IndexError: self.report({"ERROR"}, "FCurve does not have specified animation index!")
-        except AttributeError: self.report({"ERROR"}, "Object has no animation!")
+        # # make sure Animation Curve has FCurves
+        # try: FCurvesFromObject(scene.quick_obj_curve)[context.scene.quick_obj_curve_index]
+        # except IndexError: self.report({"ERROR"}, "FCurve does not have specified animation index!")
+        # except AttributeError: self.report({"ERROR"}, "Object has no animation!")
 
         # convert String "list" into type list
 
@@ -58,23 +58,27 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
             return {'CANCELLED'}
         
         if note_numbers is not None:
-            assert len(note_numbers) == len(col.all_objects), "Objects and list unbalanced!"
-            
+            if len(note_numbers) != len(col.all_objects):
+                self.report({"ERROR"}, f"Objects and note numbers unbalanced! \nObjects: {len(col.all_objects)}, Note Numbers: {len(note_numbers)}")
+                return {"CANCELLED"}
+
             sortedObjs = sorted(col.all_objects, key=attrgetter('name')) if scene.quick_use_sorted else sorted(col.all_objects, key=col_sort_key)
             
-            return (sorted(note_numbers), sortedObjs)
+            return (note_numbers, sortedObjs)
             
 
     def execute(self, context):
         scene = context.scene
+        if "CANCELLED" in self.preExecute(context): 
+            return {"CANCELLED"}  # make sure this actually cancells
         note_numbers, sortedObjs = self.preExecute(context)
 
         col = scene.quick_obj_col
         col.instrument_type = scene.quick_instrument_type
 
-        context.scene['note_number_list'] = str(sorted(note_numbers))
+        context.scene['note_number_list'] = str(note_numbers)
 
-        for noteNumber, obj in zip(sorted(note_numbers), sortedObjs):
+        for noteNumber, obj in zip(note_numbers, sortedObjs):
             obj['note_number'] = str(noteNumber)
             obj['animation_curve'] = scene.quick_obj_curve
             obj['animation_curve_index'] = scene.quick_obj_curve_index
@@ -83,12 +87,15 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         return {'FINISHED'}
 
     def invoke(self, context, event):
+        if "CANCELLED" in self.preExecute(context): 
+            return {"CANCELLED"}  # make sure this actually cancells
+        
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
         row = self.layout
         note_numbers, sortedObjs = self.preExecute(context)
-        table = self.mapNoteToObjStr(sorted(note_numbers), sortedObjs)
+        table = self.mapNoteToObjStr(note_numbers, sortedObjs)
 
         for line in table.split("\n"):
             row.label(text=line)

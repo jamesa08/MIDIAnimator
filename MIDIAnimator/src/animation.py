@@ -1,13 +1,9 @@
 from __future__ import annotations
 import bpy
-from contextlib import suppress
-from dataclasses import dataclass
-from typing import Callable, List, Tuple, Dict, Optional, Union
+from typing import List, Dict
 
 from .. utils.algorithms import *
-from .. utils.functions import noteToName
-from . MIDIStructure import MIDIFile, MIDITrack, MIDINote
-from .. utils.blender import FCurvesFromObject, deleteMarkers, secToFrames, cleanCollection, setInterpolationForLastKeyframe
+from . MIDIStructure import MIDITrack
 
 class BlenderAnimation:
     """this class acts as a wrapper for GenericTracks/custom tracks"""
@@ -23,8 +19,11 @@ class BlenderAnimation:
         assert isinstance(midiTrack, MIDITrack), "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         
-        insType = objectCollection.instrument_type
+        if objectCollection.instrument_type != "custom" and custom is not None:
+            print(f"WARN: Object Collection {objectCollection.name} not of type custom but custom class passed! Updating instrument type...")
+            objectCollection.instrument_type = "custom"
         
+        insType = objectCollection.instrument_type
         if insType == "projectile": cls = ProjectileInstrument(midiTrack, objectCollection)
         elif insType == "string": cls = StringInstrument(midiTrack, objectCollection)
         elif insType == "custom":

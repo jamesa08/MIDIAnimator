@@ -1,11 +1,13 @@
 from __future__ import annotations
 import bpy
 from dataclasses import dataclass
-from math import floor, ceil
+from math import floor, ceil, radians
 from typing import Dict, List, Tuple, Optional, Union, TYPE_CHECKING
 from mathutils import Vector, Euler
+from contextlib import suppress
 
 from .. utils.blender import *
+from .. utils.functions import rotateAroundCircle
 
 if TYPE_CHECKING:
     from .. src.MIDIStructure import MIDITrack
@@ -112,6 +114,7 @@ class NoteAnimator:
         """
         return self._frameStartOffset, self._frameEndOffset
 
+@dataclass(init=False)
 class ObjectFCurves:
     location: Tuple[bpy.types.FCurve]
     rotation: Tuple[bpy.types.FCurve]
@@ -149,8 +152,8 @@ class FCurveProcessor:
         # when None no keyframe of that type
         self.location = None
         self.rotation = None
-        self.material = None
-        self.shapeKeys = None
+        self.material = {}
+        self.shapeKeys = {}
 
     def applyFCurve(self, delta: int):
         # for fCurve in self.fCurves.location:    
@@ -204,8 +207,9 @@ class FCurveProcessor:
     def insertKeyFrames(self, frame: int):
         if self.location is not None:
             # make the deta location keyframe for self.obj
-            self.obj.delta_location = self.location
-            self.obj.keyframe_insert(data_path="delta_location", frame=frame)
+            self.obj.location = self.location
+            self.obj.keyframe_insert(data_path="location", frame=frame)
+            setInterpolationForLastKeyframe(self.obj, "BEZIER")
         
         if self.rotation is not None:
             self.obj.delta_rotation_euler = self.rotation
@@ -264,27 +268,31 @@ class Instrument:
     """base class for instruments that are played for notes"""
     collection: bpy.types.Collection
     midiTrack: 'MIDITrack'
-    noteToObjTable: Dict[int, bpy.types.Object]
+    noteToNoteAnimatorTable: Dict[int, bpy.types.Object]
     _activeObjectList: List[FrameRange]
     _activeNoteDict: Dict[int, List[FrameRange]]
     _frameStart: int
     _frameEnd: int
     _objFrameRanges: List[FrameRange]
 
-    def __init__(self, midiTrack: 'MIDITrack', collection: bpy.types.Collection):
+    def __init__(self, midiTrack: 'MIDITrack', collection: bpy.types.Collection, override=False):
         self.collection = collection
         self.midiTrack = midiTrack
-        self.noteToObjTable = dict()
-        self.override = False
+        self.noteToNoteAnimatorTable = dict()
+        self.override = override
         self._activeObjectList = []
         self._activeNoteDict = dict()
         self._frameStart = 0
         self._frameEnd = 0
         self._objFrameRanges = []
 
+        if not self.override:
+            self.__post_init__()
+    
+    def __post_init__(self):
         result = self._makeObjToFCurveDict()
-        self.createNoteToObjTable(result)
-
+        self.createNoteToNoteAnimatorTable(result)
+    
     def _makeObjToFCurveDict(self) -> Dict[bpy.types.Object, ObjectFCurves]:
         fCurveDict = {}
         for obj in self.collection.all_objects:
@@ -320,7 +328,7 @@ class Instrument:
                     shapeKeysDict[shpKey.name].append(shpKey)
             
             # delete unused shape keys (these are the keys that would be on the reference object)
-            for key in shapeKeysDict.keys():
+            for key in shapeKeysDict.copy():  # NOTE: .keys() did not work, same error (dict change size during iteration   )
                 val = shapeKeysDict[key]
                 if len(val) != 2: 
                     del shapeKeysDict[key]
@@ -332,13 +340,13 @@ class Instrument:
 
         return fCurveDict
 
-    def createNoteToObjTable(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
+    def createNoteToNoteAnimatorTable(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
             if obj.note_number is None: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            if int(obj.note_number) in self.noteToObjTable: raise RuntimeError(
+            if int(obj.note_number) in self.noteToNoteAnimatorTable: raise RuntimeError(
                 f"There are two objects in the scene with duplicate note numbers.")
             na = NoteAnimator(obj, fCurveDict[obj])
-            self.noteToObjTable[int(obj.note_number)] = na
+            self.noteToNoteAnimatorTable[int(obj.note_number)] = na
 
     def preAnimate(self):
         pass
@@ -348,11 +356,11 @@ class Instrument:
         self.createFrameRanges()
         self.preAnimate()
         self._objFrameRanges.sort(reverse=True)
-
+        assert len(self._objFrameRanges) != 0, "There are no object frames! Are there notes assigned to objects?"
         self._frameStart, self._frameEnd = self._objFrameRanges[-1].startFrame, self._objFrameRanges[0].endFrame
 
     def postFrameLoop(self):
-        self.noteToObjTable = dict()
+        self.noteToNoteAnimatorTable = dict()
         self._activeObjectList = []
         self._activeNoteDict = dict()
         self._objFrameRanges = []
@@ -411,6 +419,13 @@ class Instrument:
             # if we have a cache, get reusable object
             if cache is not None:
                 cachedObj = cache.getObject()
+                # set it's note number (for use with drivers)
+                cachedObj.note_number_int = int(obj.note_number)
+                cachedObj.keyframe_insert(data_path="note_number_int", frame=frame+offset)
+
+                # make last keyframe interpolation constant
+                setInterpolationForLastKeyframe(cachedObj, "CONSTANT")
+                
                 # tell the frameInfo to use the cached object
                 frameInfo.cachedObj = cachedObj
                 # enable cached object in viewport/render
@@ -430,12 +445,16 @@ class Instrument:
             i -= 1
 
     def createFrameRanges(self):
-        assert self.noteToObjTable is not None, "please run createNoteToObjTable first"
+        assert self.noteToNoteAnimatorTable is not None, "please run createNoteToObjTable first"
         result = []
 
         for note in self.midiTrack.notes:
             # lookup obj from note number
-            noteAnimator = self.noteToObjTable[note.noteNumber]
+            try:
+                noteAnimator = self.noteToNoteAnimatorTable[note.noteNumber]
+            except KeyError:
+                print(f"Note {note} has no object!")
+                continue # ignore note, likely just unused
             obj = noteAnimator.obj
 
             try:
@@ -446,8 +465,8 @@ class Instrument:
 
             frame = int(secToFrames(note.timeOn))
             offsets = noteAnimator.frameOffsets()
-            startFrame = int(floor(offsets[0] - hit + frame))
-            endFrame = int(ceil(offsets[1] - hit + frame))
+            startFrame = int(floor(offsets[0] - hit + frame)) - 1
+            endFrame = int(ceil(offsets[1] - hit + frame)) + 1
             result.append(FrameRange(startFrame, endFrame, obj))
 
         self._objFrameRanges = result
@@ -471,7 +490,7 @@ class Instrument:
             processorSet = set()
 
             # get the ObjectFCurves for this note
-            objFCurve = self.noteToObjTable[int(obj.note_number)].animators
+            objFCurve = self.noteToNoteAnimatorTable[int(obj.note_number)].animators
             # make a processor for it
             processor = FCurveProcessor(obj, objFCurve)
             # keep track of all objects that need keyframed
@@ -525,7 +544,7 @@ class ProjectileInstrument(Instrument):
 
         for i in range(maxNumOfProjectiles):
             duplicate = objectCollection.reference_projectile.copy()
-            duplicate.name = f"projectile_{hex(id(self.midiTrack))}_{i}"
+            duplicate.name = f"projectile_{hex(id(objectCollection))}_{i}"
             
             # hide them
             showHideObj(duplicate, True, self._objFrameRanges[0].startFrame)
