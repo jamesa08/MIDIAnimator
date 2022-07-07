@@ -1,11 +1,10 @@
-from .. utils.functions import removeDuplicates, gmProgramToName, _closestTempo
-from .. libs import mido
+from ..utils import removeDuplicates, gmProgramToName, _closestTempo
+from ..libs import mido
 from dataclasses import dataclass
 from typing import List, Tuple, Dict
 
 @dataclass
 class MIDINote:
-
     channel: int
     noteNumber: int
     velocity: int
@@ -17,7 +16,6 @@ class MIDINote:
 
 @dataclass
 class MIDIEvent:
-
     channel: int
     value: float
     time: float
@@ -26,7 +24,6 @@ class MIDIEvent:
         return self.timeOn < other.timeOn
 
 class MIDITrack:
-
     name: str
     
     controlChange: Dict[int, List[MIDIEvent]]

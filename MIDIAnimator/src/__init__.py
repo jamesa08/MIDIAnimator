@@ -1,9 +1,9 @@
 if "bpy" in locals():
     import importlib
-    importlib.reload(MIDIStructure)
+    importlib.reload(midi)
     importlib.reload(animation)
 else:
-    from . import MIDIStructure
+    from ..data_structures import midi
     from . import animation
 
 import bpy

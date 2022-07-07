@@ -2,8 +2,10 @@ from __future__ import annotations
 import bpy
 from typing import List, Dict
 
-from .. utils.algorithms import *
-from . MIDIStructure import MIDITrack
+from . algorithms import *
+from .. utils.loggerSetup import *
+from .. src.instruments import *
+from .. data_structures.midi import MIDITrack
 
 class BlenderAnimation:
     """this class acts as a wrapper for GenericTracks/custom tracks"""
@@ -20,7 +22,7 @@ class BlenderAnimation:
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         
         if objectCollection.instrument_type != "custom" and custom is not None:
-            print(f"WARN: Object Collection {objectCollection.name} not of type custom but custom class passed! Updating instrument type...")
+            logging.warn(f"Object Collection {objectCollection.name} not of type custom but custom class passed! Updating instrument type...")
             objectCollection.instrument_type = "custom"
         
         insType = objectCollection.instrument_type

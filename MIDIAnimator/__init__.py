@@ -36,6 +36,7 @@ else:
     import bpy
     from . src import *
     from . utils import *
+    from . utils.loggerSetup import *
     from . ui import *
     from . ui.operators import SCENE_OT_quick_add_props
     from . ui.panels import VIEW3D_PT_edit_note_information, VIEW3D_PT_edit_instrument_information, VIEW3D_PT_add_notes_quick
@@ -128,6 +129,8 @@ def register():
     
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
+    
+    logger.info("MIDIAnimator registered successfully")
 
 def unregister():
     del bpy.types.Object.note_number
@@ -150,3 +153,5 @@ def unregister():
 
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
+    
+    logging.info("MIDIAnimator unregistered successfully")

@@ -1,5 +1,5 @@
 from ast import literal_eval
-from ..utils.functions import nameToNote, noteToName
+from ..utils import nameToNote, noteToName
 from ..utils.blender import FCurvesFromObject
 from operator import attrgetter
 import bpy

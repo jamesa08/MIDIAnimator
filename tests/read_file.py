@@ -6,7 +6,7 @@ import sys
 sys.path.append(".")
 
 from MIDIAnimator.src.MIDINode import MIDINode
-from MIDIAnimator.src.MIDIStructure import MIDITrack
+from MIDIAnimator.data_structures.midi import MIDITrack
 from MIDIAnimator.libs import mido
 from MIDIAnimator.utils.functions import gmProgramToName, _closestTempo
 
