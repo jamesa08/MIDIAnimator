@@ -68,9 +68,7 @@ class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
         col.label(text=f"Active object: '{obj.name}'")
         col.prop(obj, "note_number")
 
-        row = col.row()
-        row.prop(obj, "animation_curve")
-        row.prop(obj, "animation_curve_index", text="")
+        col.prop(obj, "animation_curve")
         
         if blCol.instrument_type == "projectile":
             col.prop(obj, "note_hit_time")
@@ -119,9 +117,7 @@ class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
         col.prop(scene, "note_number_list")
         col.prop(scene, "quick_obj_col")
 
-        row = col.row()
-        row.prop(scene, "quick_obj_curve")
-        row.prop(scene, "quick_obj_curve_index", text="")
+        col.prop(scene, "quick_obj_curve")
         
         col.prop(scene, "quick_use_sorted")
         

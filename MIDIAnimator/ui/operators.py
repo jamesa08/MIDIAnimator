@@ -35,7 +35,7 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         col = scene.quick_obj_col
 
         # make sure essential vars are filled
-        variables = (scene.quick_obj_col, scene.quick_obj_curve, scene.quick_obj_curve_index)
+        variables = (scene.quick_obj_col, scene.quick_obj_curve)
 
         for v in variables:
             if v is None: 
@@ -81,7 +81,6 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         for noteNumber, obj in zip(note_numbers, sortedObjs):
             obj['note_number'] = str(noteNumber)
             obj['animation_curve'] = scene.quick_obj_curve
-            obj['animation_curve_index'] = scene.quick_obj_curve_index
             obj['note_hit_time'] = scene.quick_note_hit_time
         
         return {'FINISHED'}

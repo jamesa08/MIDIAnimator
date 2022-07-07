@@ -65,12 +65,6 @@ def register():
         type=bpy.types.Object,
         options=set()
     )
-    bpy.types.Object.animation_curve_index = bpy.types.Scene.quick_obj_curve_index = bpy.props.IntProperty(
-        name="Animation Curve Index",
-        description="The FCurve index (which curve in the FCurve to use).",
-        default=0,
-        options=set()
-    )
     bpy.types.Object.note_hit_time = bpy.types.Scene.quick_note_hit_time = bpy.props.IntProperty(
         name="Note Hit Time",
         description="The time in which the ball hits",
@@ -123,7 +117,6 @@ def register():
     )
     bpy.types.Scene.quick_obj_col = bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection to use")
     # bpy.types.Scene.quick_obj_curve = bpy.props.PointerProperty(type=bpy.types.Object, name="Anim Curve")
-    # bpy.types.Scene.quick_obj_curve_index = bpy.props.IntProperty(name="Anim Curve Index", default=0)
     # bpy.types.Scene.quick_note_hit_time = bpy.props.IntProperty(name="Note Hit Time", default=0)
 
     
@@ -136,7 +129,6 @@ def unregister():
     del bpy.types.Object.note_number
     del bpy.types.Object.note_number_int
     del bpy.types.Object.animation_curve
-    del bpy.types.Object.animation_curve_index
     del bpy.types.Object.note_hit_time
     del bpy.types.Collection.instrument_type
 
@@ -147,7 +139,6 @@ def unregister():
     del bpy.types.Scene.quick_instrument_type
     del bpy.types.Scene.quick_obj_col
     del bpy.types.Scene.quick_obj_curve
-    del bpy.types.Scene.quick_obj_curve_index
     del bpy.types.Scene.quick_note_hit_time
     del bpy.types.Scene.quick_use_sorted
 
