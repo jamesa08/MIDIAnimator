@@ -1,5 +1,5 @@
-from ..utils import removeDuplicates, gmProgramToName, _closestTempo
-from ..libs import mido
+from .. utils import removeDuplicates, gmProgramToName, _closestTempo
+from .. libs import mido
 from dataclasses import dataclass
 from typing import List, Tuple, Dict
 

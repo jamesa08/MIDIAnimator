@@ -1,10 +1,13 @@
-import bpy
+from MIDIAnimator.src.animation import BlenderAnimation
+from MIDIAnimator.src.instruments import Instrument
+from MIDIAnimator.data_structures.midi import *
+from MIDIAnimator.utils import mapRange
 from MIDIAnimator.utils.blender import *
-from MIDIAnimator.src.MIDIStructure import MIDIFile, MIDINote, MIDITrack
-from MIDIAnimator.src.animation import BlenderAnimation, Instrument
 from dataclasses import dataclass
-from typing import Dict
 from math import radians
+from typing import Dict
+import bpy
+from mathutils import Vector, Euler
 
 class Settings:
     onSpeed = 60   # ms
@@ -19,6 +22,12 @@ class Settings:
     offslope = _valueDiff / offSpeed
     velocity = 0
      
+@dataclass
+class BlenderKeyframe:
+    location: Vector
+    rotation: Euler
+    frame: float
+
 
 def setKeyframeHandleType(obj: bpy.types.Object, handleType):
     with suppress(AttributeError):
@@ -29,20 +38,24 @@ def setKeyframeHandleType(obj: bpy.types.Object, handleType):
 
 
 class DrumstickInstrument(Instrument): 
-    def __init__(self, midiTrack: 'MIDITrack', collection: bpy.types.Collection):
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
         super().__init__(midiTrack, collection)
         self.override = True  # we want to define how we want to animate it & dont use the API
         self.noteToObjTable = {}
 
+        self.sticks1ListenNotes = [41, 43, 45, 47, 48, 49, 57]
+        self.sticks2ListenNotes = [38, 40, 42, 44, 46, 55]
+
         self.preAnimate()
         # create note table
         self.noteTable = self.createNoteTable(midiTrack)
-        self.createNoteToObjTable()
-        self.keyframeDict = dict()
-    
+        # self.createNoteToObjTable()
+        self.keyframeDict = dict()    
+
     def preAnimate(self):
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)
+        deleteMarkers("debug")
 
     def evalDrumstickMotion(self, curNote: MIDINote, nextNote: MIDINote, index: int) -> None:
 
@@ -154,6 +167,8 @@ class DrumstickInstrument(Instrument):
         outDict = dict()
         for note in track.notes:
             noteNumber = note.noteNumber
+            if noteNumber not in self.sticks1ListenNotes: continue
+
             if noteNumber in outDict:
                 outDict[noteNumber].append(note)
             else:
@@ -178,20 +193,170 @@ class DrumstickInstrument(Instrument):
             keyframeDict[noteNumber] = [valsToWrite]
 
     def animate(self):
-        # writing to the keyframeDict here
-        for noteNumber in self.noteTable:
-            for i, curNote in enumerate(self.noteTable[noteNumber]):
-                # get the nextNote
-                nextNote = self.noteTable[noteNumber][i + 1] if i+1 < len(self.noteTable[noteNumber]) else None
+        drumstickKeyframeDict = {
+            bpy.data.objects['drumstick1L']: []
+        }
+        filteredNotes = []
+        targetsToNoteTable = dict()
 
-                # create keyframe values
-                self.evalDrumstickMotion(curNote, nextNote, i)
+        # filter the notes 
+        for note in self.midiTrack.notes:
+            if note.noteNumber not in self.sticks1ListenNotes: continue
+            filteredNotes.append(note)
+    
+
+        for obj in bpy.data.collections['CubeTargets'].all_objects:
+            note_number = int(obj.note_number)
+            targetsToNoteTable[note_number] = obj
+
+        velocities = []
+        for i, curNote in enumerate(filteredNotes):
+            nextNote = filteredNotes[i + 1] if i+1 < len(filteredNotes) else curNote
+            animLength = nextNote.timeOn - curNote.timeOn
+            v = velocityFromVectors(targetsToNoteTable[curNote.noteNumber].location, targetsToNoteTable[nextNote.noteNumber].location, secToFrames(animLength))
+            velocities.append(v)
+
+        maxV, minV = max(velocities), 0
+
+        # make sticks go to home position on first note
+        obj = bpy.data.objects['drumstick1L']
+        # insert keyframe at 0 (XXX what will happen if notes are at 0?)
+        drumstickKeyframeDict[obj].append(
+                BlenderKeyframe(
+                    location=bpy.data.objects['home_position_1'].location, 
+                    rotation=bpy.data.objects['home_position_1'].rotation_euler,
+                    frame=0
+                )
+        )
+        
+        # calculate time from 0 to the first note (filteredNotes[0])
+
+        homePos = True
+
+        # insert keyframes here
+        alreadyWarn = False
+        for i, curNote in enumerate(filteredNotes):
+            prevNote = filteredNotes[i - 1] if i - 1 != 0 else curNote
+            nextNote = filteredNotes[i + 1] if i+1 < len(filteredNotes) else curNote
+
+            animLength = nextNote.timeOn - curNote.timeOn
+            
+            # return to home pos
+            if animLength >= 5 or i == len(filteredNotes) - 1:
+                obj = bpy.data.objects['drumstick1L']
+                
+                # hold
+                drumstickKeyframeDict[obj].append(
+                    BlenderKeyframe(
+                        location=targetsToNoteTable[curNote.noteNumber].location, 
+                        rotation=targetsToNoteTable[curNote.noteNumber].rotation_euler,
+                        frame=secToFrames(curNote.timeOn + 0.5)
+                    )
+                )
+
+                # move back to home pos
+                drumstickKeyframeDict[obj].append(
+                    BlenderKeyframe(
+                        location=bpy.data.objects['home_position_1'].location, 
+                        rotation=bpy.data.objects['home_position_1'].rotation_euler,
+                        frame=secToFrames(curNote.timeOn + 1.5)
+                    )
+                )
+                homePos = True
+                # continue
+            
+            # print(secToFrames(curNote.timeOn), mapRange(velocities[i], minV, maxV, 0, 5))
+            
+            obj = bpy.data.objects['drumstick1L']
+            drumstickKeyframeDict[obj].append(
+                    BlenderKeyframe(
+                        location=targetsToNoteTable[curNote.noteNumber].location, 
+                        rotation=targetsToNoteTable[curNote.noteNumber].rotation_euler,
+                        frame=secToFrames(curNote.timeOn)
+                    )
+                )
+
+            # write a second key to make the motion feel natural (shortening the length of it)
+            fromVector = targetsToNoteTable[curNote.noteNumber].location
+            fromRot = targetsToNoteTable[curNote.noteNumber].rotation_euler
+            toVector = targetsToNoteTable[nextNote.noteNumber].location
+            
+            if homePos:
+                fromVector = bpy.data.objects['home_position_1'].location
+                fromRot = bpy.data.objects['home_position_1'].rotation_euler
+                homePos = False
+            
+            # first note fix
+            if i == 0:
+                toVector = targetsToNoteTable[curNote.noteNumber].location
+                homePos = False
+
+            delta = timeFromVectors(fromVector, toVector, mapRange(3, minV, maxV, 0, 5))
+            
+            
+            if animLength > framesToSec(delta):    # why does it have to be in framesToSec()???
+                if i == 0:
+                    frame = secToFrames(curNote.timeOn) - delta
+                else:
+                    frame = secToFrames(nextNote.timeOn) - delta
+                
+                drumstickKeyframeDict[obj].append(
+                        BlenderKeyframe(
+                            location=fromVector, 
+                            rotation=fromRot,
+                            frame=frame
+                        )
+                )
+            else:
+                if not alreadyWarn:
+                    print(f"WARNING: your drumsticks will be a little fast (beyond 3 m/s).... might want another drumstick :)")
+                    alreadyWarn = True
+
+
+
+
+
+        # insert actual keyframes
+        for obj in drumstickKeyframeDict:
+            for keyframe in drumstickKeyframeDict[obj]:
+                obj.location = keyframe.location
+                obj.rotation_euler = keyframe.rotation
+
+                obj.keyframe_insert(data_path="location", frame=keyframe.frame)
+                obj.keyframe_insert(data_path="rotation_euler", frame=keyframe.frame)
+            
+        self.animateOld()
+
+    def animateOld(self):
+        # writing to the keyframeDict here
+        filteredNotes = []
+
+        # filter the notes 
+        for note in self.midiTrack.notes:
+            if note.noteNumber not in self.sticks1ListenNotes: continue
+            filteredNotes.append(note)
+
+        
+        # for noteNumber in self.noteTable:
+        for i, curNote in enumerate(filteredNotes):
+            # get the nextNote
+            # nextNote = self.noteTable[noteNumber][i + 1] if i+1 < len(self.noteTable[noteNumber]) else None
+            nextNote = filteredNotes[i + 1] if i+1 < len(filteredNotes) else curNote
+
+            # create keyframe values
+            self.evalDrumstickMotion(curNote, nextNote, i)
+
+            # add debug markers
+            bpy.context.scene.timeline_markers.new("debug", frame=int(secToFrames(curNote.timeOn)))
+                
 
         # iterate over the keyframe dictionary to generate actual keyframes
         keyframeDict = self.keyframeDict
         for key in keyframeDict:
             for time, value, noteNumber, param in keyframeDict[key]:
-                obj = self.noteToObjTable[noteNumber]
+                # if noteNumber not in self.noteToObjTable: continue
+                # obj = self.noteToObjTable[noteNumber]
+                obj = bpy.data.objects['StickLRot']
                 
                 obj.rotation_euler[0] = radians(value)
                 obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(time))
@@ -207,22 +372,32 @@ class DrumstickInstrument(Instrument):
 
 # --------------------------------------------------
 
-file = MIDIFile("/Users/james/Downloads/test_midi.mid")
-testTrack = file.findTrack("test_track")
+#file = MIDIFile("/Users/james/Downloads/test_midi.mid")
+#testTrack = file.findTrack("test_track")
+
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/StickFiguresMIDI.mid")
+testTrack = file._tracks[0]
+# print(testTrack)
 
 drumsticks = bpy.data.collections['DrumstickGimbals']
 
 # quick notes to objs
 scene = bpy.context.scene
 scene.quick_instrument_type = "custom"
-scene.note_number_list = str([60])
+scene.note_number_list = str([1, 2])
 scene.quick_obj_col = bpy.data.collections['DrumstickGimbals']
 scene.quick_obj_curve = bpy.data.objects['ANIM_curve']
-scene.quick_obj_curve_index = 0
 scene.quick_use_sorted = True
+bpy.ops.scene.quick_add_props()
+
+scene.quick_instrument_type = "custom"
+scene.note_number_list = str([38, 41, 42, 43, 45, 47, 48, 49, 57])
+scene.quick_obj_col = bpy.data.collections['CubeTargets']
+scene.quick_obj_curve = bpy.data.objects['ANIM_curve']
+scene.quick_use_sorted = False
 bpy.ops.scene.quick_add_props()
 
 animator = BlenderAnimation()
 animator.addInstrument(midiTrack=testTrack, objectCollection=drumsticks, custom=DrumstickInstrument)  # Drumsticks
-animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['Cubes'])  # Cubes
+# animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['Cubes'])  #Cubes
 animator.animate()

@@ -117,6 +117,19 @@ def distanceFromVectors(point1: Vector, point2: Vector) -> float:
     
     return (point2 - point1).length
 
+def velocityFromVectors(point1: Vector, point2: Vector, frames: float) -> float:
+    """Calculates velocity from 2 vectors given a time"""
+    
+    distance = distanceFromVectors(point1, point2)
+    if frames != 0:
+        return distance / framesToSec(frames)
+    
+    return 0
+
+def timeFromVectors(point1: Vector, point2: Vector, velocity: float) -> float:
+    distance = distanceFromVectors(point1, point2)
+    return distance / velocity
+
 def showHideObj(obj: bpy.types.Object, hide: bool, frame: int):
     obj.hide_viewport = hide
     obj.hide_render = hide

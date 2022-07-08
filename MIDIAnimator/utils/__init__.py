@@ -85,3 +85,6 @@ def rotateAroundCircle(radius, angle) -> Tuple[int]:
     
     return x, y
 
+def mapRange(value, inMin, inMax, outMin, outMax):
+    # https://stackoverflow.com/a/68722109/6576283
+    return outMin + (((value - inMin) / (inMax - inMin)) * (outMax - outMin))
