@@ -313,5 +313,6 @@ class StringInstrument(Instrument):
         self.preAnimate()
 
     def preAnimate(self):
+        bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)

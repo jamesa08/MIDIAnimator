@@ -103,27 +103,3 @@ def animateSine(time: float, startVal: float, endVal: float, duration: float) ->
     time = min(max(time, 0), duration)  # clamps time 
     return -((cos((1 / duration) * pi * time) - 1) * ((endVal - startVal) / 2)) + startVal
 
-
-class Drumstick1Settings:
-    listenNotes = [41, 43, 45, 47, 48, 49, 57, 59]
-    
-    onSpeed = 60   # ms
-    onValue = -1
-    
-    offSpeed = 400  # ms
-    offValue = 0
-    
-    # define values
-    _valueDiff = onValue - offValue
-    onslope = _valueDiff / onSpeed
-    offslope = _valueDiff / offSpeed
-    velocity = 0
-    
-
-class Drumstick:
-    """holds data for the drumstick, and its settings"""
-    onSpeed: float
-    onValue: float
-
-    offSpeed: float
-    offValue: float
