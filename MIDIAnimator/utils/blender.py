@@ -1,36 +1,8 @@
 import bpy
 from contextlib import suppress
-from mathutils import Vector  
+from mathutils import Vector
+from mathutils.bvhtree import BVHTree
 from typing import Any, Tuple, List, Union, Set
-
-def split_path(data_path):
-    '''
-    Split a data_path into parts
-    '''
-
-    # from Jaroslav Jerryno Novotny
-    # https://blender.stackexchange.com/a/42170/23372
-    
-    if not data_path:
-        return []
-
-    # extract names from data_path
-    names = data_path.split('"')[1::2]
-    data_path_no_names = ''.join(data_path.split('"')[0::2])
-
-    # segment into chunks
-    # ID props will be segmented by replacing ][ with ].[
-    data_chunks = data_path_no_names.replace('][', '].[').split('.')
-    # probably regex should be used here and things put into dictionary
-    # so it's clear what chunk is what
-    # depends of use case, the main idea is to extract names, segment, then put back
-
-    # put names back into chunks where [] are
-    for id, chunk in enumerate(data_chunks):
-        if chunk.find('[]') > 0:
-            data_chunks[id] = chunk.replace('[]', '["' + names.pop(0) + '"]')
-
-    return data_chunks
 
 def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
     """gets shape keys from object
@@ -98,7 +70,7 @@ def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None)
     for obj in objsToRemove:
         bpy.data.objects.remove(obj, do_unlink=True)
 
-def setInterpolationForLastKeyframe(obj: bpy.types.Object, interpolation: str, data_path=None):
+def setKeyframeInterpolation(obj: bpy.types.Object, interpolation: str, data_path=None):
     with suppress(AttributeError):
         if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
             for fCrv in FCurvesFromObject(obj):
@@ -135,3 +107,18 @@ def showHideObj(obj: bpy.types.Object, hide: bool, frame: int):
     obj.hide_render = hide
     obj.keyframe_insert(data_path="hide_viewport", frame=frame)
     obj.keyframe_insert(data_path="hide_render", frame=frame)
+
+def worldBoundingBox(obj: bpy.types.Object):
+    """returns the corners of the bounding box of an object in world coordinates"""
+    return [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+
+def objectsOverlap(obj1: bpy.types.Object, obj2: bpy.types.Object) -> bool:
+    """returns True if the object's bounding boxes are overlapping"""
+    vert1 = worldBoundingBox(obj1)
+    vert2 = worldBoundingBox(obj2)
+    faces = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (4, 0, 3, 7)]
+
+    bvh1 = BVHTree.FromPolygons(vert1, faces)
+    bvh2 = BVHTree.FromPolygons(vert2, faces)
+
+    return bool(bvh1.overlap(bvh2))

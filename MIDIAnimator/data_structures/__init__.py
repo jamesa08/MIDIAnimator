@@ -7,7 +7,7 @@ from ..utils.blender import *
 
 class NoteAnimator:
     obj: bpy.types.Object
-    animators: ObjectFCurves
+    fCurves: ObjectFCurves
 
     # how many frames before a note is hit does this need to start animating
     _frameStartOffset: float
@@ -16,7 +16,7 @@ class NoteAnimator:
 
     def __init__(self, obj: bpy.types.Object, animators: ObjectFCurves):
         self.obj = obj
-        self.animators = animators
+        self.fCurves = animators
         # temporary values until we compute in _calculateOffsets()
         self._frameStartOffset = 0.0
         self._frameEndOffset = 0.0
@@ -26,7 +26,7 @@ class NoteAnimator:
     def _calculateOffsets(self):
         # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
         # and the latest animation for the note
-        combined = self.animators.location + self.animators.rotation + self.animators.material + self.animators.shapeKeys
+        combined = self.fCurves.location + self.fCurves.rotation + self.fCurves.material + self.fCurves.shapeKeys
         start, end = None, None
         for fCrv in combined:
             curveStart, curveEnd = fCrv.range()
@@ -84,6 +84,8 @@ class FCurveProcessor:
         self.material = {}
         self.shapeKeys = {}
 
+        self.linkedProcessors = [self]
+
     def applyFCurve(self, delta: int):
         # for fCurve in self.fCurves.location:    
             # do the work in BlenderLocationKeyFrame and set self.location
@@ -136,9 +138,10 @@ class FCurveProcessor:
     def insertKeyFrames(self, frame: int):
         if self.location is not None:
             # make the deta location keyframe for self.obj
+            # summed = sum([processor.location for processor in self.linkedProcessors])  future update
             self.obj.location = self.location
             self.obj.keyframe_insert(data_path="location", frame=frame)
-            setInterpolationForLastKeyframe(self.obj, "BEZIER")
+            setKeyframeInterpolation(self.obj, "BEZIER")
         
         if self.rotation is not None:
             self.obj.delta_rotation_euler = self.rotation
@@ -150,7 +153,7 @@ class FCurveProcessor:
                 exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
                 self.obj.keyframe_insert(data_path=data_path, frame=frame)
 
-        if self.shapeKeys is not None:
+        if len(self.shapeKeys) != 0:
             for shapeName in self.fCurves.shapeKeysDict:
                 shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
 

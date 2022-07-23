@@ -71,33 +71,6 @@ def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
     # after processing all intervals return the computed maximum active count
     return maxCount
 
-def findMaxSticks(track: MIDITrack, sticks: List) -> int:
-    """
-    :param intervals: List[FrameRange]
-    :return int: max number of sticks needed
-    """
-    # keep track of maximum number of active items
-    maxCount = 0
-
-    # number of active items currently
-    activeCount = 0
-    # list of end times for currently active items sorted by the end time
-    endTimesForActive = []
-
-    # for testing code
-    # currentActives = []
-
-    # for each (start frame, end frame) interval for objects
-
-    for stick in sticks:
-        for note in track.notes:
-            if note.noteNumber not in stick.settings.listenNotes: continue
-            print(stick.settings.__name__, note)
-            
-        
-
-    return None
-
 def animateSine(time: float, startVal: float, endVal: float, duration: float) -> float:
     # https://www.desmos.com/calculator/kw2grve25z
     time = min(max(time, 0), duration)  # clamps time 

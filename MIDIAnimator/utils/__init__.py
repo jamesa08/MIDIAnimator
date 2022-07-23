@@ -8,7 +8,8 @@ __all__ = [
 
 from . gmInstrumentMap import _gmInst
 from math import sin, cos
-from typing import Tuple
+from typing import Tuple, List
+from re import search as reSearch
 
 
 def noteToName(nVal: int) -> str:
@@ -35,6 +36,18 @@ def nameToNote(nStr: str) -> int:
     
     names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     return (names.index(nStr[0] + (nStr[1] if nStr[1] == '#' else ''))) + ((int(nStr[2:]) if nStr[1] == '#' else int(nStr[1:])) + 2) * 12
+
+
+def convertNoteNumber(inputStr: str) -> List[int]:
+    """converts a string to an actual type"""
+    if reSearch("^[0-9]+$", inputStr):
+        return [int(inputStr)]
+    elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
+        return [nameToNote(inputStr)]
+    elif "," in inputStr:
+        return [convertNoteNumber(num.strip())[0] for num in inputStr.split(",") if num]
+    else:
+        raise RuntimeError(f"'{inputStr}' has an invalid note number or name.")
 
 
 def gmProgramToName(pcNum: int) -> str:
