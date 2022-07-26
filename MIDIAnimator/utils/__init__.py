@@ -38,25 +38,25 @@ def nameToNote(nStr: str) -> int:
     return (names.index(nStr[0] + (nStr[1] if nStr[1] == '#' else ''))) + ((int(nStr[2:]) if nStr[1] == '#' else int(nStr[1:])) + 2) * 12
 
 
-def convertNoteNumber(inputStr: str) -> List[int]:
+def convertNoteNumbers(inputStr: str):
     """converts a string to an actual type"""
     if reSearch("^[0-9]+$", inputStr):
-        return [int(inputStr)]
+        return (int(inputStr),)
     elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
-        return [nameToNote(inputStr)]
+        return (nameToNote(inputStr),)
     elif "," in inputStr:
-        return [convertNoteNumber(num.strip())[0] for num in inputStr.split(",") if num]
+        return tuple([convertNoteNumbers(num.strip())[0] for num in inputStr.split(",") if num])
     else:
-        raise RuntimeError(f"'{inputStr}' has an invalid note number or name.")
-
+        raise ValueError(f"'{inputStr}' has an invalid note number or name.")
+        
 
 def gmProgramToName(pcNum: int) -> str:
     """Takes a General MIDI program change number from 0-127 and returns the GM instrument name.
 
     :param int pcNum: program change number
     :return str: GM instrument name
-    assert isinstance(pcNum, int), "please pass in a int"
     """
+    assert isinstance(pcNum, int), "please pass in a int"
     assert 0 <= int(pcNum) <= 127, "program change number out of range!" 
     # TODO: is this range correct? check mido
     

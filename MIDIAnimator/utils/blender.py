@@ -4,7 +4,7 @@ from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 from typing import Any, Tuple, List, Union, Set
 
-def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
+def shapeKeysFromObject(obj: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
     """gets shape keys from object
 
     :param bpy.types.Object object: the blender object
@@ -13,12 +13,12 @@ def shapeKeysFromObject(object: bpy.types.Object) -> Tuple[List[bpy.types.ShapeK
     # from Animation Nodes
     # https://github.com/JacquesLucke/animation_nodes/blob/7a74e31fca0e7fce6edefdb8183dc4ac9c5acbfc/animation_nodes/nodes/shape_key/shape_keys_from_object.py
     
-    if object is None: return [], None
-    if object.type not in ("MESH", "CURVE", "LATTICE"): return [], None
-    if object.data.shape_keys is None: return [], None
+    if obj is None: return [], None
+    if obj.type not in ("MESH", "CURVE", "LATTICE"): return [], None
+    if obj.data.shape_keys is None: return [], None
 
-    reference = object.data.shape_keys.reference_key
-    return list(object.data.shape_keys.key_blocks)[1:], reference
+    reference = obj.data.shape_keys.reference_key
+    return list(obj.data.shape_keys.key_blocks)[1:], reference
 
 def FCurvesFromObject(obj) -> List[bpy.types.FCurve]:
     if obj.animation_data is None: return []
@@ -50,11 +50,11 @@ def secToFrames(sec: float) -> float:
     
     return sec * fps
 
-def framesToSec(frame: float) -> float:
+def framesToSec(frames: float) -> float:
     bScene = bpy.context.scene
     fps = bScene.render.fps / bScene.render.fps_base
     
-    return frame / fps
+    return frames / fps
 
 def getExactFps() -> float:
     bScene = bpy.context.scene
@@ -76,6 +76,14 @@ def setKeyframeInterpolation(obj: bpy.types.Object, interpolation: str, data_pat
             for fCrv in FCurvesFromObject(obj):
                 if data_path is None or fCrv.data_path == data_path:
                     fCrv.keyframe_points[-1].interpolation = interpolation
+
+def setKeyframeHandleType(obj: bpy.types.Object, handleType, data_path=None):
+    with suppress(AttributeError):
+        if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
+            for fCrv in FCurvesFromObject(obj):
+                if data_path is None or fCrv.data_path == data_path:
+                    fCrv.keyframe_points[-1].handle_left_type = handleType
+                    fCrv.keyframe_points[-1].handle_right_type = handleType
 
 def deleteMarkers(name: str):
     scene = bpy.context.scene

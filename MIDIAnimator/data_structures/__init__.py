@@ -5,17 +5,20 @@ from typing import Tuple, List, Dict, Union, Optional
 from mathutils import Vector, Euler
 from ..utils.blender import *
 
-class NoteAnimator:
+@dataclass(init=False)
+class BlenderObject:
     obj: bpy.types.Object
+    noteNumbers: tuple
     fCurves: ObjectFCurves
-
+        
     # how many frames before a note is hit does this need to start animating
     _frameStartOffset: float
     # how many frames after a note is hit does it continue animating
     _frameEndOffset: float
 
-    def __init__(self, obj: bpy.types.Object, animators: ObjectFCurves):
+    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, animators: ObjectFCurves):
         self.obj = obj
+        self.noteNumbers = noteNumbers
         self.fCurves = animators
         # temporary values until we compute in _calculateOffsets()
         self._frameStartOffset = 0.0
@@ -160,6 +163,9 @@ class FCurveProcessor:
                 shapeKey.value = self.shapeKeys[shapeName]
                 shapeKey.keyframe_insert(data_path="value", frame=frame)
 
+    def __repr__(self) -> str:
+        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.material} {self.shapeKeys} {self.linkedProcessors}"
+
 @dataclass
 class FrameRange:
     """
@@ -167,7 +173,7 @@ class FrameRange:
     """
     startFrame: int
     endFrame: int
-    obj: Optional[bpy.types.Object]
+    bObj: BlenderObject
 
     def __post_init__(self):
         self.cachedObj: Optional[bpy.types.Object] = None

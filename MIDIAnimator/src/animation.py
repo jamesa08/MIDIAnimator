@@ -14,7 +14,7 @@ class BlenderAnimation:
     def __init__(self):
         self._instruments = []
 
-    def addInstrument(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=dict()):
+    def addInstrument(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=None):
         """ make a GenericInstrumnet subclass and add it into internal track list 
             cache only supported for type `projectile` instruments
         """

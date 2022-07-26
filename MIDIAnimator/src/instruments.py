@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pprint import pprint
 import bpy
 from dataclasses import dataclass
 from math import floor, ceil, radians
@@ -10,6 +11,7 @@ from .. utils.loggerSetup import *
 from .. data_structures import *
 from .. utils.blender import *
 from . algorithms import *
+from .. utils import convertNoteNumbers
 
 
 if TYPE_CHECKING:
@@ -20,7 +22,7 @@ class Instrument:
     """base class for instruments that are played for notes"""
     collection: bpy.types.Collection
     midiTrack: MIDITrack
-    noteToNoteAnimatorTable: Dict[int, bpy.types.Object]
+    noteToBlenderObject: Dict[int, bpy.types.Object]
     _activeObjectList: List[FrameRange]
     _activeNoteDict: Dict[int, List[FrameRange]]
     _frameStart: int
@@ -30,7 +32,7 @@ class Instrument:
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, override=False):
         self.collection = collection
         self.midiTrack = midiTrack
-        self.noteToNoteAnimatorTable = dict()
+        self.noteToBlenderObject = dict()
         self.override = override
         self._activeObjectList = []
         self._activeNoteDict = dict()
@@ -43,7 +45,7 @@ class Instrument:
     
     def __post_init__(self):
         result = self._makeObjToFCurveDict()
-        self.createNoteToNoteAnimatorTable(result)
+        self.createNoteToBlenderObject(result)
     
     def _makeObjToFCurveDict(self) -> Dict[bpy.types.Object, ObjectFCurves]:
         fCurveDict = {}
@@ -92,15 +94,16 @@ class Instrument:
 
         return fCurveDict
 
-    def createNoteToNoteAnimatorTable(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
+    def createNoteToBlenderObject(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
             if obj.note_number is None or not obj.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            na = NoteAnimator(obj, fCurveDict[obj])
-
-            if int(obj.note_number) in self.noteToNoteAnimatorTable:
-                self.noteToNoteAnimatorTable[int(obj.note_number)].append(na)
-            else:
-                self.noteToNoteAnimatorTable[int(obj.note_number)] = [na]
+            bObj = BlenderObject(obj, convertNoteNumbers(obj.note_number), fCurveDict[obj])
+            
+            for noteNumber in bObj.noteNumbers:
+                if noteNumber in self.noteToBlenderObject:
+                    self.noteToBlenderObject[noteNumber].append(bObj)
+                else:
+                    self.noteToBlenderObject[noteNumber] = [bObj]
 
     def preAnimate(self):
         pass
@@ -110,11 +113,11 @@ class Instrument:
         self.createFrameRanges()
         self.preAnimate()
         self._objFrameRanges.sort(reverse=True)
-        assert len(self._objFrameRanges) != 0, "There are no object frames! Are there notes assigned to objects?"
+        assert len(self._objFrameRanges) != 0, "ERROR: There are no object frames! Are there notes assigned to objects?"
         self._frameStart, self._frameEnd = self._objFrameRanges[-1].startFrame, self._objFrameRanges[0].endFrame
 
     def postFrameLoop(self):
-        self.noteToNoteAnimatorTable = dict()
+        self.noteToBlenderObject = dict()
         self._activeObjectList = []
         self._activeNoteDict = dict()
         self._objFrameRanges = []
@@ -143,7 +146,9 @@ class Instrument:
         # delete/return to cache for old objects
         for frameInfo in self._activeObjectList:
             objEndFrame = frameInfo.endFrame
-            obj = frameInfo.obj
+            bObj = frameInfo.bObj
+            noteNumbers = bObj.noteNumbers
+            obj = bObj.obj
             cachedObj = frameInfo.cachedObj
 
             if objEndFrame >= frame:
@@ -151,7 +156,8 @@ class Instrument:
             else:
                 # this note is no longer being played
                 # remove from activeNoteDict
-                self._activeNoteDict[int(obj.note_number)].remove(frameInfo)
+                for noteNumber in noteNumbers:
+                    self._activeNoteDict[noteNumber].remove(frameInfo)
 
                 # return object to cache and hide it
                 if cache is not None and cachedObj is not None:
@@ -167,14 +173,17 @@ class Instrument:
 
         while i >= 0 and self._objFrameRanges[i].startFrame <= frame:
             frameInfo = self._objFrameRanges[i]
-            obj = frameInfo.obj
+            bObj = frameInfo.bObj
+            obj = bObj.obj
+            noteNumbers = bObj.noteNumbers
 
             # if we have a cache, get reusable object
             if cache is not None:
                 cachedObj = cache.getObject()
                 # set it's note number (for use with drivers)
-                cachedObj.note_number_int = int(obj.note_number)
-                cachedObj.keyframe_insert(data_path="note_number_int", frame=frame+offset)
+                if len(noteNumbers) == 1:
+                    cachedObj.note_number_int = noteNumbers[0]
+                    cachedObj.keyframe_insert(data_path="note_number_int", frame=frame+offset)
 
                 # make last keyframe interpolation constant
                 setKeyframeInterpolation(cachedObj, "CONSTANT")
@@ -188,29 +197,30 @@ class Instrument:
             self._activeObjectList.append(frameInfo)
 
             # update dictionary that keeps track of notes currently being animated
-            if int(obj.note_number) in self._activeNoteDict:
-                self._activeNoteDict[int(obj.note_number)].append(frameInfo)
-            else:
-                self._activeNoteDict[int(obj.note_number)] = [frameInfo]
+            for noteNumber in noteNumbers:
+                if noteNumber in self._activeNoteDict:
+                    self._activeNoteDict[noteNumber].append(frameInfo)
+                else:
+                    self._activeNoteDict[noteNumber] = [frameInfo]
 
             # we added it to active list so have next iteration check next frame range in reverse sorted order
             self._objFrameRanges.pop()
             i -= 1
 
     def createFrameRanges(self):
-        assert self.noteToNoteAnimatorTable is not None, "please run createNoteToObjTable first"
+        assert self.noteToBlenderObject is not None, "please run noteToBlenderObject() first"
         result = []
         warnNoteNumbers = set()
         for note in self.midiTrack.notes:
             # lookup obj from note number
-            if note.noteNumber in self.noteToNoteAnimatorTable:
-                noteAnimators = self.noteToNoteAnimatorTable[note.noteNumber]
+            if note.noteNumber in self.noteToBlenderObject:
+                bObjs = self.noteToBlenderObject[note.noteNumber]
             else:
                 warnNoteNumbers.add(note.noteNumber)
                 continue # ignore note, likely just unused
             
-            for noteAnimator in noteAnimators:
-                obj = noteAnimator.obj
+            for bObj in bObjs:
+                obj = bObj.obj
 
                 try:
                     hit = obj.note_hit_time
@@ -219,10 +229,10 @@ class Instrument:
                     hit = 0
 
                 frame = int(secToFrames(note.timeOn))
-                offsets = noteAnimator.frameOffsets()
+                offsets = bObj.frameOffsets()
                 startFrame = int(floor(offsets[0] - hit + frame)) - 1
                 endFrame = int(ceil(offsets[1] - hit + frame)) + 1
-                result.append(FrameRange(startFrame, endFrame, obj))
+                result.append(FrameRange(startFrame, endFrame, bObj))
         
         if warnNoteNumbers:
             print(f"WARNING: Note Number(s) {warnNoteNumbers} have no object(s) for collection '{self.collection.name}'!")
@@ -233,29 +243,33 @@ class Instrument:
         # each cached object needs a separate FCurveProcessor since the same note can be "in progress" more than
         # once for a given frame
         cacheObjectProcessors = {}
-
+        print()
+        print(frame)
         # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
             # if finished playing all instances of this note, skip to next note
-            if len(self._activeNoteDict[noteNumber]) <= 0:
+            # TODO see if this is what is breaking the last note? I think it is
+            if len(self._activeNoteDict[noteNumber]) == 0:
                 continue
 
             # for non projectiles, this will be the same object each through the inner for loop
+            
             frameInfo = self._activeNoteDict[noteNumber][0]
-            obj = frameInfo.obj
+            bObj = frameInfo.bObj
+            obj = bObj.obj
 
             # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
             processorSet = set()
-
-            for noteAnimator in self.noteToNoteAnimatorTable[int(obj.note_number)]:
+            for bObj in self.noteToBlenderObject[noteNumber]:
                 # get the ObjectFCurves for this note
-                objFCurve = noteAnimator.fCurves
+                objFCurve = bObj.fCurves
                 # make a processor for it
                 processor = FCurveProcessor(obj, objFCurve)
                 # keep track of all objects that need keyframed
                 processorSet.add(processor)
             
                 for frameInfo in self._activeNoteDict[noteNumber]:
+                    obj = frameInfo.bObj.obj
                     # check if we are animating a cached object for this
                     cachedObj = frameInfo.cachedObj
                     if cachedObj is not None:
