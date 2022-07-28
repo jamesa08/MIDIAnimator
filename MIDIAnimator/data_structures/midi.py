@@ -1,7 +1,9 @@
+from __future__ import annotations
 from .. utils import removeDuplicates, gmProgramToName, _closestTempo
 from .. libs import mido
 from dataclasses import dataclass
 from typing import List, Tuple, Dict
+from bpy.path import abspath
 
 @dataclass
 class MIDINote:
@@ -183,6 +185,22 @@ class MIDITrack:
         
         return "".join(out)
 
+    def __add__(self, other) -> MIDITrack:
+        print(f"INFO: Attempting to merge tracks '{self.name}' & '{other.name}' ...")
+        addedTrack = MIDITrack(f"{self.name} & {other.name}")
+
+        addedTrack.notes = sorted(self.notes + other.notes)
+        
+        controlChangeCloned = self.controlChange.copy()
+        controlChangeCloned.update(other.controlChange)
+
+        addedTrack.controlChange = controlChangeCloned
+        
+        addedTrack.pitchweel = sorted(self.pitchwheel + other.pitchwheel)
+        addedTrack.aftertouch = sorted(self.aftertouch + other.aftertouch)
+        
+        return addedTrack
+
     def __repr__(self) -> str:
         type_ = type(self)
         module = type_.__module__
@@ -216,7 +234,7 @@ class MIDIFile:
         :return: list of MIDITracks
         """
 
-        midiFile = mido.MidiFile(file)
+        midiFile = mido.MidiFile(abspath(file))
 
         assert midiFile.type in range(2), "Type 2 MIDI Files are not supported!"
 
@@ -326,6 +344,11 @@ class MIDIFile:
     
     def listTrackNames(self) -> List[str]:
         return [str(track.name) for track in self._tracks]
+    
+    def mergeTracks(self, track1: MIDITrack, track2: MIDITrack, name=None):
+        merged = track1 + track2
+        if name: merged.name = name
+        return merged
 
     def __str__(self):
         out = []
