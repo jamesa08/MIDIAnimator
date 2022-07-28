@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pprint import pprint
-from MIDIAnimator.src.animation import BlenderAnimation
+from MIDIAnimator.src.animation import MIDIAnimatorNode
 from MIDIAnimator.src.instruments import Instrument
 from MIDIAnimator.data_structures.midi import *
 from MIDIAnimator.utils.blender import *
@@ -701,7 +701,7 @@ settings = {
 }
 
 
-animator = BlenderAnimation()
+animator = MIDIAnimatorNode()
 animator.addInstrument(midiTrack=testTrack, objectCollection=drumsticks, custom=DrumstickInstrumentNew, customVars=settings)  # Drumsticks
 # animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['Cubes'])  #Cubes
 animator.animate()

@@ -7,7 +7,7 @@ from .. utils.loggerSetup import *
 from .. src.instruments import *
 from .. data_structures.midi import MIDITrack
 
-class BlenderAnimation:
+class MIDIAnimatorNode:
     """this class acts as a wrapper for GenericTracks/custom tracks"""
     _instruments: List[Instrument]
 

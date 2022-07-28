@@ -2,7 +2,7 @@ from __future__ import annotations
 import bpy
 from MIDIAnimator.utils.blender import *
 from MIDIAnimator.data_structures.midi import *
-from MIDIAnimator.src.animation import BlenderAnimation, Instrument
+from MIDIAnimator.src.animation import MIDIAnimatorNode, Instrument
 from dataclasses import dataclass
 from typing import Dict
 from math import radians
@@ -234,7 +234,7 @@ testTrack = file.findTrack("MIDI Region")
 
 hiHats = bpy.data.collections['Hi-Hats']
 
-animator = BlenderAnimation()
+animator = MIDIAnimatorNode()
 animator.addInstrument(midiTrack=testTrack, objectCollection=hiHats, custom=HiHatInstrument)
 animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['cubes'])
 animator.animate()
