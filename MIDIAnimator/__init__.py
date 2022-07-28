@@ -15,13 +15,13 @@ bl_info = {
     "name": "MIDI Animator",
     "description": "Animate objects with MIDI.",
     "author": "James Alt",
-    "version": (0, 0, 1),
-    "blender": (2, 91, 0),
+    "version": (1, 0, 0),
+    "blender": (3, 0, 0),
     "location": "Scripting Space",
     "doc_url": "https://midianimatordocs.readthedocs.io/en/latest/",
-    "tracker_url": "https://github.com/imacj/MIDIAnimator/issues",
+    "tracker_url": "https://github.com/jamesa08/MIDIAnimator/issues",
     "warning": "",
-    "support": "TESTING",
+    "support": "COMMUNITY",
     "category": "Animation"
 }
 
