@@ -243,8 +243,6 @@ class Instrument:
         # each cached object needs a separate FCurveProcessor since the same note can be "in progress" more than
         # once for a given frame
         cacheObjectProcessors = {}
-        print()
-        print(frame)
         # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
             # if finished playing all instances of this note, skip to next note
