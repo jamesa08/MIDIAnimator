@@ -42,9 +42,7 @@ class VIEW3D_PT_edit_instrument_information(MIDIAniamtorPanel, bpy.types.Panel):
 
             if blCol.projectile_collection is not None:
                 col.prop(blCol, "reference_projectile")  # TODO: can there be a way to filter based on projectile_collection?
-        
-        elif blCol.instrument_type == "string":
-            col.label(text="Coming soon.")
+
 
 class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
     bl_label = "Edit Note Information"

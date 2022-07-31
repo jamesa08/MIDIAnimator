@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Tuple, List, Dict, Union, Optional
 from mathutils import Vector, Euler
 from ..utils.blender import *
+from numpy import add as npAdd
 
 @dataclass(init=False)
 class BlenderObject:
@@ -31,12 +32,14 @@ class BlenderObject:
         # and the latest animation for the note
         combined = self.fCurves.location + self.fCurves.rotation + self.fCurves.material + self.fCurves.shapeKeys
         start, end = None, None
+        
         for fCrv in combined:
             curveStart, curveEnd = fCrv.range()
             if start is None or curveStart < start:
                 start = curveStart
             if end is None or curveEnd > end:
                 end = curveEnd
+        
         self._frameStartOffset = start
         self._frameEndOffset = end
 
@@ -46,23 +49,19 @@ class BlenderObject:
         """
         return self._frameStartOffset, self._frameEndOffset
 
-@dataclass(init=False)
+@dataclass
 class ObjectFCurves:
-    location: Tuple[bpy.types.FCurve]
-    rotation: Tuple[bpy.types.FCurve]
-    material: Tuple[bpy.types.FCurve]
+    location: Tuple[bpy.types.FCurve] = ()
+    rotation: Tuple[bpy.types.FCurve] = ()
+    material: Tuple[bpy.types.FCurve] = ()
     
     # key= the "to keyframe" object's shape key's name, value= a list \
     # (index 0 = reference object shape key FCurves, index 1 = the "to keyframe" object's shape key)
-    shapeKeysDict: Dict[str, List[bpy.types.FCurve, bpy.types.ShapeKey]]
-    shapeKeys: Tuple[bpy.types.FCurve]  # a list of the reference object's shape keys FCurves
+    shapeKeysDict: Dict[str, List[bpy.types.FCurve, bpy.types.ShapeKey]] = ()
+    shapeKeys: Tuple[bpy.types.FCurve] = ()  # a list of the reference object's shape keys FCurves
 
-    def __init__(self, location = (), rotation = (), shapeKeysDict = (), shapeKeys = (), material = ()):
-        self.location = location
-        self.rotation = rotation
-        self.shapeKeysDict = shapeKeysDict
-        self.shapeKeys = shapeKeys
-        self.material = material
+    origLoc: Vector = Vector()
+    origRot: Euler = Euler()
 
 class FCurveProcessor:
     obj: bpy.types.Object
@@ -82,22 +81,19 @@ class FCurveProcessor:
         self.fCurves = fCurves
         self.locationObject = locationObject
         # when None no keyframe of that type
-        self.location = None
-        self.rotation = None
+        self.location = Vector()
+        self.rotation = Euler()
         self.material = {}
         self.shapeKeys = {}
 
-        self.linkedProcessors = [self]
-
     def applyFCurve(self, delta: int):
-        # for fCurve in self.fCurves.location:    
-            # do the work in BlenderLocationKeyFrame and set self.location
         if len(self.fCurves.location) != 0:
             if self.locationObject is None:
-                location = self.obj.location.copy()
+                # location = self.obj.location.copy()
+                location = self.location
             else:
                 location = self.locationObject.location.copy()
-
+            
             for fCurve in self.fCurves.location:
                 i = fCurve.array_index
                 val = fCurve.evaluate(delta)
@@ -107,12 +103,15 @@ class FCurveProcessor:
             self.location = location
 
         if len(self.fCurves.rotation) != 0:
-            # do the work in BlenderRotationKeyFrame and add to self.rotation
+            # if self.rotation is None:
+            #     rotation = self.obj.rotation_euler.copy()
+            # else:
+            #     rotation = self.rotation
             if self.rotation is None:
-                rotation = self.obj.rotation_euler.copy()
+                rotation = Euler()
             else:
                 rotation = self.rotation
-
+            
             for fCurve in self.fCurves.rotation:
                 i = fCurve.array_index
                 val = fCurve.evaluate(delta)
@@ -139,32 +138,35 @@ class FCurveProcessor:
                     self.shapeKeys[shapeName] = val
 
     def insertKeyFrames(self, frame: int):
-        if self.location is not None:
-            # make the deta location keyframe for self.obj
+        if len(self.fCurves.location) != 0:
             # summed = sum([processor.location for processor in self.linkedProcessors])  future update
-            self.obj.location = self.location
+            if self.locationObject is None:
+                self.obj.location = npAdd(self.location, self.fCurves.origLoc)
+            else:
+                self.obj.location = self.location
+
             self.obj.keyframe_insert(data_path="location", frame=frame)
             setKeyframeInterpolation(self.obj, "BEZIER")
         
-        if self.rotation is not None:
-            self.obj.delta_rotation_euler = self.rotation
-            self.obj.keyframe_insert(data_path="delta_rotation_euler", frame=frame)
+        if len(self.fCurves.rotation) != 0:
+            self.obj.rotation_euler = npAdd(self.rotation, self.fCurves.origRot)
+            self.obj.keyframe_insert(data_path="rotation_euler", frame=frame)
         
-        if self.material is not None:
+        if len(self.fCurves.material) != 0:
             for data_path in self.material:
                 val = self.material[data_path]
                 exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
                 self.obj.keyframe_insert(data_path=data_path, frame=frame)
 
-        if len(self.shapeKeys) != 0:
+        if len(self.fCurves.shapeKeys) != 0:
             for shapeName in self.fCurves.shapeKeysDict:
                 shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
-
+                print(self.shapeKeys)
                 shapeKey.value = self.shapeKeys[shapeName]
                 shapeKey.keyframe_insert(data_path="value", frame=frame)
 
     def __repr__(self) -> str:
-        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.material} {self.shapeKeys} {self.linkedProcessors}"
+        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.material} {self.shapeKeys}"
 
 @dataclass
 class FrameRange:

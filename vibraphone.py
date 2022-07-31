@@ -175,28 +175,18 @@ class VibraphoneProjectileInstrument(Instrument):
         # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
             # if finished playing all instances of this note, skip to next note
-            # TODO see if this is what is breaking the last note? I think it is
             if len(self._activeNoteDict[noteNumber]) == 0:
                 continue
-
-            # for non projectiles, this will be the same object each through the inner for loop
-            
-            frameInfo = self._activeNoteDict[noteNumber][0]
-            bObj = frameInfo.bObj
-            obj = bObj.obj
 
             # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
             processorSet = set()
             for bObj in self.noteToBlenderObject[noteNumber]:
-                # get the ObjectFCurves for this note
-                objFCurve = bObj.fCurves
-                # make a processor for it
-                processor = FCurveProcessorNew(obj, objFCurve)
-                # keep track of all objects that need keyframed
-                processorSet.add(processor)
-            
+                processor = FCurveProcessorNew(bObj.obj, bObj.fCurves)
+
                 for frameInfo in self._activeNoteDict[noteNumber]:
-                    obj = frameInfo.bObj.obj
+                    if frameInfo.bObj.obj != bObj.obj: continue
+                    processorSet.add(processor)
+
                     # check if we are animating a cached object for this
                     cachedObj = frameInfo.cachedObj
                     if cachedObj is not None:
@@ -206,7 +196,7 @@ class VibraphoneProjectileInstrument(Instrument):
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessorNew(cachedObj, objFCurve, obj)
+                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.fCurves, frameInfo.bObj.obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 
@@ -214,6 +204,7 @@ class VibraphoneProjectileInstrument(Instrument):
                     # need this step for cymbals since we need to add the FCurves for each instance of the note
                     objStartFrame = frameInfo.startFrame
                     delta = frame - objStartFrame
+                    # assert frameInfo.bObj.obj == bObj.obj, f"{frameInfo.bObj.obj=} and {bObj.obj=} are not the same!"
                     processor.applyFCurve(delta)
 
             # for each object (could be multiple cached objects) insert the key frame
@@ -269,7 +260,7 @@ class VibraphoneInstrument(Instrument):
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessorNew(cachedObj, objFCurve, obj)
+                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.fCurves, obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 
@@ -284,7 +275,8 @@ class VibraphoneInstrument(Instrument):
                 p.insertKeyFrames(frame + offset)
 
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pd1_vibe.mid")
 
 tracks = file.getMIDITracks()
 vibeTrack = file.findTrack("Vibraphone")

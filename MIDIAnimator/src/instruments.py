@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pprint import pprint
+from pprint import pformat, pprint
 import bpy
 from dataclasses import dataclass
 from math import floor, ceil, radians
@@ -49,9 +49,12 @@ class Instrument:
     
     def _makeObjToFCurveDict(self) -> Dict[bpy.types.Object, ObjectFCurves]:
         fCurveDict = {}
+        bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
             location = []
             rotation = []
+            origLoc = obj.location.copy()
+            origRot = obj.rotation_euler.copy()
             shapeKeysDict = {}
             shapeKeys = []
             material = []
@@ -89,9 +92,9 @@ class Instrument:
                     continue
                 
                 shapeKeys.append(val[0])  # add the FCurve only to the internal list of shapeKeys
-            
-            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), shapeKeysDict, tuple(shapeKeys), tuple(material))
 
+            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(material), shapeKeysDict, tuple(shapeKeys), origLoc, origRot)
+       
         return fCurveDict
 
     def createNoteToBlenderObject(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
@@ -104,6 +107,7 @@ class Instrument:
                     self.noteToBlenderObject[noteNumber].append(bObj)
                 else:
                     self.noteToBlenderObject[noteNumber] = [bObj]
+        
 
     def preAnimate(self):
         pass
@@ -246,28 +250,18 @@ class Instrument:
         # for this note, iterate over all frame ranges for the note being played with objects still moving
         for noteNumber in self._activeNoteDict:
             # if finished playing all instances of this note, skip to next note
-            # TODO see if this is what is breaking the last note? I think it is
             if len(self._activeNoteDict[noteNumber]) == 0:
                 continue
-
-            # for non projectiles, this will be the same object each through the inner for loop
-            
-            frameInfo = self._activeNoteDict[noteNumber][0]
-            bObj = frameInfo.bObj
-            obj = bObj.obj
 
             # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
             processorSet = set()
             for bObj in self.noteToBlenderObject[noteNumber]:
-                # get the ObjectFCurves for this note
-                objFCurve = bObj.fCurves
-                # make a processor for it
-                processor = FCurveProcessor(obj, objFCurve)
-                # keep track of all objects that need keyframed
-                processorSet.add(processor)
-            
+                processor = FCurveProcessor(bObj.obj, bObj.fCurves)
+
                 for frameInfo in self._activeNoteDict[noteNumber]:
-                    obj = frameInfo.bObj.obj
+                    if frameInfo.bObj.obj != bObj.obj: continue
+                    processorSet.add(processor)
+
                     # check if we are animating a cached object for this
                     cachedObj = frameInfo.cachedObj
                     if cachedObj is not None:
@@ -277,7 +271,7 @@ class Instrument:
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessor(cachedObj, objFCurve, obj)
+                            processor = FCurveProcessor(cachedObj, frameInfo.bObj.fCurves, frameInfo.bObj.obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 
@@ -285,6 +279,7 @@ class Instrument:
                     # need this step for cymbals since we need to add the FCurves for each instance of the note
                     objStartFrame = frameInfo.startFrame
                     delta = frame - objStartFrame
+                    # assert frameInfo.bObj.obj == bObj.obj, f"{frameInfo.bObj.obj=} and {bObj.obj=} are not the same!"
                     processor.applyFCurve(delta)
 
             # for each object (could be multiple cached objects) insert the key frame
