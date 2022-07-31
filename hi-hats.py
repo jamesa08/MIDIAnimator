@@ -45,6 +45,7 @@ class HiHatInstrument(Instrument):
         self.hiHatNotes = self.createHiHatNotes(midiTrack)
         self.getHiHatObjs()
         self.keyframes = []
+        self.topOrigLoc = self.hiHatTopObj.location.copy()
 
         # thank you to TheZacher5645 in his work for figuring out the hi-hat motion
         self.hiHatAnims = {
@@ -63,8 +64,8 @@ class HiHatInstrument(Instrument):
                 KeyframeValue(seconds=0, value=0)
             ),
             "hat-pedal2": (
-                KeyframeValue(seconds=-0.2027, value=0),
-                KeyframeValue(seconds=-0.10135, value=1),
+                KeyframeValue(seconds=-0.2027*1.4, value=0),
+                KeyframeValue(seconds=-0.10135*1.1, value=1),
                 KeyframeValue(seconds=0, value=0)
             ),
             "end": (
@@ -183,7 +184,7 @@ class HiHatInstrument(Instrument):
         for note in track.notes:
             noteNumber = note.noteNumber
             if noteNumber not in {Settings.hiHatClosed, Settings.hiHatPedal, Settings.hiHatOpen}: continue
-            bpy.context.scene.timeline_markers.new(name="debug", frame=int(secToFrames(note.timeOn)))
+            # bpy.context.scene.timeline_markers.new(name="debug", frame=int(secToFrames(note.timeOn)))
 
             hiHatNotes.append(note)
         
@@ -216,7 +217,7 @@ class HiHatInstrument(Instrument):
         for time, value, noteNumber, handleType, hit in keyframes:
             obj = self.hiHatTopObj
             if not hit:
-                obj.location[2] = value # add it to itself?
+                obj.location[2] = (value * 0.8) + self.topOrigLoc.z # add it to itself?
                 obj.keyframe_insert(data_path="location", index=2, frame=secToFrames(time))
             
             if hit:
@@ -229,12 +230,16 @@ class HiHatInstrument(Instrument):
 
 # --------------------------------------------------
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/Drums_new.mid")
-testTrack = file.findTrack("MIDI Region")
+# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/Drums_new.mid")
+# drumTrack = file.findTrack("MIDI Region")
 
-hiHats = bpy.data.collections['Hi-Hats']
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+drumTrack = file.findTrack("Drums")
+
+# hiHats = bpy.data.collections['Hi-Hats']
+hiHats = bpy.data.collections['DrumsHH']
 
 animator = MIDIAnimatorNode()
-animator.addInstrument(midiTrack=testTrack, objectCollection=hiHats, custom=HiHatInstrument)
-animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['cubes'])
+animator.addInstrument(midiTrack=drumTrack, objectCollection=hiHats, custom=HiHatInstrument)
+# animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['cubes'])
 animator.animate()

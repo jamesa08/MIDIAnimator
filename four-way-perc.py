@@ -2,7 +2,8 @@ from __future__ import annotations
 import bpy
 from MIDIAnimator.utils.blender import *
 from MIDIAnimator.data_structures.midi import *
-from MIDIAnimator.src.animation import MIDIAnimatorNode, Instrument
+from MIDIAnimator.src.animation import *
+from MIDIAnimator.src.instruments import *
 from dataclasses import dataclass
 from typing import Dict
 from math import radians
@@ -272,12 +273,11 @@ class FourWayPercussion(Instrument):
 
 # --------------------------------------------------
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/Drums_new.mid")
-testTrack = file.findTrack("MIDI Region")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+drumTrack = file.findTrack("Drums")
 
-rotationObject = bpy.data.collections['rotation_object']
+rotationObject = bpy.data.collections['Rotation_Piece']
 
 animator = MIDIAnimatorNode()
-animator.addInstrument(midiTrack=testTrack, objectCollection=rotationObject, custom=FourWayPercussion)
-# animator.addInstrument(midiTrack=testTrack, objectCollection=bpy.data.collections['cubes'])
+animator.addInstrument(midiTrack=drumTrack, objectCollection=rotationObject, custom=FourWayPercussion)
 animator.animate()
