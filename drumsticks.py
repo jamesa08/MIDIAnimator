@@ -4,7 +4,7 @@ from MIDIAnimator.src.animation import MIDIAnimatorNode
 from MIDIAnimator.src.instruments import Instrument
 from MIDIAnimator.data_structures.midi import *
 from MIDIAnimator.utils.blender import *
-from MIDIAnimator.utils import mapRange
+from MIDIAnimator.utils import mapRangeLinear
 from mathutils import Vector, Euler
 from dataclasses import dataclass
 from typing import Dict, List
@@ -388,7 +388,7 @@ class DrumstickInstrumentNew(Instrument):
                     
                     animLength = curNote.timeOn - lastNotePlayedTimeOn
                     velocity = velocityFromVectors(getToLocationOfStick, getCurrentLocationOfStick, secToFrames(animLength))
-                    velocityRel = mapRange(velocity, settings.minVel, settings.maxVel, 0, 5)
+                    velocityRel = mapRangeLinear(velocity, settings.minVel, settings.maxVel, 0, 5)
                     
                     # this determines what stick to use for this note
                     # best case drumstick
@@ -438,12 +438,12 @@ class DrumstickInstrumentNew(Instrument):
 
                     # debug stuff
                     s = ""
-                    velocityRel = mapRange(velocity, settings.minVel, settings.maxVel, 0, 5)
+                    velocityRel = mapRangeLinear(velocity, settings.minVel, settings.maxVel, 0, 5)
                     if velocityRel <= settings.velocityThreshold: s = "velocity within range"
                     # print(f"sec={curNote.timeOn} frames={secToFrames(curNote.timeOn)} {animLength=} mapRange={mapRange(velocity, settings.minVel, settings.maxVel, 0, 5)} {s}")
 
 
-                    if (animLength >= settings.animationLengthThreshold and mapRange(velocity, settings.minVel, settings.maxVel, 0, 5) <= settings.velocityThreshold):
+                    if (animLength >= settings.animationLengthThreshold and mapRangeLinear(velocity, settings.minVel, settings.maxVel, 0, 5) <= settings.velocityThreshold):
                         # assign it to stick
                         if curNote not in assignedNotes:
                             settings.notesToPlay.append(curNote)
@@ -540,7 +540,7 @@ class DrumstickInstrumentNew(Instrument):
                     toVector = settings.noteToTargetTable[curNote.noteNumber].location
                     settings.homePos = False
                 # FIXME uncomment all down
-                animLength = timeFromVectors(fromVector, toVector, mapRange(3, settings.minVel, settings.maxVel, 0, 5))
+                animLength = timeFromVectors(fromVector, toVector, mapRangeLinear(3, settings.minVel, settings.maxVel, 0, 5))
                 
                 
                 if animLength > framesToSec(animLength):    # why does it have to be in framesToSec()???

@@ -7,7 +7,7 @@ __all__ = [
 ]
 
 from . gmInstrumentMap import _gmInst
-from math import sin, cos
+from math import sin, cos, pi, e, sqrt, asin, log
 from typing import Tuple, List
 from re import search as reSearch
 
@@ -98,7 +98,33 @@ def rotateAroundCircle(radius, angle) -> Tuple[int]:
     
     return x, y
 
-def mapRange(value, inMin, inMax, outMin, outMax):
-    # https://stackoverflow.com/a/68722109/6576283
+# All mapRange() functions equations originate from here:
+# https://www.desmos.com/calculator/pw9tgtcq16
+# thank you to rgm on Stack Overflow for the graph
+# https://stackoverflow.com/questions/5731863/mapping-a-numeric-range-onto-another#comment119982185_5732390
+
+def mapRangeLinear(value, inMin, inMax, outMin, outMax):
     return outMin + (((value - inMin) / (inMax - inMin)) * (outMax - outMin))
+
+def mapRangeSin(value, inMin, inMax, outMin, outMax):
+    return (-((outMax - outMin) / 2)) * cos((pi * (inMin - value)) / (inMin - inMax)) + ((outMax + outMin) / 2)
     
+def mapRangeArcSin(value, inMin, inMax, outMin, outMax):
+    return ((outMax - outMin) / pi) * asin((2 / (inMax - inMin)) * (value - ((inMin + inMax) / 2))) + ((outMax + outMin) / 2)
+
+def mapRangeExp(value, inMin, inMax, outMin, outMax):
+    if outMin <= outMax: s = 1
+    else: s = -1
+    return (-s * (abs(outMin - outMax - s)) ** ((value - inMax) / (inMin - inMax))) + outMax + s
+
+def mapRangeLog(value, inMin, inMax, outMin, outMax):
+    if inMin <= inMax: p = 1
+    else: p = -1
+    return ((outMax - outMin) * log(abs(value - inMin + p))) / log(abs(inMax - inMin + p)) + outMin
+
+def mapRangePara(value, inMin, inMax, outMin, outMax):
+    return (((outMin - outMax) * ((value - inMax) ** 2)) / (inMax - inMin) ** 2) + outMax 
+
+def mapRangeRoot(value, inMin, inMax, outMin, outMax):
+    return (((outMax - outMin) / sqrt(inMax - inMin)) * sqrt(value - inMin)) + outMin
+

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import bpy
-from typing import List, TYPE_CHECKING
-from math import cos, pi
+from typing import List, Tuple, TYPE_CHECKING
+from math import sin, cos, pi, e
 from .. data_structures.midi import MIDITrack
 
 if TYPE_CHECKING:
@@ -76,3 +76,42 @@ def animateSine(time: float, startVal: float, endVal: float, duration: float) ->
     time = min(max(time, 0), duration)  # clamps time 
     return -((cos((1 / duration) * pi * time) - 1) * ((endVal - startVal) / 2)) + startVal
 
+def animateDampedOsc(x: float, period: float, amplitude: float, damp: float, frameRate: float):
+    return (e ** -((damp * x) / frameRate)) * (-sin((period * x) / frameRate) * amplitude)
+
+def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRate: float) -> List[Tuple[float, float]]:
+    # generates keyframes that will generate the specified dampened oscillation
+    # Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions
+    # ineractive demo: https://www.desmos.com/calculator/vzwitwmib6
+    
+    def waveFunc(x):
+        return animateDampedOsc(x, period, amplitude, damp, frameRate)
+    
+    def firstDerivative(x):
+        return (waveFunc(x) - waveFunc(x-0.001)) / 0.001
+    
+    def secondDerivative(x): 
+        return (waveFunc(x) - (2 * waveFunc(x-0.001)) + waveFunc(x-(2*0.001))) / (0.001 ** 2)
+    
+    def newtonsMethod(x):
+        if secondDerivative(x) == 0: return 0
+        return x - (firstDerivative(x)/secondDerivative(x))
+    
+    y = 1
+    i = 0
+    
+    out = [(0, 0)]
+    
+    while abs(y) > 0.01:
+        approxX = (i + 1/2) * (pi / period) * frameRate
+        i += 1
+        
+        x = newtonsMethod(newtonsMethod(newtonsMethod(newtonsMethod(approxX))))
+        if x < 0: continue
+        y = waveFunc(x)
+        
+        out.append((x, waveFunc(x)))
+    
+    out.append((x + 1, 0))
+    
+    return out
