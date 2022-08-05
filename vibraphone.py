@@ -280,7 +280,8 @@ file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pd1_vibe.mid")
 
 tracks = file.getMIDITracks()
 vibeTrack = file.findTrack("Vibraphone")
-vibraphoneNotes = [36,38,39,40,41,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,65,66,67,68,69,70,71,72,73,74,75,76,77,79]
+# vibraphoneNotes = [36,38,39,40,41,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,65,66,67,68,69,70,71,72,73,74,75,76,77,79]
+vibraphoneNotes = [36,38,39,40,41,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,69,70,71,72,73,74,75,76,77,79]
 
 scene = bpy.context.scene
 
@@ -308,11 +309,11 @@ scene["quick_obj_curve"] = bpy.context.scene.objects['ANIM_PP2']
 scene["quick_note_hit_time"] = 0
 bpy.ops.scene.quick_add_props()
 
-scene.quick_instrument_type = "string"
-scene["quick_obj_col"] = bpy.data.collections['PP3']
-scene["quick_obj_curve"] = bpy.context.scene.objects['ANIM_PP3']
-scene["quick_note_hit_time"] = 0
-bpy.ops.scene.quick_add_props()
+# scene.quick_instrument_type = "string"
+# scene["quick_obj_col"] = bpy.data.collections['PP3']
+# scene["quick_obj_curve"] = bpy.context.scene.objects['ANIM_PP3']
+# scene["quick_note_hit_time"] = 0
+# bpy.ops.scene.quick_add_props()
 
 scene.quick_instrument_type = "string"
 scene["quick_obj_col"] = bpy.data.collections['Keys']
@@ -324,6 +325,6 @@ animator = MIDIAnimatorNode()
 animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['FunnelEmpties'], custom=VibraphoneProjectileInstrument)
 animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['PP1'], custom=VibraphoneInstrument)
 animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['PP2'], custom=VibraphoneInstrument)
-animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['PP3'], custom=VibraphoneInstrument)
+# animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['PP3'], custom=VibraphoneInstrument)
 animator.addInstrument(midiTrack=vibeTrack, objectCollection=bpy.data.collections['Keys'], custom=VibraphoneInstrument)
 animator.animate()

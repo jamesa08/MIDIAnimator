@@ -76,7 +76,8 @@ vibeUpDownSettings = {
     "pp3_controller": bpy.data.objects['PP3_controller']
 }
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pd1_vibe.mid")
 
 tracks = file.getMIDITracks()
 vibeTrack = file.findTrack("Vibraphone")
