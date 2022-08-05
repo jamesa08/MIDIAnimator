@@ -145,4 +145,4 @@ def unregister():
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
     
-    logging.info("MIDIAnimator unregistered successfully")
+    logger.info("MIDIAnimator unregistered successfully")
