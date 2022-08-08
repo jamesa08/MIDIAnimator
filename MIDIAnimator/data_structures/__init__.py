@@ -10,27 +10,30 @@ from numpy import add as npAdd
 class BlenderObject:
     obj: bpy.types.Object
     noteNumbers: tuple
-    fCurves: ObjectFCurves
+    noteOnCurves: ObjectFCurves
+    noteOffCurves: ObjectFCurves
         
     # how many frames before a note is hit does this need to start animating
-    _frameStartOffset: float
+    _startRangeOn: float
     # how many frames after a note is hit does it continue animating
-    _frameEndOffset: float
+    _endRangeOn: float
 
-    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, animators: ObjectFCurves):
+    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: ObjectFCurves, noteOffCurves: ObjectFCurves):
         self.obj = obj
         self.noteNumbers = noteNumbers
-        self.fCurves = animators
-        # temporary values until we compute in _calculateOffsets()
-        self._frameStartOffset = 0.0
-        self._frameEndOffset = 0.0
+        self.noteOnCurves = noteOnCurves
+        self.noteOffCurves = noteOffCurves
+        self._startRangeOn, self._endRangeOn = self._calculateOffsets(type="note_on")
+        self._startRangeOff, self._endRangeOff = self._calculateOffsets(type="note_off")
 
-        self._calculateOffsets()
-
-    def _calculateOffsets(self):
+    def _calculateOffsets(self, type:str ="note_on"):
         # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
         # and the latest animation for the note
-        combined = self.fCurves.location + self.fCurves.rotation + self.fCurves.material + self.fCurves.shapeKeys
+        if type == "note_on":
+            combined = self.noteOnCurves.location + self.noteOnCurves.rotation + self.noteOnCurves.customProperties + self.noteOnCurves.shapeKeys
+        elif type == "note_off":
+            combined = self.noteOffCurves.location + self.noteOffCurves.rotation + self.noteOffCurves.customProperties + self.noteOffCurves.shapeKeys
+        
         start, end = None, None
         
         for fCrv in combined:
@@ -40,20 +43,26 @@ class BlenderObject:
             if end is None or curveEnd > end:
                 end = curveEnd
         
-        self._frameStartOffset = start
-        self._frameEndOffset = end
+        return start, end
 
-    def frameOffsets(self) -> Tuple[float, float]:
+    def rangeOn(self) -> Tuple[float, float]:
         """
-        :return: start (probably negative) and end offsets for playing the note
+        :return: start and end offsets for playing the **note on** curve
         """
-        return self._frameStartOffset, self._frameEndOffset
+        return self._startRangeOn, self._endRangeOn
+    
+    def rangeOff(self) -> Tuple[float, float]:
+        """
+        :return: start and end offsets for playing the **note off** curve
+        """
+        return self._startRangeOff, self._endRangeOff
+
 
 @dataclass
 class ObjectFCurves:
     location: Tuple[bpy.types.FCurve] = ()
     rotation: Tuple[bpy.types.FCurve] = ()
-    material: Tuple[bpy.types.FCurve] = ()
+    customProperties: Tuple[bpy.types.FCurve] = ()
     
     # key= the "to keyframe" object's shape key's name, value= a list \
     # (index 0 = reference object shape key FCurves, index 1 = the "to keyframe" object's shape key)
@@ -71,7 +80,7 @@ class FCurveProcessor:
     rotation: Optional[Euler]
     
     # key= custom property name, value=int or float (the val to be keyframed)
-    material: Dict[str, Union[int, float]]
+    customProperties: Dict[str, Union[int, float]]
     
     # key= the "to keyframe" object's shape key's name, value= a float (the val to be keyframed)
     shapeKeys: Dict[str, float]
@@ -83,7 +92,7 @@ class FCurveProcessor:
         # when None no keyframe of that type
         self.location = Vector()
         self.rotation = Euler()
-        self.material = {}
+        self.customProperties = {}
         self.shapeKeys = {}
 
     def applyFCurve(self, delta: int):
@@ -120,13 +129,13 @@ class FCurveProcessor:
             # set the values on internal rotation
             self.rotation = rotation
 
-        if len(self.fCurves.material) != 0:
-            for fCurve in self.fCurves.material:
+        if len(self.fCurves.customProperties) != 0:
+            for fCurve in self.fCurves.customProperties:
                 val = fCurve.evaluate(delta)
-                if fCurve.data_path in self.material:
-                    self.material[fCurve.data_path] += val
+                if fCurve.data_path in self.customProperties:
+                    self.customProperties[fCurve.data_path] += val
                 else:
-                    self.material[fCurve.data_path] = val
+                    self.customProperties[fCurve.data_path] = val
 
         if len(self.fCurves.shapeKeysDict) != 0:
             for shapeName in self.fCurves.shapeKeysDict:
@@ -152,30 +161,30 @@ class FCurveProcessor:
             self.obj.rotation_euler = npAdd(self.rotation, self.fCurves.origRot)
             self.obj.keyframe_insert(data_path="rotation_euler", frame=frame)
         
-        if len(self.fCurves.material) != 0:
-            for data_path in self.material:
-                val = self.material[data_path]
+        if len(self.fCurves.customProperties) != 0:
+            for data_path in self.customProperties:
+                val = self.customProperties[data_path]
                 exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
                 self.obj.keyframe_insert(data_path=data_path, frame=frame)
 
         if len(self.fCurves.shapeKeys) != 0:
             for shapeName in self.fCurves.shapeKeysDict:
                 shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
-                print(self.shapeKeys)
                 shapeKey.value = self.shapeKeys[shapeName]
                 shapeKey.keyframe_insert(data_path="value", frame=frame)
 
     def __repr__(self) -> str:
-        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.material} {self.shapeKeys}"
+        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.customProperties} {self.shapeKeys}"
 
 @dataclass
 class FrameRange:
     """
-    this stores an object that will be moving from _startFrame to _endFrame
+    this stores an object that will be moving from startFrame to endFrame
     """
     startFrame: int
     endFrame: int
     bObj: BlenderObject
+    type: str = "note_on"
 
     def __post_init__(self):
         self.cachedObj: Optional[bpy.types.Object] = None

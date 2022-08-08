@@ -1,51 +1,58 @@
+from ast import literal_eval
 import bpy
+import gpu
+import bgl
+from gpu_extras.batch import batch_for_shader
+
+from MIDIAnimator.utils import convertNoteNumbers, typeOfNoteNumber, noteToName
 
 class MIDIAniamtorPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "MIDIAnimator"
-    bl_options = {"DEFAULT_CLOSED"}
+    # bl_options = {"DEFAULT_CLOSED"}
 
-class VIEW3D_PT_edit_instrument_information(MIDIAniamtorPanel, bpy.types.Panel):
-    bl_label = "Edit Instrument Information"
+# class VIEW3D_PT_edit_instrument_information(MIDIAniamtorPanel, bpy.types.Panel):
+#     bl_label = "Edit Instrument Information"
 
-    @classmethod
-    def poll(cls, context):
-        selectedObjs = context.selected_editable_objects
-        blCol = context.collection
-        # return if collection is selected in outliner
-        return (len(blCol.all_objects) != 0 and len(selectedObjs) == 0) or len(context.object.users_collection) == 1
+#     @classmethod
+#     def poll(cls, context):
+#         selectedObjs = context.selected_editable_objects
+#         blCol = context.collection
+#         # return if collection is selected in outliner
+#         return (len(blCol.all_objects) != 0 and len(selectedObjs) == 0) or len(context.object.users_collection) == 1
 
 
-    def draw(self, context):
-        # print(context.collection, context.object.users_collection)
-        selectedObjs = context.selected_editable_objects
+#     def draw(self, context):
+#         # print(context.collection, context.object.users_collection)
+#         selectedObjs = context.selected_editable_objects
 
-        if (len(context.collection.all_objects) != 0 and len(selectedObjs) == 0):
-            blCol = context.collection
-        elif len(selectedObjs) != 0:
-            blCol = context.object.users_collection[0]
-        else:
-            # fallback if empty collection
-            blCol = context.collection
-
-        layout = self.layout
-        layout.use_property_decorate = False
-        layout.use_property_split = True
-        col = layout.column()
+#         if (len(context.collection.all_objects) != 0 and len(selectedObjs) == 0):
+#             blCol = context.collection
+#         elif len(selectedObjs) != 0:
+#             blCol = context.object.users_collection[0]
+#         else:
+#             # fallback if empty collection
+#             blCol = context.collection
         
-        col.label(text=f"Active collection: '{blCol.name}'")
-        col.prop(blCol, "instrument_type", text="Instrument Type")
+#         blColMidi = blCol.midi
 
-        if blCol.instrument_type == "projectile":
-            col.prop(blCol, "projectile_collection")
+#         layout = self.layout
+#         layout.use_property_decorate = False
+#         layout.use_property_split = True
+#         col = layout.column()
+        
+#         col.label(text=f"Active collection: '{blCol.name}'")
+#         col.prop(blColMidi, "instrument_type", text="Instrument Type")
 
-            if blCol.projectile_collection is not None:
-                col.prop(blCol, "reference_projectile")  # TODO: can there be a way to filter based on projectile_collection?
+#         if blColMidi.instrument_type == "projectile":
+#             col.prop(blColMidi, "projectile_collection")
 
+#             if blColMidi.projectile_collection is not None:
+#                 col.prop(blColMidi, "reference_projectile")  # TODO: can there be a way to filter based on projectile_collection?
 
-class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
-    bl_label = "Edit Note Information"
+class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
+    bl_label = "Edit Object Information"
 
     @classmethod
     def poll(cls, context):
@@ -55,6 +62,7 @@ class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
 
     def draw(self, context):
         obj = context.active_object
+        objMidi = obj.midi
         blCol = obj.users_collection[0]
 
         layout = self.layout
@@ -64,12 +72,36 @@ class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
         col = layout.column()
         
         col.label(text=f"Active object: '{obj.name}'")
-        col.prop(obj, "note_number")
-
-        col.prop(obj, "animation_curve")
+        col.prop(objMidi, "note_number")
         
-        if blCol.instrument_type == "projectile":
-            col.prop(obj, "note_hit_time")
+        col.separator()
+        
+        col.prop(objMidi, "anim_curve_type", text="Animation Curve Type")
+        
+        if objMidi.anim_curve_type == "damp_osc":
+            col.prop(objMidi, "osc_period")
+            col.prop(objMidi, "osc_amp")
+            col.prop(objMidi, "osc_damp")
+
+        elif objMidi.anim_curve_type == "keyframed":
+            row1 = col.row()
+            row1.prop(objMidi, "note_on_curve", text="Note On")
+            # this is temporary until I determine a solution for each FCurve
+            row1.prop(objMidi, "note_on_anchor_pt", text="")
+
+            row2 = col.row()
+            row2.prop(objMidi, "note_off_curve", text="Note Off")
+            row2.prop(objMidi, "note_off_anchor_pt", text="")
+            
+        elif objMidi.anim_curve_type == "adsr":
+            col.label(text="Coming soon")
+        
+        col.separator()
+
+        col.prop(objMidi, "animation_overlap")
+        
+        # if blCol.midi.instrument_type == "projectile":
+        #     col.prop(objMidi, "note_hit_time")
 
 class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
     # bl_parent_id = "VIEW3D_PT_edit_note_information"
@@ -110,21 +142,12 @@ class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
         col = layout.column()
         
         scene = context.scene
+        sceneMidi = scene.midi
 
-        col.prop(scene, "quick_instrument_type")
-        col.prop(scene, "note_number_list")
-        col.prop(scene, "quick_obj_col")
-
-        col.prop(scene, "quick_obj_curve")
+        col.prop(sceneMidi, "quick_note_number_list")
+        col.prop(sceneMidi, "quick_obj_col")
+        col.prop(sceneMidi, "quick_sort_by_name")
         
-        col.prop(scene, "quick_use_sorted")
-        
-        if scene.quick_instrument_type == "projectile":
-            col.separator_spacer()
-            col.prop(scene, "quick_note_hit_time")
-        elif scene.quick_instrument_type == "string":
-            pass
-
         col.separator_spacer()
         col.operator("scene.quick_add_props", text="Run")
         col.separator_spacer()
