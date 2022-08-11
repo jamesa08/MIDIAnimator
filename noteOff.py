@@ -1,4 +1,5 @@
 import bpy
+from copy import deepcopy
 from MIDIAnimator.data_structures import FrameRange
 from MIDIAnimator.src.animation import MIDIAnimatorNode
 from MIDIAnimator.data_structures.midi import MIDIFile, MIDITrack, MIDINote
@@ -12,6 +13,9 @@ class Keyframe:
     frame: float
     value: float
     keyType: str = ""
+
+    def __hash__(self) -> int:
+        return hash((self.frame, self.value))
 
 def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
     try:
@@ -128,32 +132,43 @@ class NoteOffTesting(Instrument):
                             value = keyframe.co[1]
                             nextKeys.append(Keyframe(frame,value))
                 
-                # keysToUpdate = []    
-                # for nextKey in nextKeys:
-                #     keyRange = findInterval(nextKey.frame, alreadyInserted)
-                #     # print(nextKey.frame, keyRange)
-                #     if keyRange is None: continue
-                #     keysToUpdate.extend(keyRange)    
-                    
-                #     inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
-                #     inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
-                #     evaluatedCurveVal = mapRangeSin(nextKey.frame, inMin, inMax, outMin, outMax)
-                #     nextKey.value += evaluatedCurveVal
+                keysToUpdate = []
+                nextKeysCopy = deepcopy(nextKeys) # to not mutate data 
 
-                # for key, i in keysToUpdate:
-                #     keyRange = findInterval(key.frame, nextKeys)
-                #     if keyRange is None: continue
+                for i, nextKey in enumerate(nextKeys):
+                    keyRange = findInterval(nextKey.frame, alreadyInserted)
+                    if keyRange is None: continue
+                    try:
+                        keysToUpdate.extend(keyRange + [(alreadyInserted[keyRange[1][1] + 1], keyRange[1][1] + 1)])
+                    except Exception:
+                        keysToUpdate.extend(keyRange)
+
+                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                    evaluatedCurveVal = mapRangeSin(nextKey.frame, inMin, inMax, outMin, outMax)
+                    print("updating inserted keys", nextKey.frame, keyRange, "with value", evaluatedCurveVal, "| result:", nextKey.value + evaluatedCurveVal)
+                    nextKey.value += evaluatedCurveVal
+                
+                seenKeys = set()
+                for key, i in keysToUpdate:
+                    if key.frame in seenKeys: continue
+                    seenKeys.add(key.frame)
                     
-                #     inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
-                #     inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
-                #     evaluatedCurveVal = mapRangeSin(key.frame, inMin, inMax, outMin, outMax)
-                #     alreadyInserted[i].value += evaluatedCurveVal
+                    keyRange = findInterval(key.frame, nextKeysCopy)
+                    if keyRange is None: continue
+                    
+
+                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                    evaluatedCurveVal = mapRangeSin(key.frame, inMin, inMax, outMin, outMax)
+                    print("updating existing keys | frame:", key.frame, "| existing value:", alreadyInserted[i].value, "| with value", evaluatedCurveVal, "| result:", alreadyInserted[i].value + evaluatedCurveVal)
+                    alreadyInserted[i].value += evaluatedCurveVal
                 
                 alreadyInserted.extend(nextKeys)
         
         
         for keyframe in sorted(alreadyInserted, key=lambda key: key.frame):
-            print(f"{keyframe.frame},{keyframe.value}")
+            # print(f"{keyframe.frame},{keyframe.value}")
             shapeKey.value = keyframe.value
             shapeKey.keyframe_insert(data_path="value", frame=keyframe.frame)
                         
