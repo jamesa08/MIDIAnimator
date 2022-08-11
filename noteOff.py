@@ -103,7 +103,7 @@ class NoteOffTesting(Instrument):
             if note.noteNumber in self.noteToBlenderObject:
                 bObjs = self.noteToBlenderObject[note.noteNumber]
             else:
-                # warn
+                # TODO warn
                 continue
             
             for bObj in bObjs:
@@ -128,41 +128,45 @@ class NoteOffTesting(Instrument):
                             value = keyframe.co[1]
                             nextKeys.append(Keyframe(frame,value))
                 
-                keysToUpdate = []    
-                for nextKey in nextKeys:
-                    keyRange = findInterval(nextKey.frame, alreadyInserted)
-                    # print(nextKey.frame, keyRange)
-                    if keyRange is None: continue
-                    keysToUpdate.extend(keyRange)    
+                # keysToUpdate = []    
+                # for nextKey in nextKeys:
+                #     keyRange = findInterval(nextKey.frame, alreadyInserted)
+                #     # print(nextKey.frame, keyRange)
+                #     if keyRange is None: continue
+                #     keysToUpdate.extend(keyRange)    
                     
-                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
-                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
-                    evaluatedCurveVal = mapRangeSin(nextKey.frame, inMin, inMax, outMin, outMax)
-                    nextKey.value += evaluatedCurveVal
+                #     inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                #     inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                #     evaluatedCurveVal = mapRangeSin(nextKey.frame, inMin, inMax, outMin, outMax)
+                #     nextKey.value += evaluatedCurveVal
 
-                for key, i in keysToUpdate:
-                    keyRange = findInterval(key.frame, nextKeys)
-                    if keyRange is None: continue
+                # for key, i in keysToUpdate:
+                #     keyRange = findInterval(key.frame, nextKeys)
+                #     if keyRange is None: continue
                     
-                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
-                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
-                    evaluatedCurveVal = mapRangeSin(key.frame, inMin, inMax, outMin, outMax)
-                    alreadyInserted[i].value += evaluatedCurveVal
+                #     inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                #     inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                #     evaluatedCurveVal = mapRangeSin(key.frame, inMin, inMax, outMin, outMax)
+                #     alreadyInserted[i].value += evaluatedCurveVal
                 
                 alreadyInserted.extend(nextKeys)
         
-
-        for keyframe in alreadyInserted:
+        
+        for keyframe in sorted(alreadyInserted, key=lambda key: key.frame):
             print(f"{keyframe.frame},{keyframe.value}")
             shapeKey.value = keyframe.value
             shapeKey.keyframe_insert(data_path="value", frame=keyframe.frame)
                         
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pd1_vibe.mid")
-vibe = file.findTrack("Vibraphone")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/test_midi_2notes_fixed.mid")
+vibe = file.findTrack("Test")
 
 animator = MIDIAnimatorNode()
 animator.addInstrument(instrumentType="custom", midiTrack=vibe, objectCollection=bpy.data.collections['Cubes'], custom=NoteOffTesting)
 
 # Animate the MIDI file
 animator.animate()
+
+
+# for key in shapeKeyFCurvesFromObject(bpy.data.objects['Cubes'])[0].keyframe_points:
+#     print(f"{key.co[0]},{key.co[1]}")
