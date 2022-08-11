@@ -26,12 +26,13 @@ class BlenderObject:
         self._startRangeOn, self._endRangeOn = self._calculateOffsets(type="note_on")
         self._startRangeOff, self._endRangeOff = self._calculateOffsets(type="note_off")
 
-    def _calculateOffsets(self, type:str ="note_on"):
+    def _calculateOffsets(self, type: str="note_on"):
         # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
         # and the latest animation for the note
-        if type == "note_on":
+        combined = []
+        if type == "note_on" and self.obj.midi.note_on_curve:
             combined = self.noteOnCurves.location + self.noteOnCurves.rotation + self.noteOnCurves.customProperties + self.noteOnCurves.shapeKeys
-        elif type == "note_off":
+        elif type == "note_off" and self.obj.midi.note_off_curve:
             combined = self.noteOffCurves.location + self.noteOffCurves.rotation + self.noteOffCurves.customProperties + self.noteOffCurves.shapeKeys
         
         start, end = None, None

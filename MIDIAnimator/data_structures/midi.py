@@ -356,3 +356,7 @@ class MIDIFile:
             out.append(str(track))
 
         return "\n".join(out)
+
+    def __iter__(self):
+        for track in self._tracks:
+            yield track

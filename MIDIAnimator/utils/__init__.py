@@ -1,10 +1,10 @@
-__all__ = [
-    "noteToName",
-    "nameToNote",
-    "gmProgramToName",
-    "removeDuplicates",
-    "rotateAroundCircle"
-]
+# __all__ = [
+#     "noteToName",
+#     "nameToNote",
+#     "gmProgramToName",
+#     "removeDuplicates",
+#     "rotateAroundCircle",
+# ]
 
 from . gmInstrumentMap import _gmInst
 from math import sin, cos, pi, e, sqrt, asin, log

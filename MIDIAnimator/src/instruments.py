@@ -115,7 +115,8 @@ class Instrument:
     def createNoteToBlenderObject(self, noteOnCurves: Dict[bpy.types.Object, ObjectFCurves], noteOffCurves: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
             if obj.midi.note_number is None or not obj.midi.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            bObj = BlenderObject(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj], noteOffCurves[obj])
+
+            bObj = BlenderObject(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
             
             for noteNumber in bObj.noteNumbers:
                 if noteNumber in self.noteToBlenderObject:

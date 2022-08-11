@@ -14,9 +14,32 @@ class Keyframe:
     keyType: str = ""
 
 def findIntersection(x1, y1, x2, y2, x3, y3, x4, y4):
-    pX = (((x1*y2)-(y1*x2)) * (x3-x4) - (x1-x2) * ((x3*y4)-(y3*x4))) / (((x1-x2) * (y3-y4)) - ((y1-y2) * (x3 - x4)))
-    pY = (((x1*y2)-(y1*x2)) * (y3-y4) - (y1-y2) * ((x3*y4)-(y3*x4))) / (((x1-x2) * (y3-y4)) - ((y1-y2) * (x3 - x4)))
+    try:
+        pX = (((x1*y2)-(y1*x2)) * (x3-x4) - (x1-x2) * ((x3*y4)-(y3*x4))) / (((x1-x2) * (y3-y4)) - ((y1-y2) * (x3 - x4)))
+        pY = (((x1*y2)-(y1*x2)) * (y3-y4) - (y1-y2) * ((x3*y4)-(y3*x4))) / (((x1-x2) * (y3-y4)) - ((y1-y2) * (x3 - x4)))
+    except ZeroDivisionError:
+        return 0, 0
+    
     return pX, pY
+
+def findInterval(frame, alreadyInsertedKeyframes):
+    if len(alreadyInsertedKeyframes) < 2: return
+    if frame < alreadyInsertedKeyframes[0].frame: return
+    if frame > alreadyInsertedKeyframes[-1].frame: return
+
+    out = []
+    for i, insertedKey in enumerate(alreadyInsertedKeyframes):
+        
+        # if insertedKey.frame <= nextKeys[0].frame: continue
+        if insertedKey.frame <= frame: continue
+
+        # for nextKey in nextKeys:
+        if frame <= insertedKey.frame:
+            out.append((alreadyInsertedKeyframes[i-1], i-1))
+            out.append((alreadyInsertedKeyframes[i], i))
+            break
+            
+    return out
 
 
 class NoteOffTesting(Instrument):
@@ -78,7 +101,6 @@ class NoteOffTesting(Instrument):
         alreadyInserted = []
         for note in self.midiTrack.notes:
             if note.noteNumber in self.noteToBlenderObject:
-                print()
                 bObjs = self.noteToBlenderObject[note.noteNumber]
             else:
                 # warn
@@ -87,54 +109,51 @@ class NoteOffTesting(Instrument):
             for bObj in bObjs:
                 nextKeys = []
                 # note on
-                for shapeName in bObj.noteOnCurves.shapeKeysDict:
-                    fCrv = bObj.noteOnCurves.shapeKeysDict[shapeName][0]  # reference shape key
-                    shapeKey = bObj.noteOnCurves.shapeKeysDict[shapeName][1]  # bObj shape key
-                    for keyframe in fCrv.keyframe_points:
-                        frame = keyframe.co[0] + secToFrames(note.timeOn) + bObj.obj.midi.note_on_anchor_pt
-                        value = keyframe.co[1]
-                        # print(f"{frame},{value},{secToFrames(note.timeOn)}")
-                        nextKeys.append(Keyframe(frame, value))
-                        # shapeKey.value = value
-                        # shapeKey.keyframe_insert(data_path="value", frame=frame)
+                if bObj.obj.midi.note_on_curve:
+                    for shapeName in bObj.noteOnCurves.shapeKeysDict:
+                        fCrv = bObj.noteOnCurves.shapeKeysDict[shapeName][0]  # reference shape key
+                        shapeKey = bObj.noteOnCurves.shapeKeysDict[shapeName][1]  # bObj shape key
+                        for keyframe in fCrv.keyframe_points:
+                            frame = keyframe.co[0] + secToFrames(note.timeOn) + bObj.obj.midi.note_on_anchor_pt
+                            value = keyframe.co[1]
+                            nextKeys.append(Keyframe(frame, value))
                 
-                # note off
-                for shapeName in bObj.noteOffCurves.shapeKeysDict:
-                    fCrv = bObj.noteOffCurves.shapeKeysDict[shapeName][0]  # reference shape key
-                    shapeKey = bObj.noteOffCurves.shapeKeysDict[shapeName][1]  # bObj shape key
-                    for keyframe in fCrv.keyframe_points:
-                        frame = keyframe.co[0] + secToFrames(note.timeOff) + bObj.obj.midi.note_off_anchor_pt
-                        value = keyframe.co[1]
-                        nextKeys.append(Keyframe(frame,value))
-                        # print(f"{frame},{value},{secToFrames(note.timeOff)}")
-                        
-                        # shapeKey.value = value
-                        # shapeKey.keyframe_insert(data_path="value", frame=frame)
+                if bObj.obj.midi.note_off_curve:
+                    # note off
+                    for shapeName in bObj.noteOffCurves.shapeKeysDict:
+                        fCrv = bObj.noteOffCurves.shapeKeysDict[shapeName][0]  # reference shape key
+                        shapeKey = bObj.noteOffCurves.shapeKeysDict[shapeName][1]  # bObj shape key
+                        for keyframe in fCrv.keyframe_points:
+                            frame = keyframe.co[0] + secToFrames(note.timeOff) + bObj.obj.midi.note_off_anchor_pt
+                            value = keyframe.co[1]
+                            nextKeys.append(Keyframe(frame,value))
                 
-                for i, key in enumerate(nextKeys.copy()):
-                    if len(alreadyInserted) != 0:
-                        lastKey = alreadyInserted[-1]
-                    else:
-                        lastKey = Keyframe(0,0)
-                    print(key, lastKey)
-                    if lastKey.frame > key.frame and lastKey.value != key.value:
-                        # print("overlap detected", lastKey.frame, keyframe.frame)
-                        # calculate slope w/ point slope formula
-                        x1, y1 = alreadyInserted[-2].frame, alreadyInserted[-2].value
-                        x2, y2 = alreadyInserted[-1].frame, alreadyInserted[-1].value
-                        x3, y3 = nextKeys[i-1].frame, nextKeys[i-1].value
-                        x4, y4 = nextKeys[i].frame, nextKeys[i].value
-                        pX, pY = findIntersection(x1, y1, x2, y2, x3, y3, x4, y4)
-                        # delete offending keyframes
-                        nextKeys.pop(0)
-                        alreadyInserted.pop(-1)
-                        
-                        alreadyInserted.append(Keyframe(pX, pY))
+                keysToUpdate = []    
+                for nextKey in nextKeys:
+                    keyRange = findInterval(nextKey.frame, alreadyInserted)
+                    # print(nextKey.frame, keyRange)
+                    if keyRange is None: continue
+                    keysToUpdate.extend(keyRange)    
+                    
+                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                    evaluatedCurveVal = mapRangeSin(nextKey.frame, inMin, inMax, outMin, outMax)
+                    nextKey.value += evaluatedCurveVal
+
+                for key, i in keysToUpdate:
+                    keyRange = findInterval(key.frame, nextKeys)
+                    if keyRange is None: continue
+                    
+                    inMin, outMin = keyRange[0][0].frame, keyRange[1][0].value
+                    inMax, outMax = keyRange[1][0].frame, keyRange[1][0].value
+                    evaluatedCurveVal = mapRangeSin(key.frame, inMin, inMax, outMin, outMax)
+                    alreadyInserted[i].value += evaluatedCurveVal
                 
                 alreadyInserted.extend(nextKeys)
         
 
         for keyframe in alreadyInserted:
+            print(f"{keyframe.frame},{keyframe.value}")
             shapeKey.value = keyframe.value
             shapeKey.keyframe_insert(data_path="value", frame=keyframe.frame)
                         
