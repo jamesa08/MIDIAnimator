@@ -161,7 +161,6 @@ class FCurveProcessor:
         if len(self.fCurves.shapeKeys) != 0:
             for shapeName in self.fCurves.shapeKeysDict:
                 shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
-                print(self.shapeKeys)
                 shapeKey.value = self.shapeKeys[shapeName]
                 shapeKey.keyframe_insert(data_path="value", frame=frame)
 

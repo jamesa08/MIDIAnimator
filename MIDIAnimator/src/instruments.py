@@ -234,6 +234,7 @@ class Instrument:
 
                 frame = int(secToFrames(note.timeOn))
                 offsets = bObj.frameOffsets()
+                assert offsets != (None, None), f"No frame ranges! Does object '{bObj.obj.name}' have animation data for its animation curve?"
                 startFrame = int(floor(offsets[0] - hit + frame)) - 1
                 endFrame = int(ceil(offsets[1] - hit + frame)) + 1
                 result.append(FrameRange(startFrame, endFrame, bObj))

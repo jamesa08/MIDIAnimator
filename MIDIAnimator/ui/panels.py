@@ -13,12 +13,12 @@ class VIEW3D_PT_edit_instrument_information(MIDIAniamtorPanel, bpy.types.Panel):
     def poll(cls, context):
         selectedObjs = context.selected_editable_objects
         blCol = context.collection
+        
         # return if collection is selected in outliner
         return (len(blCol.all_objects) != 0 and len(selectedObjs) == 0) or len(context.object.users_collection) == 1
 
 
     def draw(self, context):
-        # print(context.collection, context.object.users_collection)
         selectedObjs = context.selected_editable_objects
 
         if (len(context.collection.all_objects) != 0 and len(selectedObjs) == 0):
@@ -68,42 +68,12 @@ class VIEW3D_PT_edit_note_information(MIDIAniamtorPanel, bpy.types.Panel):
 
         col.prop(obj, "animation_curve")
         
-        if blCol.instrument_type == "projectile":
-            col.prop(obj, "note_hit_time")
+        col.prop(obj, "note_hit_time")
 
 class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
-    # bl_parent_id = "VIEW3D_PT_edit_note_information"
     bl_label = "Assign Notes to Objects"
 
     def draw(self, context):
-        # TODO: > eventually have a way to see how the notes will be mapped (?)
-        #       > for example if there are 3 objects in the collection to use
-        #       > and a list is filled in, try to eval the list
-        #       > and then show a preview of the mapping
-        #       > 
-        #       > Objects to be mapped: 
-        #       >   object  ->   note
-        #       > funnel_48 -> note 48/C2
-        #       > funnel_50 -> note 50/D2
-        #       > funnel_52 -> note 52/E2
-        #       > 
-        #       > or if the objects do not have the 'name_noteNumber' key,
-        #       > they should be just in sorted order, for example:
-        #       > 
-        #       > Objects to be mapped: 
-        #       >    object  ->    note
-        #       > funnel     -> note 48/C2
-        #       > funnel.001 -> note 50/D2
-        #       > funnel.002 -> note 52/E2
-        #       > 
-        #       > this should be easy to implement with the blender UI
-        #       > 
-        #       > Q: should this be a warning w/OK btn when the bpy.context.scene.quick_add_props() is executed?
-        #       >    and then have a pretty plaintext table?
-        #       > 
-        #       > still up in the air if this feature should really be implemented
-        #       > but for now lets plan on it
-    
         layout = self.layout
         layout.use_property_decorate = False
         layout.use_property_split = True
@@ -119,11 +89,7 @@ class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):
         
         col.prop(scene, "quick_use_sorted")
         
-        if scene.quick_instrument_type == "projectile":
-            col.separator_spacer()
-            col.prop(scene, "quick_note_hit_time")
-        elif scene.quick_instrument_type == "string":
-            pass
+        col.prop(scene, "quick_note_hit_time")
 
         col.separator_spacer()
         col.operator("scene.quick_add_props", text="Run")

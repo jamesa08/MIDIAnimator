@@ -32,8 +32,8 @@ class KeyframeValue:
 class HiHatInstrument(Instrument): 
     hiHatNotes: List[MIDINote]
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, **kwargs):
-        super().__init__(midiTrack, collection, override=False)
-        self.override = False  # we want to define how we want to animate it & dont use the API
+        super().__init__(midiTrack, collection, override=True)
+        self.override = True  # we want to define how we want to animate it & dont use the API
 
         self.hiHatTopObj = None
         self.hiHatBottomObj = None
@@ -117,7 +117,7 @@ class HiHatInstrument(Instrument):
             )
         }
 
-        self.animate_loc()
+        # self.animate_loc()
 
 
     def evalHiHatMotion(self, curNote: MIDINote, nextNote: MIDINote, index: int) -> None:
@@ -204,7 +204,7 @@ class HiHatInstrument(Instrument):
     def writeKey(self, time: float, value: float, noteNumber: int, handleType: str="ALIGNED", hit=False):
         self.keyframes.append((time, value, noteNumber, handleType, hit))
 
-    def animate_loc(self):
+    def animate(self):
         # writing to the keyframeDict here
         for i, curNote in enumerate(self.hiHatNotes):
             nextNote = self.hiHatNotes[i + 1] if i+1 < len(self.hiHatNotes) else None
@@ -217,7 +217,7 @@ class HiHatInstrument(Instrument):
         for time, value, noteNumber, handleType, hit in keyframes:
             obj = self.hiHatTopObj
             if not hit:
-                obj.location[2] = (value * 0.8) + self.topOrigLoc.z # add it to itself?
+                obj.location[2] = (value * 0.1) + self.topOrigLoc.z # add it to itself?
                 obj.keyframe_insert(data_path="location", index=2, frame=secToFrames(time))
             
             if hit:
@@ -233,7 +233,8 @@ class HiHatInstrument(Instrument):
 # file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/Drums_new.mid")
 # drumTrack = file.findTrack("MIDI Region")
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/pipedream3_8_18_21_1.mid")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/AnimDraft3.mid")
 drumTrack = file.findTrack("Drums")
 
 # hiHats = bpy.data.collections['Hi-Hats']

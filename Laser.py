@@ -22,8 +22,8 @@ class Laser(Instrument):
         self.rotation_high = kwargs["rotation_high"]
         self.note_low = kwargs["note_low"]
         self.note_high = kwargs["note_high"]
-        self.obj = self.collection.all_objects["Circle"]
-        self.laser = self.collection.all_objects["Cylinder"]
+        self.obj = self.collection.all_objects["LaserBase"]
+        self.laser = self.collection.all_objects["Laser"]
         self.preAnimate()
     
     def preAnimate(self):
@@ -33,12 +33,12 @@ class Laser(Instrument):
 
     def animate(self):
         # beginning
-        self.obj.rotation_euler.y = 0
-        self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=0)
+        self.obj.rotation_euler.x = 0
+        self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=0)
         nextNote = self.midiTrack.notes[1] if 1 < len(self.midiTrack.notes) else None
         if nextNote is not None:
             # set a key on the next note (- 1)
-            self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(nextNote.timeOn - 1))
+            self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(nextNote.timeOn - 1))
 
         # turn laser off
         showHideObj(self.laser, hide=True, frame=0)
@@ -55,8 +55,8 @@ class Laser(Instrument):
                 curNote.timeOff = nextNote.timeOn
             
             # set a timeOn key
-            self.obj.rotation_euler.y = radians(mapRangeLinear(curNote.noteNumber, self.note_low, self.note_high, self.rotation_low, self.rotation_high))
-            self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(curNote.timeOn))
+            self.obj.rotation_euler.x = radians(mapRangeLinear(curNote.noteNumber, self.note_low, self.note_high, self.rotation_low, self.rotation_high))
+            self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(curNote.timeOn))
     
 
             if animDuration > 1:
@@ -66,22 +66,22 @@ class Laser(Instrument):
             
             if animDuration < 4:
                 # not a break
-                self.obj.rotation_euler.y = radians(mapRangeLinear(curNote.noteNumber, self.note_low, self.note_high, self.rotation_low, self.rotation_high))
-                self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(nextNote.timeOn - timeDiff))
+                self.obj.rotation_euler.x = radians(mapRangeLinear(curNote.noteNumber, self.note_low, self.note_high, self.rotation_low, self.rotation_high))
+                self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(nextNote.timeOn - timeDiff))
                 
                 if timeDiff == 1:
-                    self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(curNote.timeOff))
+                    self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(curNote.timeOff))
             else:
                 # return to 0
                 # insert a note off key before its done
-                self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(curNote.timeOff))
+                self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(curNote.timeOff))
                 
                 # set key after its done (+ 1)
-                self.obj.rotation_euler.y = 0
-                self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(curNote.timeOff + 1))
+                self.obj.rotation_euler.x = 0
+                self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(curNote.timeOff + 1))
                 
                 # set a key on the next note (- 1)
-                self.obj.keyframe_insert(data_path="rotation_euler", index=1, frame=secToFrames(nextNote.timeOn - 1))
+                self.obj.keyframe_insert(data_path="rotation_euler", index=0, frame=secToFrames(nextNote.timeOn - 1))
 
 
             showHideObj(self.laser, hide=False, frame=secToFrames(curNote.timeOn))
@@ -89,16 +89,16 @@ class Laser(Instrument):
 
 
 
-file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/future_retro_laser.mid")
-# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/AnimDraft3.mid")
+# file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/future_retro_laser.mid")
+file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/AnimDraft3.mid")
 
 tracks = file.getMIDITracks()
-laserTrack = tracks[0]
-# laserTrack = file.findTrack("Laser")
+# laserTrack = tracks[0]
+laserTrack = file.findTrack("Laser")
 
 settings = {
-    "rotation_low": -35,
-    "rotation_high": 52,
+    "rotation_low": -27.3312,
+    "rotation_high": 62.8,
     "note_low": min([note.noteNumber for note in laserTrack.notes]),
     "note_high": max([note.noteNumber for note in laserTrack.notes])
 }
