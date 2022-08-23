@@ -115,7 +115,10 @@ def rotateAroundCircle(radius, angle) -> Tuple[int]:
 # https://stackoverflow.com/questions/5731863/mapping-a-numeric-range-onto-another#comment119982185_5732390
 
 def mapRangeLinear(value, inMin, inMax, outMin, outMax):
-    return outMin + (((value - inMin) / (inMax - inMin)) * (outMax - outMin))
+    try:
+        return outMin + (((value - inMin) / (inMax - inMin)) * (outMax - outMin))
+    except ZeroDivisionError:
+        return 1
 
 def mapRangeSin(value, inMin, inMax, outMin, outMax):
     return (-((outMax - outMin) / 2)) * cos((pi * (inMin - value)) / (inMin - inMax)) + ((outMax + outMin) / 2)
