@@ -52,8 +52,8 @@ class NoteOffTesting(Instrument):
         self.override = True
         self.preAnimate()
         
-        noteOnCurves = self.makeObjToFCurveDict(type="note_on")
-        noteOffCurves = self.makeObjToFCurveDict(type="note_off")
+        noteOnCurves = self.makeObjToFCurveDict(noteType="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(noteType="note_off")
         self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
         self.calculateFrameRanges()
 
@@ -77,7 +77,7 @@ class NoteOffTesting(Instrument):
                 
                 rangeOn, rangeOff = 0.0, 0.0
                 
-                if objMidi.anim_curve_type == "keyframed":
+                if objMidi.anim_type == "keyframed":
 
                     if objMidi.note_on_curve:
                         rangeOn = bObj.rangeOn()[1] - bObj.rangeOn()[0]
@@ -89,10 +89,10 @@ class NoteOffTesting(Instrument):
                         rangeOff += objMidi.note_off_anchor_pt
                         rangeOff += secToFrames(note.timeOff)
                 
-                elif objMidi.anim_curve_type == "damp_osc":
+                elif objMidi.anim_type == "damp_osc":
                     pass
                 
-                elif objMidi.anim_curve_type == "adsr":
+                elif objMidi.anim_type == "adsr":
                     pass
                 
                 out.append(FrameRange(rangeOn, rangeOff, bObj))

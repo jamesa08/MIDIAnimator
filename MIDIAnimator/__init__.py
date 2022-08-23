@@ -76,13 +76,13 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
     )
     note_off_curve: bpy.props.PointerProperty(
         name="Note Off Animation Curve", 
-        description="The animation curve object with defined keyframes to be read in",
+        description="The animation curve object with defined keyframes to be read in. \n\nDisabled: will be added in a future release",
         type=bpy.types.Object,
         options=set()
     )
     note_off_anchor_pt: bpy.props.IntProperty(
         name="Note Off Anchor Point",
-        description="Where along should we start animating (in reference to the note on time). 0 to start animating right on note off times, - for eariler, + for later",
+        description="Where along should we start animating (in reference to the note on time). 0 to start animating right on note off times, - for eariler, + for later. \n\nDisabled: will be added in a future release",
         default=0,
         options=set()
     )
@@ -112,13 +112,14 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
         default="add",
         options=set()
     )
-    anim_curve_type: bpy.props.EnumProperty(
+    anim_type: bpy.props.EnumProperty(
         items=[
             ("keyframed", "Keyframed", "Pre-defined FCurve objects to refernce the animation from"),
             ("damp_osc", "Oscillation", "Dampened oscillation"),
             ("adsr", "ADSR", "attack, decay, sustain, release")
         ],
-        name="Animation Curve Type",
+        name="Animation Type",
+        description="Disabled: will be added in a future release",
         default="keyframed",
         options=set()
     )

@@ -75,15 +75,17 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
         col.prop(objMidi, "note_number")
         
         col.separator()
-        
-        col.prop(objMidi, "anim_curve_type", text="Animation Curve Type")
-        
-        if objMidi.anim_curve_type == "damp_osc":
+        row0 = col.row()
+
+        row0.prop(objMidi, "anim_type")
+        row0.enabled = False
+
+        if objMidi.anim_type == "damp_osc":
             col.prop(objMidi, "osc_period")
             col.prop(objMidi, "osc_amp")
             col.prop(objMidi, "osc_damp")
 
-        elif objMidi.anim_curve_type == "keyframed":
+        elif objMidi.anim_type == "keyframed":
             row1 = col.row()
             row1.prop(objMidi, "note_on_curve", text="Note On")
             # this is temporary until I determine a solution for each FCurve
@@ -92,8 +94,9 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
             row2 = col.row()
             row2.prop(objMidi, "note_off_curve", text="Note Off")
             row2.prop(objMidi, "note_off_anchor_pt", text="")
-            
-        elif objMidi.anim_curve_type == "adsr":
+            row2.enabled = False
+
+        elif objMidi.anim_type == "adsr":
             col.label(text="Coming soon")
         
         col.separator()
