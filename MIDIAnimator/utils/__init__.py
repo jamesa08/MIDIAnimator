@@ -1,10 +1,10 @@
-__all__ = [
-    "noteToName",
-    "nameToNote",
-    "gmProgramToName",
-    "removeDuplicates",
-    "rotateAroundCircle"
-]
+# __all__ = [
+#     "noteToName",
+#     "nameToNote",
+#     "gmProgramToName",
+#     "removeDuplicates",
+#     "rotateAroundCircle",
+# ]
 
 from . gmInstrumentMap import _gmInst
 from math import sin, cos, pi, e, sqrt, asin, log
@@ -44,6 +44,17 @@ def convertNoteNumbers(inputStr: str):
         return (int(inputStr),)
     elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
         return (nameToNote(inputStr),)
+    elif "," in inputStr:
+        return tuple([convertNoteNumbers(num.strip())[0] for num in inputStr.split(",") if num])
+    else:
+        raise ValueError(f"'{inputStr}' has an invalid note number or name.")
+
+def typeOfNoteNumber(inputStr: str):
+    """tells you if a string is a MIDI note number or a name of a note"""
+    if reSearch("^[0-9]+$", inputStr):
+        return ("note",)
+    elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
+        return ("name",)
     elif "," in inputStr:
         return tuple([convertNoteNumbers(num.strip())[0] for num in inputStr.split(",") if num])
     else:

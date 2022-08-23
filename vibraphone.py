@@ -196,7 +196,7 @@ class VibraphoneProjectileInstrument(Instrument):
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.fCurves, frameInfo.bObj.obj)
+                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.noteOnCurves, frameInfo.bObj.obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 
@@ -260,7 +260,7 @@ class VibraphoneInstrument(Instrument):
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.fCurves, obj)
+                            processor = FCurveProcessorNew(cachedObj, frameInfo.bObj.noteOnCurves, obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 

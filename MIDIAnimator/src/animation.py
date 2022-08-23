@@ -14,26 +14,23 @@ class MIDIAnimatorNode:
     def __init__(self):
         self._instruments = []
 
-    def addInstrument(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=None):
+    def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=None):
         """ make a GenericInstrumnet subclass and add it into internal track list 
             cache only supported for type `projectile` instruments
         """
         assert isinstance(midiTrack, MIDITrack), "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         
-        if objectCollection.instrument_type != "custom" and custom is not None:
-            logging.warn(f"Object Collection {objectCollection.name} not of type custom but custom class passed! Updating instrument type...")
-            objectCollection.instrument_type = "custom"
-        
-        insType = objectCollection.instrument_type
-        if insType == "projectile": cls = ProjectileInstrument(midiTrack, objectCollection)
-        elif insType == "string": cls = StringInstrument(midiTrack, objectCollection)
-        elif insType == "custom":
+        if instrumentType == "projectile": cls = ProjectileInstrument(midiTrack, objectCollection)
+        elif instrumentType == "string": cls = StringInstrument(midiTrack, objectCollection)
+        elif instrumentType == "custom":
             if custom is None: raise RuntimeError("Please pass a custom class object. Refer to the docs.")
             if customVars is not None: 
                 cls = custom(midiTrack, objectCollection, **customVars)
             else:
                 cls = custom(midiTrack, objectCollection)
+        else:
+            raise ValueError(f"Instrument type {instrumentType} does not exist!")
         
         self._instruments.append(cls)
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from multiprocessing.sharedctypes import Value
 from pprint import pformat, pprint
 import bpy
 from dataclasses import dataclass
@@ -44,33 +45,47 @@ class Instrument:
             self.__post_init__()
     
     def __post_init__(self):
-        result = self._makeObjToFCurveDict()
-        self.createNoteToBlenderObject(result)
+        noteOnCurves = self.makeObjToFCurveDict(type="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(type="note_off")
+        self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
     
-    def _makeObjToFCurveDict(self) -> Dict[bpy.types.Object, ObjectFCurves]:
+    def makeObjToFCurveDict(self, type: str="note_on") -> Dict[bpy.types.Object, ObjectFCurves]:
+
         fCurveDict = {}
         bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
-            location = []
-            rotation = []
+            if type == "note_on":
+                objAnimObject = obj.midi.note_on_curve
+            elif type == "note_off":
+                objAnimObject = obj.midi.note_off_curve
+            else:
+                raise ValueError("Type needs to be 'note_on' or 'note_off'!")
+            
+            # if the object doesn't existA, just continue
+            if not objAnimObject: continue
+
             origLoc = obj.location.copy()
             origRot = obj.rotation_euler.copy()
+            
+            location = []
+            rotation = []
             shapeKeysDict = {}
             shapeKeys = []
-            material = []
-            for fCrv in FCurvesFromObject(obj.animation_curve):
+            customProperties = []
+            
+            for fCrv in FCurvesFromObject(objAnimObject):
                 dataPath = fCrv.data_path
                 if dataPath == "location":
                     location.append(fCrv)
                 elif dataPath == "rotation_euler":
                     rotation.append(fCrv)
                 elif dataPath[:2] == '["' and dataPath[-2:] == '"]':  # this is a custom property that we're finding
-                    getType = eval(f"type(bpy.context.scene.objects['{obj.animation_curve.name}']{dataPath})")
+                    getType = eval(f"type(bpy.context.scene.objects['{objAnimObject.name}']{dataPath})")
                     assert getType == float or getType == int, "Please create type `int` or type `float` custom properties"
-                    material.append(fCrv)
+                    customProperties.append(fCrv)
             
             # first need to get all of this reference object's shape key FCurves
-            for fCrv in shapeKeyFCurvesFromObject(obj.animation_curve):
+            for fCrv in shapeKeyFCurvesFromObject(objAnimObject):
                 if fCrv.data_path[-5:] == "value":  # we only want it if they have keyframed "value"
                     # fCrv.data_path returns 'key_blocks["name"].value'.
                     # 'key_blocks["' will never change and so will '"].value'.
@@ -93,14 +108,15 @@ class Instrument:
                 
                 shapeKeys.append(val[0])  # add the FCurve only to the internal list of shapeKeys
 
-            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(material), shapeKeysDict, tuple(shapeKeys), origLoc, origRot)
+            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(customProperties), shapeKeysDict, tuple(shapeKeys), origLoc, origRot)
        
         return fCurveDict
 
-    def createNoteToBlenderObject(self, fCurveDict: Dict[bpy.types.Object, ObjectFCurves]) -> None:
+    def createNoteToBlenderObject(self, noteOnCurves: Dict[bpy.types.Object, ObjectFCurves], noteOffCurves: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
-            if obj.note_number is None or not obj.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
-            bObj = BlenderObject(obj, convertNoteNumbers(obj.note_number), fCurveDict[obj])
+            if obj.midi.note_number is None or not obj.midi.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
+
+            bObj = BlenderObject(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
             
             for noteNumber in bObj.noteNumbers:
                 if noteNumber in self.noteToBlenderObject:
@@ -186,8 +202,8 @@ class Instrument:
                 cachedObj = cache.getObject()
                 # set it's note number (for use with drivers)
                 if len(noteNumbers) == 1:
-                    cachedObj.note_number_int = noteNumbers[0]
-                    cachedObj.keyframe_insert(data_path="note_number_int", frame=frame+offset)
+                    cachedObj.midi.note_number_int = noteNumbers[0]
+                    cachedObj.midi.keyframe_insert(data_path="note_number_int", frame=frame+offset)
 
                 # make last keyframe interpolation constant
                 setKeyframeInterpolation(cachedObj, "CONSTANT")
@@ -227,14 +243,13 @@ class Instrument:
                 obj = bObj.obj
 
                 try:
-                    hit = obj.note_hit_time
+                    hit = obj.midi.note_hit_time
                 except AttributeError:
                     print(f"WARNING: '{obj.name}' has no hit time!")
                     hit = 0
 
                 frame = int(secToFrames(note.timeOn))
-                offsets = bObj.frameOffsets()
-                assert offsets != (None, None), f"No frame ranges! Does object '{bObj.obj.name}' have animation data for its animation curve?"
+                offsets = bObj.rangeOn()
                 startFrame = int(floor(offsets[0] - hit + frame)) - 1
                 endFrame = int(ceil(offsets[1] - hit + frame)) + 1
                 result.append(FrameRange(startFrame, endFrame, bObj))
@@ -257,7 +272,7 @@ class Instrument:
             # set of FCurveProcessor in case more than one cached object currently in-progress for the same note
             processorSet = set()
             for bObj in self.noteToBlenderObject[noteNumber]:
-                processor = FCurveProcessor(bObj.obj, bObj.fCurves)
+                processor = FCurveProcessor(bObj.obj, bObj.noteOnCurves)
 
                 for frameInfo in self._activeNoteDict[noteNumber]:
                     if frameInfo.bObj.obj != bObj.obj: continue
@@ -272,7 +287,7 @@ class Instrument:
                         # this is the first time this cachedObject is used so need to create its FCurveProcessor
                         else:
                             # create a processor and include in set for keyframing
-                            processor = FCurveProcessor(cachedObj, frameInfo.bObj.fCurves, frameInfo.bObj.obj)
+                            processor = FCurveProcessor(cachedObj, frameInfo.bObj.noteOnCurves, frameInfo.bObj.obj)
                             processorSet.add(processor)
                             cacheObjectProcessors[cachedObj] = processor
 
