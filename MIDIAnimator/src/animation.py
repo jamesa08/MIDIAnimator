@@ -1,11 +1,11 @@
 from __future__ import annotations
-import bpy
 from typing import List, Dict
+import bpy
 
-from . algorithms import *
+from .. data_structures.midi import MIDITrack
 from .. utils.loggerSetup import *
 from .. src.instruments import *
-from .. data_structures.midi import MIDITrack
+from . algorithms import *
 
 class MIDIAnimatorNode:
     """this class acts as a wrapper for GenericTracks/custom tracks"""

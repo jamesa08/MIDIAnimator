@@ -1,11 +1,8 @@
 from __future__ import annotations
-import bpy
-from typing import List, Tuple, TYPE_CHECKING
+from .. data_structures import FrameRange
 from math import sin, cos, pi, e
-from .. data_structures.midi import MIDITrack
-
-if TYPE_CHECKING:
-    from ..data_structures import FrameRange
+from typing import List, Tuple
+import bpy
 
 def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
     """

@@ -1,9 +1,9 @@
 from __future__ import annotations
 from .. utils import removeDuplicates, gmProgramToName, _closestTempo
-from .. libs import mido
-from dataclasses import dataclass
 from typing import List, Tuple, Dict
-from bpy.path import abspath
+from dataclasses import dataclass
+from .. libs import mido
+from sys import modules
 
 @dataclass
 class MIDINote:
@@ -233,8 +233,13 @@ class MIDIFile:
         :param midFile: MIDI file
         :return: list of MIDITracks
         """
-
-        midiFile = mido.MidiFile(abspath(file))
+        
+        # use abspath "//"
+        if "bpy" in modules:
+            from bpy.path import abspath
+            file = abspath(file)
+        
+        midiFile = mido.MidiFile(file)
 
         assert midiFile.type in range(2), "Type 2 MIDI Files are not supported!"
 
@@ -301,7 +306,7 @@ class MIDIFile:
                     # General MIDI name
                     gmName = gmProgramToName(msg.program) if msg.channel != 9 else "Drumset"
 
-                    if curTrack.name == "" or (midiFile.type == 0 and curTrack.name == f"Track {curChannel + 1}"):
+                    if len(curTrack.name) == 0 or (midiFile.type == 0 and curTrack.name == f"Track {curChannel + 1}"):
                         curTrack.name = gmName
                     
                 elif curType == "control_change":
@@ -313,7 +318,7 @@ class MIDIFile:
                 elif curType == "aftertouch":
                     curTrack.addAftertouch(msg.channel, msg.value, time)
                 
-                if midiFile.type == 0 and curTrack.name == "":
+                if midiFile.type == 0 and len(curTrack.name) == 0:
                     curTrack.name = f"Track {curChannel + 1}"
 
                 # add track to tracks for instrumentType 1

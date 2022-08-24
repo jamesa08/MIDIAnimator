@@ -1,10 +1,10 @@
 from __future__ import annotations
-import bpy
-from dataclasses import dataclass
 from typing import Tuple, List, Dict, Union, Optional
 from mathutils import Vector, Euler
-from ..utils.blender import *
+from dataclasses import dataclass
 from numpy import add as npAdd
+from ..utils.blender import *
+import bpy
 
 @dataclass(init=False)
 class BlenderObject:

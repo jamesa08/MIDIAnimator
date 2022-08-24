@@ -1,22 +1,17 @@
 from __future__ import annotations
-from multiprocessing.sharedctypes import Value
-from pprint import pformat, pprint
-import bpy
-from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional, Union
 from math import floor, ceil, radians
-from typing import Dict, List, Tuple, Optional, Union, TYPE_CHECKING
 from mathutils import Vector, Euler
+from dataclasses import dataclass
 from contextlib import suppress
+import bpy
 
+from ..data_structures.midi import MIDITrack
+from .. utils import convertNoteNumbers
 from .. utils.loggerSetup import *
 from .. data_structures import *
 from .. utils.blender import *
 from . algorithms import *
-from .. utils import convertNoteNumbers
-
-
-if TYPE_CHECKING:
-    from .. data_structures.midi import *
 
 @dataclass
 class Instrument:
@@ -125,6 +120,7 @@ class Instrument:
         
 
     def preAnimate(self):
+        # This method will be ovewritten by custom functions
         pass
 
     def preFrameLoop(self):
@@ -193,7 +189,6 @@ class Instrument:
         while i >= 0 and self._objFrameRanges[i].startFrame <= frame:
             frameInfo = self._objFrameRanges[i]
             bObj = frameInfo.bObj
-            obj = bObj.obj
             noteNumbers = bObj.noteNumbers
 
             # if we have a cache, get reusable object
@@ -227,7 +222,7 @@ class Instrument:
             i -= 1
 
     def createFrameRanges(self):
-        assert self.noteToBlenderObject is not None, "please run noteToBlenderObject() first"
+        assert self.noteToBlenderObject is not None, "Please run noteToBlenderObject() first"
         result = []
         warnNoteNumbers = set()
         for note in self.midiTrack.notes:
@@ -308,7 +303,6 @@ class ProjectileInstrument(Instrument):
     def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection, referenceProjectile: bpy.types.Object):
         super().__init__(midiTrack, objectCollection)
 
-        # post init things here
         self._cacheInstance = None
         self.projectileCollection = projectileCollection
         self.referenceProjectile = referenceProjectile
@@ -319,7 +313,7 @@ class ProjectileInstrument(Instrument):
 
         cleanCollection(self.projectileCollection, self.referenceProjectile)
 
-        # calculate number of needed projectiles & instance the blender objects using bpy
+        # calculate number of needed projectiles & instance the blender objects
         maxNumOfProjectiles = maxSimultaneousObjects(self._objFrameRanges)
 
         projectiles = []

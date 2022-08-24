@@ -1,7 +1,7 @@
-from ast import literal_eval
 from ..utils import nameToNote, noteToName, convertNoteNumbers
 from ..utils.blender import FCurvesFromObject
 from operator import attrgetter
+from ast import literal_eval
 import bpy
 
 def col_sort_key(obj):
