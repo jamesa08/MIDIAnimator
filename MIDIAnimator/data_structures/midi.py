@@ -23,7 +23,7 @@ class MIDIEvent:
     time: float
 
     def __lt__(self, other):
-        return self.timeOn < other.timeOn
+        return self.time < other.time
 
 class MIDITrack:
     name: str
@@ -187,19 +187,21 @@ class MIDITrack:
 
     def __add__(self, other) -> MIDITrack:
         print(f"INFO: Attempting to merge tracks '{self.name}' & '{other.name}' ...")
-        addedTrack = MIDITrack(f"{self.name} & {other.name}")
+        try:
+            addedTrack = MIDITrack(f"{self.name} & {other.name}")
 
-        addedTrack.notes = sorted(self.notes + other.notes)
-        
-        controlChangeCloned = self.controlChange.copy()
-        controlChangeCloned.update(other.controlChange)
+            addedTrack.notes = sorted(self.notes + other.notes)
+            
+            controlChangeCloned = self.controlChange.copy()
+            controlChangeCloned.update(other.controlChange)
 
-        addedTrack.controlChange = controlChangeCloned
-        
-        addedTrack.pitchweel = sorted(self.pitchwheel + other.pitchwheel)
-        addedTrack.aftertouch = sorted(self.aftertouch + other.aftertouch)
-        
-        return addedTrack
+            addedTrack.controlChange = controlChangeCloned
+            
+            addedTrack.pitchweel = sorted(self.pitchwheel + other.pitchwheel)
+            addedTrack.aftertouch = sorted(self.aftertouch + other.aftertouch)
+            return addedTrack
+        except Exception as e:
+            raise RuntimeError(f"Failed to merge tracks '{self.name}' & '{other.name}'! \nException: {e}")
 
     def __repr__(self) -> str:
         type_ = type(self)
