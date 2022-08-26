@@ -284,9 +284,16 @@ class MIDIFile:
 
                 if midiFile.type == 0 and msg.type == "set_tempo":
                     tempo = msg.tempo
-
-                time += mido.tick2second(msg.time, midiFile.ticks_per_beat,
-                                         tempo if midiFile.type == 0 else _closestTempo(tempoMap, time)[1])
+                
+                # tempo fix, fixes #7
+                if midiFile.type == 0:
+                    exactTempo = tempo
+                else:
+                    exactTempo = _closestTempo(tempoMap, time)[1]
+                    if exactTempo == float('inf'):
+                        exactTempo = tempo
+                
+                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, exactTempo)
 
                 # channel messages
                 if midiFile.type == 0 and not msg.is_meta and msg.type != "sysex":
