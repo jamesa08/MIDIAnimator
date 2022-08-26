@@ -1,5 +1,5 @@
 from __future__ import annotations
-from MIDIAnimator.utils import convertNoteNumbers, typeOfNoteNumber, noteToName
+from .. utils import convertNoteNumbers, typeOfNoteNumber, noteToName
 from ast import literal_eval
 import bpy
 
