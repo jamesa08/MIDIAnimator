@@ -15,7 +15,7 @@ class MIDIAnimatorNode:
         self._instruments = []
 
     def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, properties=None, custom=None, customVars: Dict=None):
-        assert isinstance(midiTrack, MIDITrack), "Please pass in a type MIDITrack object."
+        assert type(midiTrack).__name__ == "MIDITrack", "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         assert instrumentType in {"evaluate", "projectile", "custom"}, "Instrument type invalid."
         
