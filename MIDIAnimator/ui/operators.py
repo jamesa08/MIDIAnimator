@@ -22,7 +22,14 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         # convert String "list" into type list
 
         try:
-            note_numbers = literal_eval(sceneMidi.quick_note_number_list)
+            if len(sceneMidi.quick_note_number_list) != 0:
+                note_numbers = literal_eval(sceneMidi.quick_note_number_list)
+            else:
+                if sceneMidi.quick_sort_by_name == False:
+                    note_numbers = [col_sort_key(obj) for obj  in col.all_objects]
+                else:
+                    self.report({"ERROR"}, f"List contains errors. Please check the list and try again.")
+                    return {'CANCELLED'}
         except Exception as e:
             self.report({"ERROR"}, f"List contains errors. Please check the list and try again. Error message: {e}.")
             return {'CANCELLED'}
