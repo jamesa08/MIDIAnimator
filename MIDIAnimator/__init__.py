@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 bl_info = {
-    "name": "MIDI Animator beta3.2",
+    "name": "MIDI Animator beta3.3",
     "description": "A cohesive, open-source solution to animating Blender objects using a MIDI file.",
     "author": "James Alt (et al.)",
     "version": (1, 0, 0),
