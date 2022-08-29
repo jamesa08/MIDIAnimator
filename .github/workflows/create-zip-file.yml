@@ -1,0 +1,33 @@
+name: Create MIDIAnimator build
+
+on: [push]
+
+jobs:
+  zipFile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Out branch
+        uses: actions/checkout@v3
+
+        # thank you to https://brandur.org/fragments/github-actions-env-vars-in-env-vars for the tip on using enviroment files!
+      - name: Set enviroment variables
+        run: |
+          cd ${{ github.workspace }}
+          NAME=$(python3 ${{ github.workspace }}/.github/workflows/get_name.py --readFile ${{ github.workspace }}/MIDIAnimator/__init__.py)
+          HASH=$(git log -1 --format='%h')
+          echo "NAME=$NAME" >> $GITHUB_ENV
+          echo "HASH=$HASH" >> $GITHUB_ENV
+          echo "ZIPNAME=$NAME-$HASH" >> $GITHUB_ENV
+
+      - name: Zip up MIDIAnimator
+        run: |
+          cd ${{ github.workspace }}
+          mkdir artifacts/
+          echo 'creating ${{ env.ZIPNAME }}.zip in ${{ github.workspace }}/artifacts/'
+          zip -r ${{ github.workspace }}/artifacts/$ZIPNAME.zip MIDIAnimator/
+      
+      - name: Download all workflow run artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.ZIPNAME }}
+          path: ${{ github.workspace }}/artifacts/
