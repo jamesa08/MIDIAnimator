@@ -108,7 +108,10 @@ class Instrument:
 
     def createNoteToBlenderObject(self, noteOnCurves: Dict[bpy.types.Object, ObjectFCurves], noteOffCurves: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
-            if obj.midi.note_number is None or not obj.midi.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+            
+            # make sure objects are not in target collection
+            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
 
             bObj = BlenderObject(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
             
@@ -244,7 +247,7 @@ class Instrument:
 
                 frame = int(secToFrames(note.timeOn))
                 offsets = bObj.rangeOn()
-                assert offsets != (None, None), f"Frame offsets are none for object '{obj.name}'! Does '{obj.name}' have a note on animation curve?"
+                assert offsets != (None, None), f"Frame ranges are none for object '{obj.name}'!"
                 startFrame = int(floor(offsets[0] + hit + frame)) - 1
                 endFrame = int(ceil(offsets[1] + hit + frame)) + 1
                 result.append(FrameRange(startFrame, endFrame, bObj))

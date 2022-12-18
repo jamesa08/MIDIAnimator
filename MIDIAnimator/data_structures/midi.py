@@ -348,13 +348,15 @@ class MIDIFile:
     
     def findTrack(self, name) -> MIDITrack:
         """Finds the track with a specified name
-
+        raises ValueError if there is no track with that specified name
         :param str name: The name of the track to be returned
         :return list: The track with the specified name
         """
         for track in self._tracks:
             if track.name == name:
                 return track
+        
+        raise ValueError(f"Track name '{name}' does not exist!")
     
     def listTrackNames(self) -> List[str]:
         return [str(track.name) for track in self._tracks]
