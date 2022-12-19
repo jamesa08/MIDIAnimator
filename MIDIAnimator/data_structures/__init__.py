@@ -7,7 +7,11 @@ from ..utils.blender import *
 from numpy import add as npAdd
 
 @dataclass(init=False)
-class BlenderObject:
+class BlenderWrapper:
+    """object wrapper for a Blender Object
+    this allows us to store data with the blender objects (such as FCurve data, note numbers, MIDI information, etc)
+    """
+
     obj: bpy.types.Object
     noteNumbers: tuple
     noteOnCurves: ObjectFCurves
@@ -184,7 +188,7 @@ class FrameRange:
     """
     startFrame: int
     endFrame: int
-    bObj: BlenderObject
+    bObj: BlenderWrapper
     type: str = "note_on"
 
     def __post_init__(self):

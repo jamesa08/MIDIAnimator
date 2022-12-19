@@ -59,6 +59,7 @@ class NoteOffTesting(Instrument):
 
     def preAnimate(self):
         bpy.context.scene.frame_set(-10000)
+        deleteMarkers("NOTE")
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)
 
@@ -66,13 +67,16 @@ class NoteOffTesting(Instrument):
         out = []
         for note in self.midiTrack.notes:
             if note.noteNumber in self.noteToBlenderObject:
-                bObjs = self.noteToBlenderObject[note.noteNumber]
+                wprs = self.noteToBlenderObject[note.noteNumber]
             else:
                 # warn
                 continue
+            
+            bpy.context.scene.timeline_markers.new(f'NOTE ON {note.timeOn}', frame=int(secToFrames(note.timeOn)))
+            bpy.context.scene.timeline_markers.new(f'NOTE OFF {note.timeOff}', frame=int(secToFrames(note.timeOff)))
 
-            for bObj in bObjs:
-                obj = bObj.obj
+            for wpr in wprs:
+                obj = wpr.obj
                 objMidi = obj.midi
                 
                 rangeOn, rangeOff = 0.0, 0.0
@@ -80,12 +84,12 @@ class NoteOffTesting(Instrument):
                 if objMidi.anim_curve_type == "keyframed":
 
                     if objMidi.note_on_curve:
-                        rangeOn = bObj.rangeOn()[1] - bObj.rangeOn()[0]
+                        rangeOn = wpr.rangeOn()[1] - wpr.rangeOn()[0]
                         rangeOn += objMidi.note_on_anchor_pt
                         rangeOn += secToFrames(note.timeOn)
                     
                     if objMidi.note_off_curve:
-                        rangeOff = bObj.rangeOff()[1] - bObj.rangeOff()[0]
+                        rangeOff = wpr.rangeOff()[1] - wpr.rangeOff()[0]
                         rangeOff += objMidi.note_off_anchor_pt
                         rangeOff += secToFrames(note.timeOff)
                 
@@ -95,7 +99,7 @@ class NoteOffTesting(Instrument):
                 elif objMidi.anim_curve_type == "adsr":
                     pass
                 
-                out.append(FrameRange(rangeOn, rangeOff, bObj))
+                out.append(FrameRange(rangeOn, rangeOff, wpr))
         
         return out
 
@@ -105,30 +109,30 @@ class NoteOffTesting(Instrument):
         alreadyInserted = []
         for note in self.midiTrack.notes:
             if note.noteNumber in self.noteToBlenderObject:
-                bObjs = self.noteToBlenderObject[note.noteNumber]
+                wprs = self.noteToBlenderObject[note.noteNumber]
             else:
                 # TODO warn
                 continue
             
-            for bObj in bObjs:
+            for wpr in wprs:
                 nextKeys = []
                 # note on
-                if bObj.obj.midi.note_on_curve:
-                    for shapeName in bObj.noteOnCurves.shapeKeysDict:
-                        fCrv = bObj.noteOnCurves.shapeKeysDict[shapeName][0]  # reference shape key
-                        shapeKey = bObj.noteOnCurves.shapeKeysDict[shapeName][1]  # bObj shape key
+                if wpr.obj.midi.note_on_curve:
+                    for shapeName in wpr.noteOnCurves.shapeKeysDict:
+                        fCrv = wpr.noteOnCurves.shapeKeysDict[shapeName][0]  # reference shape key
+                        shapeKey = wpr.noteOnCurves.shapeKeysDict[shapeName][1]  # wpr shape key
                         for keyframe in fCrv.keyframe_points:
-                            frame = keyframe.co[0] + secToFrames(note.timeOn) + bObj.obj.midi.note_on_anchor_pt
+                            frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
                             value = keyframe.co[1]
                             nextKeys.append(Keyframe(frame, value))
                 
-                if bObj.obj.midi.note_off_curve:
+                if wpr.obj.midi.note_off_curve:
                     # note off
-                    for shapeName in bObj.noteOffCurves.shapeKeysDict:
-                        fCrv = bObj.noteOffCurves.shapeKeysDict[shapeName][0]  # reference shape key
-                        shapeKey = bObj.noteOffCurves.shapeKeysDict[shapeName][1]  # bObj shape key
+                    for shapeName in wpr.noteOffCurves.shapeKeysDict:
+                        fCrv = wpr.noteOffCurves.shapeKeysDict[shapeName][0]  # reference shape key
+                        shapeKey = wpr.noteOffCurves.shapeKeysDict[shapeName][1]  # wpr shape key
                         for keyframe in fCrv.keyframe_points:
-                            frame = keyframe.co[0] + secToFrames(note.timeOff) + bObj.obj.midi.note_off_anchor_pt
+                            frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
                             value = keyframe.co[1]
                             nextKeys.append(Keyframe(frame,value))
                 
@@ -168,16 +172,16 @@ class NoteOffTesting(Instrument):
         
         
         for keyframe in sorted(alreadyInserted, key=lambda key: key.frame):
-            # print(f"{keyframe.frame},{keyframe.value}")
+            print(f"{keyframe.frame},{keyframe.value}")
             shapeKey.value = keyframe.value
             shapeKey.keyframe_insert(data_path="value", frame=keyframe.frame)
                         
 
 file = MIDIFile("/Users/james/github/MIDIFiles/testMidi/test_midi_2notes_fixed.mid")
-vibe = file.findTrack("Test")
+test = file.findTrack("Test")
 
 animator = MIDIAnimatorNode()
-animator.addInstrument(instrumentType="custom", midiTrack=vibe, objectCollection=bpy.data.collections['Cubes'], custom=NoteOffTesting)
+animator.addInstrument(instrumentType="custom", midiTrack=test, objectCollection=bpy.data.collections['Cubes'], custom=NoteOffTesting)
 
 # Animate the MIDI file
 animator.animate()

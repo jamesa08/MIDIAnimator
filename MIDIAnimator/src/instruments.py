@@ -116,7 +116,7 @@ class Instrument:
         for obj in self.collection.all_objects:
             if obj.midi.note_number is None or not obj.midi.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
 
-            bObj = BlenderObject(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
+            bObj = BlenderWrapper(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
             
             for noteNumber in bObj.noteNumbers:
                 if noteNumber in self.noteToBlenderObject:

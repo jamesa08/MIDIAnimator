@@ -28,6 +28,8 @@ class MIDIEvent:
 class MIDITrack:
     name: str
     
+    notes: List[MIDINote]
+
     controlChange: Dict[int, List[MIDIEvent]]
     pitchwheel: List[MIDIEvent]
     aftertouch: List[MIDIEvent]
