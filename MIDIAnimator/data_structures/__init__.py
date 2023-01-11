@@ -52,13 +52,13 @@ class BlenderWrapper:
 
     def rangeOn(self) -> Tuple[float, float]:
         """
-        :return: start and end offsets for playing the **note on** curve
+        :return: start and end frames for playing the **note on** curve
         """
         return self._startRangeOn, self._endRangeOn
     
     def rangeOff(self) -> Tuple[float, float]:
         """
-        :return: start and end offsets for playing the **note off** curve
+        :return: start and end frames for playing the **note off** curve
         """
         return self._startRangeOff, self._endRangeOff
 
