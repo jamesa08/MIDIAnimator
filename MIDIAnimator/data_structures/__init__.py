@@ -6,6 +6,15 @@ from mathutils import Vector, Euler
 from ..utils.blender import *
 from numpy import add as npAdd
 
+@dataclass
+class Keyframe:
+    """simple keyframe data structure"""
+    frame: float  # frame of the keyframe
+    value: float  # value of the keyframe
+
+    def __hash__(self) -> int:
+        return hash((self.frame, self.value))
+
 @dataclass(init=False)
 class BlenderWrapper:
     """object wrapper for a Blender Object
@@ -61,7 +70,6 @@ class BlenderWrapper:
         :return: start and end frames for playing the **note off** curve
         """
         return self._startRangeOff, self._endRangeOff
-
 
 @dataclass
 class ObjectFCurves:

@@ -3,6 +3,7 @@ import bpy
 from typing import List, Tuple, TYPE_CHECKING
 from math import sin, cos, pi, e
 from .. data_structures.midi import MIDITrack
+from .. data_structures import Keyframe
 
 if TYPE_CHECKING:
     from ..data_structures import FrameRange
@@ -79,7 +80,7 @@ def animateSine(time: float, startVal: float, endVal: float, duration: float) ->
 def animateDampedOsc(x: float, period: float, amplitude: float, damp: float, frameRate: float):
     return (e ** -((damp * x) / frameRate)) * (-sin((period * x) / frameRate) * amplitude)
 
-def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRate: float) -> List[Tuple[float, float]]:
+def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRate: float) -> List[Keyframe]:
     # generates keyframes that will generate the specified dampened oscillation
     # Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions
     # ineractive demo: https://www.desmos.com/calculator/vzwitwmib6
@@ -100,7 +101,7 @@ def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRat
     y = 1
     i = 0
     
-    out = [(0, 0)]
+    out = [Keyframe(0, 0)]
     
     while abs(y) > 0.01:
         approxX = (i + 1/2) * (pi / period) * frameRate
@@ -110,8 +111,8 @@ def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRat
         if x < 0: continue
         y = waveFunc(x)
         
-        out.append((x, waveFunc(x)))
+        out.append(Keyframe(x, waveFunc(x)))
     
-    out.append((x + 1, 0))
+    out.append(Keyframe(x + 1, 0))
     
     return out
