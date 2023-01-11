@@ -237,7 +237,7 @@ class FourWayPercussion(Instrument):
         return fourWayNotes
 
     def getRotObj(self) -> None:
-        assert len(self.collection.all_objects) == 1, "please make sure you have 1 objects in the collection"
+        assert len(self.collection.all_objects) == 1, "please make sure you have 1 object in the collection"
         
         for obj in self.collection.all_objects:
             self.rotObj = obj

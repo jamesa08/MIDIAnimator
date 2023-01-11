@@ -1,22 +1,17 @@
 from __future__ import annotations
-from multiprocessing.sharedctypes import Value
-from pprint import pformat, pprint
-import bpy
-from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional, Union
 from math import floor, ceil, radians
-from typing import Dict, List, Tuple, Optional, Union, TYPE_CHECKING
 from mathutils import Vector, Euler
+from dataclasses import dataclass
 from contextlib import suppress
+import bpy
 
+from ..data_structures.midi import MIDITrack
+from .. utils import convertNoteNumbers
 from .. utils.loggerSetup import *
 from .. data_structures import *
 from .. utils.blender import *
 from . algorithms import *
-from .. utils import convertNoteNumbers
-
-
-if TYPE_CHECKING:
-    from .. data_structures.midi import *
 
 @dataclass
 class Instrument:
@@ -45,18 +40,17 @@ class Instrument:
             self.__post_init__()
     
     def __post_init__(self):
-        noteOnCurves = self.makeObjToFCurveDict(type="note_on")
-        noteOffCurves = self.makeObjToFCurveDict(type="note_off")
+        noteOnCurves = self.makeObjToFCurveDict(noteType="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(noteType="note_off")
         self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
     
-    def makeObjToFCurveDict(self, type: str="note_on") -> Dict[bpy.types.Object, ObjectFCurves]:
-
+    def makeObjToFCurveDict(self, noteType: str="note_on") -> Dict[bpy.types.Object, ObjectFCurves]:
         fCurveDict = {}
         bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
-            if type == "note_on":
+            if noteType == "note_on":
                 objAnimObject = obj.midi.note_on_curve
-            elif type == "note_off":
+            elif noteType == "note_off":
                 objAnimObject = obj.midi.note_off_curve
             else:
                 raise ValueError("Type needs to be 'note_on' or 'note_off'!")
@@ -114,7 +108,10 @@ class Instrument:
 
     def createNoteToBlenderObject(self, noteOnCurves: Dict[bpy.types.Object, ObjectFCurves], noteOffCurves: Dict[bpy.types.Object, ObjectFCurves]) -> None:
         for obj in self.collection.all_objects:
-            if obj.midi.note_number is None or not obj.midi.note_number: raise RuntimeError(f"Object '{obj.name}' has no note number!")
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+            
+            # make sure objects are not in target collection
+            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
 
             bObj = BlenderWrapper(obj, convertNoteNumbers(obj.midi.note_number), noteOnCurves[obj] if obj.midi.note_on_curve else None, noteOffCurves[obj] if obj.midi.note_off_curve else None)
             
@@ -126,6 +123,7 @@ class Instrument:
         
 
     def preAnimate(self):
+        # This method will be ovewritten by custom functions
         pass
 
     def preFrameLoop(self):
@@ -194,7 +192,6 @@ class Instrument:
         while i >= 0 and self._objFrameRanges[i].startFrame <= frame:
             frameInfo = self._objFrameRanges[i]
             bObj = frameInfo.bObj
-            obj = bObj.obj
             noteNumbers = bObj.noteNumbers
 
             # if we have a cache, get reusable object
@@ -228,7 +225,7 @@ class Instrument:
             i -= 1
 
     def createFrameRanges(self):
-        assert self.noteToBlenderObject is not None, "please run noteToBlenderObject() first"
+        assert self.noteToBlenderObject is not None, "Please run noteToBlenderObject() first"
         result = []
         warnNoteNumbers = set()
         for note in self.midiTrack.notes:
@@ -243,15 +240,16 @@ class Instrument:
                 obj = bObj.obj
 
                 try:
-                    hit = obj.midi.note_hit_time
+                    hit = obj.midi.note_on_anchor_pt
                 except AttributeError:
-                    print(f"WARNING: '{obj.name}' has no hit time!")
+                    print(f"WARNING: '{obj.name}' has no note on anchor point!")
                     hit = 0
 
                 frame = int(secToFrames(note.timeOn))
                 offsets = bObj.rangeOn()
-                startFrame = int(floor(offsets[0] - hit + frame)) - 1
-                endFrame = int(ceil(offsets[1] - hit + frame)) + 1
+                assert offsets != (None, None), f"Frame ranges are none for object '{obj.name}'!"
+                startFrame = int(floor(offsets[0] + hit + frame)) - 1
+                endFrame = int(ceil(offsets[1] + hit + frame)) + 1
                 result.append(FrameRange(startFrame, endFrame, bObj))
         
         if warnNoteNumbers:
@@ -305,39 +303,38 @@ class Instrument:
 class ProjectileInstrument(Instrument):
     _cacheInstance: Optional[CacheInstance]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection, referenceProjectile: bpy.types.Object):
+        super().__init__(midiTrack, objectCollection)
 
-        # post init things here
         self._cacheInstance = None
+        self.projectileCollection = projectileCollection
+        self.referenceProjectile = referenceProjectile
 
     def preAnimate(self):
         # delete old objects
         objectCollection = self.collection
 
-        assert objectCollection.projectile_collection is not None, "Please define a Projectile collection for type Projectile."
-        assert objectCollection.reference_projectile is not None, "Please define a reference object to be duplicated."
-        cleanCollection(objectCollection.projectile_collection, objectCollection.reference_projectile)
+        cleanCollection(self.projectileCollection, self.referenceProjectile)
 
-        # calculate number of needed projectiles & instance the blender objects using bpy
+        # calculate number of needed projectiles & instance the blender objects
         maxNumOfProjectiles = maxSimultaneousObjects(self._objFrameRanges)
 
         projectiles = []
 
         for i in range(maxNumOfProjectiles):
-            duplicate = objectCollection.reference_projectile.copy()
+            duplicate = self.referenceProjectile.copy()
             duplicate.name = f"projectile_{hex(id(objectCollection))}_{i}"
             
             # hide them
             showHideObj(duplicate, True, self._objFrameRanges[0].startFrame)
 
-            objectCollection.projectile_collection.objects.link(duplicate)
+            self.projectileCollection.objects.link(duplicate)
             projectiles.append(duplicate)
         
         # create CacheInstance object
         self._cacheInstance = CacheInstance(projectiles)
 
-class StringInstrument(Instrument):
+class EvaluateInstrument(Instrument):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

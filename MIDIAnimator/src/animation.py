@@ -1,11 +1,11 @@
 from __future__ import annotations
-import bpy
 from typing import List, Dict
+import bpy
 
-from . algorithms import *
+from .. data_structures.midi import MIDITrack
 from .. utils.loggerSetup import *
 from .. src.instruments import *
-from .. data_structures.midi import MIDITrack
+from . algorithms import *
 
 class MIDIAnimatorNode:
     """this class acts as a wrapper for GenericTracks/custom tracks"""
@@ -14,23 +14,30 @@ class MIDIAnimatorNode:
     def __init__(self):
         self._instruments = []
 
-    def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, custom=None, customVars: Dict=None):
-        """ make a GenericInstrumnet subclass and add it into internal track list 
-            cache only supported for type `projectile` instruments
-        """
-        assert isinstance(midiTrack, MIDITrack), "Please pass in a type MIDITrack object."
+    def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, properties=None, custom=None, customVars: Dict=None):
+        assert type(midiTrack).__name__ == "MIDITrack", "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
+        assert instrumentType in {"evaluate", "projectile", "custom"}, "Instrument type invalid."
         
-        if instrumentType == "projectile": cls = ProjectileInstrument(midiTrack, objectCollection)
-        elif instrumentType == "string": cls = StringInstrument(midiTrack, objectCollection)
+        if instrumentType == "projectile":
+            assert properties is not None, "Please pass a dictionary of properties in. Refer to the docs for help."
+            assert "projectile_collection" in properties, "Please pass 'projectile_collection' into the properties dictionary."
+            assert "reference_projectile" in properties, "Please pass 'reference_projectile' into the properties dictionary."
+            
+            assert isinstance(properties["projectile_collection"], bpy.types.Collection), "Please pass in a bpy.types.Collection for property 'projectile_collection'."
+            assert isinstance(properties["reference_projectile"], bpy.types.Object), "Please pass in a bpy.types.Object for property 'reference_projectile'."
+            
+            cls = ProjectileInstrument(midiTrack, objectCollection, properties["projectile_collection"], properties["reference_projectile"])
+        
+        elif instrumentType == "evaluate": 
+            cls = EvaluateInstrument(midiTrack, objectCollection)
+
         elif instrumentType == "custom":
-            if custom is None: raise RuntimeError("Please pass a custom class object. Refer to the docs.")
+            if custom is None: raise RuntimeError("Please pass a custom class object. Refer to the docs for help.")
             if customVars is not None: 
                 cls = custom(midiTrack, objectCollection, **customVars)
             else:
                 cls = custom(midiTrack, objectCollection)
-        else:
-            raise ValueError(f"Instrument type {instrumentType} does not exist!")
         
         self._instruments.append(cls)
 

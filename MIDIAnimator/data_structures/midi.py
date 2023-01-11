@@ -1,9 +1,9 @@
 from __future__ import annotations
 from .. utils import removeDuplicates, gmProgramToName, _closestTempo
-from .. libs import mido
-from dataclasses import dataclass
 from typing import List, Tuple, Dict
-from bpy.path import abspath
+from dataclasses import dataclass
+from .. libs import mido
+from sys import modules
 
 @dataclass
 class MIDINote:
@@ -23,7 +23,7 @@ class MIDIEvent:
     time: float
 
     def __lt__(self, other):
-        return self.timeOn < other.timeOn
+        return self.time < other.time
 
 class MIDITrack:
     name: str
@@ -189,19 +189,21 @@ class MIDITrack:
 
     def __add__(self, other) -> MIDITrack:
         print(f"INFO: Attempting to merge tracks '{self.name}' & '{other.name}' ...")
-        addedTrack = MIDITrack(f"{self.name} & {other.name}")
+        try:
+            addedTrack = MIDITrack(f"{self.name} & {other.name}")
 
-        addedTrack.notes = sorted(self.notes + other.notes)
-        
-        controlChangeCloned = self.controlChange.copy()
-        controlChangeCloned.update(other.controlChange)
+            addedTrack.notes = sorted(self.notes + other.notes)
+            
+            controlChangeCloned = self.controlChange.copy()
+            controlChangeCloned.update(other.controlChange)
 
-        addedTrack.controlChange = controlChangeCloned
-        
-        addedTrack.pitchweel = sorted(self.pitchwheel + other.pitchwheel)
-        addedTrack.aftertouch = sorted(self.aftertouch + other.aftertouch)
-        
-        return addedTrack
+            addedTrack.controlChange = controlChangeCloned
+            
+            addedTrack.pitchweel = sorted(self.pitchwheel + other.pitchwheel)
+            addedTrack.aftertouch = sorted(self.aftertouch + other.aftertouch)
+            return addedTrack
+        except Exception as e:
+            raise RuntimeError(f"Failed to merge tracks '{self.name}' & '{other.name}'! \nException: {e}")
 
     def __repr__(self) -> str:
         type_ = type(self)
@@ -235,8 +237,13 @@ class MIDIFile:
         :param midFile: MIDI file
         :return: list of MIDITracks
         """
-
-        midiFile = mido.MidiFile(abspath(file))
+        
+        # use abspath "//"
+        if "bpy" in modules:
+            from bpy.path import abspath
+            file = abspath(file)
+        
+        midiFile = mido.MidiFile(file)
 
         assert midiFile.type in range(2), "Type 2 MIDI Files are not supported!"
 
@@ -279,9 +286,16 @@ class MIDIFile:
 
                 if midiFile.type == 0 and msg.type == "set_tempo":
                     tempo = msg.tempo
-
-                time += mido.tick2second(msg.time, midiFile.ticks_per_beat,
-                                         tempo if midiFile.type == 0 else _closestTempo(tempoMap, time)[1])
+                
+                # tempo fix, fixes #7
+                if midiFile.type == 0:
+                    exactTempo = tempo
+                else:
+                    exactTempo = _closestTempo(tempoMap, time)[1]
+                    if exactTempo == float('inf'):
+                        exactTempo = tempo
+                
+                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, exactTempo)
 
                 # channel messages
                 if midiFile.type == 0 and not msg.is_meta and msg.type != "sysex":
@@ -303,7 +317,7 @@ class MIDIFile:
                     # General MIDI name
                     gmName = gmProgramToName(msg.program) if msg.channel != 9 else "Drumset"
 
-                    if curTrack.name == "" or (midiFile.type == 0 and curTrack.name == f"Track {curChannel + 1}"):
+                    if len(curTrack.name) == 0 or (midiFile.type == 0 and curTrack.name == f"Track {curChannel + 1}"):
                         curTrack.name = gmName
                     
                 elif curType == "control_change":
@@ -315,7 +329,7 @@ class MIDIFile:
                 elif curType == "aftertouch":
                     curTrack.addAftertouch(msg.channel, msg.value, time)
                 
-                if midiFile.type == 0 and curTrack.name == "":
+                if midiFile.type == 0 and len(curTrack.name) == 0:
                     curTrack.name = f"Track {curChannel + 1}"
 
                 # add track to tracks for instrumentType 1
@@ -336,13 +350,15 @@ class MIDIFile:
     
     def findTrack(self, name) -> MIDITrack:
         """Finds the track with a specified name
-
+        raises ValueError if there is no track with that specified name
         :param str name: The name of the track to be returned
         :return list: The track with the specified name
         """
         for track in self._tracks:
             if track.name == name:
                 return track
+        
+        raise ValueError(f"Track name '{name}' does not exist!")
     
     def listTrackNames(self) -> List[str]:
         return [str(track.name) for track in self._tracks]

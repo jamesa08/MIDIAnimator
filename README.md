@@ -60,6 +60,10 @@
 
 **MIDI Animator** aims to provide a cohesive, open-source solution to animating instruments using a MIDI file.
 
+Check out the technical demo:
+
+[![Radiant Ensemble](https://img.youtube.com/vi/hW_21_5kVK8/maxresdefault.jpg)](https://www.youtube.com/watch?v=hW_21_5kVK8 "Radiant Ensemble")
+
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 ### Built With

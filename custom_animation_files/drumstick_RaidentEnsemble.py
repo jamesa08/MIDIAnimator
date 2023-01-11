@@ -1,10 +1,10 @@
 from __future__ import annotations
 from pprint import pprint
+from MIDIAnimator.utils import mapRangeLinear, convertNoteNumbers
 from MIDIAnimator.src.animation import MIDIAnimatorNode
 from MIDIAnimator.src.instruments import Instrument
 from MIDIAnimator.data_structures.midi import *
 from MIDIAnimator.utils.blender import *
-from MIDIAnimator.utils import mapRangeLinear
 from mathutils import Vector, Euler
 from dataclasses import dataclass
 from typing import Dict, List
@@ -76,7 +76,7 @@ class DrumstickSettings:
 
         # build up noteToTarget table (one target per object for now)
         for obj in self.targetCollection.all_objects:
-            note_number = int(obj.note_number)
+            note_number = convertNoteNumbers(obj.midi.note_number)[0]
             self.noteToTargetTable[note_number] = obj
 
 
@@ -773,5 +773,5 @@ settings = {
 
 
 animator = MIDIAnimatorNode()
-animator.addInstrument(midiTrack=drums, objectCollection=drumsticks, custom=DrumstickInstrumentNew, customVars=settings)  # Drumsticks
+animator.addInstrument(instrumentType="custom", midiTrack=drums, objectCollection=drumsticks, custom=DrumstickInstrumentNew, customVars=settings)  # Drumsticks
 animator.animate()

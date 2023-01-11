@@ -1,4 +1,3 @@
-from __future__ import annotations
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
@@ -12,16 +11,18 @@ from __future__ import annotations
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 bl_info = {
-    "name": "MIDI Animator",
-    "description": "Animate objects with MIDI.",
-    "author": "James Alt",
+    "name": "MIDI Animator beta3.3",
+    "description": "A cohesive, open-source solution to animating Blender objects using a MIDI file.",
+    "author": "James Alt (et al.)",
     "version": (1, 0, 0),
     "blender": (3, 0, 0),
     "location": "Scripting Space",
     "doc_url": "https://midianimatordocs.readthedocs.io/en/latest/",
     "tracker_url": "https://github.com/jamesa08/MIDIAnimator/issues",
-    "warning": "",
+    "warning": "MIDIAnimator is currently in beta. If you encounter any issues, please feel free to open an issue on GitHub (https://github.com/jamesa08/MIDIAnimator/issues)",
     "support": "COMMUNITY",
     "category": "Animation"
 }
@@ -43,13 +44,6 @@ else:
     from . ui.panels import VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick
 
 
-instruments = [
-    ("projectile", "Projectile", ""), 
-    ("string", "Evaluated", ""),
-    ("custom", "Custom", "")
-]
-instrumenets_default = "string"
-
 class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
     note_number:  bpy.props.StringProperty(
         name="Note Number", 
@@ -59,7 +53,7 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
     )
     note_number_int:  bpy.props.IntProperty(
         name="Note Number Integer", 
-        description="The note number of an object. Integers only. For use elsewhere",
+        description="The note number (integer) of an object",
         default=60
     )
     note_on_curve: bpy.props.PointerProperty(
@@ -76,13 +70,15 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
     )
     note_off_curve: bpy.props.PointerProperty(
         name="Note Off Animation Curve", 
-        description="The animation curve object with defined keyframes to be read in",
+        description="The animation curve object with defined keyframes to be read in."
+                    "\n\nDisabled: will be added in a future release",
         type=bpy.types.Object,
         options=set()
     )
     note_off_anchor_pt: bpy.props.IntProperty(
         name="Note Off Anchor Point",
-        description="Where along should we start animating (in reference to the note on time). 0 to start animating right on note off times, - for eariler, + for later",
+        description="Where along should we start animating (in reference to the note on time). 0 to start animating right on note off times, - for eariler, + for later."
+                    "\n\nDisabled: will be added in a future release",
         default=0,
         options=set()
     )
@@ -106,46 +102,24 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
     )
     animation_overlap: bpy.props.EnumProperty(
         items=[
-            ("add", "Add", "Curves will add motion")
+            ("add", "Add", "Curves will add motion. More options will be added in the future")
         ],
         name="Animation Overlap",
         default="add",
         options=set()
     )
-    anim_curve_type: bpy.props.EnumProperty(
+    anim_type: bpy.props.EnumProperty(
         items=[
             ("keyframed", "Keyframed", "Pre-defined FCurve objects to refernce the animation from"),
-            ("damp_osc", "Oscillation", "Dampened oscillation"),
-            ("adsr", "ADSR", "attack, decay, sustain, release")
+            ("damp_osc", "Oscillation", "Dampened oscillation. Planned for a future release"),
+            ("adsr", "ADSR", "Attack, Decay, Sustain, Release. Planned for a future release")
         ],
-        name="Animation Curve Type",
+        name="Animation Type",
+        description="Disabled: will be added in a future release",
         default="keyframed",
         options=set()
     )
     
-
-class MIDIAnimatorColProperties(bpy.types.PropertyGroup):
-
-    # Instrument Types
-    instrument_type: bpy.props.EnumProperty(
-        items=instruments, 
-        name="Instrument Type", 
-        default=instrumenets_default,
-        options=set()
-    )
-    projectile_collection: bpy.props.PointerProperty(
-        name="Projectile Collection",
-        description="This is where the projectiles will be stored",
-        type=bpy.types.Collection,
-        options=set()
-    )
-    reference_projectile: bpy.props.PointerProperty(
-        name="Reference Projectile",
-        description="The projectile object to be duplicated",
-        type=bpy.types.Object,
-        options=set()
-    )
-
 class MIDIAnimatorSceneProperties(bpy.types.PropertyGroup):
     # Edit Notes (Quick)
     quick_note_number_list: bpy.props.StringProperty(
@@ -165,14 +139,13 @@ class MIDIAnimatorSceneProperties(bpy.types.PropertyGroup):
         options=set()
     )
 
-classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick, MIDIAnimatorObjectProperties, MIDIAnimatorColProperties, MIDIAnimatorSceneProperties)
+classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick, MIDIAnimatorObjectProperties, MIDIAnimatorSceneProperties)
 
 def register():
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
     
     bpy.types.Object.midi = bpy.props.PointerProperty(type=MIDIAnimatorObjectProperties)
-    bpy.types.Collection.midi = bpy.props.PointerProperty(type=MIDIAnimatorColProperties)
     bpy.types.Scene.midi = bpy.props.PointerProperty(type=MIDIAnimatorSceneProperties)
 
     logger.info("MIDIAnimator registered successfully")
@@ -182,7 +155,6 @@ def unregister():
         bpy.utils.unregister_class(bpyClass)
 
     del bpy.types.Object.midi
-    del bpy.types.Collection.midi
     del bpy.types.Scene.midi
 
     logger.info("MIDIAnimator unregistered successfully")

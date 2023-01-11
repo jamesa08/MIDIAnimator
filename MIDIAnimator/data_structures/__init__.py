@@ -1,10 +1,10 @@
 from __future__ import annotations
-import bpy
-from dataclasses import dataclass
 from typing import Tuple, List, Dict, Union, Optional
 from mathutils import Vector, Euler
-from ..utils.blender import *
+from dataclasses import dataclass
 from numpy import add as npAdd
+from ..utils.blender import *
+import bpy
 
 @dataclass
 class Keyframe:
@@ -33,12 +33,19 @@ class BlenderWrapper:
 
     def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: ObjectFCurves, noteOffCurves: ObjectFCurves):
         self.obj = obj
+
+        # make sure object does not use itself as a note on/off curve
+        assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
+
+        # make sure obj has at least a note on/off curve 
+        assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! Refer to the docs if you are having trouble."
+        
         self.noteNumbers = noteNumbers
         self.noteOnCurves = noteOnCurves
         self.noteOffCurves = noteOffCurves
         self._startRangeOn, self._endRangeOn = self._calculateOffsets(type="note_on")
         self._startRangeOff, self._endRangeOff = self._calculateOffsets(type="note_off")
-
+        
     def _calculateOffsets(self, type: str="note_on"):
         # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
         # and the latest animation for the note
@@ -50,6 +57,8 @@ class BlenderWrapper:
         
         start, end = None, None
         
+        assert len(combined) != 0, f"Object '{self.obj.name}' does not have animation data! (There are no FCurves on the object)"
+
         for fCrv in combined:
             curveStart, curveEnd = fCrv.range()
             if start is None or curveStart < start:

@@ -72,8 +72,8 @@ class NoteOffTesting(Instrument):
         self.override = True
         self.preAnimate()
         
-        noteOnCurves = self.makeObjToFCurveDict(type="note_on")
-        noteOffCurves = self.makeObjToFCurveDict(type="note_off")
+        noteOnCurves = self.makeObjToFCurveDict(noteType="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(noteType="note_off")
         self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
         # self.frameRanges = self.calculateFrameRanges()
 
@@ -92,16 +92,39 @@ class NoteOffTesting(Instrument):
                     # warn that there is no object tied to note number in MIDI
                     continue
                 
+<<<<<<< HEAD:noteOff.py
                 bpy.context.scene.timeline_markers.new(f'NOTE ON {note.timeOn}', frame=int(secToFrames(note.timeOn)))
                 bpy.context.scene.timeline_markers.new(f'NOTE OFF {note.timeOff}', frame=int(secToFrames(note.timeOff)))
+=======
+                rangeOn, rangeOff = 0.0, 0.0
+                
+                if objMidi.anim_type == "keyframed":
+>>>>>>> origin/dev:custom_animation_files/noteOff.py
 
                 for wpr in wprs:
                     obj = wpr.obj
                     objMidi = obj.midi
                     
+<<<<<<< HEAD:noteOff.py
                     rangeOn, rangeOff = 0.0, 0.0
                     
                     if objMidi.anim_curve_type == "keyframed":
+=======
+                    if objMidi.note_off_curve:
+                        rangeOff = bObj.rangeOff()[1] - bObj.rangeOff()[0]
+                        rangeOff += objMidi.note_off_anchor_pt
+                        rangeOff += secToFrames(note.timeOff)
+                
+                elif objMidi.anim_type == "damp_osc":
+                    pass
+                
+                elif objMidi.anim_type == "adsr":
+                    pass
+                
+                out.append(FrameRange(rangeOn, rangeOff, bObj))
+        
+        return out
+>>>>>>> origin/dev:custom_animation_files/noteOff.py
 
                         if objMidi.note_on_curve:
                             # get the relaitive time the curve is on
