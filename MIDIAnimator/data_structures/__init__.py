@@ -57,7 +57,9 @@ class BlenderWrapper:
         
         start, end = None, None
         
-        assert len(combined) != 0, f"Object '{self.obj.name}' does not have animation data! (There are no FCurves on the object)"
+        # FIXME do not warn here about FCurves being on the object
+        # this now needs to be at a higher level
+        # assert len(combined) != 0, f"Object '{self.obj.name}' does not have animation data! (There are no FCurves on the object)"
 
         for fCrv in combined:
             curveStart, curveEnd = fCrv.range()

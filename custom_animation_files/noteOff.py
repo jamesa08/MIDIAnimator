@@ -72,8 +72,8 @@ class NoteOffTesting(Instrument):
         self.override = True
         self.preAnimate()
         
-        noteOnCurves = self.makeObjToFCurveDict(type="note_on")
-        noteOffCurves = self.makeObjToFCurveDict(type="note_off")
+        noteOnCurves = self.makeObjToFCurveDict(noteType="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(noteType="note_off")
         self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
         # self.frameRanges = self.calculateFrameRanges()
 
