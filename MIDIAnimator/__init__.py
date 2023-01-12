@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 bl_info = {
-    "name": "MIDI Animator beta3.3",
+    "name": "MIDI Animator beta4.0",
     "description": "A cohesive, open-source solution to animating Blender objects using a MIDI file.",
     "author": "James Alt (et al.)",
     "version": (1, 0, 0),
@@ -115,7 +115,6 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
             ("adsr", "ADSR", "Attack, Decay, Sustain, Release. Planned for a future release")
         ],
         name="Animation Type",
-        description="Disabled: will be added in a future release",
         default="keyframed",
         options=set()
     )

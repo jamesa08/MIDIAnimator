@@ -35,7 +35,6 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
         row0 = col.row()
 
         row0.prop(objMidi, "anim_type")
-        row0.enabled = False
 
         if objMidi.anim_type == "damp_osc":
             col.prop(objMidi, "osc_period")
@@ -51,7 +50,6 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
             row2 = col.row()
             row2.prop(objMidi, "note_off_curve", text="Note Off")
             row2.prop(objMidi, "note_off_anchor_pt", text="")
-            row2.enabled = False
 
         elif objMidi.anim_type == "adsr":
             col.label(text="Coming soon")
