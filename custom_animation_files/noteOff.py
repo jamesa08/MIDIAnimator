@@ -137,42 +137,7 @@ class NoteOffTesting(Instrument):
             else:
                 # warn that there is no object tied to note number in MIDI
                 continue
-            
-            # bpy.context.scene.timeline_markers.new(f'NOTE ON {note.timeOn}', frame=int(secToFrames(note.timeOn)))
-            # bpy.context.scene.timeline_markers.new(f'NOTE OFF {note.timeOff}', frame=int(secToFrames(note.timeOff)))
-
-            # for wpr in wprs:
-            #     obj = wpr.obj
-            #     objMidi = obj.midi
-                
-            #     rangeOn, rangeOff = 0.0, 0.0
-                
-            #     if objMidi.anim_curve_type == "keyframed":
-
-            #         if objMidi.note_on_curve:
-            #             # get the relative time the curve is on
-            #             start, end = wpr.rangeOn()
-            #             rangeOn = start
-                        
-            #             rangeOn += objMidi.note_on_anchor_pt
-            #             rangeOn += secToFrames(note.timeOn)
-                    
-
-            #         if objMidi.note_off_curve:
-            #             # get the relative time the curve is off
-            #             start, end = wpr.rangeOff()
-            #             rangeOff = start
-                        
-            #             rangeOff += objMidi.note_off_anchor_pt
-            #             rangeOff += secToFrames(note.timeOff)
-
-                
-            #     elif objMidi.anim_curve_type == "damp_osc":
-            #         pass
-                
-            #     elif objMidi.anim_curve_type == "adsr":
-            #         pass
-
+        
         insertedKeys = []
 
         for note in self.midiTrack.notes:

@@ -100,7 +100,7 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
         default=10,
         options=set()
     )
-    animation_overlap: bpy.props.EnumProperty(
+    anim_overlap: bpy.props.EnumProperty(
         items=[
             ("add", "Add", "Curves will add motion. More options will be added in the future")
         ],

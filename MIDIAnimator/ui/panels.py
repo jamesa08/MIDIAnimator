@@ -56,7 +56,7 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
         
         col.separator()
 
-        col.prop(objMidi, "animation_overlap")
+        col.prop(objMidi, "anim_overlap")
         
 
 class VIEW3D_PT_add_notes_quick(MIDIAniamtorPanel, bpy.types.Panel):

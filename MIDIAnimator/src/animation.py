@@ -51,6 +51,7 @@ class MIDIAnimatorNode:
                 instrument.animate()
                 continue
 
-            instrument.preFrameLoop()
-            instrument.animateFrames(offset)
-            instrument.postFrameLoop()
+            # instrument.preFrameLoop()
+            # instrument.animateFrames(offset)
+            instrument.animate()
+            # instrument.postFrameLoop()

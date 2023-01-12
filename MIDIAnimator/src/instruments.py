@@ -300,6 +300,158 @@ class Instrument:
             for p in processorSet:
                 p.insertKeyFrames(frame + offset)
 
+@dataclass
+class InstrumentNew:
+    """base class for instruments that are played for notes"""
+    collection: bpy.types.Collection
+    midiTrack: MIDITrack
+    noteToBlenderObject: Dict[int, bpy.types.Object]
+
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, override=False):
+        self.collection = collection
+        self.midiTrack = midiTrack
+        self.noteToBlenderObject = dict()
+        self.override = override
+
+        if not self.override:
+            self.__post_init__()
+    
+    def __post_init__(self):
+        # ensure objects of keyframed type have either note on or note off FCurve objects
+        for obj in self.collection.all_objects:
+            if obj.midi.anim_type == "keyframed" and obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
+                raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
+        
+        noteOnCurves = self.makeObjToFCurveDict(noteType="note_on")
+        noteOffCurves = self.makeObjToFCurveDict(noteType="note_off")
+        self.createNoteToBlenderObject(noteOnCurves, noteOffCurves)
+    
+    def makeObjToFCurveDict(self, noteType: str="note_on") -> Dict[bpy.types.Object, ObjectFCurves]:
+        fCurveDict = {}
+        assert noteType == "note_on" or noteType == "note_off", "Only types 'note_on' or 'note_off' are supported!"
+        bpy.context.scene.frame_set(-10000)
+        for obj in self.collection.all_objects:
+            if obj.midi.anim_type == "keyframed":
+                if noteType == "note_on":
+                    objAnimObject = obj.midi.note_on_curve
+                elif noteType == "note_off":
+                    objAnimObject = obj.midi.note_off_curve
+                else:
+                    raise ValueError("Type needs to be 'note_on' or 'note_off'!")
+                
+            # if the object doesn't exist, just continue
+            if not objAnimObject: continue
+
+            origLoc = obj.location.copy()
+            origRot = obj.rotation_euler.copy()
+            
+            location = []
+            rotation = []
+            shapeKeysDict = {}
+            shapeKeys = []
+            customProperties = []
+            
+            for fCrv in FCurvesFromObject(objAnimObject):
+                dataPath = fCrv.data_path
+                if dataPath == "location":
+                    location.append(fCrv)
+                elif dataPath == "rotation_euler":
+                    rotation.append(fCrv)
+                elif dataPath[:2] == '["' and dataPath[-2:] == '"]':  # this is a custom property that we're finding
+                    getType = eval(f"type(bpy.context.scene.objects['{objAnimObject.name}']{dataPath})")
+                    assert getType == float or getType == int, "Please create type `int` or type `float` custom properties"
+                    customProperties.append(fCrv)
+            
+            # first need to get all of this reference object's shape key FCurves
+            for fCrv in shapeKeyFCurvesFromObject(objAnimObject):
+                if fCrv.data_path[-5:] == "value":  # we only want it if they have keyframed "value"
+                    # fCrv.data_path returns 'key_blocks["name"].value'.
+                    # 'key_blocks["' will never change and so will '"].value'.
+                    # chopping those off gives us just the name
+                    
+                    name = fCrv.data_path[12:-8]
+                    shapeKeysDict[name] = [fCrv]  # always 1 FCurve for 1 shape key
+
+            # now get this object's shape keys so we can insert keyframes on them
+            for shpKey in shapeKeysFromObject(obj)[0]:  #only want the shape keys, not the basis, see func for more info
+                if shpKey.name in shapeKeysDict:
+                    shapeKeysDict[shpKey.name].append(shpKey)
+            
+            # delete unused shape keys (these are the keys that would be on the reference object)
+            for key in shapeKeysDict.copy():  # NOTE: .keys() did not work, same error (dict change size during iteration   )
+                val = shapeKeysDict[key]
+                if len(val) != 2: 
+                    del shapeKeysDict[key]
+                    continue
+                
+                shapeKeys.append(val[0])  # add the FCurve only to the internal list of shapeKeys
+
+            fCurveDict[obj] = ObjectFCurves(tuple(location), tuple(rotation), tuple(customProperties), shapeKeysDict, tuple(shapeKeys), origLoc, origRot)
+       
+        return fCurveDict
+
+    def createNoteToBlenderObject(self, noteOnCurves: Dict[bpy.types.Object, ObjectFCurves], noteOffCurves: Dict[bpy.types.Object, ObjectFCurves]) -> None:
+        allUsedNotes = self.midiTrack.allUsedNotes()
+
+        for obj in self.collection.all_objects:
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+
+            # make sure objects are not in target collection
+            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
+
+            wpr = BlenderWrapper(
+                obj=obj, 
+                noteNumbers=convertNoteNumbers(obj.midi.note_number), 
+                noteOnCurves=noteOnCurves[obj] if obj.midi.note_on_curve else None, 
+                noteOffCurves=noteOffCurves[obj] if obj.midi.note_off_curve else None
+            )
+            
+            for noteNumber in wpr.noteNumbers:
+                if noteNumber not in allUsedNotes:
+                    print(f"WARNING: Object `{wpr.obj.name}` (MIDI note {noteNumber}) does not exist in the MIDI track (MIDI track {self.midiTrack.name}!")
+
+                if noteNumber in self.noteToBlenderObject:
+                    self.noteToBlenderObject[noteNumber].append(wpr)
+                else:
+                    self.noteToBlenderObject[noteNumber] = [wpr]
+
+    def cleanup(self):
+        self.noteToBlenderObject = dict()
+        self._activeObjectList = []
+        self._activeNoteDict = dict()
+        self._objFrameRanges = []
+
+    def animate(self):
+        insertedKeys = []
+        for note in self.midiTrack.notes:
+            # lookup blender object
+            if note.noteNumber in self.noteToBlenderObject:
+                wprs = self.noteToBlenderObject[note.noteNumber]
+            else: 
+                continue
+
+            # iterate over all objects
+            for wpr in wprs:
+                obj = wpr.obj
+                nextKeys = []
+
+                if obj.midi.anim_type == "keyframed":
+                    # add the next keyframe information to some list of keyframes
+                    pass
+                elif obj.midi.anim_type == "osc":
+                    # evaluate the parameters on the object and add them to list of nextKeys list
+                    # using function genDampedOscKeyframes()
+                    pass
+                elif obj.midi.anim_type == "adsr":
+                    # evaluate the parameters on the object and add them to list of nextKeys list
+                    # using function genADSRKeyframes() (not yet implemented)
+                    pass
+                
+                if obj.midi.anim_overlap == "add":
+                    # take keyframes that are next and "add" them to the last keyframes
+                    pass
+
+
 class ProjectileInstrument(Instrument):
     _cacheInstance: Optional[CacheInstance]
 
@@ -334,7 +486,7 @@ class ProjectileInstrument(Instrument):
         # create CacheInstance object
         self._cacheInstance = CacheInstance(projectiles)
 
-class EvaluateInstrument(Instrument):
+class EvaluateInstrument(InstrumentNew):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
