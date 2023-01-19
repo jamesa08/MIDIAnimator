@@ -198,3 +198,33 @@ def interval(keyList, frame) -> Tuple[Keyframe]:
     for i in range(len(keyList)):
         if keyList[i].frame <= frame <= keyList[i+1].frame:
             return (keyList[i], keyList[i+1])
+
+def addKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]):
+    keysOverlapping = findOverlap(insertedKeys, nextKeys)
+
+    insertedKeysInterValues = []
+    nextKeysInterValues = []
+
+    # interpolate the keyframes for each set of keyframes
+    for key in nextKeys:
+        inv1, inv2 = interval(keysOverlapping, key.frame)
+        if inv1 is None and inv2 is None: continue
+        nextKeysInterValues.append(Keyframe(key.frame, getValue(inv1, inv2, key.frame)))
+
+    for key in keysOverlapping:
+        inv1, inv2 = interval(nextKeys, key.frame)
+        if inv1 is None and inv2 is None: continue
+        insertedKeysInterValues.append(Keyframe(key.frame, getValue(inv1, inv2, key.frame)))
+
+    # now add the keyframe values together (the most important part)
+    for key, interp in zip(keysOverlapping, insertedKeysInterValues):
+        key.value += interp.value
+
+    for key, interp in zip(nextKeys, nextKeysInterValues):
+        key.value += interp.value
+
+    # extend the lists (need a better method to ensure the keyframes before get cut off and then start )
+    keysOverlapping.extend(nextKeys)
+    keysOverlapping.sort(key=lambda keyframe: keyframe.frame)
+
+    insertedKeys.extend(keysOverlapping)

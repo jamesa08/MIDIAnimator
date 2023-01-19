@@ -4,6 +4,7 @@ from mathutils import Vector, Euler
 from dataclasses import dataclass
 from numpy import add as npAdd
 from ..utils.blender import *
+from ..data_structures.midi import MIDINote
 import bpy
 
 @dataclass
@@ -22,65 +23,29 @@ class BlenderWrapper:
     """
 
     obj: bpy.types.Object
-    noteNumbers: tuple
-    noteOnCurves: ObjectFCurves
-    noteOffCurves: ObjectFCurves
-        
-    # how many frames before a note is hit does this need to start animating
-    _startRangeOn: float
-    # how many frames after a note is hit does it continue animating
-    _endRangeOn: float
+    noteNumbers: Tuple[int]
+    
+    noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
+    noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
 
-    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: ObjectFCurves, noteOffCurves: ObjectFCurves):
+    noteOnKeyframes: ObjectKeyframes
+    noteOffKeyframes: ObjectKeyframes
+
+    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]):
         self.obj = obj
 
-        # make sure object does not use itself as a note on/off curve
-        assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
-
-        # make sure obj has at least a note on/off curve 
-        assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! Refer to the docs if you are having trouble."
+        # make sure object does not use itself as a note on/off curve for the keyframed type
+        # make sure obj has at least a note on/off curve for the keyframed type
+        if obj.midi.anim_type == "keyframed":
+            assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
+            assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! Refer to the docs if you are having trouble."
         
         self.noteNumbers = noteNumbers
         self.noteOnCurves = noteOnCurves
         self.noteOffCurves = noteOffCurves
-        self._startRangeOn, self._endRangeOn = self._calculateOffsets(type="note_on")
-        self._startRangeOff, self._endRangeOff = self._calculateOffsets(type="note_off")
         
-    def _calculateOffsets(self, type: str="note_on"):
-        # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
-        # and the latest animation for the note
-        combined = []
-        if type == "note_on" and self.obj.midi.note_on_curve:
-            combined = self.noteOnCurves.location + self.noteOnCurves.rotation + self.noteOnCurves.customProperties + self.noteOnCurves.shapeKeys
-        elif type == "note_off" and self.obj.midi.note_off_curve:
-            combined = self.noteOffCurves.location + self.noteOffCurves.rotation + self.noteOffCurves.customProperties + self.noteOffCurves.shapeKeys
-        
-        start, end = None, None
-        
-        # FIXME do not warn here about FCurves being on the object
-        # this now needs to be at a higher level
-        # assert len(combined) != 0, f"Object '{self.obj.name}' does not have animation data! (There are no FCurves on the object)"
-
-        for fCrv in combined:
-            curveStart, curveEnd = fCrv.range()
-            if start is None or curveStart < start:
-                start = curveStart
-            if end is None or curveEnd > end:
-                end = curveEnd
-        
-        return start, end
-
-    def rangeOn(self) -> Tuple[float, float]:
-        """
-        :return: start and end frames for playing the **note on** curve
-        """
-        return self._startRangeOn, self._endRangeOn
-    
-    def rangeOff(self) -> Tuple[float, float]:
-        """
-        :return: start and end frames for playing the **note off** curve
-        """
-        return self._startRangeOff, self._endRangeOff
+        self.noteOnKeyframes = ObjectKeyframes(wpr=self)
+        self.noteOffKeyframes = ObjectKeyframes(wpr=self)
 
 @dataclass
 class ObjectFCurves:
@@ -95,6 +60,40 @@ class ObjectFCurves:
 
     origLoc: Vector = Vector()
     origRot: Euler = Euler()
+
+@dataclass
+class ObjectShapeKey:
+    name: str = ""
+    referenceCurve: bpy.types.FCurve = None
+    targetKey: bpy.types.ShapeKey = None
+
+    def __hash__(self) -> int:
+        return hash((self.referenceCurve, self.targetKey))
+
+@dataclass
+class ObjectFCurvesNew:
+    location: Tuple[bpy.types.FCurve] = ()
+    rotation: Tuple[bpy.types.FCurve] = ()
+    customProperties: Tuple[bpy.types.FCurve] = ()
+    
+    # key= the target object's shape key's name, value= ObjectShapeKey
+    shapeKeys: Dict[str, ObjectShapeKey] = ()
+
+
+@dataclass(init=False)
+class ObjectKeyframes:
+    wpr: BlenderWrapper
+
+    listOfKeys: Dict[bpy.types.FCurve, List[Keyframe]]
+
+    def __init__(self, wpr):
+        self.wpr = wpr
+        # key: FCurve, value: List[Keyframe]
+        # will this implementation work? I think?
+        self.listOfKeys = {}
+
+    # def process(note: MIDINote) -> None:
+    #     pass
 
 class FCurveProcessor:
     obj: bpy.types.Object
