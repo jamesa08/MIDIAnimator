@@ -188,16 +188,17 @@ class EvaluateInstrument(Instrument):
                     # at this point, note On and note Off curves should be identical lengths, as cheked previously by validateFCurves() in the wpr init method
                     # so we can iterate over 1 set of FCurves, and get their datapaths
                     # but if there are no noteOnCurves but there are noteOffCurves, we will need to iterate over that instead 
-                    for (fCrv, noteOffCurve) in zip_longest(wpr.noteOnCurves, wpr.noteOffCurves):
+                    for (noteOnCurve, noteOffCurve) in zip_longest(wpr.noteOnCurves, wpr.noteOffCurves):
                         nextKeys = []
 
-                        if not fCrv:
+                        # there will never be a time where both noteOnCurve and noteOffCurve will be None
+                        # this precondition is checked when creating the wrapper Blender objects
+                        if noteOnCurve:
                             # find the keyframe lists for this particular FCurve
-                            key = (fCrv.data_path, fCrv.array_index)
-                        else:
+                            key = (noteOnCurve.data_path, noteOnCurve.array_index)
+                        elif noteOffCurve:
                             # try using noteOffCurve if there is no noteOnCurve
                             key = (noteOffCurve.data_path, noteOffCurve.array_index)
-
 
                         if key not in wpr.keyframes.listOfKeys:
                             wpr.keyframes.listOfKeys[key] = []
@@ -205,8 +206,8 @@ class EvaluateInstrument(Instrument):
                         keyframes = wpr.keyframes.listOfKeys[key]
                         
                         if wpr.noteOnCurves:
-                            if isinstance(fCrv, bpy.types.FCurve):
-                                for keyframe in fCrv.keyframe_points:
+                            if isinstance(noteOnCurve, bpy.types.FCurve):
+                                for keyframe in noteOnCurve.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
                                     if wpr.obj.midi.velocity_intensity != 0:
                                         value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
@@ -214,9 +215,9 @@ class EvaluateInstrument(Instrument):
                                         value = keyframe.co[1]
                                     nextKeys.append(Keyframe(frame, value))
                             
-                            elif isinstance(fCrv, ObjectShapeKey):
+                            elif isinstance(noteOnCurve, ObjectShapeKey):
                                 # shape keys handle differently
-                                for keyframe in fCrv.referenceCurve.keyframe_points:
+                                for keyframe in noteOnCurve.referenceCurve.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
                                     if wpr.obj.midi.velocity_intensity != 0:
                                         value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
