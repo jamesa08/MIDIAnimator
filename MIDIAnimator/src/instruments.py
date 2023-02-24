@@ -208,28 +208,40 @@ class EvaluateInstrument(Instrument):
                             if isinstance(fCrv, bpy.types.FCurve):
                                 for keyframe in fCrv.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                    value = keyframe.co[1]
+                                    if wpr.obj.midi.velocity_intensity != 0:
+                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
+                                    else:
+                                        value = keyframe.co[1]
                                     nextKeys.append(Keyframe(frame, value))
                             
                             elif isinstance(fCrv, ObjectShapeKey):
                                 # shape keys handle differently
                                 for keyframe in fCrv.referenceCurve.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                    value = keyframe.co[1]
+                                    if wpr.obj.midi.velocity_intensity != 0:
+                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
+                                    else:
+                                        value = keyframe.co[1]
                                     nextKeys.append(Keyframe(frame, value))
                         
                         if wpr.noteOffCurves:
                             if isinstance(noteOffCurve, bpy.types.FCurve):
                                 for keyframe in noteOffCurve.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
-                                    value = keyframe.co[1]
+                                    if wpr.obj.midi.velocity_intensity != 0:
+                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
+                                    else:
+                                        value = keyframe.co[1]
                                     nextKeys.append(Keyframe(frame, value))
                             
                             elif isinstance(noteOffCurve, ObjectShapeKey):
                                 # shape keys handle differently
                                 for keyframe in noteOffCurve.referenceCurve.keyframe_points:
                                     frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
-                                    value = keyframe.co[1]
+                                    if wpr.obj.midi.velocity_intensity != 0:
+                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
+                                    else:
+                                        value = keyframe.co[1]
                                     nextKeys.append(Keyframe(frame, value))
 
 

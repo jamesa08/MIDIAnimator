@@ -56,6 +56,8 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
         
         col.separator()
 
+        col.prop(objMidi, "velocity_intensity", slider=True)
+
         col.prop(objMidi, "anim_overlap")
         
 

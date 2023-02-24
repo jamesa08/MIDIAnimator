@@ -51,6 +51,14 @@ class MIDIAnimatorObjectProperties(bpy.types.PropertyGroup):
                     "readable note (C3)",
         default="C3"
     )
+    velocity_intensity:  bpy.props.FloatProperty(
+        name="Velocity Intensity", 
+        description="The strength of the velocity affecting the keyframe values. 0 for no velocity influence.",
+        default=0.0,
+        soft_min=0,
+        soft_max=2,
+        options=set()
+    )
     note_number_int:  bpy.props.IntProperty(
         name="Note Number Integer", 
         description="The note number (integer) of an object",
