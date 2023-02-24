@@ -4,6 +4,7 @@ from math import floor, ceil, radians
 from mathutils import Vector, Euler
 from dataclasses import dataclass
 from contextlib import suppress
+from itertools import zip_longest
 from pprint import pprint
 import bpy
 
@@ -26,6 +27,7 @@ class Instrument:
         self.midiTrack = midiTrack
         self.noteToWpr = dict()
         self.override = override
+        self.preAnimate()
 
         if not self.override:
             self.__post_init__()
@@ -37,8 +39,8 @@ class Instrument:
                 raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
         
         self.createNoteToBlenderWpr()
-    
-    def getFCurves(self, obj: bpy.types.Object, noteType: str="note_on") -> ObjectFCurvesNew:
+
+    def getFCurves(self, obj: bpy.types.Object, noteType: str="note_on") -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
         assert noteType == "note_on" or noteType == "note_off", "Only types 'note_on' or 'note_off' are supported!"
         
         if obj.midi.anim_type != "keyframed": return ()
@@ -53,29 +55,8 @@ class Instrument:
         # if the object doesn't exist, just return None
         if not objAnimObject: return ()
 
-        # bpy.context.scene.frame_set(-10000)
-        
-        fCurves: List[bpy.types.FCurve] = []
-
-        location = []
-        rotation = []
         shapeKeysDict = {}
-        customProperties = []
-        
-        for fCrv in FCurvesFromObject(objAnimObject):
-            dataPath = fCrv.data_path
-            fCurves.append(fCrv)
-
-            if dataPath == "location":
-                location.append(fCrv)
-            elif dataPath == "rotation_euler":
-                rotation.append(fCrv)
-            # custom property
-            elif dataPath[:2] == '["' and dataPath[-2:] == '"]':
-                getType = eval(f"type(bpy.context.scene.objects['{objAnimObject.name}']{dataPath})")
-                assert getType == float or getType == int, "Please create type `int` or type `float` custom properties"
-                customProperties.append(fCrv)
-        
+    
         # TODO theres probably a better way to make this work. Eventually I want ObjectShapeKeys to be an immutable class, using frozen dataclasses.
         # first need to get all of this reference object's shape key FCurves
         for fCrv in shapeKeyFCurvesFromObject(objAnimObject):
@@ -94,14 +75,14 @@ class Instrument:
                 shapeKeysDict[shpKey.name].targetKey = shpKey
         
         # delete unused shape keys (these are the keys that would be on the reference object)
-        for key in shapeKeysDict.copy():  # NOTE: .keys() did not work, same error (dict change size during iteration   )
+        for key in shapeKeysDict.copy():
             val = shapeKeysDict[key]
             if val.targetKey == None: 
                 del shapeKeysDict[key]
         
         out = []
-        # FIXME temp (?)        
-        for fCrv in fCurves:
+
+        for fCrv in FCurvesFromObject(objAnimObject):
             out.append(fCrv)
 
         for key in shapeKeysDict:
@@ -128,154 +109,25 @@ class Instrument:
             
             for noteNumber in wpr.noteNumbers:
                 if noteNumber not in allUsedNotes:
-                    print(f"WARNING: Object `{wpr.obj.name}` (MIDI note {noteNumber}) does not exist in the MIDI track (MIDI track {self.midiTrack.name}!")
+                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
 
                 if noteNumber in self.noteToWpr:
                     self.noteToWpr[noteNumber].append(wpr)
                 else:
                     self.noteToWpr[noteNumber] = [wpr]
 
-    def cleanup(self):
-        self.noteToWpr = dict()
+    def preAnimate():
+        """actions to take before the animation starts (cleaning keyframes, setting up objects, etc.)
+        this method is called on class initalization.
+        subclass should override this method
+        """
+        pass
 
     def animate(self):
-        for note in self.midiTrack.notes:
-            # lookup blender object
-            if note.noteNumber in self.noteToWpr:
-                wprs = self.noteToWpr[note.noteNumber]
-            else: 
-                continue
-
-            # iterate over all objects
-            for wpr in wprs:
-                obj = wpr.obj
-
-                if obj.midi.anim_type == "keyframed":
-                    # note On Curves
-                    for fCrv in wpr.noteOnCurves:
-                        nextKeys = []
-
-                        # find the keyframe lists for this particular FCurve
-                        if fCrv not in wpr.noteOnKeyframes.listOfKeys:
-                            wpr.noteOnKeyframes.listOfKeys[fCrv] = []
-                        
-                        keyframesOn = wpr.noteOnKeyframes.listOfKeys[fCrv]
-                        
-                        if isinstance(fCrv, bpy.types.FCurve):
-                            for keyframe in fCrv.keyframe_points:
-                                frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                value = keyframe.co[1]
-                                nextKeys.append(Keyframe(frame, value))
-                            
-                            # take keyframes that are next and "add" them to the already insrted keyframes
-                            if obj.midi.anim_overlap == "add":
-                                addKeyframes(insertedKeys=keyframesOn, nextKeys=nextKeys)
-                        
-                        elif isinstance(fCrv, ObjectShapeKey):
-                            # shape keys handle differently
-                            for keyframe in fCrv.referenceCurve.keyframe_points:
-                                frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                value = keyframe.co[1]
-                                nextKeys.append(Keyframe(frame, value))
-                            
-                            # take keyframes that are next and "add" them to the already insrted keyframes
-                            if obj.midi.anim_overlap == "add":
-                                addKeyframes(insertedKeys=keyframesOn, nextKeys=nextKeys)
-                            
-                    # note Off Curves
-                    for fCrv in wpr.noteOffCurves:
-                        nextKeys = []
-
-                        # find the keyframe lists for this particular FCurve
-                        if fCrv not in wpr.noteOffKeyframes.listOfKeys:
-                            wpr.noteOffKeyframes.listOfKeys[fCrv] = []
-                        
-                        keyframesOff = wpr.noteOffKeyframes.listOfKeys[fCrv]
-                        
-                        if isinstance(fCrv, bpy.types.FCurve):
-                            for keyframe in fCrv.keyframe_points:
-                                frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_off_anchor_pt
-                                value = keyframe.co[1]
-                                nextKeys.append(Keyframe(frame, value))
-                            
-                            # take keyframes that are next and "add" them to the already insrted keyframes
-                            if obj.midi.anim_overlap == "add":
-                                addKeyframes(insertedKeys=keyframesOff, nextKeys=nextKeys)
-                        
-                        elif isinstance(fCrv, ObjectShapeKey):
-                            for keyframe in fCrv.referenceCurve.keyframe_points:
-                                frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_off_anchor_pt
-                                value = keyframe.co[1]
-                                nextKeys.append(Keyframe(frame, value))
-                            
-                            # take keyframes that are next and "add" them to the already insrted keyframes
-                            if obj.midi.anim_overlap == "add":
-                                addKeyframes(insertedKeys=keyframesOff, nextKeys=nextKeys)
-                    
-                elif obj.midi.anim_type == "osc":
-                    # for now, we're going to use a keyframed object to determine which channels to keyframe to
-                    # this will eventually be replaced with a more permanent solution, like a UI element where you can add the different channels
-                    # evaluate the parameters on the object and add them to list of nextKeys list
-                    # using function genDampedOscKeyframes()
-                    pass
-                
-                elif obj.midi.anim_type == "adsr":
-                    # evaluate the parameters on the object and add them to list of nextKeys list
-                    # using function genADSRKeyframes() (not yet implemented)
-                    pass
-
-        
-        # write keyframes after iterating over all notes
-        for wpr in wprs:
-            obj = wpr.obj
-            for fCrv in wpr.noteOnCurves:
-                keyframesOn = wpr.noteOnKeyframes.listOfKeys[fCrv]
-                
-                # FIXME this isnt correct. FCurves from both noteOn and noteOff lists are different. Need a new method to find matching FCurves
-                if fCrv in wpr.noteOffKeyframes.listOfKeys:
-                    keyframesOff = wpr.noteOffKeyframes.listOfKeys[fCrv]
-                else:
-                    keyframesOff = []
-                
-                # keyframesOff = wpr.noteOffKeyframes.listOfKeys[list(wpr.noteOffKeyframes.listOfKeys)[0]]
-                
-                print("x, y")
-                for keyframe in sorted(keyframesOn + keyframesOff, key=lambda x: x.frame):
-                    print(f"{keyframe.frame}, {keyframe.value}")
-
-                if isinstance(fCrv, bpy.types.FCurve):
-                    for keyframe in sorted(keyframesOn + keyframesOff, key=lambda x: x.frame):
-                        # set value
-                        if fCrv.data_path[:2] == '["' and fCrv.data_path[-2:] == '"]':
-                            # custom prop
-                            exec(f"bpy.data.objects['{obj.name}']{fCrv.data_path} = {keyframe.value}")
-                            obj.keyframe_insert(data_path=fCrv.data_path, frame=keyframe.frame)
-                        else:
-                            exec(f"bpy.data.objects['{obj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {keyframe.value}")
-                            obj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=keyframe.frame)
-                elif isinstance(fCrv, ObjectShapeKey):
-                    for keyframe in sorted(keyframesOn + keyframesOff, key=lambda x: x.frame):
-                        fCrv.targetKey.value = keyframe.value
-                        fCrv.targetKey.keyframe_insert(data_path="value", frame=keyframe.frame)
-
-            # for fCrv in wpr.noteOffCurves:
-            #     keyframesOff = wpr.noteOffKeyframes.listOfKeys[fCrv]
-
-            #     if isinstance(fCrv, bpy.types.FCurve):
-            #         for keyframe in keyframesOff:
-            #             # set value
-            #             if fCrv.data_path[:2] == '["' and fCrv.data_path[-2:] == '"]':
-            #                 # custom prop
-            #                 exec(f"bpy.data.objects['{obj.name}']{fCrv.data_path} = {keyframe.value}")
-            #                 obj.keyframe_insert(data_path=fCrv.data_path, frame=keyframe.frame)
-            #             else:
-            #                 exec(f"bpy.data.objects['{obj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {keyframe.value}")
-            #                 obj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=keyframe.frame)
-            #     elif isinstance(fCrv, ObjectShapeKey):
-            #         for keyframe in keyframesOff:
-            #             fCrv.targetKey.value = keyframe.value
-            #             fCrv.targetKey.keyframe_insert(data_path="value", frame=keyframe.frame)
-
+        """actual animation. this method is only called once
+        subclass should override this method
+        """
+        raise RuntimeError("subclass should override animate() method. See the docs on how to create custom instruments.")
 
 class ProjectileInstrument(Instrument):
     _cacheInstance: Optional[CacheInstance]
@@ -315,10 +167,132 @@ class EvaluateInstrument(Instrument):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.preAnimate()
-
     def preAnimate(self):
         bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)
-        bpy.context.scene.frame_set(0)
+    
+    def animate(self):
+        for note in self.midiTrack.notes:
+            # lookup blender object
+            if note.noteNumber in self.noteToWpr:
+                wprs = self.noteToWpr[note.noteNumber]
+            else: 
+                continue
+            
+            # iterate over all "wrapped" Blender objects
+            for wpr in wprs:
+                obj = wpr.obj
+
+                if obj.midi.anim_type == "keyframed":
+                    # at this point, note On and note Off curves should be identical lengths, as cheked previously by validateFCurves() in the wpr init method
+                    # so we can iterate over 1 set of FCurves, and get their datapaths
+                    # but if there are no noteOnCurves but there are noteOffCurves, we will need to iterate over that instead 
+                    for (fCrv, noteOffCurve) in zip_longest(wpr.noteOnCurves, wpr.noteOffCurves):
+                        nextKeys = []
+
+                        if not fCrv:
+                            # find the keyframe lists for this particular FCurve
+                            key = (fCrv.data_path, fCrv.array_index)
+                        else:
+                            # try using noteOffCurve if there is no noteOnCurve
+                            key = (noteOffCurve.data_path, noteOffCurve.array_index)
+
+
+                        if key not in wpr.keyframes.listOfKeys:
+                            wpr.keyframes.listOfKeys[key] = []
+                        
+                        keyframes = wpr.keyframes.listOfKeys[key]
+                        
+                        if wpr.noteOnCurves:
+                            if isinstance(fCrv, bpy.types.FCurve):
+                                for keyframe in fCrv.keyframe_points:
+                                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
+                                    value = keyframe.co[1]
+                                    nextKeys.append(Keyframe(frame, value))
+                            
+                            elif isinstance(fCrv, ObjectShapeKey):
+                                # shape keys handle differently
+                                for keyframe in fCrv.referenceCurve.keyframe_points:
+                                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
+                                    value = keyframe.co[1]
+                                    nextKeys.append(Keyframe(frame, value))
+                        
+                        if wpr.noteOffCurves:
+                            if isinstance(noteOffCurve, bpy.types.FCurve):
+                                for keyframe in noteOffCurve.keyframe_points:
+                                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
+                                    value = keyframe.co[1]
+                                    nextKeys.append(Keyframe(frame, value))
+                            
+                            elif isinstance(noteOffCurve, ObjectShapeKey):
+                                # shape keys handle differently
+                                for keyframe in noteOffCurve.referenceCurve.keyframe_points:
+                                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
+                                    value = keyframe.co[1]
+                                    nextKeys.append(Keyframe(frame, value))
+
+
+                        # take keyframes that are next and "add" them to the already insrted keyframes
+                        if obj.midi.anim_overlap == "add":
+                            addKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                
+                elif obj.midi.anim_type == "osc":
+                    # for now, we're going to use a keyframed object to determine which channels to keyframe to
+                    # this will eventually be replaced with a more permanent solution, like a UI element where you can add the different channels
+                    # evaluate the parameters on the object and add them to list of nextKeys list
+                    # using function genDampedOscKeyframes()
+                    pass
+                
+                elif obj.midi.anim_type == "adsr":
+                    # for now, we're going to use a keyframed object to determine which channels to keyframe to
+                    # this will eventually be replaced with a more permanent solution, like a UI element where you can add the different channels
+                    # evaluate the parameters on the object and add them to list of nextKeys list
+                    # using function genADSRKeyframes() (not yet implemented)
+                    pass
+
+        
+        # write keyframes after iterating over all notes
+        for noteNumber in self.noteToWpr:
+            for wpr in self.noteToWpr[noteNumber]:
+                obj = wpr.obj
+
+                if obj.midi.anim_type == "keyframed":
+                    for noteOnCurve, noteOffCurve in zip_longest(wpr.noteOnCurves, wpr.noteOffCurves):
+                        # make sure curve exists. if it doesn't this is probably a noteOff only object
+                        if noteOnCurve is not None:
+                            fCrv = noteOnCurve
+                        else:
+                            fCrv = noteOffCurve
+                        
+                        # if the object does not play anything (no MIDI notes read == no keyframes to write)
+                        if (fCrv.data_path, fCrv.array_index) not in wpr.keyframes.listOfKeys: continue
+                        keyframes = wpr.keyframes.listOfKeys[(fCrv.data_path, fCrv.array_index)]
+
+                        if isinstance(fCrv, bpy.types.FCurve):
+                            for keyframe in sorted(keyframes, key=lambda x: x.frame):
+                                # set value
+                                if fCrv.data_path[:2] == '["' and fCrv.data_path[-2:] == '"]':
+                                    # custom prop
+                                    exec(f"bpy.data.objects['{obj.name}']{fCrv.data_path} = {keyframe.value}")
+                                    obj.keyframe_insert(data_path=fCrv.data_path, frame=keyframe.frame)
+                                else:
+                                    # every other datapath
+                                    # add initial values
+                                    if fCrv.data_path == "location":
+                                        value = keyframe.value + wpr.initalLoc[fCrv.array_index]
+                                    elif fCrv.data_path == "rotation_euler":
+                                        value = keyframe.value + wpr.initalRot[fCrv.array_index]
+                                    elif fCrv.data_path == "scale":
+                                        value = keyframe.value + wpr.initalScl[fCrv.array_index]
+                                    else:
+                                        value = keyframe.value
+                                    
+                                    exec(f"bpy.data.objects['{obj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {value}")
+                                    obj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=keyframe.frame)
+                        elif isinstance(fCrv, ObjectShapeKey):
+                            for keyframe in sorted(keyframes, key=lambda x: x.frame):
+                                fCrv.targetKey.value = keyframe.value
+                                fCrv.targetKey.keyframe_insert(data_path="value", frame=keyframe.frame)
+                else:
+                    raise RuntimeError(f"ERROR: Type {obj.midi.anim_type} for object {obj.name} not supported yet.")

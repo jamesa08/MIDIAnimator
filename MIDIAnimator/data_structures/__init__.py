@@ -28,38 +28,31 @@ class BlenderWrapper:
     noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
     noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
 
-    noteOnKeyframes: ObjectKeyframes
-    noteOffKeyframes: ObjectKeyframes
+    keyframes: ObjectKeyframes
 
     def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]):
         self.obj = obj
+        
+        self.noteNumbers = noteNumbers
+        self.noteOnCurves = sorted(noteOnCurves, key=lambda x: f"{x.data_path}_{x.array_index}")
+        self.noteOffCurves = sorted(noteOffCurves, key=lambda x: f"{x.data_path}_{x.array_index}")
 
         # make sure object does not use itself as a note on/off curve for the keyframed type
         # make sure obj has at least a note on/off curve for the keyframed type
+        # make sure the FCurves are valid
         if obj.midi.anim_type == "keyframed":
             assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
-            assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! Refer to the docs if you are having trouble."
+            assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! To use the Keyframed Animation type, you need to have a Note On curve or a Note Off curve."
+            assert validateFCurves(noteOnCurves, noteOffCurves) is not False, "Note On FCurve object and the Note Off FCurve object have the different data paths (or extraneous data paths)! Make sure to match the Note On and Note Off data paths."
         
-        self.noteNumbers = noteNumbers
-        self.noteOnCurves = noteOnCurves
-        self.noteOffCurves = noteOffCurves
-        
+        self.keyframes = ObjectKeyframes(wpr=self)
         self.noteOnKeyframes = ObjectKeyframes(wpr=self)
         self.noteOffKeyframes = ObjectKeyframes(wpr=self)
-
-@dataclass
-class ObjectFCurves:
-    location: Tuple[bpy.types.FCurve] = ()
-    rotation: Tuple[bpy.types.FCurve] = ()
-    customProperties: Tuple[bpy.types.FCurve] = ()
-    
-    # key= the "to keyframe" object's shape key's name, value= a list \
-    # (index 0 = reference object shape key FCurves, index 1 = the "to keyframe" object's shape key)
-    shapeKeysDict: Dict[str, List[bpy.types.FCurve, bpy.types.ShapeKey]] = ()
-    shapeKeys: Tuple[bpy.types.FCurve] = ()  # a list of the reference object's shape keys FCurves
-
-    origLoc: Vector = Vector()
-    origRot: Euler = Euler()
+        
+        # these need to be copied at the first keyframe
+        self.initalLoc = obj.location.copy()
+        self.initalRot = obj.rotation_euler.copy()
+        self.initalScl = obj.scale.copy()
 
 @dataclass
 class ObjectShapeKey:
@@ -67,137 +60,22 @@ class ObjectShapeKey:
     referenceCurve: bpy.types.FCurve = None
     targetKey: bpy.types.ShapeKey = None
 
+    data_path: str = referenceCurve.data_path if referenceCurve is not None else ""
+    array_index: int = 0
+
     def __hash__(self) -> int:
         return hash((self.referenceCurve, self.targetKey))
-
-@dataclass
-class ObjectFCurvesNew:
-    location: Tuple[bpy.types.FCurve] = ()
-    rotation: Tuple[bpy.types.FCurve] = ()
-    customProperties: Tuple[bpy.types.FCurve] = ()
-    
-    # key= the target object's shape key's name, value= ObjectShapeKey
-    shapeKeys: Dict[str, ObjectShapeKey] = ()
-
 
 @dataclass(init=False)
 class ObjectKeyframes:
     wpr: BlenderWrapper
 
-    listOfKeys: Dict[bpy.types.FCurve, List[Keyframe]]
+    # key: Tuple[FCurve.data_path, FCurve.array_index], value: List[Keyframe]
+    listOfKeys: Dict[Tuple[str, int], List[Keyframe]]
 
     def __init__(self, wpr):
         self.wpr = wpr
-        # key: FCurve, value: List[Keyframe]
-        # will this implementation work? I think?
         self.listOfKeys = {}
-
-    # def process(note: MIDINote) -> None:
-    #     pass
-
-class FCurveProcessor:
-    obj: bpy.types.Object
-    locationObject: Optional[bpy.types.Object]
-    fCurves: ObjectFCurves
-    location: Optional[Vector]
-    rotation: Optional[Euler]
-    
-    # key= custom property name, value=int or float (the val to be keyframed)
-    customProperties: Dict[str, Union[int, float]]
-    
-    # key= the "to keyframe" object's shape key's name, value= a float (the val to be keyframed)
-    shapeKeys: Dict[str, float]
-
-    def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
-        self.obj = obj
-        self.fCurves = fCurves
-        self.locationObject = locationObject
-        # when None no keyframe of that type
-        self.location = Vector()
-        self.rotation = Euler()
-        self.customProperties = {}
-        self.shapeKeys = {}
-
-    def applyFCurve(self, delta: int):
-        if len(self.fCurves.location) != 0:
-            if self.locationObject is None:
-                # location = self.obj.location.copy()
-                location = self.location
-            else:
-                location = self.locationObject.location.copy()
-            
-            for fCurve in self.fCurves.location:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                location[i] = val
-            
-            # set the values on internal location
-            self.location = location
-
-        if len(self.fCurves.rotation) != 0:
-            # if self.rotation is None:
-            #     rotation = self.obj.rotation_euler.copy()
-            # else:
-            #     rotation = self.rotation
-            if self.rotation is None:
-                rotation = Euler()
-            else:
-                rotation = self.rotation
-            
-            for fCurve in self.fCurves.rotation:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                rotation[i] += val
-
-            # set the values on internal rotation
-            self.rotation = rotation
-
-        if len(self.fCurves.customProperties) != 0:
-            for fCurve in self.fCurves.customProperties:
-                val = fCurve.evaluate(delta)
-                if fCurve.data_path in self.customProperties:
-                    self.customProperties[fCurve.data_path] += val
-                else:
-                    self.customProperties[fCurve.data_path] = val
-
-        if len(self.fCurves.shapeKeysDict) != 0:
-            for shapeName in self.fCurves.shapeKeysDict:
-                val = self.fCurves.shapeKeysDict[shapeName][0].evaluate(delta)  # we want to get only the FCurve from the dict (index 0 is the FCurve)
-
-                if shapeName in self.shapeKeys:
-                    self.shapeKeys[shapeName] += val
-                else:
-                    self.shapeKeys[shapeName] = val
-
-    def insertKeyFrames(self, frame: int):
-        if len(self.fCurves.location) != 0:
-            # summed = sum([processor.location for processor in self.linkedProcessors])  future update
-            if self.locationObject is None:
-                self.obj.location = npAdd(self.location, self.fCurves.origLoc)
-            else:
-                self.obj.location = self.location
-
-            self.obj.keyframe_insert(data_path="location", frame=frame)
-            setKeyframeInterpolation(self.obj, "BEZIER")
-        
-        if len(self.fCurves.rotation) != 0:
-            self.obj.rotation_euler = npAdd(self.rotation, self.fCurves.origRot)
-            self.obj.keyframe_insert(data_path="rotation_euler", frame=frame)
-        
-        if len(self.fCurves.customProperties) != 0:
-            for data_path in self.customProperties:
-                val = self.customProperties[data_path]
-                exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
-                self.obj.keyframe_insert(data_path=data_path, frame=frame)
-
-        if len(self.fCurves.shapeKeys) != 0:
-            for shapeName in self.fCurves.shapeKeysDict:
-                shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
-                shapeKey.value = self.shapeKeys[shapeName]
-                shapeKey.keyframe_insert(data_path="value", frame=frame)
-
-    def __repr__(self) -> str:
-        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.customProperties} {self.shapeKeys}"
 
 @dataclass
 class FrameRange:
@@ -207,12 +85,11 @@ class FrameRange:
     startFrame: int
     endFrame: int
     bObj: BlenderWrapper
-    type: str = "note_on"
 
     def __post_init__(self):
         self.cachedObj: Optional[bpy.types.Object] = None
 
-    def __lt__(self, other: FrameRange):
+    def __lt__(self, other: FrameRange) -> FrameRange:
         return self.startFrame < other.startFrame
 
 @dataclass(init=False)

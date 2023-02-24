@@ -46,12 +46,6 @@ class MIDIAnimatorNode:
 
         :param int offset: amount to add to the frame number for each keyframe (in case we have negative keyframes), defaults to 0
         """
+        
         for instrument in self._instruments:
-            if instrument.override:
-                instrument.animate()
-                continue
-
-            # instrument.preFrameLoop()
-            # instrument.animateFrames(offset)
             instrument.animate()
-            # instrument.postFrameLoop()
