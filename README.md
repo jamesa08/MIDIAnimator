@@ -2,6 +2,7 @@
 
 <!-- PROJECT SHIELDS -->
 
+![build][build-shield]
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
@@ -25,12 +26,14 @@
     <br />
     <a href="https://midianimatordocs.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
     <br />
-    <!-- <br />
-    <a href="https://github.com/imacj/MIDIAnimator/">View Demo</a>
-    · -->
-    <a href="https://github.com/imacj/MIDIAnimator/issues">Report Bug</a>
+    <br />
+    <a href="https://www.youtube.com/watch?v=hW_21_5kVK8">View Technical Demo</a>
     ·
-    <a href="https://github.com/imacj/MIDIAnimator/issues">Request Feature</a>
+    <a href="https://docs.google.com/presentation/d/1mSh2aTBmIc8nku--YBUQYN17VsLCOIxsg_MDFF-hec4/edit?usp=sharing"> Technical Presentation</a>
+    ·
+    <a href="https://github.com/jamesa08/MIDIAnimator/issues">Report Bug</a>
+    ·
+    <a href="https://github.com/jamesa08/MIDIAnimator/issues">Request Feature</a>
   </p>
 </div>
 
@@ -115,7 +118,7 @@ _See `LICENSE.txt` for more information._<br>
 
 James Alt - [jalt@capital.edu](mailto:jalt@capital.edu)
 
-Project Link: [https://github.com/imacj/MIDIAnimator](https://github.com/imacj/MIDIAnimator)
+Project Link: [https://github.com/jamesa08/MIDIAnimator](https://github.com/jamesa08/MIDIAnimator)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -135,16 +138,17 @@ Here are some of the development tools I used to create this project.
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 
+[build-shield]: https://img.shields.io/github/actions/workflow/status/jamesa08/MIDIAnimator/create-zip-file.yml
 [mido-shield]: https://img.shields.io/pypi/v/mido?label=mido
-[contributors-shield]: https://img.shields.io/github/contributors/imacj/MIDIAnimator.svg?style=flat
-[contributors-url]: https://github.com/imacj/MIDIAnimator/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/imacj/MIDIAnimator.svg?style=flat
+[contributors-shield]: https://img.shields.io/github/contributors/jamesa08/MIDIAnimator.svg?style=flat
+[contributors-url]: https://github.com/jamesa08/MIDIAnimator/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/jamesa08/MIDIAnimator.svg?style=flat
 [mido-url]: https://pypi.org/project/mido/
-[forks-url]: https://github.com/imacj/MIDIAnimator/network/members
-[stars-shield]: https://img.shields.io/github/stars/imacj/MIDIAnimator.svg?style=flat
-[stars-url]: https://github.com/imacj/MIDIAnimator/stargazers
-[issues-shield]: https://img.shields.io/github/issues/imacj/MIDIAnimator.svg?style=flat
-[issues-url]: https://github.com/imacj/MIDIAnimator/issues
-[license-shield]: https://img.shields.io/github/license/imacj/MIDIAnimator.svg?style=flat
-[license-url]: https://github.com/imacj/MIDIAnimator/blob/master/LICENSE.txt
+[forks-url]: https://github.com/jamesa08/MIDIAnimator/network/members
+[stars-shield]: https://img.shields.io/github/stars/jamesa08/MIDIAnimator.svg?style=flat
+[stars-url]: https://github.com/jamesa08/MIDIAnimator/stargazers
+[issues-shield]: https://img.shields.io/github/issues/jamesa08/MIDIAnimator.svg?style=flat
+[issues-url]: https://github.com/jamesa08/MIDIAnimator/issues
+[license-shield]: https://img.shields.io/github/license/jamesa08/MIDIAnimator.svg?style=flat
+[license-url]: https://github.com/jamesa08/MIDIAnimator/blob/master/LICENSE.txt
 [product-screenshot]: images/screenshot.png
