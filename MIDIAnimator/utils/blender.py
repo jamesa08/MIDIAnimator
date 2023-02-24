@@ -34,6 +34,36 @@ def shapeKeyFCurvesFromObject(obj) -> List[bpy.types.FCurve]:
         return list(obj.data.shape_keys.animation_data.action.fcurves)
     return []
 
+def validateFCurves(noteOnFCurves, noteOffFCurves, haveSorted: bool=False) -> bool:
+    """
+    This function will ensure both lists of FCurves have the same data_paths and array_indexes.
+    `haveSorted` will sort the objects for you. Default is false. 
+    Returns True if valid, False otherwise
+    """
+    # if there is no FCurves on each object, this is valid
+    if (len(noteOnFCurves) == 0 and bool(noteOffFCurves) is False) or (len(noteOffFCurves) == 0 and bool(noteOnFCurves is False)): return True
+
+    # if one doesn't exist, its valid (since there isn't another pair to match with)
+    if (bool(noteOnFCurves) is False and bool(noteOffFCurves) is True) or (bool(noteOffFCurves) is False and bool(noteOnFCurves) is True): return True
+    
+    # if they both don't exist, its invalid
+    if bool(noteOnFCurves) is False and bool(noteOffFCurves) is False: return False
+    
+    # if they don't match in length, immediately stop checking
+    if len(noteOnFCurves) != len(noteOffFCurves): return False
+    
+    # check through FCurves
+    if haveSorted:
+        iterObj = zip(sorted(noteOnFCurves, key=lambda x: f"{x.data_path}_{x.array_index}"), sorted(noteOffFCurves, key=lambda y: f"{y.data_path}_{y.array_index}"))
+    else:
+        iterObj = zip(noteOnFCurves, noteOffFCurves)
+    
+    for noteOnCurve, noteOffCurve in iterObj:
+        if noteOnCurve.data_path != noteOffCurve.data_path: return False
+        if noteOnCurve.array_index != noteOffCurve.array_index: return False
+        
+    return True
+
 def cleanKeyframes(obj, channels: Set={"all_channels"}):
     fCurves = FCurvesFromObject(obj)
     
