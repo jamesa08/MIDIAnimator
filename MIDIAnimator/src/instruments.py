@@ -173,6 +173,29 @@ class EvaluateInstrument(Instrument):
             cleanKeyframes(obj)
     
     def animate(self):
+        def processNextKeys(curve, note, wpr, nextKeys):
+            if isinstance(curve, bpy.types.FCurve):
+                keyframes = curve.keyframe_points
+            elif isinstance(curve, ObjectShapeKey):
+                keyframes = curve.referenceCurve.keyframe_points
+            else:
+                # invaid curve type
+                return
+
+            for keyframe in keyframes:
+                if curve == noteOnCurve:
+                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
+                elif curve == noteOffCurve:
+                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
+
+                value = keyframe.co[1]
+                
+                if wpr.obj.midi.velocity_intensity != 0:
+                    value *= note.velocity / 127 * wpr.obj.midi.velocity_intensity
+                
+                nextKeys.append(Keyframe(frame, value))
+
+        
         for note in self.midiTrack.notes:
             # lookup blender object
             if note.noteNumber in self.noteToWpr:
@@ -204,47 +227,13 @@ class EvaluateInstrument(Instrument):
                             wpr.keyframes.listOfKeys[key] = []
                         
                         keyframes = wpr.keyframes.listOfKeys[key]
-                        
-                        if wpr.noteOnCurves:
-                            if isinstance(noteOnCurve, bpy.types.FCurve):
-                                for keyframe in noteOnCurve.keyframe_points:
-                                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                    if wpr.obj.midi.velocity_intensity != 0:
-                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
-                                    else:
-                                        value = keyframe.co[1]
-                                    nextKeys.append(Keyframe(frame, value))
-                            
-                            elif isinstance(noteOnCurve, ObjectShapeKey):
-                                # shape keys handle differently
-                                for keyframe in noteOnCurve.referenceCurve.keyframe_points:
-                                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
-                                    if wpr.obj.midi.velocity_intensity != 0:
-                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
-                                    else:
-                                        value = keyframe.co[1]
-                                    nextKeys.append(Keyframe(frame, value))
-                        
-                        if wpr.noteOffCurves:
-                            if isinstance(noteOffCurve, bpy.types.FCurve):
-                                for keyframe in noteOffCurve.keyframe_points:
-                                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
-                                    if wpr.obj.midi.velocity_intensity != 0:
-                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
-                                    else:
-                                        value = keyframe.co[1]
-                                    nextKeys.append(Keyframe(frame, value))
-                            
-                            elif isinstance(noteOffCurve, ObjectShapeKey):
-                                # shape keys handle differently
-                                for keyframe in noteOffCurve.referenceCurve.keyframe_points:
-                                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
-                                    if wpr.obj.midi.velocity_intensity != 0:
-                                        value = keyframe.co[1] * (note.velocity / 127) * wpr.obj.midi.velocity_intensity
-                                    else:
-                                        value = keyframe.co[1]
-                                    nextKeys.append(Keyframe(frame, value))
 
+                        # process next keys
+                        if wpr.noteOnCurves:
+                            processNextKeys(noteOnCurve, note, wpr, nextKeys)
+
+                        if wpr.noteOffCurves:
+                            processNextKeys(noteOffCurve, note, wpr, nextKeys)
 
                         # take keyframes that are next and "add" them to the already insrted keyframes
                         if obj.midi.anim_overlap == "add":
