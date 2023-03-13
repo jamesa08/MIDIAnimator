@@ -40,7 +40,8 @@ class Instrument:
         
         self.createNoteToBlenderWpr()
 
-    def getFCurves(self, obj: bpy.types.Object, noteType: str="note_on") -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
+    @staticmethod
+    def getFCurves(obj: bpy.types.Object, noteType: str="note_on") -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
         assert noteType == "note_on" or noteType == "note_off", "Only types 'note_on' or 'note_off' are supported!"
         
         if obj.midi.anim_type != "keyframed": return ()
@@ -103,8 +104,8 @@ class Instrument:
             wpr = BlenderWrapper(
                 obj=obj, 
                 noteNumbers=convertNoteNumbers(obj.midi.note_number), 
-                noteOnCurves=self.getFCurves(obj=obj, noteType="note_on"), 
-                noteOffCurves=self.getFCurves(obj=obj, noteType="note_off")
+                noteOnCurves=Instrument.getFCurves(obj=obj, noteType="note_on"), 
+                noteOffCurves=Instrument.getFCurves(obj=obj, noteType="note_off")
             )
             
             for noteNumber in wpr.noteNumbers:
@@ -174,7 +175,7 @@ class ProjectileInstrument(Instrument):
             # iterate over all "wrapped" Blender objects
             for wpr in wprs:
                 obj = wpr.obj
-                
+
                 if obj.midi.anim_type == "keyframed":
                     pass
                 elif obj.midi.anim_type == "osc":
