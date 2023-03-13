@@ -163,6 +163,27 @@ class ProjectileInstrument(Instrument):
         # create CacheInstance object
         self._cacheInstance = CacheInstance(projectiles)
 
+    def animate(self):
+        for note in self.midiTrack.notes:
+            # lookup blender object
+            if note.noteNumber in self.noteToWpr:
+                wprs = self.noteToWpr[note.noteNumber]
+            else: 
+                continue
+            
+            # iterate over all "wrapped" Blender objects
+            for wpr in wprs:
+                obj = wpr.obj
+                
+                if obj.midi.anim_type == "keyframed":
+                    pass
+                elif obj.midi.anim_type == "osc":
+                    pass
+                elif obj.midi.anim_type == "adsr":
+                    pass
+
+
+
 class EvaluateInstrument(Instrument):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -195,7 +216,7 @@ class EvaluateInstrument(Instrument):
                 
                 nextKeys.append(Keyframe(frame, value))
 
-        
+
         for note in self.midiTrack.notes:
             # lookup blender object
             if note.noteNumber in self.noteToWpr:
@@ -262,10 +283,7 @@ class EvaluateInstrument(Instrument):
                 if obj.midi.anim_type == "keyframed":
                     for noteOnCurve, noteOffCurve in zip_longest(wpr.noteOnCurves, wpr.noteOffCurves):
                         # make sure curve exists. if it doesn't this is probably a noteOff only object
-                        if noteOnCurve is not None:
-                            fCrv = noteOnCurve
-                        else:
-                            fCrv = noteOffCurve
+                        fCrv = noteOnCurve if noteOnCurve is not None else noteOffCurve
                         
                         # if the object does not play anything (no MIDI notes read == no keyframes to write)
                         if (fCrv.data_path, fCrv.array_index) not in wpr.keyframes.listOfKeys: continue
