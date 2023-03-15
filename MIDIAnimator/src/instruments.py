@@ -222,8 +222,8 @@ class ProjectileInstrument(Instrument):
 
 
 class EvaluateInstrument(Instrument):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
+        super().__init__(midiTrack=midiTrack, collection=collection)
 
     def preAnimate(self):
         bpy.context.scene.frame_set(-10000)
