@@ -101,7 +101,7 @@ class Instrument:
             # make sure objects are not in target collection
             assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
 
-            wpr = BlenderWrapper(
+            wpr = ObjectWrapper(
                 obj=obj, 
                 noteNumbers=convertNoteNumbers(obj.midi.note_number), 
                 noteOnCurves=Instrument.getFCurves(obj=obj, noteType="note_on"), 
@@ -254,6 +254,15 @@ class EvaluateInstrument(Instrument):
                 nextKeys.append(Keyframe(frame, value))
 
 
+        # create wprToKeyframe
+        wprToKeyframe  = {}
+        for noteNumber in self.noteToWpr:
+            wprs = self.noteToWpr[noteNumber]
+            
+            for wpr in wprs:
+                wprToKeyframe[wpr] = {}
+        
+
         for note in self.midiTrack.notes:
             # lookup blender object
             if note.noteNumber in self.noteToWpr:
@@ -281,10 +290,10 @@ class EvaluateInstrument(Instrument):
                             # try using noteOffCurve if there is no noteOnCurve
                             key = (noteOffCurve.data_path, noteOffCurve.array_index)
 
-                        if key not in wpr.keyframes.listOfKeys:
-                            wpr.keyframes.listOfKeys[key] = []
+                        if key not in wprToKeyframe[wpr]:
+                            wprToKeyframe[wpr][key] = []
                         
-                        keyframes = wpr.keyframes.listOfKeys[key]
+                        keyframes = wprToKeyframe[wpr][key]
 
                         # process next keys
                         if wpr.noteOnCurves:
@@ -323,9 +332,10 @@ class EvaluateInstrument(Instrument):
                         fCrv = noteOnCurve if noteOnCurve is not None else noteOffCurve
                         
                         # if the object does not play anything (no MIDI notes read == no keyframes to write)
-                        if (fCrv.data_path, fCrv.array_index) not in wpr.keyframes.listOfKeys: continue
-                        keyframes = wpr.keyframes.listOfKeys[(fCrv.data_path, fCrv.array_index)]
-
+                        if (fCrv.data_path, fCrv.array_index) not in wprToKeyframe[wpr]: continue
+                        keyframes = wprToKeyframe[wpr][(fCrv.data_path, fCrv.array_index)]
+                        # keyframes = wpr.keyframes.listOfKeys[(fCrv.data_path, fCrv.array_index)]
+                        
                         if isinstance(fCrv, bpy.types.FCurve):
                             for keyframe in sorted(keyframes, key=lambda x: x.frame):
                                 # set value

@@ -17,7 +17,7 @@ class Keyframe:
         return hash((self.frame, self.value))
 
 @dataclass(init=False)
-class BlenderWrapper:
+class ObjectWrapper:
     """object wrapper for a Blender Object
     this allows us to store data with the blender objects (such as FCurve data, note numbers, MIDI information, etc)
     """
@@ -27,8 +27,6 @@ class BlenderWrapper:
     
     noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
     noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
-
-    keyframes: ObjectKeyframes
 
     # these are for all the animation FCurves assigned to the object (beginning frame, ending frame)
     startFrame: float
@@ -52,9 +50,7 @@ class BlenderWrapper:
             assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! To use the Keyframed Animation type, you need to have a Note On curve or a Note Off curve."
             assert validateFCurves(noteOnCurves, noteOffCurves) is not False, "Note On FCurve object and the Note Off FCurve object have the different data paths (or extraneous data paths)! Make sure to match the Note On and Note Off data paths."
             self._calculateOffsets()
-        
-        self.keyframes = ObjectKeyframes(wpr=self)
-        
+                
         # these need to be copied at the first keyframe
         self.initalLoc = obj.location.copy()
         self.initalRot = obj.rotation_euler.copy()
@@ -88,17 +84,6 @@ class ObjectShapeKey:
     def range(self):
         return self.referenceCurve.range()
 
-@dataclass(init=False)
-class ObjectKeyframes:
-    wpr: BlenderWrapper
-
-    # key: Tuple[FCurve.data_path, FCurve.array_index], value: List[Keyframe]
-    listOfKeys: Dict[Tuple[str, int], List[Keyframe]]
-
-    def __init__(self, wpr):
-        self.wpr = wpr
-        self.listOfKeys = {}
-
 @dataclass
 class FrameRange:
     """
@@ -106,7 +91,7 @@ class FrameRange:
     """
     startFrame: int
     endFrame: int
-    wpr: BlenderWrapper
+    wpr: ObjectWrapper
 
     def __lt__(self, other: FrameRange) -> FrameRange:
         return self.startFrame < other.startFrame
