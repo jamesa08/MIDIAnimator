@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 def maxSimultaneousObjects(intervals: List[Tuple[float, float]]) -> int:
     """
+    gets the max simotaneous objects for List[Tuple[float, float]]`.
     :param intervals: List[Tuple[float, float]]
     :return int: max number of objects that are visible at any point in time
     """
@@ -71,18 +72,42 @@ def maxSimultaneousObjects(intervals: List[Tuple[float, float]]) -> int:
     return maxCount
 
 def animateSine(time: float, startVal: float, endVal: float, duration: float) -> float:
-    # https://www.desmos.com/calculator/kw2grve25z
+    """evaluates a sine curve based on paramters
+    interactive demo: https://www.desmos.com/calculator/kw2grve25z
+
+    :param float time: the time at which you want to evaluate from (e.g., f(x))
+    :param float startVal: starting value (e.g., y-axis)
+    :param float endVal: ending value (e.g., y-axis)
+    :param float duration: how long the animation should last (e.g., x-axis)
+    :return float: the result of the evaluated animation (e.g., result of evaluating f(x))
+    """
     time = min(max(time, 0), duration)  # clamps time 
     return -((cos((1 / duration) * pi * time) - 1) * ((endVal - startVal) / 2)) + startVal
 
-def animateDampedOsc(x: float, period: float, amplitude: float, damp: float, frameRate: float):
-    return (e ** -((damp * x) / frameRate)) * (-sin((period * x) / frameRate) * amplitude)
+def animateDampedOsc(time: float, period: float, amplitude: float, damp: float, frameRate: float):
+    """evaluates a dampaned oscillation curve based on parameters
+
+    :param float time: the time at which you want to evaluate from (e.g., f(x))
+    :param float period: how long it takes for the oscillation to repeat one time
+    :param float amplitude: how large is each oscillation
+    :param float damp: damping of the oscillation (how much decrease of energy for each oscillation) 
+    :param float frameRate: the framerate of the current scene
+    :return _type_: _description_
+    """
+    return (e ** -((damp * time) / frameRate)) * (-sin((period * time) / frameRate) * amplitude)
 
 def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRate: float) -> List[Keyframe]:
-    # generates keyframes that will generate the specified dampened oscillation
-    # Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions
-    # ineractive demo: https://www.desmos.com/calculator/vzwitwmib6
+    """generates keyframes that will generate the specified dampend oscillation
+    Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions
+    interactive demo: https://www.desmos.com/calculator/vzwitwmib6
     
+    :param float period: how long it takes for the oscillation to repeat one time
+    :param float amplitude: how large is each oscillation
+    :param float damp: damping of the oscillation (how much decrease of energy for each oscillation) 
+    :param float frameRate: the framerate of the current scene
+    :return List[Keyframe]: a list of keyframes of the min's and max's of the oscillation. 
+    """
+
     def waveFunc(x):
         return animateDampedOsc(x, period, amplitude, damp, frameRate)
     

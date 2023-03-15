@@ -7,6 +7,15 @@ from sys import modules
 
 @dataclass
 class MIDINote:
+    """Takes a `channel`, `noteNumber`, `velocity`, `timeOn` and `timeOff` and creates a `MIDINote` object.
+
+    :param int channel: MIDI channel of the note, 0-15.
+    :param int noteNumber: MIDI note number of the note, 0-127.
+    :param int velocity: MIDI velocity of the note, 0-127.
+    :param float timeOn: Time the note was turned on, in seconds.
+    :param float timeOff: Time the note was turned off, in seconds.
+    :return: None
+    """
     channel: int
     noteNumber: int
     velocity: int
@@ -18,6 +27,12 @@ class MIDINote:
 
 @dataclass
 class MIDIEvent:
+    """Takes a `channel`, `value`, `time` and creates a `MIDIEvent` object.
+
+    :param int channel: MIDI channel of the note, 0-15.
+    :param float velocity: MIDI value of the event, 0-127.
+    :param float time: Time the event occurred, in seconds.
+    """
     channel: int
     value: float
     time: float
@@ -26,14 +41,18 @@ class MIDIEvent:
         return self.time < other.time
 
 class MIDITrack:
+    # name of the MIDITrack
     name: str
     
+    # the list of MIDINotes in the MIDITrack
     notes: List[MIDINote]
 
+    # different paramters in the MIDITrack
     controlChange: Dict[int, List[MIDIEvent]]
     pitchwheel: List[MIDIEvent]
     aftertouch: List[MIDIEvent]
 
+    # key= (channel, noteNumber), value=List[MIDINote]
     _noteTable: Dict[Tuple[int, int], List[MIDINote]]
 
     def __init__(self, name: str):
@@ -138,9 +157,8 @@ class MIDITrack:
         return len(variables) == sum([len(v) == 0 for v in variables])
 
     def allUsedNotes(self) -> list:
-        """Returns a list of all used notes in a MIDI Track.
-
-        :return list: a list of all used notes
+        """
+        :return list: a list of all used notes in the MIDITrack
         """
 
         return removeDuplicates([note.noteNumber for note in self.notes])
@@ -213,6 +231,7 @@ class MIDITrack:
         return f"<{module}.{qualname} object \"{self.name}\", at {hex(id(self))}>"
 
 class MIDIFile:
+    # lists of tracks
     _tracks = List[MIDITrack]
 
     def __init__(self, midiFile: str):
@@ -229,13 +248,17 @@ class MIDIFile:
         
 
     def getMIDITracks(self) -> List[MIDITrack]:
+        """returns a list of all `MIDITrack` objects in the `MIDIFile`
+
+        :return List[MIDITrack]: a list of all `MIDITrack` objects
+        """
         return self._tracks
 
     def _parseMIDI(self, file: str) -> List[MIDITrack]:
-        """helper method that takes a MIDI file (instrumentType 0 and 1) and returns a list of MIDITracks
+        """helper method that takes a MIDI file (instrumentType 0 and 1) and returns a list of `MIDITracks`
 
         :param midFile: MIDI file
-        :return: list of MIDITracks
+        :return: list of `MIDITracks`
         """
         
         # use abspath "//"
@@ -350,7 +373,9 @@ class MIDIFile:
     
     def findTrack(self, name) -> MIDITrack:
         """Finds the track with a specified name
-        raises ValueError if there is no track with that specified name
+        
+        raises `ValueError` if there is no track with that specified name
+        
         :param str name: The name of the track to be returned
         :return list: The track with the specified name
         """
@@ -361,9 +386,20 @@ class MIDIFile:
         raise ValueError(f"Track name '{name}' does not exist!")
     
     def listTrackNames(self) -> List[str]:
+        """gets a list of all `MIDITrack` names
+
+        :return List[str]: returns a list of `MIDITrack` names
+        """
         return [str(track.name) for track in self._tracks]
     
-    def mergeTracks(self, track1: MIDITrack, track2: MIDITrack, name=None):
+    def mergeTracks(self, track1: MIDITrack, track2: MIDITrack, name: str=None) -> MIDITrack:
+        """merges 2 tracks together. You can also use the `+` operator.
+
+        :param MIDITrack track1: the first `MIDITrack` to merge
+        :param MIDITrack track2: the second `MIDITrack` to merge
+        :param str name: name of the new track, defaults to None
+        :return MIDITrack: the merged `MIDITrack`s.
+        """
         merged = track1 + track2
         if name: merged.name = name
         return merged

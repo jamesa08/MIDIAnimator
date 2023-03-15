@@ -8,13 +8,23 @@ from .. src.instruments import *
 from . algorithms import *
 
 class MIDIAnimatorNode:
-    """this class acts as a wrapper for GenericTracks/custom tracks"""
+    """This class encompasses all `Instrument` classes (and its subclasses)."""
     _instruments: List[Instrument]
 
     def __init__(self):
         self._instruments = []
 
-    def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, properties=None, custom=None, customVars: Dict=None):
+    def addInstrument(self, instrumentType: str, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, properties: Dict[str]=None, custom=None, customVars: Dict=None):
+        """adds an instrument to MIDIAnimator. This will create the class for you
+
+        :param str instrumentType: The instrument type. Choose from "evaluate", "Projectile" or "Custom". 
+        :param MIDITrack midiTrack: The `MIDITrack` object to create the instrument from
+        :param bpy.types.Collection objectCollection: The collection (`bpy.types.Collection`) of Blender objects to be animated.
+        :param Dict[str] properties: dictionary of properties for classes, defaults to None
+        :param class(Instrument) custom: a custom Instrument class that inherits from Instrument, defaults to None
+        :param Dict customVars: a dictionary of custom vars you would like to send to your custom class, defaults to None
+        :raises RuntimeError: if instrumentType="custom" and the customClass is None.
+        """
         assert type(midiTrack).__name__ == "MIDITrack", "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         assert instrumentType in {"evaluate", "projectile", "custom"}, "Instrument type invalid."

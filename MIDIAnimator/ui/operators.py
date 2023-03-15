@@ -23,10 +23,11 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
 
         try:
             if len(sceneMidi.quick_note_number_list) != 0:
+                # using literal_eval is a safe way to evaluate the expression, instead of just using eval()
                 note_numbers = literal_eval(sceneMidi.quick_note_number_list)
             else:
                 if sceneMidi.quick_sort_by_name == False:
-                    note_numbers = [col_sort_key(obj) for obj  in col.all_objects]
+                    note_numbers = [col_sort_key(obj) for obj in col.all_objects]
                 else:
                     self.report({"ERROR"}, f"List contains errors. Please check the list and try again.")
                     return {'CANCELLED'}
@@ -57,8 +58,6 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         if "CANCELLED" in self.preExecute(context): 
             return {"CANCELLED"}  # make sure this actually cancells
         note_numbers, sortedObjs = self.preExecute(context)
-
-        col = sceneMidi.quick_obj_col
 
         sceneMidi.quick_note_number_list = str(note_numbers)
 

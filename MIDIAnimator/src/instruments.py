@@ -17,12 +17,19 @@ from . algorithms import *
 
 @dataclass
 class Instrument:
-    """base class for instruments that are played for notes"""
+    """base class for MIDI instruments. These will handle all pre-animation and animation techniques."""
     collection: bpy.types.Collection
     midiTrack: MIDITrack
     noteToWpr: Dict[int, bpy.types.Object]
 
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, override=False):
+        """Base class for MIDI instruments. These will handle all pre-animation and animation techniques.
+        You should not instance this class by itself. This class should be inherited.
+
+        :param MIDITrack midiTrack: the MIDITrack object to animate from
+        :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
+        :param bool override: override the __post_init__ method, defaults to False
+        """
         self.collection = collection
         self.midiTrack = midiTrack
         self.noteToWpr = dict()
@@ -33,15 +40,27 @@ class Instrument:
             self.__post_init__()
     
     def __post_init__(self):
+        """checks objects to see if they're valid
+        creates note to ObjectWrapper dictionary
+
+        :raises ValueError: _description_
+        """
         # ensure objects of keyframed type have either note on or note off FCurve objects
         for obj in self.collection.all_objects:
             if obj.midi.anim_type == "keyframed" and obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
                 raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
         
-        self.createNoteToBlenderWpr()
+        self.createNoteToObjectWpr()
 
     @staticmethod
     def getFCurves(obj: bpy.types.Object, noteType: str="note_on") -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
+        """gets the FCurves on a Blender Object.
+
+        :param bpy.types.Object obj: the object with either a note_on_curve or a note_off_curve to get the FCurves from
+        :param str noteType: which note type to get, can be `"note_on"` or `"note_off"`, defaults to `"note_on"`
+        :raises ValueError: if `noteType` is invalid
+        :return List[Union[bpy.types.FCurve, ObjectShapeKey]]: returns a list of either `bpy.types.FCurve`s or an `ObjectShapeKey`.
+        """
         assert noteType == "note_on" or noteType == "note_off", "Only types 'note_on' or 'note_off' are supported!"
         
         if obj.midi.anim_type != "keyframed": return ()
@@ -92,7 +111,11 @@ class Instrument:
         
         return out
 
-    def createNoteToBlenderWpr(self) -> None:
+    def createNoteToObjectWpr(self) -> None:
+        """takes the MIDI file and builds a dictionary with the key being note number, and the value being a ObjectWrapper (which gets its FCurves)
+
+        :raises ValueError: if there is no note number on the object
+        """
         allUsedNotes = self.midiTrack.allUsedNotes()
 
         for obj in self.collection.all_objects:
@@ -120,12 +143,14 @@ class Instrument:
     def preAnimate():
         """actions to take before the animation starts (cleaning keyframes, setting up objects, etc.)
         this method is called on class initalization.
-        subclass should override this method
+        
+        subclass should override this method, this method will not do anything if called
         """
         pass
 
     def animate(self):
-        """actual animation. this method is only called once
+        """this will keyframe the objects in `self.objectCollection`. this method is only called once
+        
         subclass should override this method
         """
         raise RuntimeError("subclass should override animate() method. See the docs on how to create custom instruments.")
@@ -134,6 +159,13 @@ class ProjectileInstrument(Instrument):
     _cache: CacheInstance
 
     def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection, referenceProjectile: bpy.types.Object):
+        """Pre-defined animation code that animates a projectile launching from a funnel.
+
+        :param MIDITrack midiTrack: the MIDITrack object to animate from
+        :param bpy.types.Collection objectCollection: the `bpy.types.Collection` of Blender objects (funnels) to apply keyframes to. These are the funnel objects (starting position for the projectiles).
+        :param bpy.types.Collection projectileCollection: the `bpy.types.Collection` to store the projectiles
+        :param bpy.types.Object referenceProjectile: the `bpy.types.Object` to clone the projectile to. This will not be animated, the mesh will be copied.
+        """
         self._cache = CacheInstance()
         self.projectileCollection = projectileCollection
         self.referenceProjectile = referenceProjectile
@@ -141,10 +173,14 @@ class ProjectileInstrument(Instrument):
         super().__init__(midiTrack, objectCollection)
 
     def preAnimate(self):
-        # delete all old projectiles & their associated keyframes
+        """deletes all old projectiles & their associated keyframes"""
         cleanCollection(self.projectileCollection, self.referenceProjectile)
 
     def animate(self):
+        """generates projectiles with keyframes and adds them to the projectileCollection
+
+        :raises ValueError: if the animation projectile object on the funnels do not have an animation curve (for the ball path)
+        """
         # iterate over all notes
         for note in self.midiTrack.notes:
             # lookup blender object
@@ -223,14 +259,21 @@ class ProjectileInstrument(Instrument):
 
 class EvaluateInstrument(Instrument):
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
+        """Takes an object with FCurves and duplicates it across the timeline.
+
+        :param MIDITrack midiTrack: the MIDITrack object to animate from
+        :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
+        """
         super().__init__(midiTrack=midiTrack, collection=collection)
 
     def preAnimate(self):
+        """cleans all keyframes before the animation"""
         bpy.context.scene.frame_set(-10000)
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)
     
     def animate(self):
+        """applys keyframe data to the objects from the MIDITrack"""
         def processNextKeys(curve, note, wpr, nextKeys):
             if isinstance(curve, bpy.types.FCurve):
                 keyframes = curve.keyframe_points

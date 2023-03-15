@@ -9,7 +9,10 @@ import bpy
 
 @dataclass
 class Keyframe:
-    """simple keyframe data structure"""
+    """A simple keyframe data structure.
+    :param float frame: the frame value of the keyframe (x)
+    :param float value: the value of the keyframe (y)
+    """
     frame: float  # frame of the keyframe
     value: float  # value of the keyframe
 
@@ -18,10 +21,6 @@ class Keyframe:
 
 @dataclass(init=False)
 class ObjectWrapper:
-    """object wrapper for a Blender Object
-    this allows us to store data with the blender objects (such as FCurve data, note numbers, MIDI information, etc)
-    """
-
     obj: bpy.types.Object
     noteNumbers: Tuple[int]
     
@@ -32,7 +31,15 @@ class ObjectWrapper:
     startFrame: float
     endFrame: float
 
-    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]):
+    def __init__(self, obj: bpy.types.Object, noteNumbers: Tuple[int], noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]):
+        """object wrapper for `bpy.types.Object` objects.
+        this allows us to store data with the blender objects (such as FCurve data, note numbers, MIDI information, etc)
+
+        :param bpy.types.Object obj: Blender object
+        :param Tuple[int] noteNumbers: a tuple of note numbers of type `int`.
+        :param List[Union[bpy.types.FCurve, ObjectShapeKey]] noteOnCurves: A list of NoteOn curves dervided from `obj`.
+        :param List[Union[bpy.types.FCurve, ObjectShapeKey]] noteOffCurves: A list of NoteOff curves dervided from `obj`.
+        """
         self.obj = obj
         
         self.noteNumbers = noteNumbers
@@ -57,7 +64,10 @@ class ObjectWrapper:
         self.initalScl = obj.scale.copy()
     
     def _calculateOffsets(self):
-        """mutating function that calculates the range of the Note On FCurves (how long each FCurve on the object will be activelty moving)"""
+        """mutating function that calculates the range of the Note On FCurves (how long each FCurve on the object will be activelty moving)
+        
+        :return: None
+        """
 
         for noteOnCurve in self.noteOnCurves:
             curveStart, curveEnd = noteOnCurve.range()
@@ -71,6 +81,14 @@ class ObjectWrapper:
 
 @dataclass
 class ObjectShapeKey:
+    """Wrapper for a `bpy.types.Object`'s Shape Key
+    
+    :param str name: name of the shape key
+    :param bpy.types.FCurve referenceCurve: the reference shape key (with the reference/animation curve)
+    :param bpy.types.ShapeKey targetKey: the target shape key, this will be keyframed
+    :param str data_path: data path for the shape key (needed for keyframing)
+    :param int array_index: array index for the shape key (needed for keyframing)
+    """
     name: str = ""
     referenceCurve: bpy.types.FCurve = None
     targetKey: bpy.types.ShapeKey = None
@@ -81,7 +99,11 @@ class ObjectShapeKey:
     def __hash__(self) -> int:
         return hash((self.referenceCurve, self.targetKey))
     
-    def range(self):
+    def range(self) -> Tuple[float, float]:
+        """returns the range (total length) of the reference curve
+
+        :return Tuple[float, float]: start time and end time
+        """
         return self.referenceCurve.range()
 
 @dataclass
@@ -98,6 +120,7 @@ class FrameRange:
 
 @dataclass(init=False)
 class CacheInstance:
+    """CacheInstance handles caching objects by finding avaialbe frame times. If there are not any avaiable frame times, it will create a new object"""
     _cache: Dict[int, List[FrameRange]]
 
     def __init__(self):
@@ -133,9 +156,18 @@ class CacheInstance:
         self._cache[indexToAdd].append(frameRange)
 
     def getCache(self):
+        """gets the entire cache
+
+        :return Dict[int, List[FrameRange]]: the cache instance dictionary with all of the indicies and `FrameRange`s
+        """
         return self._cache
 
     def getStartTime(self):
+        """gets the first start time in the cache.
+        If there isn't any data yet, it will be 0.
+
+        :return float: the first start time
+        """
         if len(self._cache) == 0:
             return 0
         
