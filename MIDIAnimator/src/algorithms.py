@@ -8,9 +8,9 @@ from .. data_structures import Keyframe
 if TYPE_CHECKING:
     from ..data_structures import FrameRange
 
-def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
+def maxSimultaneousObjects(intervals: List[Tuple[float, float]]) -> int:
     """
-    :param intervals: List[FrameRange]
+    :param intervals: List[Tuple[float, float]]
     :return int: max number of objects that are visible at any point in time
     """
     # keep track of maximum number of active items
@@ -25,9 +25,7 @@ def maxSimultaneousObjects(intervals: List[FrameRange]) -> int:
     # currentActives = []
 
     # for each (start frame, end frame) interval for objects
-    for frameRange in intervals:
-        start = frameRange.startFrame
-        end = frameRange.endFrame
+    for start, end in intervals:
         endIndex = 0
         endTimesCount = len(endTimesForActive)
         # remove active objects whose end time is before this new interval we are processing

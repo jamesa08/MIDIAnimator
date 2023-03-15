@@ -100,20 +100,38 @@ def cleanCollection(col: bpy.types.Collection, refObject: bpy.types.Object=None)
     for obj in objsToRemove:
         bpy.data.objects.remove(obj, do_unlink=True)
 
-def setKeyframeInterpolation(obj: bpy.types.Object, interpolation: str, data_path=None):
+def setKeyframeInterpolation(obj: bpy.types.Object, interpolation: str, data_path=None, array_index=None):
     with suppress(AttributeError):
         if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
             for fCrv in FCurvesFromObject(obj):
-                if data_path is None or fCrv.data_path == data_path:
+                if (data_path is None or fCrv.data_path == data_path) and (array_index is None or fCrv.array_index == array_index):
                     fCrv.keyframe_points[-1].interpolation = interpolation
 
-def setKeyframeHandleType(obj: bpy.types.Object, handleType, data_path=None):
+def setKeyframeHandleType(obj: bpy.types.Object, handleType, data_path=None, array_index=None):
     with suppress(AttributeError):
         if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
             for fCrv in FCurvesFromObject(obj):
-                if data_path is None or fCrv.data_path == data_path:
+                if (data_path is None or fCrv.data_path == data_path) and (array_index is None or fCrv.array_index == array_index):
                     fCrv.keyframe_points[-1].handle_left_type = handleType
                     fCrv.keyframe_points[-1].handle_right_type = handleType
+
+def copyKeyframeProperties(obj: bpy.types.Object, keyframeToCopy: bpy.types.Keyframe, data_path=None, array_index=None):
+    """Copies all properties of the last keyframe on the specified data path and array index EXCEPT for the frame and value."""
+    with suppress(AttributeError):
+        if obj is not None and obj.animation_data is not None and obj.animation_data.action is not None:
+            for fCrv in FCurvesFromObject(obj):
+                if (data_path is None or fCrv.data_path == data_path) and (array_index is None or fCrv.array_index == array_index):
+                    oldKeyframe = fCrv.keyframe_points[-1]
+                    oldFrame = oldKeyframe.co[0]
+                    newFrame = keyframeToCopy.co[0]
+                    oldKeyframe.interpolation = keyframeToCopy.interpolation
+                    oldKeyframe.handle_left[0] = (keyframeToCopy.handle_left[0] - newFrame) + oldFrame
+                    oldKeyframe.handle_left[1] = keyframeToCopy.handle_left[1]
+                    oldKeyframe.handle_right[0] = (keyframeToCopy.handle_right[0] - newFrame) + oldFrame
+                    oldKeyframe.handle_right[1] = keyframeToCopy.handle_right[1]
+                    oldKeyframe.handle_left_type = keyframeToCopy.handle_left_type
+                    oldKeyframe.handle_right_type = keyframeToCopy.handle_right_type
+
 
 def deleteMarkers(name: str):
     scene = bpy.context.scene

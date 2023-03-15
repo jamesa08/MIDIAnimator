@@ -131,40 +131,21 @@ class Instrument:
         raise RuntimeError("subclass should override animate() method. See the docs on how to create custom instruments.")
 
 class ProjectileInstrument(Instrument):
-    _cacheInstance: Optional[CacheInstance]
+    _cache: CacheInstance
 
     def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection, referenceProjectile: bpy.types.Object):
-        super().__init__(midiTrack, objectCollection)
-
-        self._cacheInstance = None
+        self._cache = CacheInstance()
         self.projectileCollection = projectileCollection
         self.referenceProjectile = referenceProjectile
 
-    def preAnimate(self):
-        # delete old objects
-        objectCollection = self.collection
+        super().__init__(midiTrack, objectCollection)
 
+    def preAnimate(self):
+        # delete all old projectiles & their associated keyframes
         cleanCollection(self.projectileCollection, self.referenceProjectile)
 
-        # calculate number of needed projectiles & instance the blender objects
-        maxNumOfProjectiles = maxSimultaneousObjects(self._objFrameRanges)
-
-        projectiles = []
-
-        for i in range(maxNumOfProjectiles):
-            duplicate = self.referenceProjectile.copy()
-            duplicate.name = f"projectile_{hex(id(objectCollection))}_{i}"
-            
-            # hide them
-            showHideObj(duplicate, True, self._objFrameRanges[0].startFrame)
-
-            self.projectileCollection.objects.link(duplicate)
-            projectiles.append(duplicate)
-        
-        # create CacheInstance object
-        self._cacheInstance = CacheInstance(projectiles)
-
     def animate(self):
+        # iterate over all notes
         for note in self.midiTrack.notes:
             # lookup blender object
             if note.noteNumber in self.noteToWpr:
@@ -177,12 +158,67 @@ class ProjectileInstrument(Instrument):
                 obj = wpr.obj
 
                 if obj.midi.anim_type == "keyframed":
-                    pass
+                    hit = obj.midi.note_on_anchor_pt
+        
+                    frame = secToFrames(note.timeOn)
+                    
+                    # only needed because we are not using NoteOff at all
+                    # and the instrument validation checks both for NoteOn and NoteOff, and it only cares if at least 1 is present
+                    # this could be FIXME'd by creating more functionality for validateFCurves()
+                    # for now, this is okay
+                    if (wpr.startFrame, wpr.endFrame) == (None, None):
+                        raise ValueError(f"Refrerence Projectile object `{obj.name}` has no Animation FCurves!")
+
+                    startFrame = wpr.startFrame - hit + frame
+                    endFrame = wpr.endFrame - hit + frame
+    
+                    self._cache.addObject(FrameRange(startFrame, endFrame, wpr))
+                    
                 elif obj.midi.anim_type == "osc":
                     pass
                 elif obj.midi.anim_type == "adsr":
                     pass
+        
+        # instance all projectiles and apply the keyframes by copying them and adding the frame range data
+        cacheDict = self._cache.getCache()
+        for cacheIndex in cacheDict:
+            # instance the projectile
+            projectileObj = self.referenceProjectile.copy()
+            projectileObj.name = f"projectile_{hex(id(self.projectileCollection))}_{cacheIndex}"
+            
+            # hide them
+            # 1 frame before so when they're turned on, it isn't overwritten
+            showHideObj(obj=projectileObj, hide=True, frame=self._cache.getStartTime() - 1)
+                
+            self.projectileCollection.objects.link(projectileObj)
+            
+            # apply keyframes to projectiles now
+            frameRanges = cacheDict[cacheIndex]
+            for frameRange in frameRanges:
+                # turn ball on
+                showHideObj(obj=projectileObj, hide=False, frame=frameRange.startFrame)
 
+                # insert keyframes associated with projectile
+                for fCrv in frameRange.wpr.noteOnCurves:
+                    for keyframe in fCrv.keyframe_points:
+                        frame, value = keyframe.co
+                        frame += frameRange.startFrame
+
+                        # if fCrv.data_path == "location":
+                        #     value = wpr.initalLoc[fCrv.array_index]
+
+                        exec(f"bpy.data.objects['{projectileObj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {value}")
+                        projectileObj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=frame)
+                        
+                        # make all keyframes bezier
+                        setKeyframeInterpolation(projectileObj, "BEZIER", data_path=fCrv.data_path, array_index=fCrv.array_index)
+                        copyKeyframeProperties(obj=projectileObj, keyframeToCopy=keyframe, data_path=fCrv.data_path, array_index=fCrv.array_index)
+
+                # make the last keyframe constant
+                setKeyframeInterpolation(projectileObj, "CONSTANT")
+
+                # turn ball off
+                showHideObj(obj=projectileObj, hide=True, frame=frameRange.endFrame)
 
 
 class EvaluateInstrument(Instrument):
