@@ -5,7 +5,7 @@
 # from the environment for the first two.
 SPHINXOPTS    ?=
 SPHINXBUILD   ?= sphinx-build
-SOURCEDIR     = source
+SOURCEDIR     = .
 BUILDDIR      = build
 
 # Put it first so that "make" without argument is like "make help".
@@ -14,17 +14,11 @@ help:
 
 .PHONY: help Makefile
 
-# Catch-all target: route all unknown targets to Sphinx using the new
-# "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
-%: Makefile
-	$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
-
 html: Makefile
-	sphinx-apidoc -f -o source/api ../MIDIAnimator
-	python3 make.py
-	$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+	python3 build_api_docs.py -f -o api ../MIDIAnimator
+	python3 -m sphinx -T -E -b html -d $(BUILDDIR)/doctrees . $(BUILDDIR)/html
 
 clean: Makefile
-	rm -f source/api/*.rst
-	@echo "Removing everything under source/api/*.rst"
+	rm -f api/*.rst
+	@echo "Removing everything under api/*.rst"
 	$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)

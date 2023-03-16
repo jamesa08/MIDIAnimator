@@ -3,14 +3,17 @@
 import os
 import sys
 import re
+import datetime
 
-sys.path.insert(0, os.path.abspath("../../"))
+print(f"cwd={os.getcwd()}")
+sys.path.insert(0, os.path.abspath("../"))
+
 from MIDIAnimator import bl_info
 
 # -- Project information
 
 project = 'MIDIAnimator'
-copyright = '2023, James Alt'
+copyright = f'{datetime.date.today().year}, James Alt'
 author = 'James Alt'
 
 release = bl_info['name'].split(" ")[-1]
@@ -42,13 +45,15 @@ html_theme = 'sphinx_rtd_theme'
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
 
-autodoc_mock_imports = ["MIDIAnimator.libs", "ObjectShapeKey"]
+autodoc_mock_imports = ["MIDIAnimator.libs", "numpy"]
 
 autodoc_class_signature = "separated"
 
 add_module_names = False
 
 exclude_patterns = ['api/modules.rst', 'api/MIDIAnimator.rst', 'api/MIDIAnimator.ui.rst']
+
+master_doc = 'index'
 
 
 # thank you to https://github.com/sphinx-doc/sphinx/issues/4065#issuecomment-538535280
@@ -64,5 +69,5 @@ def strip_signatures(app, what, name, obj, options, signature, return_annotation
     return sig, ret                                                             
                                                                                 
                                                                                 
-def setup(app):                                                                 
+def setup(app):
     app.connect('autodoc-process-signature', strip_signatures)
