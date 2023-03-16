@@ -1,0 +1,8 @@
+sphinx==4.5.0
+sphinx-rtd-theme==1.0.0
+
+myst-parser==0.17.2                 # via my-st
+mypy-extensions==0.4.3              # via my-st
+mdit-py-plugins==0.3.0              # via my-st
+fake-bpy-module-latest
+numpy
