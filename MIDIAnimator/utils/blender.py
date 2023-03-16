@@ -1,9 +1,11 @@
-from ..data_structures import ObjectShapeKey
 import bpy
 from contextlib import suppress
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
-from typing import Any, Tuple, List, Union, Set
+from typing import Any, Tuple, List, Union, Set, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..data_structures import ObjectShapeKey
 
 def shapeKeysFromObject(obj: bpy.types.Object) -> Tuple[List[bpy.types.ShapeKey], bpy.types.ShapeKey]:
     """gets shape keys from object
@@ -45,7 +47,7 @@ def shapeKeyFCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
         return list(obj.data.shape_keys.animation_data.action.fcurves)
     return []
 
-def validateFCurves(noteOnFCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffFCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], haveSorted: bool=False) -> bool:
+def validateFCurves(noteOnFCurves: List[Union[bpy.types.FCurve, 'ObjectShapeKey']], noteOffFCurves: List[Union[bpy.types.FCurve, 'ObjectShapeKey']], haveSorted: bool=False) -> bool:
     """This function will ensure both lists of FCurves have the same `data_paths` and `array_indexes`.
 
     :param List[Union[bpy.types.FCurve, ObjectShapeKey]] noteOnFCurves: the list of Note On curves
