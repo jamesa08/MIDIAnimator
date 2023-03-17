@@ -137,3 +137,5 @@ dmypy.json
 
 # Sphinx documentation
 /docs/build/
+/docs/api/*
+!/docs/api/.gitkeep
