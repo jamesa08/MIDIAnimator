@@ -85,6 +85,36 @@ To get started, check out the [Getting Started](https://midianimatordocs.readthe
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
+<!-- BUILDING THE DOCS  -->
+
+## Building The Docs
+
+1. Clone the repository `git clone https://github.com/imacj/MIDIAnimator.git` and `cd MIDIAnimator/docs`.
+2. Run `pip install -r requirements.txt`.
+3. Run `make html` to build the HTML docs.
+4. Open `index.html` or run `open build/html/index.html` (for Mac users).
+5. Before committing, make sure you clean the build folder with `make clean`.
+
+Note: Instead of reStructuredText markdown files, this project uses MyST markdown files. For some basic information on MyST markdown, visit https://myst-parser.readthedocs.io/en/v0.15.1/sphinx/intro.html and https://jupyterbook.org/en/stable/reference/cheatsheet.html.
+
+The API docs are auto-built with `sphinx-autodoc`. If you want to make changes to the API documentation, please find the file you want to edit and edit the documentation string.
+
+**Please open a PR if you want to make changes to the docs.**
+<!--
+
+Useful commands:
+
+for building (in docs dir)
+make clean && make html
+
+for opening built html
+open build/html/index.html
+
+-->
+<br>
+
+<p align="right">(<a href="#top">back to top</a>)</p>
+
 <!-- CONTRIBUTING -->
 
 ## Contributing
