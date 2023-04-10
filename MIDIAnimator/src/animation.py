@@ -28,7 +28,7 @@ class MIDIAnimatorNode:
         assert type(midiTrack).__name__ == "MIDITrack", "Please pass in a type MIDITrack object."
         assert isinstance(objectCollection, bpy.types.Collection), "Please pass in a type collection for the objects to be animated."
         assert instrumentType in {"evaluate", "projectile", "custom"}, "Instrument type invalid."
-        
+    
         if instrumentType == "projectile":
             assert properties is not None, "Please pass a dictionary of properties in. Refer to the docs for help."
             assert "projectile_collection" in properties, "Please pass 'projectile_collection' into the properties dictionary."
