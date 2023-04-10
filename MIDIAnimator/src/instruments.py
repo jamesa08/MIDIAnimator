@@ -1,11 +1,7 @@
 from __future__ import annotations
-from typing import Dict, List, Tuple, Optional, Union
-from math import floor, ceil, radians
-from mathutils import Vector, Euler
-from dataclasses import dataclass
-from contextlib import suppress
+
+from typing import Dict, List, Union
 from itertools import zip_longest
-from pprint import pprint
 import bpy
 
 from ..data_structures.midi import MIDITrack
@@ -15,7 +11,6 @@ from .. data_structures import *
 from .. utils.blender import *
 from . algorithms import *
 
-@dataclass
 class Instrument:
     """base class for MIDI instruments. These will handle all pre-animation and animation techniques."""
     collection: bpy.types.Collection
@@ -140,7 +135,7 @@ class Instrument:
                 else:
                     self.noteToWpr[noteNumber] = [wpr]
 
-    def preAnimate():
+    def preAnimate(self):
         """actions to take before the animation starts (cleaning keyframes, setting up objects, etc.)
         this method is called on class initalization.
         
@@ -154,6 +149,7 @@ class Instrument:
         subclass should override this method
         """
         raise RuntimeError("subclass should override animate() method. See the docs on how to create custom instruments.")
+
 
 class ProjectileInstrument(Instrument):
     _cache: CacheInstance
@@ -283,18 +279,34 @@ class EvaluateInstrument(Instrument):
                 # invaid curve type
                 return
 
-            for keyframe in keyframes:
+            for i, keyframe in enumerate(keyframes):
+                # get offsets for this note
                 if curve == noteOnCurve:
-                    frame = keyframe.co[0] + secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
+                    offset = secToFrames(note.timeOn) + wpr.obj.midi.note_on_anchor_pt
                 elif curve == noteOffCurve:
-                    frame = keyframe.co[0] + secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
-
+                    offset = secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
+    
+                frame = keyframe.co[0] + offset
                 value = keyframe.co[1]
-                
+
                 if wpr.obj.midi.velocity_intensity != 0:
                     value *= note.velocity / 127 * wpr.obj.midi.velocity_intensity
                 
-                nextKeys.append(Keyframe(frame, value))
+
+                # this is a way to convert Blender's Elastic interpolation to straight keyframes
+                # currently this is limited to only 1 elastic animation (must be the first one), and it must be a ease out animation
+                # eventually i will support more but this is good enough for now
+                if i == 0 and keyframe.interpolation == "ELASTIC":
+                    lengthToNextKey = curve.keyframe_points[i+1].co[0] - keyframe.co[0]
+                    
+                    period = 6.5 / keyframe.period
+                    amplitude = keyframe.amplitude * 1.2
+                    damp = 8 / lengthToNextKey
+
+                    generatedOscKeys = genDampedOscKeyframes(period, amplitude, damp, frame)
+                    nextKeys.extend(generatedOscKeys)
+                else:
+                    nextKeys.append(Keyframe(frame, value))
 
 
         # create wprToKeyframe

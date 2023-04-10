@@ -1,7 +1,7 @@
 from __future__ import annotations
 import bpy
 from typing import List, Tuple, TYPE_CHECKING
-from math import sin, cos, pi, e
+from math import sin, cos, pi, e, atan
 from .. data_structures.midi import MIDITrack
 from .. data_structures import Keyframe
 
@@ -84,7 +84,7 @@ def animateSine(time: float, startVal: float, endVal: float, duration: float) ->
     time = min(max(time, 0), duration)  # clamps time 
     return -((cos((1 / duration) * pi * time) - 1) * ((endVal - startVal) / 2)) + startVal
 
-def animateDampedOsc(time: float, period: float, amplitude: float, damp: float, frameRate: float):
+def animateDampedOsc(time: float, period: float, amplitude: float, damp: float):
     """evaluates a dampaned oscillation curve based on parameters
 
     :param float time: the time at which you want to evaluate from (e.g., f(x))
@@ -94,12 +94,12 @@ def animateDampedOsc(time: float, period: float, amplitude: float, damp: float, 
     :param float frameRate: the framerate of the current scene
     :return _type_: _description_
     """
-    return (e ** -((damp * time) / frameRate)) * (-sin((period * time) / frameRate) * amplitude)
+    return (e ** -((damp * time))) * (-sin((period * time)) * amplitude)
 
-def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRate: float) -> List[Keyframe]:
+def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frame=0) -> List[Keyframe]:
     """generates keyframes that will generate the specified dampend oscillation
-    Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions
-    interactive demo: https://www.desmos.com/calculator/vzwitwmib6
+    Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions for v1
+    interactive demo (v2): https://www.desmos.com/calculator/yxt2r7nxuk
     
     :param float period: how long it takes for the oscillation to repeat one time
     :param float amplitude: how large is each oscillation
@@ -109,34 +109,34 @@ def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frameRat
     """
 
     def waveFunc(x):
-        return animateDampedOsc(x, period, amplitude, damp, frameRate)
-    
-    def firstDerivative(x):
-        return (waveFunc(x) - waveFunc(x-0.001)) / 0.001
-    
-    def secondDerivative(x): 
-        return (waveFunc(x) - (2 * waveFunc(x-0.001)) + waveFunc(x-(2*0.001))) / (0.001 ** 2)
-    
-    def newtonsMethod(x):
-        if secondDerivative(x) == 0: return 0
-        return x - (firstDerivative(x)/secondDerivative(x))
+        return animateDampedOsc(x, period, amplitude, damp)
+
+    def localExtrema(x):
+        # these are the x intercepts of the first derivative of the wave function
+        # in turn will give us our local extrema for the main wave function
+        return (atan(period/damp)/period) + (x*pi/period)
     
     y = 1
     i = 0
     
-    out = [Keyframe(0, 0)]
+    out = [Keyframe(frame, 0)]
     
-    while abs(y) > 0.01:
-        approxX = (i + 1/2) * (pi / period) * frameRate
-        i += 1
+    # negate period to positive and invert the amplitude if period is negative
+    if period < 0:
+        period = -period
+        amplitude = -amplitude
+
+    while abs(y) > 0.001:
         
-        x = newtonsMethod(newtonsMethod(newtonsMethod(newtonsMethod(approxX))))
+        x = localExtrema(i)
+
         if x < 0: continue
         y = waveFunc(x)
         
-        out.append(Keyframe(x, waveFunc(x)))
+        out.append(Keyframe(x+frame, waveFunc(x)))
+        i += 1
     
-    out.append(Keyframe(x + 1, 0))
+    out.append(Keyframe(x + frame + 1, 0))
     
     return out
 
