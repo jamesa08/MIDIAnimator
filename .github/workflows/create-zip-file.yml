@@ -23,11 +23,12 @@ jobs:
         run: |
           cd ${{ github.workspace }}
           mkdir artifacts/
-          echo 'creating ${{ env.ZIPNAME }}.zip in ${{ github.workspace }}/artifacts/'
-          zip -r ${{ github.workspace }}/artifacts/$ZIPNAME.zip MIDIAnimator/
+          mkdir artifacts/${{ env.ZIPNAME }}
+          echo 'creating ${{ env.ZIPNAME }} in ${{ github.workspace }}/artifacts/'
+          cp -a MIDIAnimator/ ${{ github.workspace }}/artifacts/${{ env.ZIPNAME }}
       
       - name: Download all workflow run artifacts
         uses: actions/upload-artifact@v3
         with:
           name: ${{ env.ZIPNAME }}
-          path: ${{ github.workspace }}/artifacts/
+          path: ${{ github.workspace }}/artifacts/${{ env.ZIPNAME }}
