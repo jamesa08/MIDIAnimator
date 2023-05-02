@@ -16,8 +16,25 @@ class Keyframe:
     frame: float  # frame of the keyframe
     value: float  # value of the keyframe
 
+    @property
+    def co(self):
+        return (self.frame, self.value)
+
     def __hash__(self) -> int:
         return hash((self.frame, self.value))
+
+@dataclass
+class DummyFCurve:
+    keyframe_points: Tuple[Keyframe]
+    array_index: int
+    data_path: str
+    
+    @staticmethod
+    def range():
+        return 0, 1
+    
+    def evaluate(self, frame):
+        return self.keyframe_points[0].value
 
 @dataclass(init=False)
 class ObjectWrapper:
@@ -52,11 +69,11 @@ class ObjectWrapper:
         # make sure object does not use itself as a note on/off curve for the keyframed type
         # make sure obj has at least a note on/off curve for the keyframed type
         # make sure the FCurves are valid
-        if obj.midi.anim_type == "keyframed":
-            assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
-            assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! To use the Keyframed Animation type, you need to have a Note On curve or a Note Off curve."
-            assert validateFCurves(noteOnCurves, noteOffCurves) is not False, "Note On FCurve object and the Note Off FCurve object have the different data paths (or extraneous data paths)! Make sure to match the Note On and Note Off data paths."
-            self._calculateOffsets()
+        # if obj.midi.anim_type == "keyframed":
+        #     assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
+        #     assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! To use the Keyframed Animation type, you need to have a Note On curve or a Note Off curve."
+        #     assert validateFCurves(noteOnCurves, noteOffCurves) is not False, "Note On FCurve object and the Note Off FCurve object have the different data paths (or extraneous data paths)! Make sure to match the Note On and Note Off data paths."
+        self._calculateOffsets()
                 
         # these need to be copied at the first keyframe
         self.initalLoc = obj.location.copy()
@@ -105,6 +122,11 @@ class ObjectShapeKey:
         :return Tuple[float, float]: start time and end time
         """
         return self.referenceCurve.range()
+    
+    @property
+    def keyframe_points(self):
+        return self.referenceCurve.keyframe_points
+
 
 @dataclass
 class FrameRange:

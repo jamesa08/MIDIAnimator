@@ -3,11 +3,15 @@ from __future__ import annotations
 from typing import Dict, List, Union, Type
 from itertools import zip_longest
 from dataclasses import dataclass
+from math import radians, degrees
 from enum import Enum
 import bpy
 
 from .. data_structures.midi import MIDITrack
+from .. libs.py_expression_eval import Parser
 from .. utils import convertNoteNumbers
+from .. utils import rotateAroundCircle, animateAlongTwoPoints
+from .. utils import mapRangeLinear as mLin, mapRangeLog as mLog, mapRangeExp as mExp, mapRangeArcSin as mASin, mapRangePara as mPara, mapRangeRoot as mRoot, mapRangeSin as mSin
 from .. utils.loggerSetup import *
 from .. data_structures import *
 from .. utils.blender import *
@@ -17,82 +21,54 @@ class Instrument:
     """base class for MIDI instruments. These will handle all pre-animation and animation techniques."""
     collection: bpy.types.Collection
     midiTrack: MIDITrack
-    noteToWpr: Dict[int, bpy.types.Object]
 
-    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, override=False):
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
         """Base class for MIDI instruments. These will handle all pre-animation and animation techniques.
         You should not instance this class by itself. This class should be inherited.
 
         :param MIDITrack midiTrack: the MIDITrack object to animate from
         :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
-        :param bool override: override the __post_init__ method, defaults to False
         """
         self.collection = collection
         self.midiTrack = midiTrack
-        self.override = override
-        
-        self.noteToWpr = dict()
-        self.preAnimate()
-
-        if not self.override:
-            self.__post_init__()
-
-    def __post_init__(self):
-        """checks objects to see if they're valid
-        creates note to ObjectWrapper dictionary
-
-        :raises ValueError: _description_
-        """
-        # ensure objects of keyframed type have either note on or note off FCurve objects
-        for obj in self.collection.all_objects:
-            if obj.midi.anim_type == "keyframed" and obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
-                raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
-        
-        self.createNoteToObjectWpr()
     
     @staticmethod
     def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection,):
-        """draws the UI for the instrument view"""
+        """draws the UI for the instrument view
+        subclass should override this method, this method will not do anything if called"""
         pass
     
     @staticmethod
     def drawObject(context: bpy.types.Context, col: bpy.types.UILayout, blObj: bpy.types.Object):
-        """draws the UI for the object view"""
+        """draws the UI for the object view
+        subclass should override this method, this method will not do anything if called
+        """
         pass
 
     @staticmethod
     def properties():
-        """register properties for this instrument"""
+        """register properties for this instrument
+        subclass should override this method, this method will not do anything if called
+        """
         pass
 
     @staticmethod
-    def getFCurves(obj: bpy.types.Object, noteType: str="note_on") -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
+    def getFCurves(animationObject: bpy.types.Object, referenceObject: bpy.types.Object) -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
         """gets the FCurves on a Blender Object.
 
-        :param bpy.types.Object obj: the object with either a note_on_curve or a note_off_curve to get the FCurves from
-        :param str noteType: which note type to get, can be `"note_on"` or `"note_off"`, defaults to `"note_on"`
-        :raises ValueError: if `noteType` is invalid
-        :return List[Union[bpy.types.FCurve, ObjectShapeKey]]: returns a list of either `bpy.types.FCurve`s or an `ObjectShapeKey`.
+        :param bpy.types.Object animationObject: the object to keyframe
+        :param bpy.types.Object referenceObject: the object that holds the reference FCurves
+        :return List[Union[bpy.types.FCurve, ObjectShapeKey]]: returns a list of either `bpy.types.FCurve`s and/or an `ObjectShapeKey`.
         """
-        assert noteType == "note_on" or noteType == "note_off", "Only types 'note_on' or 'note_off' are supported!"
-        
-        if obj.midi.anim_type != "keyframed": return ()
-        
-        if noteType == "note_on":
-            objAnimObject = obj.midi.note_on_curve
-        elif noteType == "note_off":
-            objAnimObject = obj.midi.note_off_curve
-        else:
-            raise ValueError("Type needs to be 'note_on' or 'note_off'!")
         
         # if the object doesn't exist, just return None
-        if not objAnimObject: return ()
+        if not referenceObject: return ()
 
         shapeKeysDict = {}
     
         # TODO theres probably a better way to make this work. Eventually I want ObjectShapeKeys to be an immutable class, using frozen dataclasses.
         # first need to get all of this reference object's shape key FCurves
-        for fCrv in shapeKeyFCurvesFromObject(objAnimObject):
+        for fCrv in shapeKeyFCurvesFromObject(referenceObject):
             if fCrv.data_path[-5:] == "value":  # we only want it if they have keyframed "value"
                 # fCrv.data_path returns 'key_blocks["name"].value'.
                 # 'key_blocks["' will never change and so will '"].value'.
@@ -103,7 +79,7 @@ class Instrument:
                 shapeKeysDict[name] = objKeys  # always 1 FCurve for 1 shape key
 
         # now get this object's shape keys so we can insert keyframes on them
-        for shpKey in shapeKeysFromObject(obj)[0]:  #only want the shape keys, not the basis, see func for more info
+        for shpKey in shapeKeysFromObject(animationObject)[0]:  #only want the shape keys, not the basis, see func for more info
             if shpKey.name in shapeKeysDict:
                 shapeKeysDict[shpKey.name].targetKey = shpKey
         
@@ -115,7 +91,7 @@ class Instrument:
         
         out = []
 
-        for fCrv in FCurvesFromObject(objAnimObject):
+        for fCrv in FCurvesFromObject(referenceObject):
             out.append(fCrv)
 
         for key in shapeKeysDict:
@@ -123,35 +99,6 @@ class Instrument:
             out.append(objShpKey)
         
         return out
-
-    def createNoteToObjectWpr(self) -> None:
-        """takes the MIDI file and builds a dictionary with the key being note number, and the value being a ObjectWrapper (which gets its FCurves)
-
-        :raises ValueError: if there is no note number on the object
-        """
-        allUsedNotes = self.midiTrack.allUsedNotes()
-
-        for obj in self.collection.all_objects:
-            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
-
-            # make sure objects are not in target collection
-            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
-
-            wpr = ObjectWrapper(
-                obj=obj, 
-                noteNumbers=convertNoteNumbers(obj.midi.note_number), 
-                noteOnCurves=Instrument.getFCurves(obj=obj, noteType="note_on"), 
-                noteOffCurves=Instrument.getFCurves(obj=obj, noteType="note_off")
-            )
-            
-            for noteNumber in wpr.noteNumbers:
-                if noteNumber not in allUsedNotes:
-                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
-
-                if noteNumber in self.noteToWpr:
-                    self.noteToWpr[noteNumber].append(wpr)
-                else:
-                    self.noteToWpr[noteNumber] = [wpr]
 
     def preAnimate(self):
         """actions to take before the animation starts (cleaning keyframes, setting up objects, etc.)
@@ -170,31 +117,42 @@ class Instrument:
 
 
 class ProjectileInstrument(Instrument):
+    noteToWpr: Dict[int, bpy.types.Object]
     _cache: CacheInstance
 
-    def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection, projectileCollection: bpy.types.Collection, referenceProjectile: bpy.types.Object):
+    def __init__(self, midiTrack: MIDITrack, objectCollection: bpy.types.Collection):
         """Pre-defined animation code that animates a projectile launching from a funnel.
-
         :param MIDITrack midiTrack: the MIDITrack object to animate from
         :param bpy.types.Collection objectCollection: the `bpy.types.Collection` of Blender objects (funnels) to apply keyframes to. These are the funnel objects (starting position for the projectiles).
-        :param bpy.types.Collection projectileCollection: the `bpy.types.Collection` to store the projectiles
-        :param bpy.types.Object referenceProjectile: the `bpy.types.Object` to clone the projectile to. This will not be animated, the mesh will be copied.
         """
-        self._cache = CacheInstance()
-        self.projectileCollection = projectileCollection
-        self.referenceProjectile = referenceProjectile
-
         super().__init__(midiTrack, objectCollection)
 
+        self.projectileCollection = objectCollection.midi.projectile_collection
+        self.referenceProjectile = objectCollection.midi.reference_projectile
+        
+        # clean objects
+        self.preAnimate()
+        
+        self._cache = CacheInstance()
+        self.noteToWpr = dict()
+        self.createNoteToObjectWpr()
+
     @staticmethod
-    def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection,):
+    def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection):
         """draws the UI for the instrument view"""
         col.prop(blCol.midi, "projectile_collection")
+        col.prop(blCol.midi, "reference_projectile")
+        col.prop(blCol.midi, "use_initial_location")
+        col.prop(blCol.midi, "use_circle_loc_map")
+        if blCol.midi.use_circle_loc_map:
+            col.prop(blCol.midi, "circle_loc_offset", text="Offset")
+            col.prop(blCol.midi, "loc_collection", text="Location Collection")
     
     @staticmethod
     def drawObject(context: bpy.types.Context, col: bpy.types.UILayout, blObj: bpy.types.Object):
         """draws the UI for the object view"""
-        pass
+        col.prop(blObj.midi, "anim_curve", text="Projectile Curve")
+        col.prop(blObj.midi, "hit_time")
 
     @staticmethod
     def properties():
@@ -205,14 +163,140 @@ class ProjectileInstrument(Instrument):
             type=bpy.types.Collection,
             options=set()
         )
-
         MIDIAnimatorCollectionProperties.reference_projectile = bpy.props.PointerProperty(
             name="Reference Projectile",
             description="the `bpy.types.Object` to clone the projectile to. This object will not be animated, instead it will be copied.",
             type=bpy.types.Object,
             options=set()
         )
+        MIDIAnimatorCollectionProperties.use_initial_location = bpy.props.BoolProperty(
+            name="Use Inital Location",
+            description="Use the inital location of the funnel object as the starting location for the projectile",
+            default=True,
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.use_circle_loc_map = bpy.props.BoolProperty(
+            name="Use Angle Based Location",
+            description="If all of the funnels are at a central point and you want the projectiles to radiate out (similar to a fountian), use this.",
+            default=False,
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.circle_loc_offset = bpy.props.FloatProperty(
+            name="Angle Offset",
+            description="Offset for the circle location mapping, in degrees.",
+            default=0.0,
+            subtype="ANGLE",
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.loc_collection = bpy.props.PointerProperty(
+            name="Location Collection",
+            description="the `bpy.types.Collection` to locate the angle of the projectiles",
+            type=bpy.types.Collection,
+            options=set()
+        )
 
+
+        MIDIAnimatorObjectProperties.hit_time = bpy.props.IntProperty(
+            name="Hit Time",
+            description="Where the ball hits an object, this will get offset the animation, - for eariler, + for later",
+            default=0,
+            options=set()
+        )
+        MIDIAnimatorObjectProperties.anim_curve = bpy.props.PointerProperty(
+            name="Projectile Animation Curve", 
+            description="The projectile curve with defined keyframes to be read in. This is the curve that will be used to animate the projectiles.",
+            type=bpy.types.Object,
+            options=set()
+        )
+
+    @staticmethod
+    def getFCurves(animationObject: bpy.types.Object, referenceObject: bpy.types.Object) -> List[Union[bpy.types.FCurve, ObjectShapeKey]]:
+        """gets the FCurves on a Blender Object.
+
+        :param bpy.types.Object animationObject: the object to keyframe
+        :param bpy.types.Object referenceObject: the object that holds the reference FCurves
+        :return List[Union[bpy.types.FCurve, ObjectShapeKey]]: returns a list of either `bpy.types.FCurve`s and/or an `ObjectShapeKey`.
+        """
+        
+        # if the object doesn't exist, just return None
+        if not referenceObject: return ()
+
+        shapeKeysDict = {}
+
+        # TODO theres probably a better way to make this work. Eventually I want ObjectShapeKeys to be an immutable class, using frozen dataclasses.
+        # first need to get all of this reference object's shape key FCurves
+        for fCrv in shapeKeyFCurvesFromObject(referenceObject):
+            if fCrv.data_path[-5:] == "value":  # we only want it if they have keyframed "value"
+                # fCrv.data_path returns 'key_blocks["name"].value'.
+                # 'key_blocks["' will never change and so will '"].value'.
+                # chopping those off gives us just the name
+                
+                name = fCrv.data_path[12:-8]
+                objKeys = ObjectShapeKey(name=name, referenceCurve=fCrv, targetKey=None)
+                shapeKeysDict[name] = objKeys  # always 1 FCurve for 1 shape key
+
+        # now get this object's shape keys so we can insert keyframes on them
+        for shpKey in shapeKeysFromObject(animationObject)[0]:  #only want the shape keys, not the basis, see func for more info
+            if shpKey.name in shapeKeysDict:
+                shapeKeysDict[shpKey.name].targetKey = shpKey
+        
+        # delete unused shape keys (these are the keys that would be on the reference object)
+        for key in shapeKeysDict.copy():
+            val = shapeKeysDict[key]
+            if val.targetKey == None: 
+                del shapeKeysDict[key]
+        
+        out = []
+        loc = [False]*3
+
+        for fCrv in FCurvesFromObject(referenceObject):
+            if fCrv.data_path == "location":
+                loc[fCrv.array_index] = True
+            
+            out.append(fCrv)
+        
+        # needed to add these in manually because they don't exist on the reference object
+        # that way when a projectile gets keyframed, it will be at the correct location
+        for i, bool in enumerate(loc):
+            if not bool:
+                out.append(DummyFCurve(keyframe_points=(Keyframe(frame=0, value=referenceObject.location[i]),), array_index=i, data_path="location"))
+
+
+        for key in shapeKeysDict:
+            objShpKey = shapeKeysDict[key]
+            out.append(objShpKey)
+        
+        return out
+
+    def createNoteToObjectWpr(self) -> None:
+        """takes the MIDI file and builds a dictionary with the key being note number, and the value being a ObjectWrapper (which gets its FCurves)
+
+        :raises ValueError: if there is no note number on the object
+        """
+        allUsedNotes = self.midiTrack.allUsedNotes()
+
+        for obj in self.collection.all_objects:
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+
+            # make sure objects are not in target collection
+            assert not any(item == obj.midi.anim_curve for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
+
+            wpr = ObjectWrapper(
+                obj=obj, 
+                noteNumbers=convertNoteNumbers(obj.midi.note_number), 
+                noteOnCurves=ProjectileInstrument.getFCurves(animationObject=obj, referenceObject=obj.midi.anim_curve),
+                noteOffCurves=()
+            )
+            
+            for noteNumber in wpr.noteNumbers:
+                if noteNumber not in allUsedNotes:
+                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+
+                if noteNumber in self.noteToWpr:
+                    self.noteToWpr[noteNumber].append(wpr)
+                else:
+                    self.noteToWpr[noteNumber] = [wpr]
+    
     def preAnimate(self):
         """deletes all old projectiles & their associated keyframes"""
         cleanCollection(self.projectileCollection, self.referenceProjectile)
@@ -227,34 +311,29 @@ class ProjectileInstrument(Instrument):
             # lookup blender object
             if note.noteNumber in self.noteToWpr:
                 wprs = self.noteToWpr[note.noteNumber]
-            else: 
+            else:
                 continue
             
             # iterate over all "wrapped" Blender objects
             for wpr in wprs:
                 obj = wpr.obj
 
-                if obj.midi.anim_type == "keyframed":
-                    hit = obj.midi.note_on_anchor_pt
-        
-                    frame = secToFrames(note.timeOn)
-                    
-                    # only needed because we are not using NoteOff at all
-                    # and the instrument validation checks both for NoteOn and NoteOff, and it only cares if at least 1 is present
-                    # this could be FIXME'd by creating more functionality for validateFCurves()
-                    # for now, this is okay
-                    if (wpr.startFrame, wpr.endFrame) == (None, None):
-                        raise ValueError(f"Refrerence Projectile object `{obj.name}` has no Animation FCurves!")
-
-                    startFrame = wpr.startFrame - hit + frame
-                    endFrame = wpr.endFrame - hit + frame
+                hit = obj.midi.hit_time
     
-                    self._cache.addObject(FrameRange(startFrame, endFrame, wpr))
-                    
-                elif obj.midi.anim_type == "osc":
-                    pass
-                elif obj.midi.anim_type == "adsr":
-                    pass
+                frame = secToFrames(note.timeOn)
+                
+                # only needed because we are not using NoteOff at all
+                # and the instrument validation checks both for NoteOn and NoteOff, and it only cares if at least 1 is present
+                # this could be FIXME'd by creating more functionality for validateFCurves()
+                # for now, this is okay
+                if (wpr.startFrame, wpr.endFrame) == (None, None):
+                    raise ValueError(f"Refrerence Projectile object `{obj.name}` has no Animation FCurves!")
+
+                startFrame = wpr.startFrame - hit + frame
+                endFrame = wpr.endFrame - hit + frame
+
+                self._cache.addObject(FrameRange(startFrame, endFrame, wpr))
+                
         
         # instance all projectiles and apply the keyframes by copying them and adding the frame range data
         cacheDict = self._cache.getCache()
@@ -279,10 +358,33 @@ class ProjectileInstrument(Instrument):
                 for fCrv in frameRange.wpr.noteOnCurves:
                     for keyframe in fCrv.keyframe_points:
                         frame, value = keyframe.co
-                        frame += frameRange.startFrame
 
-                        # if fCrv.data_path == "location":
-                        #     value = wpr.initalLoc[fCrv.array_index]
+                        if fCrv.data_path == "location":
+                            if self.collection.midi.use_initial_location:
+                                value += frameRange.wpr.initalLoc[fCrv.array_index]
+
+                            if self.collection.midi.use_circle_loc_map and fCrv.array_index == 0:
+                                ## TODO this will need to be cleaned up & refactored, needs to be more dynamic & have less hardcoded values
+
+                                index = list(self.noteToWpr.keys()).index(frameRange.wpr.noteNumbers[0])
+                                funnelObject = frameRange.wpr.obj
+                                angleObject = list(self.collection.midi.loc_collection.all_objects)[index]
+
+                                # vibraphone divide value = /10.45
+                                # marimba divide value = /3.7
+                                # need to figure out what the divide issue
+                                x, y = animateAlongTwoPoints(funnelObject.matrix_world.translation, angleObject.matrix_world.translation, keyframe.co[0]/10.45)
+                                
+                                # set the value to the new x value
+                                value = x
+                                
+                                # set the y value & keyframe it (this is done because the y value is not animated on the reference object)
+                                projectileObj.location.y = y
+                                projectileObj.keyframe_insert(data_path="location", index=1, frame=frame + frameRange.startFrame)
+                                setKeyframeInterpolation(projectileObj, "BEZIER", data_path=fCrv.data_path, array_index=1)
+                                copyKeyframeProperties(obj=projectileObj, keyframeToCopy=keyframe, data_path=fCrv.data_path, array_index=1)
+
+                        frame += frameRange.startFrame
 
                         exec(f"bpy.data.objects['{projectileObj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {value}")
                         projectileObj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=frame)
@@ -299,6 +401,8 @@ class ProjectileInstrument(Instrument):
 
 
 class EvaluateInstrument(Instrument):
+    noteToWpr: Dict[int, bpy.types.Object]
+
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
         """Takes an object with FCurves and duplicates it across the timeline.
 
@@ -306,6 +410,17 @@ class EvaluateInstrument(Instrument):
         :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
         """
         super().__init__(midiTrack=midiTrack, collection=collection)
+        
+        self.preAnimate()
+
+        self.noteToWpr = dict()
+        
+        # ensure objects of keyframed type have either note on or note off FCurve objects
+        for obj in self.collection.all_objects:
+            if obj.midi.anim_type == "keyframed" and obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
+                raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
+        
+        self.createNoteToObjectWpr()
 
     @staticmethod
     def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection,):
@@ -338,10 +453,14 @@ class EvaluateInstrument(Instrument):
             row2.prop(objMidi, "note_off_curve", text="Note Off")
             row2.prop(objMidi, "note_off_anchor_pt", text="")
 
+
         elif objMidi.anim_type == "adsr":
             col.label(text="Coming soon")
         
         col.separator()
+
+        col.prop(objMidi, "x_mapper")
+        col.prop(objMidi, "y_mapper")
 
         col.prop(objMidi, "velocity_intensity", slider=True)
 
@@ -425,6 +544,48 @@ class EvaluateInstrument(Instrument):
             default="keyframed",
             options=set()
         )
+        MIDIAnimatorObjectProperties.x_mapper = bpy.props.StringProperty(
+            name="X axis mapper",
+            description="X axis mapper (time) of the animation. Use 'x' for time, 'note' for note number, and 'vel' for velocity.",
+            default="x",
+            options=set()
+        )
+        MIDIAnimatorObjectProperties.y_mapper = bpy.props.StringProperty(
+            name="Y axis mapper",
+            description="Y axis mapper (amplitude) of the animation. Use 'y' for amplitude, 'note' for note number, and 'vel' for velocity.",
+            default="y",
+            options=set()
+        )
+
+    
+    def createNoteToObjectWpr(self) -> None:
+        """takes the MIDI file and builds a dictionary with the key being note number, and the value being a ObjectWrapper (which gets its FCurves)
+
+        :raises ValueError: if there is no note number on the object
+        """
+        allUsedNotes = self.midiTrack.allUsedNotes()
+
+        for obj in self.collection.all_objects:
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+
+            # make sure objects are not in target collection
+            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
+
+            wpr = ObjectWrapper(
+                obj=obj, 
+                noteNumbers=convertNoteNumbers(obj.midi.note_number), 
+                noteOnCurves=Instrument.getFCurves(animationObject=obj, referenceObject=obj.midi.note_on_curve), 
+                noteOffCurves=Instrument.getFCurves(animationObject=obj, referenceObject=obj.midi.note_off_curve)
+            )
+            
+            for noteNumber in wpr.noteNumbers:
+                if noteNumber not in allUsedNotes:
+                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+
+                if noteNumber in self.noteToWpr:
+                    self.noteToWpr[noteNumber].append(wpr)
+                else:
+                    self.noteToWpr[noteNumber] = [wpr]
 
     def preAnimate(self):
         """cleans all keyframes before the animation"""
@@ -450,8 +611,14 @@ class EvaluateInstrument(Instrument):
                 elif curve == noteOffCurve:
                     offset = secToFrames(note.timeOff) + wpr.obj.midi.note_off_anchor_pt
     
-                frame = keyframe.co[0] + offset
+                frame = keyframe.co[0]
                 value = keyframe.co[1]
+
+                # X and Y mappers
+                frame = eval(str(wpr.obj.midi.x_mapper).replace("x", f"{frame}").replace("note", f"{note.noteNumber}").replace("vel", f"{note.velocity}") if wpr.obj.midi.x_mapper else f"{frame}")
+                value = eval(str(wpr.obj.midi.y_mapper).replace("y", f"{value}").replace("note", f"{note.noteNumber}").replace("vel", f"{note.velocity}") if wpr.obj.midi.y_mapper else f"{value}")
+                
+                frame += offset
 
                 if wpr.obj.midi.velocity_intensity != 0:
                     value *= note.velocity / 127 * wpr.obj.midi.velocity_intensity
@@ -459,15 +626,18 @@ class EvaluateInstrument(Instrument):
 
                 # this is a way to convert Blender's Elastic interpolation to straight keyframes
                 # currently this is limited to only 1 elastic animation (must be the first one), and it must be a ease out animation
-                # eventually i will support more but this is good enough for now
+                # eventually i will support more but this is okay for now, will be replaced with a better system in the future
                 if i == 0 and keyframe.interpolation == "ELASTIC":
                     lengthToNextKey = curve.keyframe_points[i+1].co[0] - keyframe.co[0]
                     
                     period = 6.5 / keyframe.period
                     amplitude = keyframe.amplitude * 1.2
                     damp = 8 / lengthToNextKey
+                    
+                    period = eval(str(wpr.obj.midi.x_mapper).replace("x", f"{period}").replace("note", f"{note.noteNumber}").replace("vel", f"{note.velocity}") if wpr.obj.midi.x_mapper else f"{period}")
+                    amplitude = eval(str(wpr.obj.midi.y_mapper).replace("y", f"{amplitude}").replace("note", f"{note.noteNumber}").replace("vel", f"{note.velocity}") if wpr.obj.midi.y_mapper else f"{amplitude}")
 
-                    generatedOscKeys = genDampedOscKeyframes(period, amplitude, damp, frame)
+                    generatedOscKeys = genDampedOscKeyframes(period, amplitude, damp, keyframe.co[0] + offset)
                     nextKeys.extend(generatedOscKeys)
                 else:
                     nextKeys.append(Keyframe(frame, value))
@@ -576,6 +746,7 @@ class EvaluateInstrument(Instrument):
                                     
                                     exec(f"bpy.data.objects['{obj.name}'].{fCrv.data_path}[{fCrv.array_index}] = {value}")
                                     obj.keyframe_insert(data_path=fCrv.data_path, index=fCrv.array_index, frame=keyframe.frame)
+                        
                         elif isinstance(fCrv, ObjectShapeKey):
                             for keyframe in sorted(keyframes, key=lambda x: x.frame):
                                 fCrv.targetKey.value = keyframe.value

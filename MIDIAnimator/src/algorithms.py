@@ -99,7 +99,7 @@ def animateDampedOsc(time: float, period: float, amplitude: float, damp: float):
 def genDampedOscKeyframes(period: float, amplitude: float, damp: float, frame=0) -> List[Keyframe]:
     """generates keyframes that will generate the specified dampend oscillation
     Thanks to TheZacher5645 for helping figure out calculating the local extrema & derivative functions for v1
-    interactive demo (v2): https://www.desmos.com/calculator/yxt2r7nxuk
+    interactive demo (v2): https://www.desmos.com/calculator/qwmf2xkno3
     
     :param float period: how long it takes for the oscillation to repeat one time
     :param float amplitude: how large is each oscillation

@@ -30,14 +30,14 @@ class MIDIAnimatorNode:
         assert instrumentType in {"evaluate", "projectile", "custom"}, "Instrument type invalid."
     
         if instrumentType == "projectile":
-            assert properties is not None, "Please pass a dictionary of properties in. Refer to the docs for help."
-            assert "projectile_collection" in properties, "Please pass 'projectile_collection' into the properties dictionary."
-            assert "reference_projectile" in properties, "Please pass 'reference_projectile' into the properties dictionary."
+            # assert properties is not None, "Please pass a dictionary of properties in. Refer to the docs for help."
+            # assert "projectile_collection" in properties, "Please pass 'projectile_collection' into the properties dictionary."
+            # assert "reference_projectile" in properties, "Please pass 'reference_projectile' into the properties dictionary."
             
-            assert isinstance(properties["projectile_collection"], bpy.types.Collection), "Please pass in a bpy.types.Collection for property 'projectile_collection'."
-            assert isinstance(properties["reference_projectile"], bpy.types.Object), "Please pass in a bpy.types.Object for property 'reference_projectile'."
+            # assert isinstance(properties["projectile_collection"], bpy.types.Collection), "Please pass in a bpy.types.Collection for property 'projectile_collection'."
+            # assert isinstance(properties["reference_projectile"], bpy.types.Object), "Please pass in a bpy.types.Object for property 'reference_projectile'."
             
-            cls = ProjectileInstrument(midiTrack=midiTrack, objectCollection=objectCollection, projectileCollection=properties["projectile_collection"], referenceProjectile=properties["reference_projectile"])
+            cls = ProjectileInstrument(midiTrack=midiTrack, objectCollection=objectCollection)
         
         elif instrumentType == "evaluate": 
             cls = EvaluateInstrument(midiTrack, objectCollection)

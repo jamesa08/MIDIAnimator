@@ -1,7 +1,8 @@
 from . gmInstrumentMap import _gmInst
-from math import sin, cos, pi, e, sqrt, asin, log
+from math import sin, cos, pi, e, sqrt, asin, atan, log
 from typing import Tuple, List
 from re import search as reSearch
+from mathutils import Vector
 
 
 def noteToName(nVal: int) -> str:
@@ -117,6 +118,18 @@ def rotateAroundCircle(radius, angle) -> Tuple[int]:
     y = sin(angle) * radius
     
     return x, y
+
+def animateAlongTwoPoints(firstPoint: Vector, secondPoint: Vector, xComponent: float):
+    x1, y1 = firstPoint.x, firstPoint.y
+    x2, y2 = secondPoint.x, secondPoint.y
+
+    angle = 2*atan((y2-y1)/(x2-x1 + sqrt((x2-x1)**2 + (y2-y1)**2)))
+    
+    xCos = cos(angle) * xComponent + x1
+    ySin = sin(angle) * xComponent + y1
+
+    return xCos, ySin
+
 
 # All mapRange() functions equations originate from here:
 # https://www.desmos.com/calculator/pw9tgtcq16

@@ -176,13 +176,13 @@ def copyKeyframeProperties(obj: bpy.types.Object, keyframeToCopy: bpy.types.Keyf
             for fCrv in FCurvesFromObject(obj):
                 if (data_path is None or fCrv.data_path == data_path) and (array_index is None or fCrv.array_index == array_index):
                     oldKeyframe = fCrv.keyframe_points[-1]
-                    oldFrame = oldKeyframe.co[0]
-                    newFrame = keyframeToCopy.co[0]
+                    oldFrame, oldValue = oldKeyframe.co
+                    newFrame, newValue = keyframeToCopy.co
                     oldKeyframe.interpolation = keyframeToCopy.interpolation
                     oldKeyframe.handle_left[0] = (keyframeToCopy.handle_left[0] - newFrame) + oldFrame
-                    oldKeyframe.handle_left[1] = keyframeToCopy.handle_left[1]
+                    oldKeyframe.handle_left[1] = (keyframeToCopy.handle_left[1] - newValue) + oldValue
                     oldKeyframe.handle_right[0] = (keyframeToCopy.handle_right[0] - newFrame) + oldFrame
-                    oldKeyframe.handle_right[1] = keyframeToCopy.handle_right[1]
+                    oldKeyframe.handle_right[1] = (keyframeToCopy.handle_right[1] - newValue) + oldValue
                     oldKeyframe.handle_left_type = keyframeToCopy.handle_left_type
                     oldKeyframe.handle_right_type = keyframeToCopy.handle_right_type
 
