@@ -8,7 +8,6 @@ from enum import Enum
 import bpy
 
 from .. data_structures.midi import MIDITrack
-from .. libs.py_expression_eval import Parser
 from .. utils import convertNoteNumbers
 from .. utils import rotateAroundCircle, animateAlongTwoPoints
 from .. utils import mapRangeLinear as mLin, mapRangeLog as mLog, mapRangeExp as mExp, mapRangeArcSin as mASin, mapRangePara as mPara, mapRangeRoot as mRoot, mapRangeSin as mSin
