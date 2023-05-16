@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 bl_info = {
-    "name": "MIDI Animator beta4.0",
+    "name": "MIDIAnimator beta4.0",
     "description": "A cohesive, open-source solution to animating Blender objects using a MIDI file.",
     "author": "James Alt (et al.)",
     "version": (1, 0, 0),
@@ -39,13 +39,14 @@ else:
     from . src import *
     from . src.instruments import Instruments, MIDIAnimatorObjectProperties, MIDIAnimatorCollectionProperties, MIDIAnimatorSceneProperties
     from . utils import *
-    from . utils.loggerSetup import *
+    from . utils.logger import logger
     from . ui import *
-    from . ui.operators import SCENE_OT_quick_add_props
+    from . ui.operators import SCENE_OT_quick_add_props, SCENE_OT_copy_log
     from . ui.panels import VIEW3D_PT_edit_instrument_information, VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick
 
 
-classes = (SCENE_OT_quick_add_props, VIEW3D_PT_edit_instrument_information, VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick, MIDIAnimatorObjectProperties, MIDIAnimatorCollectionProperties, MIDIAnimatorSceneProperties)
+
+classes = (SCENE_OT_quick_add_props, SCENE_OT_copy_log, VIEW3D_PT_edit_instrument_information, VIEW3D_PT_edit_object_information, VIEW3D_PT_add_notes_quick, MIDIAnimatorObjectProperties, MIDIAnimatorCollectionProperties, MIDIAnimatorSceneProperties)
 
 def register():
     for bpyClass in classes:
@@ -61,6 +62,7 @@ def register():
         item.value.cls.properties()
 
     logger.info("MIDIAnimator registered successfully")
+    logger.info(f"MIDIAnimator version {'.'.join([str(i) for i in bl_info['version']])} {bl_info['name'].replace('MIDIAnimator ', '')}.")
 
 def unregister():
     for bpyClass in classes:

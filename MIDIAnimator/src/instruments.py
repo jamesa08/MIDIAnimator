@@ -9,9 +9,9 @@ import bpy
 
 from .. data_structures.midi import MIDITrack
 from .. utils import convertNoteNumbers
-from .. utils import rotateAroundCircle, animateAlongTwoPoints
+from .. utils import animateAlongTwoPoints
 from .. utils import mapRangeLinear as mLin, mapRangeLog as mLog, mapRangeExp as mExp, mapRangeArcSin as mASin, mapRangePara as mPara, mapRangeRoot as mRoot, mapRangeSin as mSin
-from .. utils.loggerSetup import *
+from .. utils.logger import logger
 from .. data_structures import *
 from .. utils.blender import *
 from . algorithms import *
@@ -128,6 +128,12 @@ class ProjectileInstrument(Instrument):
 
         self.projectileCollection = objectCollection.midi.projectile_collection
         self.referenceProjectile = objectCollection.midi.reference_projectile
+        
+        assert self.projectileCollection is not None, "Please pass in a projectile collection!"
+        assert self.referenceProjectile is not None, "Please pass in a reference projectile!"
+
+        assert isinstance(self.projectileCollection, bpy.types.Collection), "Please pass in a bpy.types.Collection for property 'projectile_collection'."
+        assert isinstance(self.referenceProjectile, bpy.types.Object), "Please pass in a bpy.types.Object for property 'reference_projectile'."
         
         # clean objects
         self.preAnimate()
@@ -289,7 +295,7 @@ class ProjectileInstrument(Instrument):
             
             for noteNumber in wpr.noteNumbers:
                 if noteNumber not in allUsedNotes:
-                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+                    logger.warning(f"Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
 
                 if noteNumber in self.noteToWpr:
                     self.noteToWpr[noteNumber].append(wpr)
@@ -544,14 +550,14 @@ class EvaluateInstrument(Instrument):
             options=set()
         )
         MIDIAnimatorObjectProperties.x_mapper = bpy.props.StringProperty(
-            name="X axis mapper",
-            description="X axis mapper (time) of the animation. Use 'x' for time, 'note' for note number, and 'vel' for velocity.",
+            name="Time mapper",
+            description="Time mapper (X axis) of the animation. Use 'x' for time, 'note' for note number, and 'vel' for velocity.",
             default="x",
             options=set()
         )
         MIDIAnimatorObjectProperties.y_mapper = bpy.props.StringProperty(
-            name="Y axis mapper",
-            description="Y axis mapper (amplitude) of the animation. Use 'y' for amplitude, 'note' for note number, and 'vel' for velocity.",
+            name="Amplitude mapper",
+            description="Amplitude mapper (Y axis) of the animation. Use 'y' for amplitude, 'note' for note number, and 'vel' for velocity.",
             default="y",
             options=set()
         )
@@ -579,7 +585,7 @@ class EvaluateInstrument(Instrument):
             
             for noteNumber in wpr.noteNumbers:
                 if noteNumber not in allUsedNotes:
-                    print(f"WARNING: Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+                    logger.warning(f"Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
 
                 if noteNumber in self.noteToWpr:
                     self.noteToWpr[noteNumber].append(wpr)
@@ -767,6 +773,7 @@ class InstrumentItem:
 class Instruments(Enum):
     projectile = InstrumentItem(identifier="projectile", name="Projectile", description="A projectile that is fired from the instrument", cls=ProjectileInstrument)
     evaluate = InstrumentItem(identifier="evaluate", name="Evaluate", description="Evaluate thing", cls=EvaluateInstrument)
+    custom = InstrumentItem(identifier="custom", name="Custom", description="Custom Instrument. Must pass the class via `MIDIAnimatorNode.addInstrument()`. See the docs for help.", cls=Instrument)
 
 
 # Shared properties throughout all objects, instruments(collections) and scences. 

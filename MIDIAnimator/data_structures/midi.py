@@ -1,5 +1,6 @@
 from __future__ import annotations
 from .. utils import removeDuplicates, gmProgramToName, _closestTempo
+from .. utils.logger import logger
 from typing import List, Tuple, Dict
 from dataclasses import dataclass
 from .. libs import mido
@@ -206,7 +207,7 @@ class MIDITrack:
         return "".join(out)
 
     def __add__(self, other) -> MIDITrack:
-        print(f"INFO: Attempting to merge tracks '{self.name}' & '{other.name}' ...")
+        logger.info(f"Attempting to merge tracks '{self.name}' & '{other.name}' ...")
         try:
             addedTrack = MIDITrack(f"{self.name} & {other.name}")
 
