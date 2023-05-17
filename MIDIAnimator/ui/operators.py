@@ -11,7 +11,10 @@ import bpy
 def col_sort_key(obj):
     """Split collection names by _ and sort by MIDINote or the name of the note"""
     name = obj.name.split("_")[-1]
-    return convertNoteNumbers(name)[0]
+    try:
+        return convertNoteNumbers(name)[0]
+    except ValueError:
+        raise ValueError(f"Object '{obj.name}' has an invalid note number or name") from None
 
 class SCENE_OT_quick_add_props(bpy.types.Operator):
     bl_idname = "scene.quick_add_props"
@@ -26,19 +29,18 @@ class SCENE_OT_quick_add_props(bpy.types.Operator):
         # convert String "list" into type list
 
         try:
-            if len(sceneMidi.quick_note_number_list) != 0:
-                # using literal_eval is a safe way to evaluate the expression, instead of just using eval()
+            if len(sceneMidi.quick_note_number_list) != 0 and sceneMidi.quick_note_number_list != "[]":
                 note_numbers = literal_eval(sceneMidi.quick_note_number_list)
+            elif not sceneMidi.quick_sort_by_name or sceneMidi.quick_note_number_list == "[]":
+                note_numbers = [col_sort_key(obj) for obj in col.all_objects]
             else:
-                if sceneMidi.quick_sort_by_name == False:
-                    note_numbers = [col_sort_key(obj) for obj in col.all_objects]
-                else:
-                    self.report({"ERROR"}, f"List contains errors. Please check the list and try again.")
-                    logger.error(f"List contains errors. Please check the list and try again.")
-                    return {'CANCELLED'}
+                error_message = "List/collection contains errors. Please check the list and try again."
+                self.report({"ERROR"}, error_message)
+                logger.error(error_message)
+                return {'CANCELLED'}
         except Exception as e:
-            self.report({"ERROR"}, f"List contains errors. Please check the list and try again. Error message: {e}.")
-            logger.error(f"List contains errors. Please check the list and try again. Error message: {e}.")
+            self.report({"ERROR"}, f"List/collection contains errors. Please check the list and try again. Error message: {e}.")
+            logger.error(f"List/collection contains errors. Please check the list and try again. Error message: {e}.")
             return {'CANCELLED'}
         
         if note_numbers is not None:
@@ -99,8 +101,8 @@ Blender version {bpy.app.version_string}.
 Python version {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.
 OS: {platform.platform()}.
 System: {platform.system()}.
-Version: {platform.version()}.
-        """
+Version: {platform.version()}."""
+
         context.window_manager.clipboard = output
         logger.info("Copied output to clipboard.")
         self.report({'INFO'}, "Copied MIDIAnimator output to clipboard.")
