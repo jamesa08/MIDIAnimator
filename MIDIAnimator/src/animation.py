@@ -21,7 +21,7 @@ class MIDIAnimatorNode:
         :param bpy.types.Collection objectCollection: The collection (`bpy.types.Collection`) of Blender objects to be animated.
         :param class(Instrument) custom: a custom Instrument class that inherits from Instrument, defaults to None
         :param Dict customVars: a dictionary of custom vars you would like to send to your custom class, defaults to None
-        :raises RuntimeError: if instrumentType="custom" and the customClass is None.
+        :raises ValueError: if instrumentType="custom" and the customClass is None.
         """
         
         assert type(midiTrack).__name__ == "MIDITrack", "Please pass in a type MIDITrack object."
@@ -35,7 +35,7 @@ class MIDIAnimatorNode:
         
         try: 
             if instrumentType == "custom":
-                if custom is None: raise RuntimeError("Please pass a custom class object. Refer to the docs for help.")
+                if custom is None: raise ValueError("Please pass a custom class object. Refer to the docs for help.")
                 if customVars is not None: 
                     cls = custom(midiTrack, objectCollection, **customVars)
                 else:
