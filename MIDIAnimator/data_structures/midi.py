@@ -108,7 +108,7 @@ class MIDITrack:
             # remove this note for this note number b/c we have the note off for this note
             del note[0]
         except IndexError:
-            raise RuntimeError("NoteOff message has no NoteOn message! Please open an issue on GitHub.")            
+            raise RuntimeError("NoteOff message has no NoteOn message! Your MIDI File may be corrupt. Please open an issue on GitHub.")
 
     def addControlChange(self, control_number: int, channel: int, value: int, time: float):
         """add a control change value
