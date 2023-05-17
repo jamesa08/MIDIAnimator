@@ -4,7 +4,7 @@ import re
 import sys
 import os
 
-os.system('python3 -m pip install -r docs/requirements.txt')
+os.system('python3 -m pip install -r requirements.txt')
 
 from sphinx.ext.apidoc import main
 
