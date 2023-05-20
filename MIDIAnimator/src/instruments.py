@@ -202,7 +202,7 @@ class ProjectileInstrument(Instrument):
             options=set()
         )
         MIDIAnimatorObjectProperties.anim_curve = bpy.props.PointerProperty(
-            name="Projectile Animation Curve", 
+            name="Projectile Reference Curve", 
             description="The projectile curve with defined keyframes to be read in. This is the curve that will be used to animate the projectiles.",
             type=bpy.types.Object,
             options=set()
@@ -315,12 +315,12 @@ class ProjectileInstrument(Instrument):
                 raise ValueError(f"Object '{obj.name}' must have a Projectile Curve!")
                 
             if obj.midi.anim_curve is not None and len(FCurvesFromObject(obj.midi.anim_curve)) == 0:
-                logger.warning(f"Object '{obj.name}' has no animation curves! (projectile curve object '{obj.midi.anim_curve.name}')")
+                logger.warning(f"Object '{obj.name}' has no reference curves! (projectile curve object '{obj.midi.anim_curve.name}')")
 
     def animate(self):
         """generates projectiles with keyframes and adds them to the projectileCollection
 
-        :raises ValueError: if the animation projectile object on the funnels do not have an animation curve (for the ball path)
+        :raises ValueError: if the animation projectile object on the funnels do not have an reference curve (for the ball path)
         """
         # iterate over all notes
         for note in self.midiTrack.notes:
@@ -494,8 +494,8 @@ class EvaluateInstrument(Instrument):
             default=60
         )
         MIDIAnimatorObjectProperties.note_on_curve = bpy.props.PointerProperty(
-            name="Note On Animation Curve", 
-            description="The animation curve object with defined keyframes to be read in",
+            name="Note On Reference Curve", 
+            description="The reference curve object with defined keyframes to be read in",
             type=bpy.types.Object,
             options=set()
         )
@@ -506,8 +506,8 @@ class EvaluateInstrument(Instrument):
             options=set()
         )
         MIDIAnimatorObjectProperties.note_off_curve = bpy.props.PointerProperty(
-            name="Note Off Animation Curve", 
-            description="The animation curve object with defined keyframes to be read in."
+            name="Note Off Reference Curve", 
+            description="The reference curve object with defined keyframes to be read in."
                         "\n\nDisabled: will be added in a future release",
             type=bpy.types.Object,
             options=set()
@@ -610,7 +610,7 @@ class EvaluateInstrument(Instrument):
             
             if obj.midi.anim_type == "keyframed":
                 if obj.midi.note_on_curve == obj or obj.midi.note_off_curve == obj:
-                    raise ValueError(f"Object '{obj.name}' cannot use itself as an animation curve!")
+                    raise ValueError(f"Object '{obj.name}' cannot use itself as an reference curve!")
                 
                 # make sure objects are not in target collection
                 for objCheck in self.collection.all_objects:
