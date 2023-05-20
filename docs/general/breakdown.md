@@ -4,7 +4,7 @@
 
 There are 2 different approaches to driving a music animation:
 
-1. FFT based approach- where you input an audio file (.wav, .mp3, etc) and have the visual elements react to the audio data. The audio data is filtered with steep inverse notch filters on selected frequencies. With the filtered data, you can then use the amplitude of the signal to drive animation parameters.
+1. FFT based approach- where you input an audio file (.wav, .mp3, etc) and have the visual elements react to the audio data. The audio data is filtered with steep inverse notch filters on selected frequencies. With the filtered data, you can then use the amplitude of the signal to drive animation parameters. This feature is [built into Blender.](https://docs.blender.org/manual/en/latest/editors/graph_editor/fcurves/editing.html#bake-sound-to-f-curves)
 
 2. Preactive approach using a MIDI file. A MIDI file is read in and broken down into its components. Animation curves get “copied” throughout the duration of the MIDI file, based on sets of parameters, typically determined by the notes in the MIDI file. The MIDI file determines when animations are being copied. This is the way MIDIAnimator works.
 

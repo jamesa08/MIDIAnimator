@@ -6,7 +6,7 @@
 To understand how MIDIAnimator works, we must first understand how MIDI files work.
 A MIDI file is a file that contains a list of MIDI tracks. Each MIDI track contains a list of MIDI events. MIDI events can be a note on, note off, control change, etc.
 
-Learn more about MIDI here: https://www.midi.org/specifications-old/item/the-midi-1-0-specification
+Learn more about MIDI here: [https://www.midi.org/specifications-old/item/the-midi-1-0-specification](https://www.midi.org/specifications-old/item/the-midi-1-0-specification)
 
 In MIDIAnimator, MIDI tracks are represented in the form of Blender collections. Each collection contains a list of objects, in which each object has a note number assigned to it. Collections have different animation types that influence the objects in that colleciton.
 
@@ -30,19 +30,17 @@ These collections **only** contain the objects that you want to animate.
 
 - **Anchor Points**: A number that represents when to trigger the animation based on the note on time. For example, if you had a note that came on at frame 30, and you want the animation to trigger on frame 25, you would set the note anchor point to -5 (start 5 frames before the note time).
 
-- **Reference Object**: An object that contains the animation data, and will not be used for the actual animation itself. This object only serves as a reference for the target animation. For example, a cube that has keyframed animation.
+- **Reference Object**: *Also sometimes referred to as "Animation Object" (however, deprecated)*. An object that contains the animation data, and will not be used for the actual animation itself. This object only serves as a reference for the target animation. For example, a cube that has keyframed animation.
 
 - **Target Object**: An object that will be animated. Does not contain any animation. For example, a cube that will be animated.
 
-
-To start writing your own MIDIAnimation programs, first, you will need a scene to work with. You can download the template scene [here](example.com). # FIXME
-
-```{note}
-It is reccomended that you keep your scene organized and tidy. Make good names for collections and objects.
-```
 <hr>
 
+To start writing your own MIDIAnimation programs, first, you will need a scene to work with. You can download the template scene [here](https://github.com/jamesa08/MIDIAnimator/raw/main/docs/demo_scene/demo_scene.blend) and a demo MIDI file [here](https://github.com/jamesa08/MIDIAnimator/raw/main/docs/demo_scene/demo.mid).
 
+```{note}
+It is reccomended that you keep your scene organized and tidy. Make good names for collections and objects. In general, it is common practice to place reference objects within a collection named "Animation" and apply a prefix of "ANIM_" to each reference object. This approach helps to organize and differentiate the reference objects from other elements in the program. By following this convention, it becomes easier to locate and manage all reference objects in the scene.
+```
 <hr>
 
 ## Step 1: Setup Collections for Animation:
@@ -165,10 +163,16 @@ There are differnet ways to deal with overlapping animation. Currently, the only
 A node-based workflow will be coming in the next few updates. Both options will still be available. 
 ```
 
+```{note}
+It is highly reccomended that you know some programming basics. If you are new to programming, I suggest you check out [Programwiz](https://www.programiz.com/python-programming) to learn the absolute basics of Python.
+```
+
 Open up a Text Editor window. I also suggest you open up a [Console Window](https://docs.blender.org/manual/en/2.79/advanced/command_line/introduction.html) if you want to print debug messages to the screen.
 
 
 Here is a sample script:
+
+*(Note: In the demo MIDI file, the MIDI track is called "Demo")*
 ```python
 import bpy
 from MIDIAnimator.src.animation import MIDIAnimatorNode
@@ -268,41 +272,4 @@ All objects in the collection passed in (for example, the "Cubes" collection) th
 
 ```{note}
 If you get stuck or run into issues, feel free to open an issue on the GitHub, or join the [Animusic Discord](https://discord.gg/yDfyhfA) and post in the #midianimator-discussion channel. Ping @iMac and he will be able to assist you.
-```
-
-
-<br><hr>
-
-
-## Writing Custom Animation Functions
-
-```{note}
-This section is under development. Check back later.
-```
-
-Sample code to write custom animations.
-
-
-```python
-import bpy
-from MIDIAnimator.src.animation import MIDIAnimatorNode
-from MIDIAnimator.src.instruments import Instrument
-from MIDIAnimator.data_structures.midi import MIDIFile
-
-class CustomInstrument(Instrument):
-    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection, **kwargs):
-        super().__init__(midiTrack, collection, override=True)
-    
-    def animate(self):
-        # Write your custom animation here...
-        pass
-
-file = MIDIFile("/path/to/midi/file.mid")
-pianoTrack = file.findTrack("Steinway Grand Piano")
-
-animator = MIDIAnimatorNode()
-animator.addInstrument(midiTrack=pianoTrack, objectCollection=bpy.data.collections['Cubes'], custom=CustomInstrument)
-
-# Animate the MIDI file
-animator.animate()
 ```
