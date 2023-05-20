@@ -299,6 +299,9 @@ class ProjectileInstrument(Instrument):
         for obj in self.collection.all_objects:
             if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
         
+            if obj.midi.anim_curve == obj:
+                raise ValueError(f"Object '{obj.name}' cannot use itself as a animation projectile curve!")
+
             # make sure objects are not in the funnel collection
             for objCheck in self.collection.all_objects:
                 if objCheck == obj.midi.anim_curve:
@@ -606,11 +609,15 @@ class EvaluateInstrument(Instrument):
             if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
             
             if obj.midi.anim_type == "keyframed":
+                if obj.midi.note_on_curve == obj or obj.midi.note_off_curve == obj:
+                    raise ValueError(f"Object '{obj.name}' cannot use itself as an animation curve!")
+                
                 # make sure objects are not in target collection
                 for objCheck in self.collection.all_objects:
                     if objCheck in (obj.midi.note_on_curve, obj.midi.note_off_curve):
                         raise ValueError(f"Animation reference object '{objCheck.name}' is in the target animation collection! Please move the object out of the collection and place it in a different collection.")
 
+                
                 # ensure objects of keyframed type have either note on or note off FCurve objects
                 if obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
                     raise ValueError(f"Object '{obj.name}' must have either a Note On Curve or a Note Off Curve!")
@@ -625,6 +632,7 @@ class EvaluateInstrument(Instrument):
                 
                 if obj.midi.note_off_curve is not None and len(FCurvesFromObject(obj.midi.note_off_curve)) == 0:
                     logger.warning(f"Object '{obj.name}' has no Note Off FCurves! (note off object '{obj.midi.note_off_curve.name}')")
+                
 
     def animate(self):
         """applys keyframe data to the objects from the MIDITrack"""
