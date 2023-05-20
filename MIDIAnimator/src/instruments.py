@@ -129,12 +129,6 @@ class ProjectileInstrument(Instrument):
         self.projectileCollection = objectCollection.midi.projectile_collection
         self.referenceProjectile = objectCollection.midi.reference_projectile
         
-        assert self.projectileCollection is not None, "Please pass in a projectile collection!"
-        assert self.referenceProjectile is not None, "Please pass in a reference projectile!"
-
-        assert isinstance(self.projectileCollection, bpy.types.Collection), "Please pass in a bpy.types.Collection for property 'projectile_collection'."
-        assert isinstance(self.referenceProjectile, bpy.types.Object), "Please pass in a bpy.types.Object for property 'reference_projectile'."
-        
         # clean objects
         self.preAnimate()
         
@@ -281,11 +275,6 @@ class ProjectileInstrument(Instrument):
         allUsedNotes = self.midiTrack.allUsedNotes()
 
         for obj in self.collection.all_objects:
-            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
-
-            # make sure objects are not in target collection
-            assert not any(item == obj.midi.anim_curve for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
-
             wpr = ObjectWrapper(
                 obj=obj, 
                 noteNumbers=convertNoteNumbers(obj.midi.note_number), 
@@ -295,7 +284,7 @@ class ProjectileInstrument(Instrument):
             
             for noteNumber in wpr.noteNumbers:
                 if noteNumber not in allUsedNotes:
-                    logger.warning(f"Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+                    logger.warning(f"Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does have a coresponding MIDI note in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
 
                 if noteNumber in self.noteToWpr:
                     self.noteToWpr[noteNumber].append(wpr)
@@ -305,6 +294,25 @@ class ProjectileInstrument(Instrument):
     def preAnimate(self):
         """deletes all old projectiles & their associated keyframes"""
         cleanCollection(self.projectileCollection, self.referenceProjectile)
+
+        # precheck
+        for obj in self.collection.all_objects:
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+        
+            # make sure objects are not in the funnel collection
+            for objCheck in self.collection.all_objects:
+                if objCheck == obj.midi.anim_curve:
+                    raise ValueError(f"Animation projectile curve object '{objCheck.name}' is in the funnel animation collection! Please move the object out of the collection and place it in a different collection.")
+                if objCheck == obj.midi.reference_projectile:
+                    raise ValueError(f"Reference projectile object '{objCheck.name}' is in the funnel animation collection! Please move the object out of the collection and place it in a different collection.")
+
+
+            # ensure objects of keyframed type have a projectile curve
+            if obj.midi.anim_curve is None:
+                raise ValueError(f"Object '{obj.name}' must have a Projectile Curve!")
+                
+            if obj.midi.anim_curve is not None and len(FCurvesFromObject(obj.midi.anim_curve)) == 0:
+                logger.warning(f"Object '{obj.name}' has no animation curves! (projectile curve object '{obj.midi.anim_curve.name}')")
 
     def animate(self):
         """generates projectiles with keyframes and adds them to the projectileCollection
@@ -419,12 +427,7 @@ class EvaluateInstrument(Instrument):
         self.preAnimate()
 
         self.noteToWpr = dict()
-        
-        # ensure objects of keyframed type have either note on or note off FCurve objects
-        for obj in self.collection.all_objects:
-            if obj.midi.anim_type == "keyframed" and obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
-                raise ValueError("Animation type `keyframed` must have either a Note On Curve or a Note Off Curve!")
-        
+
         self.createNoteToObjectWpr()
 
     @staticmethod
@@ -571,11 +574,6 @@ class EvaluateInstrument(Instrument):
         allUsedNotes = self.midiTrack.allUsedNotes()
 
         for obj in self.collection.all_objects:
-            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
-
-            # make sure objects are not in target collection
-            assert not any(item in set((obj.midi.note_on_curve, obj.midi.note_off_curve)) for item in set(self.collection.all_objects)), "Animation reference objects are in the target animation collection! Please move them out of the collection."
-
             wpr = ObjectWrapper(
                 obj=obj, 
                 noteNumbers=convertNoteNumbers(obj.midi.note_number), 
@@ -585,7 +583,7 @@ class EvaluateInstrument(Instrument):
             
             for noteNumber in wpr.noteNumbers:
                 if noteNumber not in allUsedNotes:
-                    logger.warning(f"Object `{wpr.obj.name}` with MIDI note `{noteNumber}` does not exist in the MIDI track provided (MIDI track `{self.midiTrack.name}`)!")
+                    logger.warning(f"Object '{wpr.obj.name}' with MIDI note '{noteNumber}' does not exist in the MIDI track provided (MIDI track '{self.midiTrack.name}')!")
 
                 if noteNumber in self.noteToWpr:
                     self.noteToWpr[noteNumber].append(wpr)
@@ -594,10 +592,40 @@ class EvaluateInstrument(Instrument):
 
     def preAnimate(self):
         """cleans all keyframes before the animation"""
+        old_frame = bpy.context.scene.frame_current
         bpy.context.scene.frame_set(-10000)
+        
+        # remove all old keyframes
         for obj in self.collection.all_objects:
             cleanKeyframes(obj)
-    
+        
+        bpy.context.scene.frame_set(old_frame)
+        
+        # prechecks
+        for obj in self.collection.all_objects:
+            if obj.midi.note_number is None or not obj.midi.note_number: raise ValueError(f"Object '{obj.name}' has no note number!")
+            
+            if obj.midi.anim_type == "keyframed":
+                # make sure objects are not in target collection
+                for objCheck in self.collection.all_objects:
+                    if objCheck in (obj.midi.note_on_curve, obj.midi.note_off_curve):
+                        raise ValueError(f"Animation reference object '{objCheck.name}' is in the target animation collection! Please move the object out of the collection and place it in a different collection.")
+
+                # ensure objects of keyframed type have either note on or note off FCurve objects
+                if obj.midi.note_on_curve is None and obj.midi.note_off_curve is None:
+                    raise ValueError(f"Object '{obj.name}' must have either a Note On Curve or a Note Off Curve!")
+
+                # ensure objects of keyframed type and have both Note On and Note Off curves have the same data paths
+                if obj.midi.note_on_curve is not None and obj.midi.note_off_curve is not None:
+                    if not validateFCurves(obj.midi.note_on_curve, obj.midi.note_off_curve):
+                        raise ValueError(f"Object '{obj.name}' has invalid FCurves! Make sure the Note On and Note Off FCurves have the same data paths (or remove extraneous data paths).")
+                    
+                if obj.midi.note_on_curve is not None and len(FCurvesFromObject(obj.midi.note_on_curve)) == 0:
+                    logger.warning(f"Object '{obj.name}' has no Note On FCurves! (note on object '{obj.midi.note_on_curve.name}')")
+                
+                if obj.midi.note_off_curve is not None and len(FCurvesFromObject(obj.midi.note_off_curve)) == 0:
+                    logger.warning(f"Object '{obj.name}' has no Note Off FCurves! (note off object '{obj.midi.note_off_curve.name}')")
+
     def animate(self):
         """applys keyframe data to the objects from the MIDITrack"""
         def processNextKeys(curve, note, wpr, nextKeys):
