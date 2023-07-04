@@ -21,6 +21,9 @@ class Instrument:
     collection: bpy.types.Collection
     midiTrack: MIDITrack
 
+    # removes note number from Object's attributes.
+    EXCLUDE_NOTE_NUMBER = False
+
     def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
         """Base class for MIDI instruments. These will handle all pre-animation and animation techniques.
         You should not instance this class by itself. This class should be inherited.
@@ -795,6 +798,281 @@ class EvaluateInstrument(Instrument):
                 else:
                     raise RuntimeError(f"ERROR: Type {obj.midi.anim_type} for object {obj.name} not supported yet.")
 
+
+class HiHatInstrument(Instrument):
+    EXCLUDE_NOTE_NUMBER = True
+    
+    hiHatNotes: List[MIDINote]
+
+    HANDLE_TYPE = "ALIGNED"
+
+    # thank you to TheZacher5645 in his work for figuring out the hi-hat motion
+    # this handles vertical motion only!
+    HI_HAT_VERT_ANIMS = {
+        "none": (
+        ),
+        "hat-up": (
+            KeyframeSeconds(seconds=-0.4054/2.5, value=0),
+            KeyframeSeconds(seconds=0, value=1)
+        ),
+        "hat-down": (
+            KeyframeSeconds(seconds=-0.2027/2, value=1),
+            KeyframeSeconds(seconds=0, value=0)
+        ),
+        "hat-pedal": (
+            KeyframeSeconds(seconds=-0.10135, value=1),
+            KeyframeSeconds(seconds=0, value=0)
+        ),
+        "hat-pedal2": (
+            KeyframeSeconds(seconds=-0.2027*1.4, value=0),
+            KeyframeSeconds(seconds=-0.10135*1.1, value=1),
+            KeyframeSeconds(seconds=0, value=0)
+        ),
+        "end": (
+            KeyframeSeconds(seconds=0.4054, value=1),
+            KeyframeSeconds(seconds=0.8108, value=0)
+        )
+    }
+    
+    # https://i.imgur.com/DhNy3KU.png
+    # HiHatInstrument.TRANSITION_MATRIX[fromNote][toNote] = animation to play
+    TRANSITION_MATRIX = {
+        "open": {
+            "open": "none",
+            "closed": "hat-down",
+            "pedal": "hat-pedal",
+            "end": "end"
+        },
+        "closed": {
+            "open": "hat-up",
+            "closed": "none",
+            "pedal": "hat-pedal2",
+            "end": "none"
+        },
+        "pedal": {
+            "open": "hat-up",
+            "closed": "none",
+            "pedal": "hat-pedal2",
+            "end": "none"
+        },
+        "start": {
+            "open": "hat-up",
+            "closed": "none",
+            "pedal": "hat-pedal2",
+            "end": "none"
+        }
+    }
+
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
+        """Template Class
+
+        :param MIDITrack midiTrack: the MIDITrack object to animate from
+        :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
+        """
+        super().__init__(midiTrack=midiTrack, collection=collection)
+    
+        self.hiHatTopObj: bpy.types.Object = None
+        self.hiHatBottomObj: bpy.types.Object = None
+        self.strippedMIDI: MIDITrack = MIDITrack(name=self.midiTrack.name)
+        self.hiHatNotes: Dict[str, Tuple] = dict()
+        self.topOrigLoc = None
+
+        self.preAnimate()
+
+        self.animType = {
+            self.hiHatNotes["closed"]: "closed",
+            self.hiHatNotes["pedal"]: "pedal",
+            self.hiHatNotes["open"]: "open",
+        }
+
+        self.vertKeyframes = []
+
+        # create a new MIDI instrument layered to "evaluate" rotation motion
+        self.evalInstrument = EvaluateInstrument(midiTrack=self.strippedMIDI, collection=self.collection)
+
+    @staticmethod
+    def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection,):
+        """draws the UI for the instrument view
+        subclass should override this method, this method will not do anything if called"""
+        col.prop(blCol.midi, "note_number_closed")
+        col.prop(blCol.midi, "note_number_pedal")
+        col.prop(blCol.midi, "note_number_open")
+        # added in next commit 
+        # col.prop(blCol.midi, "vertical_add") # Vertical Z add number
+        # col.prop(blCol.midi, "velocity_intensity", slider=True)
+        # col.prop(blCol.midi, "y_mapper")
+    
+    @staticmethod
+    def drawObject(context: bpy.types.Context, col: bpy.types.UILayout, blObj: bpy.types.Object):
+        """draws the UI for the object view
+        subclass should override this method, this method will not do anything if called
+        """
+        objMidi = blObj.midi
+
+        col.separator()
+        row0 = col.row()
+
+        row0.prop(objMidi, "hi_hat_object")  # enum that defines which hi hat, top or bottom
+
+    @staticmethod
+    def properties():   
+        MIDIAnimatorCollectionProperties.y_mapper = bpy.props.StringProperty(
+            name="Amplitude mapper",
+            description="Amplitude mapper (Y axis) of the animation. Use 'y' for amplitude, 'note' for note number, and 'vel' for velocity.",
+            default="y",
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.velocity_intensity = bpy.props.FloatProperty(
+            name="Velocity Intensity", 
+            description="The strength of the velocity affecting the keyframe values. 0 for no velocity influence.",
+            default=0.0,
+            soft_min=0,
+            soft_max=2,
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.note_number_closed = bpy.props.StringProperty(
+            name="Note Number Closed", 
+            description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
+                        "readable note (C3)",
+            default="42"
+        )
+        MIDIAnimatorCollectionProperties.note_number_pedal = bpy.props.StringProperty(
+            name="Note Number Pedal", 
+            description="The note number of an object. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
+                        "readable note (C3)",
+            default="44"
+        )
+        MIDIAnimatorCollectionProperties.note_number_open = bpy.props.StringProperty(
+            name="Note Number Open", 
+            description="",
+            default="46"
+        )
+        MIDIAnimatorCollectionProperties.rotation_curve = bpy.props.PointerProperty(
+            name="Rotation Curve", 
+            description="",
+            type=bpy.types.Object,
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.vertical_add = bpy.props.FloatProperty(
+            name="Vertical Add",
+            description="",
+            default=0.0,
+            options=set()
+        )
+        MIDIAnimatorObjectProperties.hi_hat_object = bpy.props.EnumProperty(
+            items=[
+                ("bottom", "Bottom", "Hi Hat Bottom object"),
+                ("top", "Top", "Hi Hat Top object")
+            ],
+            name="Hi Hat Type",
+            description="",
+            default="top",
+            options=set()
+
+        )
+
+    def evalHiHatVerticalMotion(self, curNote: MIDINote, nextNote: MIDINote, index: int) -> None:
+        time = 0
+        noteNumber = 0
+
+        curNoteType = self.animType[curNote.noteNumber]
+    
+        if nextNote is not None:
+            # normal note (not first or last)
+            nextNoteType = self.animType[nextNote.noteNumber]
+            time = nextNote.timeOn
+            noteNumber = nextNote.noteNumber
+        else:
+            # last note
+            nextNoteType = "end"
+            time = curNote.timeOn
+            noteNumber = self.hiHatNotes["closed"]
+        
+        if index == 0:
+            # first note
+            curNoteType = "start"
+            time = curNote.timeOn
+            noteNumber = curNote.noteNumber
+
+
+        animToWrite = HiHatInstrument.TRANSITION_MATRIX[curNoteType][nextNoteType]
+
+        if nextNote is not None:
+            animDuration = nextNote.timeOn - curNote.timeOn
+        else:
+            animDuration = 1
+
+        for keyframe in HiHatInstrument.HI_HAT_VERT_ANIMS[animToWrite]:
+            # self.keyframes
+            self.vertKeyframes.append((keyframe.seconds + time, keyframe.value/10, noteNumber))
+
+    def preAnimate(self):
+        old_frame = bpy.context.scene.frame_current
+        bpy.context.scene.frame_set(-10000)
+        
+        # remove all old keyframes
+        for obj in self.collection.all_objects:
+            cleanKeyframes(obj)
+        
+        bpy.context.scene.frame_set(old_frame)
+        
+        # get top and bottom Hi Hat objects
+        for obj in self.collection.all_objects:
+            if obj.midi.hi_hat_object == "top":
+                self.hiHatTopObj = obj
+            elif obj.midi.hi_hat_object == "bottom":
+                self.hiHatBottomObj = obj
+        
+        # if there isn't a top or bottom object specified, or more than one specified, raise
+        if not self.hiHatTopObj or not self.hiHatBottomObj:
+            raise
+        
+        # record original location of top object
+        self.topOrigLoc = self.hiHatTopObj.location.copy()
+
+        # create hi-hat note dict
+        # a two way dict would be nice, I cant remember the name of it but I saw it in a mCoding video recently. Will have a look at it and likely implement it into this
+        self.hiHatNotes = {
+            "closed": convertNoteNumbers(self.collection.midi.note_number_closed)[0],
+            "pedal": convertNoteNumbers(self.collection.midi.note_number_pedal)[0],
+            "open": convertNoteNumbers(self.collection.midi.note_number_open)[0]
+        }
+
+        # check note number against self.hiHatNotes's values
+        hiHatNums = {noteNumber for name, noteNumber in self.hiHatNotes.items()}
+
+        # get MIDI track and strip other extraneous notes out
+        for note in self.midiTrack.notes:
+            if note.noteNumber in hiHatNums:
+                self.strippedMIDI.notes.append(note)
+
+        # add properties for rotation (internal EvaluateInstrument)
+        self.hiHatTopObj.midi.note_on_curve = bpy.data.objects['ANIM_HHrot']
+        self.hiHatTopObj.midi.note_number = f'{self.hiHatNotes["closed"]}, {self.hiHatNotes["open"]}'
+        self.hiHatBottomObj.midi.note_on_curve = bpy.data.objects['ANIM_HHrot']
+        self.hiHatBottomObj.midi.note_number = f'{self.hiHatNotes["closed"]}'
+
+    
+    def animate(self):
+        # animate hi hat rotation motion
+
+        self.evalInstrument.animate()
+
+        # animate hi hat vertical motion
+        for i, curNote in enumerate(self.strippedMIDI.notes):
+            nextNote = self.strippedMIDI.notes[i + 1] if i+1 < len(self.strippedMIDI.notes) else None
+
+            # create keyframe values
+            self.evalHiHatVerticalMotion(curNote, nextNote, i)
+
+        # iterate over the keyframe dictionary to generate actual keyframes
+        for time, value, noteNumber in self.vertKeyframes:
+            self.hiHatTopObj.location[2] = (value*0.5) + self.topOrigLoc.z # add it to itself?
+            self.hiHatTopObj.keyframe_insert(data_path="location", index=2, frame=secToFrames(time))
+            
+            # set keyframe handle type, may not be needed anymore idk FIXME
+            setKeyframeHandleType(self.hiHatTopObj, HiHatInstrument.HANDLE_TYPE)
+
 # ------------------------------------------------------------------
 
 @dataclass
@@ -807,8 +1085,9 @@ class InstrumentItem:
 
 # Enum of instruments. Add new instruments here and they will be automatically added to the UI
 class Instruments(Enum):
-    projectile = InstrumentItem(identifier="projectile", name="Projectile", description="A projectile that is fired from the instrument", cls=ProjectileInstrument)
     evaluate = InstrumentItem(identifier="evaluate", name="Evaluate", description="Evaluate thing", cls=EvaluateInstrument)
+    projectile = InstrumentItem(identifier="projectile", name="Projectile", description="A projectile that is fired from the instrument", cls=ProjectileInstrument)
+    hiHat = InstrumentItem(identifier="hi-hat", name="Hi Hat", description="Hi Hat", cls=HiHatInstrument)
     custom = InstrumentItem(identifier="custom", name="Custom", description="Custom Instrument. Must pass the class via `MIDIAnimatorNode.addInstrument()`. See the docs for help.", cls=Instrument)
 
 

@@ -65,12 +65,14 @@ class VIEW3D_PT_edit_object_information(MIDIAniamtorPanel, bpy.types.Panel):
         
         col.label(text=f"Active object: '{obj.name}'")
 
-        col.prop(objMidi, "note_number")
         
         for item in Instruments:
             value = item.value
             if value.identifier == blColMidi.instrument_type:
                 value.cls.drawObject(context, col, obj)
+                # if the property exists (precheck for next cond.) and is false or if the property does not exist at all, draw the note number object
+                if (hasattr(value.cls, "EXCLUDE_NOTE_NUMBER") and not value.cls.EXCLUDE_NOTE_NUMBER) or not hasattr(value.cls, "EXCLUDE_NOTE_NUMBER"):
+                    col.prop(objMidi, "note_number")
                 break
         
 

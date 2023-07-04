@@ -24,6 +24,23 @@ class Keyframe:
         return hash((self.frame, self.value))
 
 @dataclass
+class KeyframeSeconds:
+    """A simple keyframe data structure for time in seconds.
+    :param float seconds: the seconds value of the keyframe (x)
+    :param float value: the value of the keyframe (y)
+    """
+    seconds: float  # seconds of the keyframe
+    value: float  # value of the keyframe
+
+    @property
+    def co(self):
+        return (self.seconds, self.value)
+
+    def __hash__(self) -> int:
+        return hash((self.seconds, self.value))
+
+
+@dataclass
 class DummyFCurve:
     keyframe_points: Tuple[Keyframe]
     array_index: int
