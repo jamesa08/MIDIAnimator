@@ -153,7 +153,7 @@ Note anchor points tell you when to trigger the animation based on the note on t
 ![cube_anim_note_anchor_pt](https://raw.githubusercontent.com/jamesa08/MIDIAnimator/main/docs/images/cube_anim_note_anchor_pt.png)
 *Note anchor points are located next to the Note On/Off object field.*
 
-There are differnet ways to deal with overlapping animation. Currently, the only way researched is to "add" the motion together. This works great for oscillating motion, but for other types of motion, it may give undesirable results. More overlapping methods will be added as they are researched.
+There are different ways to deal with overlapping animation. Currently, the only way researched is to "add" the motion together. This works great for oscillating motion, but for other types of motion, it may give undesirable results. More overlapping methods will be added as they are researched.
 
 <hr>
 
