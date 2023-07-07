@@ -230,10 +230,10 @@ class MIDIFile:
         return self._tracks
 
     def _parseMIDI(self, file: str) -> List[MIDITrack]:
-        """helper method that takes a MIDI file (instrumentType 0 and 1) and returns a list of MIDITracks
+        """helper method that takes a MIDI file (instrumentType 0 and 1) and returns a list of `MIDITracks`
 
         :param midFile: MIDI file
-        :return: list of MIDITracks
+        :return: list of `MIDITracks`
         """
         
         # use abspath "//"
@@ -256,7 +256,7 @@ class MIDIFile:
             midiTracks = []
 
             time = 0
-            tempo = 0
+            tempo = 500000
 
             # get tempo map first
             for msg in mido.merge_tracks(midiFile.tracks):
@@ -279,21 +279,10 @@ class MIDIFile:
                 curTrack.name = track.name
 
 
-            for msg in track:
+            for msg in mido.merge_tracks([track]):
+                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
+                
                 curType = msg.type
-
-                if midiFile.type == 0 and msg.type == "set_tempo":
-                    tempo = msg.tempo
-                
-                # tempo fix, fixes #7
-                if midiFile.type == 0:
-                    exactTempo = tempo
-                else:
-                    exactTempo = _closestTempo(tempoMap, time)[1]
-                    if exactTempo == float('inf'):
-                        exactTempo = tempo
-                
-                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, exactTempo)
 
                 # channel messages
                 if midiFile.type == 0 and not msg.is_meta and msg.type != "sysex":
@@ -329,6 +318,16 @@ class MIDIFile:
                 
                 if midiFile.type == 0 and len(curTrack.name) == 0:
                     curTrack.name = f"Track {curChannel + 1}"
+
+                # tempo section (must be at end of chain)
+                if midiFile.type == 0 and msg.type == "set_tempo":
+                    tempo = msg.tempo
+
+                if midiFile.type == 1:
+                    tempo = _closestTempo(tempoMap, time)[1]
+                    if tempo == float('inf'):  # FIXME this should probably just be fixed within the _closestTempo function
+                        tempo = tempoMap[-1][1]
+                
 
                 # add track to tracks for instrumentType 1
                 if midiFile.type == 1 and msg.is_meta and curType == "end_of_track" and not curTrack._isEmpty():
