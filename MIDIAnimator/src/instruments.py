@@ -897,7 +897,6 @@ class HiHatInstrument(Instrument):
         col.prop(blCol.midi, "note_number_closed")
         col.prop(blCol.midi, "note_number_pedal")
         col.prop(blCol.midi, "note_number_open")
-        # added in next commit 
         # col.prop(blCol.midi, "vertical_add") # Vertical Z add number
         # col.prop(blCol.midi, "velocity_intensity", slider=True)
         # col.prop(blCol.midi, "y_mapper")
@@ -1073,6 +1072,195 @@ class HiHatInstrument(Instrument):
             # set keyframe handle type, may not be needed anymore idk FIXME
             setKeyframeHandleType(self.hiHatTopObj, HiHatInstrument.HANDLE_TYPE)
 
+class LaserInstrument(Instrument):
+    EXCLUDE_NOTE_NUMBER = True
+    def __init__(self, midiTrack: MIDITrack, collection: bpy.types.Collection):
+        """Template Class
+
+        :param MIDITrack midiTrack: the MIDITrack object to animate from
+        :param bpy.types.Collection collection: the `bpy.types.Collection` of Blender objects to apply keyframes to
+        """
+        super().__init__(midiTrack=midiTrack, collection=collection)
+
+        self.baseObj: bpy.types.Object = None
+        self.emitterObj: bpy.types.Object = None
+        self.noteLow: int = None
+        self.noteHigh: int = None
+        
+        self.preAnimate()
+
+    @staticmethod
+    def drawInstrument(context: bpy.types.Context, col: bpy.types.UILayout, blCol: bpy.types.Collection,):
+        """draws the UI for the instrument view
+        subclass should override this method, this method will not do anything if called"""
+        col.prop(blCol.midi, "laser_rotation_low")
+        col.prop(blCol.midi, "laser_rotation_high")
+        col.prop(blCol.midi, "laser_note_low")
+        col.prop(blCol.midi, "laser_note_high")
+
+    @staticmethod
+    def drawObject(context: bpy.types.Context, col: bpy.types.UILayout, blObj: bpy.types.Object):
+        """draws the UI for the object view
+        subclass should override this method, this method will not do anything if called
+        """
+        objMidi = blObj.midi
+
+        col.separator()
+
+        col.prop(objMidi, "laser_object")
+
+        if objMidi.laser_object == "base":
+            col.prop(objMidi, "laser_rotation_axis")
+            # add label
+            col.label(text=f"Rotation Axis {int(objMidi.laser_rotation_axis)}")
+
+    @staticmethod
+    def properties():
+        MIDIAnimatorCollectionProperties.laser_rotation_low = bpy.props.FloatProperty(
+            name="Rotation Low",
+            description="Lowest rotation for the laser",
+            default=radians(-45),
+            subtype="ANGLE",
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.laser_rotation_high = bpy.props.FloatProperty(
+            name="Rotation High",
+            description="Highest rotation for the laser",
+            default=radians(45),
+            subtype="ANGLE",
+            options=set()
+        )
+        MIDIAnimatorCollectionProperties.laser_note_low = bpy.props.StringProperty(
+            name="Note Number Low", 
+            description="The lowest note number for the laser. Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
+                        "readable note (C3). If 'lowest', the laser will use the lowest note in the MIDI",
+            default="lowest",
+        )
+        MIDIAnimatorCollectionProperties.laser_note_high = bpy.props.StringProperty(
+            name="Note Number High", 
+            description="The highest note number for the laser.  Can be entered as a integer (MIDI Note Number, e.g. 60) or as a "
+                        "readable note (C3). If 'highest', the laser will use the highest note in the MIDI",
+            default="highest"
+        )
+        MIDIAnimatorObjectProperties.laser_object = bpy.props.EnumProperty(
+            items=[
+                ("base", "Base", "Rotation base object. This is the object that gets rotated."),
+                ("emitter", "Emitter", "Emitter object. This is the object that gets turned off/on")
+            ],
+            name="Object Type",
+            description="",
+            default="base",
+            options=set()
+        )
+        MIDIAnimatorObjectProperties.laser_rotation_axis = bpy.props.EnumProperty(
+            items=[
+                ("0", "X", "X axis"),
+                ("1", "Y", "Y axis"),
+                ("2", "Z", "Z axis")
+            ],
+            name="Rotation Axis",
+            description="",
+            default="0",
+            options=set()
+        )
+    
+    def preAnimate(self):
+        old_frame = bpy.context.scene.frame_current
+        bpy.context.scene.frame_set(-10000)
+
+        # remove all old keyframes
+        for obj in self.collection.all_objects:
+            cleanKeyframes(obj)
+        
+        bpy.context.scene.frame_set(old_frame)
+
+        # get laser objects
+        for obj in self.collection.all_objects:
+            if obj.midi.laser_object == "base":
+                self.baseObj = obj
+            elif obj.midi.laser_object == "emitter":
+                self.emitterObj = obj
+
+        # if there isn't a base or emitter object specified, or more than one specified, raise
+        if not self.baseObj or not self.emitterObj:
+            raise ValueError("LaserInstrument: No base or emitter object specified, or more than one specified.")
+        
+        allNotes = self.midiTrack.allUsedNotes()
+        if self.collection.midi.laser_note_low == "lowest":
+            self.noteLow = min(allNotes)
+        else:
+            self.noteLow = convertNoteNumbers(self.collection.midi.laser_note_low)[0]
+
+        if self.collection.midi.laser_note_high == "highest":
+            self.noteHigh = max(allNotes)
+        else:
+            self.noteHigh = convertNoteNumbers(self.collection.midi.laser_note_high)[0]
+
+
+    def animate(self):
+        rotationAxis = int(self.baseObj.midi.laser_rotation_axis)
+        # setup first note
+        #
+        self.baseObj.rotation_euler[rotationAxis] = 0
+        self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=0)
+        firstNote = self.midiTrack.notes[1] if 1 < len(self.midiTrack.notes) else None
+        if firstNote is not None:
+            # set a keyframe on the next note (- 1) so it rotates up from 0 to the first note
+            self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(firstNote.timeOn - 1))
+
+        # turn laser off
+        showHideObj(self.emitterObj, hide=True, frame=0)
+
+        for i, curNote, in enumerate(self.midiTrack.notes):
+            nextNote = self.midiTrack.notes[i+1] if i+1 < len(self.midiTrack.notes) else MIDINote(channel=0, noteNumber=60, velocity=1, timeOn=1000000, timeOff=1000001)
+            animDuration = nextNote.timeOn - curNote.timeOn
+            rotationLow = self.collection.midi.laser_rotation_low
+            rotationHigh = self.collection.midi.laser_rotation_high
+            noteLow = self.noteLow
+            noteHigh = self.noteHigh
+
+            curNoteTimeOn = curNote.timeOn
+            curNoteTimeOff = curNote.timeOff
+            nextNoteTimeOn = nextNote.timeOn
+            nextNoteTimeOff = nextNote.timeOff
+
+            # check if the next note is before the current note is done
+            if nextNoteTimeOn < curNoteTimeOff:
+                curNoteTimeOff = nextNoteTimeOn
+
+            # set a timeOn key
+            self.baseObj.rotation_euler[rotationAxis] = mLin(curNote.noteNumber, noteLow, noteHigh, rotationLow, rotationHigh)
+            self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(curNoteTimeOn))
+
+            if animDuration > 1:
+                timeDiff = 1
+            else:
+                timeDiff = 0.1
+
+            if animDuration < 4:
+                # not a break
+                self.baseObj.rotation_euler[rotationAxis] = mLin(curNote.noteNumber, noteLow, noteHigh, rotationLow, rotationHigh)
+                self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(nextNoteTimeOn - timeDiff))
+                
+                if timeDiff == 1:
+                    self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(curNoteTimeOff))
+            else:
+                # return to 0
+                # insert a note off key before its done
+                self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(curNoteTimeOff))
+                
+                # set key after its done (+ 1)
+                self.baseObj.rotation_euler[rotationAxis] = 0
+                self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(curNoteTimeOff + 1))
+                
+                # set a key on the next note (- 1)
+                self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=secToFrames(nextNoteTimeOn - 1))
+
+
+            showHideObj(self.emitterObj, hide=False, frame=secToFrames(curNoteTimeOn))
+            showHideObj(self.emitterObj, hide=True, frame=secToFrames(curNoteTimeOff))
+
+
 # ------------------------------------------------------------------
 
 @dataclass
@@ -1087,7 +1275,9 @@ class InstrumentItem:
 class Instruments(Enum):
     evaluate = InstrumentItem(identifier="evaluate", name="Evaluate", description="Evaluate thing", cls=EvaluateInstrument)
     projectile = InstrumentItem(identifier="projectile", name="Projectile", description="A projectile that is fired from the instrument", cls=ProjectileInstrument)
-    hiHat = InstrumentItem(identifier="hi-hat", name="Hi Hat", description="Hi Hat", cls=HiHatInstrument)
+    laser = InstrumentItem(identifier="laser", name="Laser", description="Laser", cls=LaserInstrument)
+    # Hi-Hats posponed until a future release
+    # hiHat = InstrumentItem(identifier="hi-hat", name="Hi Hat", description="Hi Hat", cls=HiHatInstrument)
     custom = InstrumentItem(identifier="custom", name="Custom", description="Custom Instrument. Must pass the class via `MIDIAnimatorNode.addInstrument()`. See the docs for help.", cls=Instrument)
 
 
