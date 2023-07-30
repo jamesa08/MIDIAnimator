@@ -309,7 +309,7 @@ class ProjectileInstrument(Instrument):
             for objCheck in self.collection.all_objects:
                 if objCheck == obj.midi.anim_curve:
                     raise ValueError(f"Animation projectile curve object '{objCheck.name}' is in the funnel animation collection! Please move the object out of the collection and place it in a different collection.")
-                if objCheck == obj.midi.reference_projectile:
+                if objCheck == self.collection.midi.reference_projectile:
                     raise ValueError(f"Reference projectile object '{objCheck.name}' is in the funnel animation collection! Please move the object out of the collection and place it in a different collection.")
 
 
@@ -1199,8 +1199,8 @@ class LaserInstrument(Instrument):
 
     def animate(self):
         rotationAxis = int(self.baseObj.midi.laser_rotation_axis)
+
         # setup first note
-        #
         self.baseObj.rotation_euler[rotationAxis] = 0
         self.baseObj.keyframe_insert(data_path="rotation_euler", index=rotationAxis, frame=0)
         firstNote = self.midiTrack.notes[1] if 1 < len(self.midiTrack.notes) else None
