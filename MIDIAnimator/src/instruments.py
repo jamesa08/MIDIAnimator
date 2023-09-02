@@ -627,7 +627,7 @@ class EvaluateInstrument(Instrument):
 
                 # ensure objects of keyframed type and have both Note On and Note Off curves have the same data paths
                 if obj.midi.note_on_curve is not None and obj.midi.note_off_curve is not None:
-                    if not validateFCurves(obj.midi.note_on_curve, obj.midi.note_off_curve):
+                    if not validateFCurves(FCurvesFromObject(obj.midi.note_on_curve), FCurvesFromObject(obj.midi.note_off_curve)):
                         raise ValueError(f"Object '{obj.name}' has invalid FCurves! Make sure the Note On and Note Off FCurves have the same data paths (or remove extraneous data paths).")
                     
                 if obj.midi.note_on_curve is not None and len(FCurvesFromObject(obj.midi.note_on_curve)) == 0:
