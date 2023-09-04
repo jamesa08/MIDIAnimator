@@ -77,7 +77,7 @@ Check out the technical demo:
 
 ## Getting Started
 
-To get started, check out the [Getting Started](https://midianimatordocs.readthedocs.io/en/latest/usage.html) docs page.
+To get started, check out the [Getting Started](https://midianimatordocs.readthedocs.io/en/latest/general/getting_started.html) docs page.
 <br>
 
 <p align="right">(<a href="#top">back to top</a>)</p>
