@@ -511,14 +511,12 @@ class EvaluateInstrument(Instrument):
         MIDIAnimatorObjectProperties.note_off_curve = bpy.props.PointerProperty(
             name="Note Off Reference Curve", 
             description="The reference curve object with defined keyframes to be read in."
-                        "\n\nDisabled: will be added in a future release",
             type=bpy.types.Object,
             options=set()
         )
         MIDIAnimatorObjectProperties.note_off_anchor_pt = bpy.props.IntProperty(
             name="Note Off Anchor Point",
             description="Where along should we start animating (in reference to the note on time). 0 to start animating right on note off times, - for eariler, + for later."
-                        "\n\nDisabled: will be added in a future release",
             default=0,
             options=set()
         )
