@@ -56,7 +56,7 @@ def validateFCurves(noteOnFCurves: List[Union[bpy.types.FCurve, 'ObjectShapeKey'
     :return bool: True if valid, False otherwise
     """
     # if there is no FCurves on each object, this is valid
-    if (len(noteOnFCurves) == 0 and bool(noteOffFCurves) is False) or (len(noteOffFCurves) == 0 and bool(noteOnFCurves is False)): return True
+    if (len(noteOnFCurves) == 0 and bool(noteOffFCurves) is False) or (len(noteOffFCurves) == 0 and bool(noteOnFCurves) is False): return True
 
     # if one doesn't exist, its valid (since there isn't another pair to match with)
     if (bool(noteOnFCurves) is False and bool(noteOffFCurves) is True) or (bool(noteOffFCurves) is False and bool(noteOnFCurves) is True): return True
