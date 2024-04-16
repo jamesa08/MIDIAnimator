@@ -1,11 +1,11 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
+name = "MIDIAnimator"
+version = "0.5.0"
+description = "Procedurally animate a MIDI file. version beta5"
 authors = ["you"]
-license = ""
-repository = ""
-default-run = "app"
+license = "GPL-3.0"
+repository = "https://github.com/jamesa08/MIDIAnimator"
+default-run = "MIDIAnimator"
 edition = "2021"
 rust-version = "1.60"
 
@@ -21,6 +21,7 @@ tauri = { version = "1.6.1", features = [] }
 regex = "1.5.4"
 lazy_static = "1.4.0"
 midly = "0.5.3"
+
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
