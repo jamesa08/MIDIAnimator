@@ -286,11 +286,12 @@ class MIDIFile:
 
             # get tempo map first
             for msg in mido.merge_tracks(midiFile.tracks):
-                time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
+                time += mido.tick2second(msg.time, midiFile.ticks_per_beat  , tempo)
                 if msg.type == "set_tempo":
+                    tempo = msg.tempo
                     tempoMap.append((time, msg.tempo))
 
-
+            print(tempoMap)
         for track in midiFile.tracks:
             time = 0
             tempo = 500000
@@ -307,7 +308,7 @@ class MIDIFile:
 
             for msg in mido.merge_tracks([track]):
                 time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
-                
+                print(time)
                 curType = msg.type
 
                 # channel messages
@@ -353,6 +354,8 @@ class MIDIFile:
                     tempo = _closestTempo(tempoMap, time)[1]
                     if tempo == float('inf'):  # FIXME this should probably just be fixed within the _closestTempo function
                         tempo = tempoMap[-1][1]
+                    
+
                 
 
                 # add track to tracks for instrumentType 1
