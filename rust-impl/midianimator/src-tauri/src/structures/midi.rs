@@ -1,7 +1,12 @@
-use midly::{num::u28, MetaMessage, MidiMessage, Smf, TrackEvent, TrackEventKind};
+use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use core::panic;
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::utils::{closest_tempo, gm_program_to_name};
+
+
+// TODO eventually refactor into more of The Rust Way
 // MARK: - MIDINote
 
 #[derive(Debug, Clone)]
@@ -91,6 +96,12 @@ impl PartialOrd for MIDIEvent {
     }
 }
 
+fn tick2second(tick: u32, ticks_per_beat: f64, tempo: f64) -> f64 {
+    let scale = tempo * 1e-6 / ticks_per_beat;
+    return tick as f64 * scale;
+}
+// MARK: - MIDITrack
+
 #[derive(Debug, Clone)]
 pub struct MIDITrack {
     pub name: String,
@@ -116,23 +127,27 @@ impl MIDITrack {
     pub fn add_note_on(&mut self, channel: u8, note_number: u8, velocity: u8, time_on: f64) {
         let key = (channel, note_number);
         let note = MIDINote::new(channel, note_number, velocity, time_on, -1.0);
-
         if let Some(notes) = self.note_table.get_mut(&key) {
-            notes.push(note.clone());
+            notes.push(note);
         } else {
-            self.note_table.insert(key, vec![note.clone()]);
+            self.note_table.insert(key, vec![note]);
         }
-
-        self.notes.push(note);
     }
 
-    pub fn add_note_off(&mut self, channel: u8, note_number: u8, velocity: u8, time_off: f64) {
+    pub fn add_note_off(&mut self, channel: u8, note_number: u8, _velocity: u8, time_off: f64) {
+        
+        // find matching note on message
         let key = (channel, note_number);
-
-        if let Some(notes) = self.note_table.get_mut(&key) {
-            if let Some(note) = notes.first_mut() {
-                note.time_off = time_off;
-                notes.remove(0);
+        if let Some(table) = self.note_table.get_mut(&key) {
+            // assume the first note on message for this note is the one that matches with this note off
+            if let Some(note_from_tb) = table.first_mut() {
+                note_from_tb.time_off = time_off;
+                
+                // remove this note for this note number b/c we have the note off for this note
+                let note = table.remove(0);
+                
+                // after note is deleted from the table, add it to the actual notes list
+                self.notes.push(note);
             } else {
                 panic!("NoteOff message has no NoteOn message! Your MIDI File may be corrupt. Please open an issue on GitHub.");
             }
@@ -141,7 +156,6 @@ impl MIDITrack {
 
     pub fn add_control_change(&mut self, control_number: u8, channel: u8, value: u8, time: f64) {
         let event = MIDIEvent::new(channel, value as f64, time);
-
         if let Some(events) = self.control_change.get_mut(&control_number) {
             events.push(event);
         } else {
@@ -166,8 +180,8 @@ impl MIDITrack {
 
     pub fn all_used_notes(&self) -> Vec<u8> {
         let mut used_notes: Vec<u8> = self.notes.iter().map(|note| note.note_number).collect();
-        used_notes.sort_unstable();
-        used_notes.dedup();
+        used_notes.sort_unstable();  // sort
+        used_notes.dedup();  // remove duplicates
         used_notes
     }
 }
@@ -212,78 +226,172 @@ pub struct MIDIFile {
 
 impl MIDIFile {
     pub fn new(midi_file: &str) -> Result<Self, Box<dyn std::error::Error>> {
+        // instance variables
+        let mut tracks: Vec<MIDITrack> = Vec::new();
+
         let bytes = std::fs::read(midi_file)?;
         let smf = Smf::parse(&bytes)?;
+        
+        let midi_type = smf.header.format;
+        let mut midi_tracks: &mut Vec<MIDITrack> = &mut Vec::new();
+        let mut temp_tracks: Vec<MIDITrack> = Vec::new();
+        
+        let mut tempo_map: Vec<(f64, f64)> = Vec::new();
+        
+        let ticks_per_beat = match smf.header.timing {
+            midly::Timing::Metrical(tpq) => tpq.as_int() as f64,  // normal ticks per beat
+            midly::Timing::Timecode(fps, tpf) => {
+                let ticks_per_second = (fps.as_f32() * tpf as f32) as u32;
+                let beats_per_minute = 120;
+                (ticks_per_second as f64 / beats_per_minute as f64 * 60.0) as f64
+            }
+        };
 
-        let mut tracks = Vec::new();
+        if midi_type == midly::Format::Sequential {
+            panic!("Type 2 / Sequential format are not supported!");
+        }
+        let mut new_tracks; 
+        if midi_type == midly::Format::SingleTrack {
+            // Type 0
+            // Tracks depend on MIDI channels for the different tracks
+            // Instance in 16 blank MIDI tracks
+            new_tracks = vec![MIDITrack::new(""); 16];
+            midi_tracks = &mut new_tracks;
+        } else {
+            // Type 1
+            // Tracks are independent of MIDI channels
+            
+            // get tempo map first
+            let mut time: f64 = 0.0;
+            let mut current_tempo: f64 = 500000.0;
 
-        for (i, track) in smf.tracks.iter().enumerate() {
-            let mut midi_track = MIDITrack::new(&format!("Track {}", i + 1));
-
-            let mut time = 0.0;
-            let mut tempo = 500000;
-
-            for event in track {
-                match event {
-                    TrackEvent { delta, kind: TrackEventKind::Midi { channel, message } } => {
-                        time += *delta as f64 / smf.header.timing.ticks_per_beat() as f64 * tempo as f64 / 1_000_000.0;
-
-                        match message {
-                            // ...
-                            MidiMessage::Controller { controller, value } => {
-                                midi_track.add_control_change(
-                                    controller.as_int() as u8,
-                                    (*channel).into(),
-                                    value.as_int() as u8,
-                                    time,
-                                );
-                            }
-                            MidiMessage::PitchBend { bend } => {
-                                midi_track.add_pitchwheel(
-                                    (*channel).into(),
-                                    bend.0 as f64 / 8192.0 - 1.0,
-                                    time,
-                                );
-                            }
-                            MidiMessage::NoteOff { key, vel } => {
-                                midi_track.add_note_off((*channel).into(), key.as_int(), vel.as_int(), time);
-                            }
-                            MidiMessage::Controller { controller, value } => {
-                                midi_track.add_control_change(
-                                    controller.as_int(),
-                                    (*channel).into(),
-                                    value.as_int(),
-                                    time,
-                                );
-                            }
-                            MidiMessage::PitchBend { bend } => {
-                                midi_track.add_pitchwheel(
-                                    (*channel).into(),
-                                    bend.0 as f64 / 8192.0 - 1.0,
-                                    time,
-                                );
-                            }
-                            _ => {}
-                        }
+            for track in smf.tracks.iter() {
+                for msg in track {
+                    // TODO investigate if we need to add time first or last, also in main for loop
+                    time += tick2second(msg.delta.as_int(), ticks_per_beat, current_tempo);
+                    
+                    if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = msg.kind {
+                        current_tempo = tempo.as_int() as f64;  // FIXME I think this is needed, not in original implementation
+                        tempo_map.push((time, current_tempo));
                     }
-                    TrackEvent { delta, kind: TrackEventKind::Meta(MetaMessage::Tempo(new_tempo)) } => {
-                        time += *delta as f64 / smf.header.timing.as_int() as f64 * tempo as f64 / 1_000_000.0;
-                        tempo = u28::from(new_tempo).as_int() as u32;
-                    }
-                    TrackEvent { delta, kind: TrackEventKind::Meta(MetaMessage::TrackName(name)) } => {
-                        midi_track.name = String::from_utf8_lossy(name).into_owned();
-                    }
-                    _ => {}
+                    // update time with new tempo
                 }
             }
+            println!("{:?}", tempo_map);
+        }
+        let mut i = 0;
+        for track in smf.tracks.iter() {
+            let mut time: f64 = 0.0;
+            let mut tempo: f64 = 500000.0;
+            let mut current_channel: i32;
+            let mut current_track = &mut MIDITrack::new("");
 
-            if !midi_track.is_empty() {
-                tracks.push(midi_track);
+            if midi_type == midly::Format::SingleTrack {
+                // Type 0
+                current_track = &mut midi_tracks[0];
+            }  // type 1 is already handled
+
+            for msg in track {
+                time += tick2second(msg.delta.as_int(), ticks_per_beat, tempo);
+                println!("{:?}", time);
+                // channel messages
+                if let TrackEventKind::Midi { channel, message: _ } = msg.kind {
+                    current_channel = channel.as_int() as i32;
+                    // only update type 0 tracks, as type 1 tracks are independent of channels
+                    if midi_type == midly::Format::SingleTrack {
+                        current_track = &mut midi_tracks[current_channel as usize];
+                    }
+                    if current_track.name.len() == 0 {
+                        i += 1;
+                        current_track.name = format!("Track {}", i);
+                    }
+
+                }
+                // meta messages
+                if let TrackEventKind::Meta(meta_message) = msg.kind {
+                    // set track name
+                    if let MetaMessage::TrackName(name) = meta_message {
+                        current_track.name = String::from_utf8_lossy(name).into_owned();
+                    }
+
+                    if let MetaMessage::Tempo(new_tempo) = meta_message {
+                        tempo = new_tempo.as_int() as f64;
+                    }
+                // midi messages
+                } else if let TrackEventKind::Midi { channel, message } = msg.kind {
+                    if let MidiMessage::NoteOn { key, vel } = message {
+                        // velocity 0 note_on messages need to be note_off
+                        if vel == 0 {
+                            current_track.add_note_off(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
+                        } else {
+                            current_track.add_note_on(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
+                        }
+                    } else if let MidiMessage::NoteOff { key, vel } = message {
+                        current_track.add_note_off(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
+                    } else if let MidiMessage::ProgramChange { program } = message {
+                        // General MIDI name
+                        let mut gm_name: String = gm_program_to_name(program.as_int() as i32);
+                        // General MIDI channel 10 is reserved for drums
+                        if channel.as_int() == 9 {
+                            gm_name = "Drumset".to_string();
+                        }
+                        // If track name is empty or default, set it to the GM name (if it's a GM instrument)
+                        if current_track.name.len() == 0 || (midi_type == midly::Format::SingleTrack && current_track.name == format!("Track {current_channel}", current_channel = channel.as_int())) {
+                            current_track.name = gm_name.clone();
+                        }
+                    } else if let MidiMessage::Controller { controller, value } = message {
+                        current_track.add_control_change(controller.as_int() as u8, channel.as_int() as u8, value.as_int() as u8, time as f64);
+                    } else if let MidiMessage::PitchBend { bend } = message {
+                        current_track.add_pitchwheel(channel.as_int() as u8, bend.0.as_int() as f64 / 8192.0 - 1.0, time as f64);
+                    } else if let MidiMessage::Aftertouch { key, vel } = message {
+                        // FIXME fix this, need to add key
+                        current_track.add_aftertouch(channel.as_int() as u8, vel.as_int() as f64 / 127.0, time as f64);
+                    }
+                    if midi_type == midly::Format::Parallel {
+                        tempo = closest_tempo(&tempo_map, time, false).1;
+                        println!("{:?}", tempo);
+                    }
+                }
+
+                // EOF for type 1
+                if midi_type == midly::Format::Parallel {
+                    if let TrackEventKind::Meta(meta_message) = msg.kind {
+                        if let MetaMessage::EndOfTrack = meta_message {
+                            // push current track to ins var tracks
+                            temp_tracks.push(current_track.clone());
+                            
+                        }
+                    }
+                }
+
+            }
+        }
+        
+        // EOF for type 0
+        if midi_type == midly::Format::SingleTrack {
+            // push all midi_tracks into temp_tracks
+            for track in midi_tracks.iter() {
+                temp_tracks.push(track.clone());
             }
         }
 
+        for track in temp_tracks.iter() {
+            if !track.is_empty() {
+                // sort notes
+                let mut notes = track.notes.clone();
+                notes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                
+                let mut track = track.clone();
+                track.notes = notes;
+                
+                tracks.push(track.clone());
+            }
+        }
+        
+
         Ok(MIDIFile { tracks })
     }
+
 
     pub fn get_midi_tracks(&self) -> &Vec<MIDITrack> {
         &self.tracks
