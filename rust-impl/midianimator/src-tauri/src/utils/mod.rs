@@ -6,6 +6,10 @@ use std::f64::consts::PI;
 mod gm_instrument_map;
 use gm_instrument_map::GM_INST;
 
+pub fn print_type_of<T>(_: &T) {
+    println!("{}", std::any::type_name::<T>())
+}
+
 pub fn note_to_name(n_val: i32) -> String {
     assert!(n_val >= 0 && n_val <= 127, "MIDI note number out of range!");
 
@@ -67,11 +71,20 @@ pub fn type_of_note_number(input_str: &str) -> Result<Vec<&str>, String> {
 
 pub fn gm_program_to_name(pc_num: i32) -> String {
     assert!(pc_num >= 0 && pc_num <= 127, "Program change number out of range!");
-    return GM_INST.get(&(pc_num + 1)).unwrap().to_string()
+    return GM_INST.get(&(pc_num)).unwrap().to_string()
 }
 
-pub fn closest_tempo(vals: &[(f64, f64)], n: f64, sort_list: bool) -> (f64, f64) {
+pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f64) {
+    /*
+    takes a list of tempos and times and returns the one closest to n
+
+    :param list vals: list of values to compare to, List[(time, tempo)]
+    :param float n: the time to compare to
+    :param bool sortList: have the tempo list sorted, defaults to False
+    :return tuple: returns the closest time value's tempo & time as a tuple, e.g. (2.50 sec, 500000 ticks)
+     */
     let mut vals = vals.to_vec();
+
     if sort_list {
         vals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     }
@@ -80,13 +93,14 @@ pub fn closest_tempo(vals: &[(f64, f64)], n: f64, sort_list: bool) -> (f64, f64)
         return vals[0];
     }
 
-    for i in 0..vals.len() - 1 {
-        if vals[i].0 <= n && n < vals[i + 1].0 {
+    // go through each tempo tuple and find the one that is closest to t
+    for i in 0..vals.len() {
+        if vals[i].0 <= t && t < vals[(i + 1) % vals.len()].0 {
             return vals[i];
         }
     }
-
-    vals[vals.len() - 1]
+    // return last tempo tuple
+    return vals[vals.len() - 1]
 }
 
 pub fn remove_duplicates(vals: &[i32]) -> Vec<i32> {
