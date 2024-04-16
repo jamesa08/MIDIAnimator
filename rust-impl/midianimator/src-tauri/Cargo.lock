@@ -3,6 +3,19 @@
 version = 3
 
 [[package]]
+name = "MIDIAnimator"
+version = "0.5.0"
+dependencies = [
+ "lazy_static",
+ "midly",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -61,19 +74,6 @@ name = "anyhow"
 version = "1.0.81"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0952808a6c2afd1aa8947271f3a60f1a6763c7b912d210184c5149b5cf147247"
-
-[[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "lazy_static",
- "midly",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
-]
 
 [[package]]
 name = "atk"
