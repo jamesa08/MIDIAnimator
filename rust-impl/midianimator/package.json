@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@tauri-apps/api": "^1.5.5",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
@@ -12,7 +13,8 @@
     "@types/react-dom": "^18.2.23",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
+    "react-scripts": "^5.0.1",
+    "reactflow": "^11.11.3",
     "rete": "^2.0.3",
     "rete-area-plugin": "^2.0.4",
     "rete-connection-plugin": "^2.0.1",
