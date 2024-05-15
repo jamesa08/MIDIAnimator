@@ -8,6 +8,7 @@ import socket
 import json
 import threading
 import types
+import re
 import bpy
 
 class ServerMeta(type):
@@ -58,11 +59,39 @@ class Server(metaclass=ServerMeta):
     def receive_messages(self):
         while self.socket:
             try:
-                data = self.socket.recv(1024).decode()
-                if not data:
-                    raise Exception("Server closed the connection")
+                data = b''
                 
-                print(data)
+                # turn off blocking, so we can manually check if we have the full message
+                self.socket.setblocking(False)
+
+                # need to loop over until we find the full `uuid` string with ending brace `}`. This is to ensure we have read the full message.
+                # if the message itself contains a uuid message, this is not a valid message.
+                while True:
+                    try: 
+                        chunk = self.socket.recv(1024)
+                        if not chunk:
+                            raise Exception("Server closed the connection")
+                        
+                        data += chunk
+
+                    except socket.error as e:
+                        # if the socket has no data available, ignore the exception
+                        if e.errno != socket.errno.EWOULDBLOCK:
+                            raise e
+                        continue
+
+
+                    # splits the string up by the end of the json object using regex (as we can use () to capture the split string in the result)
+                    # then we filter out any empty strings from the split
+                    
+                    try:
+                        check = list(filter(None, re.split('("})', data.decode("utf-8").strip())))
+                        # two checks to see if we have the full message, if we have "uuid": and "} (don't particularly care about the rest of the uuid)
+                        if len(check) >= 2 and check[-1] == '"}' and '"uuid":' in check[-2] or not chunk:
+                            break
+                    except Exception as e:
+                        print("error", e)
+                
                 raw_message = json.loads(data.strip())
                 # if raw_message["sender"] == "server":
                 print(raw_message)
@@ -77,24 +106,18 @@ class Server(metaclass=ServerMeta):
                     # functions = {name: obj for name, obj in lv.items() if callable(obj)}
                     # res = functions["execution"]()
                     # print(f"RES {res}")
+                    
+                    compiled_code = compile(raw_message['message'], '<string>', 'exec')  # compile the code string as a code object
 
-                    # Compile the code string as a code object
-                    compiled_code = compile(raw_message['message'], '<string>', 'exec')
+                    ipc_runtime = types.ModuleType('ipc_runtime')  # create a new module object
 
-                    # Create a new module object
-                    ipc_runtime = types.ModuleType('ipc_runtime')
+                    ipc_runtime.__dict__['bpy'] = bpy  # add bpy to module
 
-                    # add bpy to the module 
-                    ipc_runtime.__dict__['bpy'] = bpy
+                    exec(compiled_code, ipc_runtime.__dict__) # execute the code object in the context of the new module
 
-                    # Execute the code object in the context of the new module
-                    exec(compiled_code, ipc_runtime.__dict__)
+                    execute_func = ipc_runtime.execute   # retrieve the functions from the module
 
-                    # Retrieve the functions from the module
-                    execution_func = ipc_runtime.execution
-
-                    # Call the functions
-                    res = execution_func()
+                    res = execute_func()
 
                     if res:
                         self.send_message(res, raw_message["uuid"])
