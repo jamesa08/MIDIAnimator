@@ -54,7 +54,12 @@ class Server(metaclass=ServerMeta):
             raise Exception("Not connected to server")
         message_json = json.dumps({"sender": "client", "message": message, "uuid": uuid}) + '\n'
         print(message_json)
-        self.socket.sendall(message_json.encode())
+        data = message_json.encode()
+        
+        chunk_size = 4096  # 4 KiB
+        for i in range(0, len(data), chunk_size):
+            self.socket.sendall(data[i:i+chunk_size])
+
 
     def receive_messages(self):
         while self.socket:
