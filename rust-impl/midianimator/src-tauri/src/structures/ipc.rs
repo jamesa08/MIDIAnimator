@@ -94,8 +94,6 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                 
                 // convert the accumulated data to a string and parse it as JSON
                 if let Ok(data_str) = String::from_utf8(data.clone()) {
-                    // println!("{:?}", data_str);
-                    
                     // similar code is in python add-on
                     let check: Vec<&str> = data_str.split("\"}").filter(|s| !s.is_empty()).collect();
                     if check.len() >= 2 && check.last() == Some(&"\n") && check[check.len() - 2].contains("\"uuid\":") {
@@ -112,12 +110,16 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                             if let Some(tx) = tx {
                                 tx.send(message.message).unwrap();
                             }
+                            // remove remaining data
+                            // FIXME: (might want to remove just the message, but idk just yet)
+                            data.clear();
                         }
                     }
                 }
             }
             Err(e) => {
                 println!("Error in handle_client(): {}", e);
+                data.clear();
                 break;
             }
         }
