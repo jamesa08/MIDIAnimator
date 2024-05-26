@@ -1,5 +1,5 @@
 #[cfg(test)]
-// run from /src-tauri 
+// run from /src-tauri
 // cargo test
 mod tests {
     // use MIDIAnimator::structures::ipc;

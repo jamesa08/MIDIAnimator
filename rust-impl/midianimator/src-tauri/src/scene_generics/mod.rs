@@ -1,7 +1,6 @@
 // use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Vector3 {
     pub x: f32,
@@ -44,7 +43,6 @@ pub struct AnimCurve {
     pub extrapolation: String,
     pub keyframe_points: Vec<KeyframePoint>,
     pub range: Vec<f32>,
-
 }
 
 // MARK: - BlendShape

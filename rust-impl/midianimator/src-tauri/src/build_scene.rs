@@ -1,8 +1,7 @@
 use crate::scene_generics;
 use crate::structures::ipc;
-use std::collections::HashMap;
 use serde_json::{self, Value};
-
+use std::collections::HashMap;
 
 static SCENE_BUILDER_PY: &str = include_str!("blender_python/blender_scene_builder.py");
 static SCENE_SENDER_PY: &str = include_str!("blender_python/blender_scene_sender.py");
@@ -21,7 +20,8 @@ pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
     if let Some(scene_map) = json_data.as_object() {
         for (scene_name, scene_data) in scene_map {
             if let Some(object_groups_map) = scene_data["object_group"].as_object() {
-                let object_groups: Vec<scene_generics::ObjectGroup> = object_groups_map.iter()
+                let object_groups: Vec<scene_generics::ObjectGroup> = object_groups_map
+                    .iter()
                     .map(|(group_name, object_group_data)| {
                         let objects: Vec<scene_generics::Object> = object_group_data["objects"]
                             .as_array()
@@ -54,48 +54,86 @@ pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
                                             z: scale[2].as_f64()? as f32,
                                         },
                                         blend_shapes: scene_generics::BlendShapes {
-                                            keys: blend_shapes["keys"].as_array()?.iter().filter_map(|key| key.as_str().map(|s| s.to_string())).collect(),
-                                            reference: blend_shapes["reference"].as_str().map(|s| s.to_string()),
-                                        },
-                                        anim_curves: anim_curves.iter().filter_map(|curve| {
-                                            let array_index = curve["array_index"].as_u64()? as u32;
-                                            let auto_smoothing = curve["auto_smoothing"].as_str()?.to_string();
-                                            let data_path = curve["data_path"].as_str()?.to_string();
-                                            let extrapolation = curve["extrapolation"].as_str()?.to_string();
-                                            let range = curve["range"].as_array()?.iter().filter_map(|r| r.as_f64().map(|v| v as f32)).collect::<Vec<_>>();
-                                            let keyframe_points = curve["keyframe_points"].as_array()?.iter().filter_map(|kf| {
-                                                Some(scene_generics::KeyframePoint {
-                                                    amplitude: kf["amplitude"].as_f64()? as f32,
-                                                    back: kf["back"].as_f64()? as f32,
-                                                    easing: kf["easing"].as_str()?.to_string(),
-                                                    handle_left: vec! {
-                                                        kf["handle_left"][0].as_f64()? as f32,
-                                                        kf["handle_left"][1].as_f64()? as f32,
-                                                    },
-                                                    handle_left_type: kf["handle_left_type"].as_str()?.to_string(),
-                                                    handle_right: vec! {
-                                                        kf["handle_right"][0].as_f64()? as f32,
-                                                        kf["handle_right"][1].as_f64()? as f32,
-                                                    },
-                                                    handle_right_type: kf["handle_right_type"].as_str()?.to_string(),
-                                                    interpolation: kf["interpolation"].as_str()?.to_string(),
-                                                    co: vec! {
-                                                        kf["co"][0].as_f64()? as f32,
-                                                        kf["co"][1].as_f64()? as f32,
-                                                    },
-                                                    period: kf["period"].as_f64()? as f32,
+                                            keys: blend_shapes["keys"]
+                                                .as_array()?
+                                                .iter()
+                                                .filter_map(|key| {
+                                                    key.as_str().map(|s| s.to_string())
                                                 })
-                                            }).collect();
+                                                .collect(),
+                                            reference: blend_shapes["reference"]
+                                                .as_str()
+                                                .map(|s| s.to_string()),
+                                        },
+                                        anim_curves: anim_curves
+                                            .iter()
+                                            .filter_map(|curve| {
+                                                let array_index =
+                                                    curve["array_index"].as_u64()? as u32;
+                                                let auto_smoothing =
+                                                    curve["auto_smoothing"].as_str()?.to_string();
+                                                let data_path =
+                                                    curve["data_path"].as_str()?.to_string();
+                                                let extrapolation =
+                                                    curve["extrapolation"].as_str()?.to_string();
+                                                let range = curve["range"]
+                                                    .as_array()?
+                                                    .iter()
+                                                    .filter_map(|r| r.as_f64().map(|v| v as f32))
+                                                    .collect::<Vec<_>>();
+                                                let keyframe_points = curve["keyframe_points"]
+                                                    .as_array()?
+                                                    .iter()
+                                                    .filter_map(|kf| {
+                                                        Some(scene_generics::KeyframePoint {
+                                                            amplitude: kf["amplitude"].as_f64()?
+                                                                as f32,
+                                                            back: kf["back"].as_f64()? as f32,
+                                                            easing: kf["easing"]
+                                                                .as_str()?
+                                                                .to_string(),
+                                                            handle_left: vec![
+                                                                kf["handle_left"][0].as_f64()?
+                                                                    as f32,
+                                                                kf["handle_left"][1].as_f64()?
+                                                                    as f32,
+                                                            ],
+                                                            handle_left_type: kf
+                                                                ["handle_left_type"]
+                                                                .as_str()?
+                                                                .to_string(),
+                                                            handle_right: vec![
+                                                                kf["handle_right"][0].as_f64()?
+                                                                    as f32,
+                                                                kf["handle_right"][1].as_f64()?
+                                                                    as f32,
+                                                            ],
+                                                            handle_right_type: kf
+                                                                ["handle_right_type"]
+                                                                .as_str()?
+                                                                .to_string(),
+                                                            interpolation: kf["interpolation"]
+                                                                .as_str()?
+                                                                .to_string(),
+                                                            co: vec![
+                                                                kf["co"][0].as_f64()? as f32,
+                                                                kf["co"][1].as_f64()? as f32,
+                                                            ],
+                                                            period: kf["period"].as_f64()? as f32,
+                                                        })
+                                                    })
+                                                    .collect();
 
-                                            Some(scene_generics::AnimCurve {
-                                                array_index,
-                                                auto_smoothing,
-                                                data_path,
-                                                extrapolation,
-                                                keyframe_points,
-                                                range,
+                                                Some(scene_generics::AnimCurve {
+                                                    array_index,
+                                                    auto_smoothing,
+                                                    data_path,
+                                                    extrapolation,
+                                                    keyframe_points,
+                                                    range,
+                                                })
                                             })
-                                        }).collect(),
+                                            .collect(),
                                     })
                                 } else {
                                     None
@@ -122,14 +160,18 @@ pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
         panic!("Invalid scene data format");
     }
 
-    return scenes
+    return scenes;
 }
 
-
-pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> std::io::Result<()> {
+pub async fn send_scene_data(
+    scenes: HashMap<String, scene_generics::Scene>,
+) -> std::io::Result<()> {
     let json_string = serde_json::to_string(&scenes).unwrap();
-    
-    let injected_script = SCENE_SENDER_PY.replace("JSON_DATA = r\"\"\"\"\"\"", &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string));
+
+    let injected_script = SCENE_SENDER_PY.replace(
+        "JSON_DATA = r\"\"\"\"\"\"",
+        &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string),
+    );
 
     let result = match ipc::send_message(injected_script.to_string()).await {
         Some(data) => data,
@@ -137,7 +179,7 @@ pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> 
             panic!("Error sending scene data");
         }
     };
-    
+
     println!("{:?}", result);
 
     if result != "OK" {

@@ -1,7 +1,7 @@
 // utils/gm_instrument_map.rs
 
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 
 // https://docs.rs/lazy_static/latest/lazy_static/
 // initializing a static hashmap will need to use lazy_static
@@ -136,7 +136,6 @@ lazy_static! {
         (126, "Applause"),
         (127, "Gunshot")
     ]);
-
     pub static ref GM_PERC_INST_NOTES: HashMap<i32, &'static str> = HashMap::from([
         (35, "Acoustic Bass Drum"),
         (36, "Bass Drum 1"),
