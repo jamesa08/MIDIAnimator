@@ -1,3 +1,34 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.mac-traffic-lights-container {
+    padding: 20px;
+    display: flex;
+    flex-direction: row;
+    justify-content: left;
+    gap: 8px;
+}
+
+.mac-traffic-light {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.red {
+    background-color: #FF5F57;
+}
+
+.yellow {
+    background-color: #FEBC2E;
+}
+
+.green {
+    background-color: #28C840;
+}
+
+.menu-bar {
+    background-color: white;
+}

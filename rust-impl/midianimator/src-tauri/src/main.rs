@@ -17,22 +17,22 @@ lazy_static! {
 async fn main() {
     ipc::start_server();
 
-    // tauri::Builder::default()
-    // .run(tauri::generate_context!())
-    // .expect("error while launching MIDIAnimator!");
+    tauri::Builder::default()
+    .run(tauri::generate_context!())
+    .expect("error while launching MIDIAnimator!");
 
     // count down timer
-    let mut count = 3;
-    while count > 0 {
-        println!("waiting {}", count);
-        count -= 1;
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    let scenes = build_scene::get_scene_data().await;
+    // let mut count = 3;
+    // while count > 0 {
+    //     println!("waiting {}", count);
+    //     count -= 1;
+    //     std::thread::sleep(std::time::Duration::from_secs(1));
+    // }
+    // let scenes = build_scene::get_scene_data().await;
 
     // println!("{:?}", scenes);
 
-    build_scene::send_scene_data(scenes).await;
+    // build_scene::send_scene_data(scenes).await;
 
 
 //     let message = r#"def get_object_name():
@@ -45,15 +45,15 @@ async fn main() {
 //     if let Some(response) = ipc::send_message(message.to_string()).await {
 //         println!("Received response: {}", response);
 //     }
-    let mut count = 0;
+    // let mut count = 0;
 
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if count == 100 {
-            break;
-        }
-        count += 1;
-    }
+    // loop {
+    //     std::thread::sleep(std::time::Duration::from_millis(500));
+    //     if count == 100 {
+    //         break;
+    //     }
+    //     count += 1;
+    // }
 }
 
 

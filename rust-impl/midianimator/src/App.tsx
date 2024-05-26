@@ -1,8 +1,9 @@
+import MenuBar from "./ui-components/MenuBar";
+
 function App() {
     return (
-        <div className="text-yellow-400">
-            Hello World!
-        </div>
+        <MenuBar />
+        
     );
 }
 
