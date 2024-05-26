@@ -3,19 +3,18 @@
 #![allow(non_snake_case)]
 
 use lazy_static::lazy_static;
-use tauri::{command, generate_handler, Builder};
+// use tauri::{command, generate_handler, Builder};
 
-use MIDIAnimator::structures::midi::MIDIFile;
+// use MIDIAnimator::structures::midi::MIDIFile;
 use MIDIAnimator::structures::ipc;
+use MIDIAnimator::build_scene;
 
 lazy_static! {
     static ref MIDI_FILE_STR: &'static str = "/Users/james/github/MIDIFiles/testMidi/test_midi_2_rs_4_14_24.mid";
 }
 
-
 #[tokio::main]
 async fn main() {
-    
     ipc::start_server();
 
     // tauri::Builder::default()
@@ -29,17 +28,23 @@ async fn main() {
         count -= 1;
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
+    let scenes = build_scene::get_scene_data().await;
 
-    let message = r#"def get_object_name():
-    return bpy.data.objects['Cube'].name_full
+    // println!("{:?}", scenes);
 
-def execution():
-    return get_object_name()
-"#;
+    build_scene::send_scene_data(scenes).await;
 
-    if let Some(response) = ipc::send_message(message.to_string()).await {
-        println!("Received response: {}", response);
-    }
+
+//     let message = r#"def get_object_name():
+//     return bpy.data.objects['Cube'].name_full
+
+// def execution():
+//     return get_object_name()
+// "#;
+
+//     if let Some(response) = ipc::send_message(message.to_string()).await {
+//         println!("Received response: {}", response);
+//     }
     let mut count = 0;
 
     loop {
