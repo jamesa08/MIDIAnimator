@@ -4,178 +4,146 @@ from mathutils import Vector, Euler
 from dataclasses import dataclass
 from numpy import add as npAdd
 from ..utils.blender import *
+from ..data_structures.midi import MIDINote
 import bpy
 
-@dataclass(init=False)
-class BlenderObject:
-    obj: bpy.types.Object
-    noteNumbers: tuple
-    noteOnCurves: ObjectFCurves
-    noteOffCurves: ObjectFCurves
-        
-    # how many frames before a note is hit does this need to start animating
-    _startRangeOn: float
-    # how many frames after a note is hit does it continue animating
-    _endRangeOn: float
+@dataclass
+class Keyframe:
+    """A simple keyframe data structure.
+    :param float frame: the frame value of the keyframe (x)
+    :param float value: the value of the keyframe (y)
+    """
+    frame: float  # frame of the keyframe
+    value: float  # value of the keyframe
 
-    def __init__(self, obj: bpy.types.Object, noteNumbers: tuple, noteOnCurves: ObjectFCurves, noteOffCurves: ObjectFCurves):
-        self.obj = obj
-        self.noteNumbers = noteNumbers
-        self.noteOnCurves = noteOnCurves
-        self.noteOffCurves = noteOffCurves
-        self._startRangeOn, self._endRangeOn = self._calculateOffsets(type="note_on")
-        self._startRangeOff, self._endRangeOff = self._calculateOffsets(type="note_off")
+    @property
+    def co(self):
+        return (self.frame, self.value)
 
-    def _calculateOffsets(self, type: str="note_on"):
-        # when playing a note, calculate the offset from the note hit time to the earliest animation for the note
-        # and the latest animation for the note
-        combined = []
-        if type == "note_on" and self.obj.midi.note_on_curve:
-            combined = self.noteOnCurves.location + self.noteOnCurves.rotation + self.noteOnCurves.customProperties + self.noteOnCurves.shapeKeys
-        elif type == "note_off" and self.obj.midi.note_off_curve:
-            combined = self.noteOffCurves.location + self.noteOffCurves.rotation + self.noteOffCurves.customProperties + self.noteOffCurves.shapeKeys
-        
-        start, end = None, None
-        
-        for fCrv in combined:
-            curveStart, curveEnd = fCrv.range()
-            if start is None or curveStart < start:
-                start = curveStart
-            if end is None or curveEnd > end:
-                end = curveEnd
-        
-        return start, end
+    def __hash__(self) -> int:
+        return hash((self.frame, self.value))
 
-    def rangeOn(self) -> Tuple[float, float]:
-        """
-        :return: start and end offsets for playing the **note on** curve
-        """
-        return self._startRangeOn, self._endRangeOn
-    
-    def rangeOff(self) -> Tuple[float, float]:
-        """
-        :return: start and end offsets for playing the **note off** curve
-        """
-        return self._startRangeOff, self._endRangeOff
+@dataclass
+class KeyframeSeconds:
+    """A simple keyframe data structure for time in seconds.
+    :param float seconds: the seconds value of the keyframe (x)
+    :param float value: the value of the keyframe (y)
+    """
+    seconds: float  # seconds of the keyframe
+    value: float  # value of the keyframe
+
+    @property
+    def co(self):
+        return (self.seconds, self.value)
+
+    def __hash__(self) -> int:
+        return hash((self.seconds, self.value))
 
 
 @dataclass
-class ObjectFCurves:
-    location: Tuple[bpy.types.FCurve] = ()
-    rotation: Tuple[bpy.types.FCurve] = ()
-    customProperties: Tuple[bpy.types.FCurve] = ()
+class DummyFCurve:
+    keyframe_points: Tuple[Keyframe]
+    array_index: int
+    data_path: str
     
-    # key= the "to keyframe" object's shape key's name, value= a list \
-    # (index 0 = reference object shape key FCurves, index 1 = the "to keyframe" object's shape key)
-    shapeKeysDict: Dict[str, List[bpy.types.FCurve, bpy.types.ShapeKey]] = ()
-    shapeKeys: Tuple[bpy.types.FCurve] = ()  # a list of the reference object's shape keys FCurves
+    @staticmethod
+    def range():
+        return 0, 1
+    
+    def evaluate(self, frame):
+        return self.keyframe_points[0].value
 
-    origLoc: Vector = Vector()
-    origRot: Euler = Euler()
-
-class FCurveProcessor:
+@dataclass(init=False)
+class ObjectWrapper:
     obj: bpy.types.Object
-    locationObject: Optional[bpy.types.Object]
-    fCurves: ObjectFCurves
-    location: Optional[Vector]
-    rotation: Optional[Euler]
+    noteNumbers: Tuple[int]
     
-    # key= custom property name, value=int or float (the val to be keyframed)
-    customProperties: Dict[str, Union[int, float]]
-    
-    # key= the "to keyframe" object's shape key's name, value= a float (the val to be keyframed)
-    shapeKeys: Dict[str, float]
+    noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
+    noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]
 
-    def __init__(self, obj: bpy.types.Object, fCurves: ObjectFCurves, locationObject: Optional[bpy.types.Object] = None):
+    # these are for all the animation FCurves assigned to the object (beginning frame, ending frame)
+    startFrame: float
+    endFrame: float
+
+    def __init__(self, obj: bpy.types.Object, noteNumbers: Tuple[int], noteOnCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]], noteOffCurves: List[Union[bpy.types.FCurve, ObjectShapeKey]]):
+        """object wrapper for `bpy.types.Object` objects.
+        this allows us to store data with the blender objects (such as FCurve data, note numbers, MIDI information, etc)
+
+        :param bpy.types.Object obj: Blender object
+        :param Tuple[int] noteNumbers: a tuple of note numbers of type `int`.
+        :param List[Union[bpy.types.FCurve, ObjectShapeKey]] noteOnCurves: A list of NoteOn curves dervided from `obj`.
+        :param List[Union[bpy.types.FCurve, ObjectShapeKey]] noteOffCurves: A list of NoteOff curves dervided from `obj`.
+        """
         self.obj = obj
-        self.fCurves = fCurves
-        self.locationObject = locationObject
-        # when None no keyframe of that type
-        self.location = Vector()
-        self.rotation = Euler()
-        self.customProperties = {}
-        self.shapeKeys = {}
-
-    def applyFCurve(self, delta: int):
-        if len(self.fCurves.location) != 0:
-            if self.locationObject is None:
-                # location = self.obj.location.copy()
-                location = self.location
-            else:
-                location = self.locationObject.location.copy()
-            
-            for fCurve in self.fCurves.location:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                location[i] = val
-            
-            # set the values on internal location
-            self.location = location
-
-        if len(self.fCurves.rotation) != 0:
-            # if self.rotation is None:
-            #     rotation = self.obj.rotation_euler.copy()
-            # else:
-            #     rotation = self.rotation
-            if self.rotation is None:
-                rotation = Euler()
-            else:
-                rotation = self.rotation
-            
-            for fCurve in self.fCurves.rotation:
-                i = fCurve.array_index
-                val = fCurve.evaluate(delta)
-                rotation[i] += val
-
-            # set the values on internal rotation
-            self.rotation = rotation
-
-        if len(self.fCurves.customProperties) != 0:
-            for fCurve in self.fCurves.customProperties:
-                val = fCurve.evaluate(delta)
-                if fCurve.data_path in self.customProperties:
-                    self.customProperties[fCurve.data_path] += val
-                else:
-                    self.customProperties[fCurve.data_path] = val
-
-        if len(self.fCurves.shapeKeysDict) != 0:
-            for shapeName in self.fCurves.shapeKeysDict:
-                val = self.fCurves.shapeKeysDict[shapeName][0].evaluate(delta)  # we want to get only the FCurve from the dict (index 0 is the FCurve)
-
-                if shapeName in self.shapeKeys:
-                    self.shapeKeys[shapeName] += val
-                else:
-                    self.shapeKeys[shapeName] = val
-
-    def insertKeyFrames(self, frame: int):
-        if len(self.fCurves.location) != 0:
-            # summed = sum([processor.location for processor in self.linkedProcessors])  future update
-            if self.locationObject is None:
-                self.obj.location = npAdd(self.location, self.fCurves.origLoc)
-            else:
-                self.obj.location = self.location
-
-            self.obj.keyframe_insert(data_path="location", frame=frame)
-            setKeyframeInterpolation(self.obj, "BEZIER")
         
-        if len(self.fCurves.rotation) != 0:
-            self.obj.rotation_euler = npAdd(self.rotation, self.fCurves.origRot)
-            self.obj.keyframe_insert(data_path="rotation_euler", frame=frame)
+        self.noteNumbers = noteNumbers
         
-        if len(self.fCurves.customProperties) != 0:
-            for data_path in self.customProperties:
-                val = self.customProperties[data_path]
-                exec(f"bpy.context.scene.objects['{self.obj.name}']{data_path} = {val}")
-                self.obj.keyframe_insert(data_path=data_path, frame=frame)
+        self.noteOnCurves = sorted(noteOnCurves, key=lambda x: f"{x.data_path}_{x.array_index}")
+        self.noteOffCurves = sorted(noteOffCurves, key=lambda x: f"{x.data_path}_{x.array_index}")
+        
+        self.startFrame, self.endFrame = None, None
 
-        if len(self.fCurves.shapeKeys) != 0:
-            for shapeName in self.fCurves.shapeKeysDict:
-                shapeKey = self.fCurves.shapeKeysDict[shapeName][1]  # index 1 is the shape Key to keyframe
-                shapeKey.value = self.shapeKeys[shapeName]
-                shapeKey.keyframe_insert(data_path="value", frame=frame)
+        # make sure object does not use itself as a note on/off curve for the keyframed type
+        # make sure obj has at least a note on/off curve for the keyframed type
+        # make sure the FCurves are valid
+        # if obj.midi.anim_type == "keyframed":
+        #     assert obj.midi.note_on_curve != obj and obj.midi.note_off_curve != obj, f"Object '{obj.name}' cannot use itself as an animation curve (Note On/Off)!"
+        #     assert obj.midi.note_on_curve is not None or obj.midi.note_off_curve is not None, f"Object '{obj.name}' does not have a Note On/Off animation curve! To use the Keyframed Animation type, you need to have a Note On curve or a Note Off curve."
+        #     assert validateFCurves(noteOnCurves, noteOffCurves) is not False, "Note On FCurve object and the Note Off FCurve object have the different data paths (or extraneous data paths)! Make sure to match the Note On and Note Off data paths."
+        self._calculateOffsets()
+                
+        # these need to be copied at the first keyframe
+        self.initalLoc = obj.location.copy()
+        self.initalRot = obj.rotation_euler.copy()
+        self.initalScl = obj.scale.copy()
+    
+    def _calculateOffsets(self):
+        """mutating function that calculates the range of the Note On FCurves (how long each FCurve on the object will be activelty moving)
+        
+        :return: None
+        """
 
-    def __repr__(self) -> str:
-        return f"{self.obj} {self.locationObject} {self.fCurves} {self.location} {self.rotation} {self.customProperties} {self.shapeKeys}"
+        for noteOnCurve in self.noteOnCurves:
+            curveStart, curveEnd = noteOnCurve.range()
+            if self.startFrame is None or curveStart < self.startFrame:
+                self.startFrame = curveStart
+            if self.endFrame is None or curveEnd > self.endFrame:
+                self.endFrame = curveEnd
+
+    def __hash__(self):
+        return hash(repr(self.obj.id_data))
+
+@dataclass
+class ObjectShapeKey:
+    """Wrapper for a `bpy.types.Object`'s Shape Key
+    
+    :param str name: name of the shape key
+    :param bpy.types.FCurve referenceCurve: the reference shape key (with the reference/animation curve)
+    :param bpy.types.ShapeKey targetKey: the target shape key, this will be keyframed
+    :param str data_path: data path for the shape key (needed for keyframing)
+    :param int array_index: array index for the shape key (needed for keyframing)
+    """
+    name: str = ""
+    referenceCurve: bpy.types.FCurve = None
+    targetKey: bpy.types.ShapeKey = None
+
+    data_path: str = referenceCurve.data_path if referenceCurve is not None else ""
+    array_index: int = 0
+
+    def __hash__(self) -> int:
+        return hash((self.referenceCurve, self.targetKey))
+    
+    def range(self) -> Tuple[float, float]:
+        """returns the range (total length) of the reference curve
+
+        :return Tuple[float, float]: start time and end time
+        """
+        return self.referenceCurve.range()
+    
+    @property
+    def keyframe_points(self):
+        return self.referenceCurve.keyframe_points
+
 
 @dataclass
 class FrameRange:
@@ -184,31 +152,64 @@ class FrameRange:
     """
     startFrame: int
     endFrame: int
-    bObj: BlenderObject
-    type: str = "note_on"
+    wpr: ObjectWrapper
 
-    def __post_init__(self):
-        self.cachedObj: Optional[bpy.types.Object] = None
-
-    def __lt__(self, other: FrameRange):
+    def __lt__(self, other: FrameRange) -> FrameRange:
         return self.startFrame < other.startFrame
 
 @dataclass(init=False)
 class CacheInstance:
-    _cache = List[bpy.types.Object]
+    """CacheInstance handles caching objects by finding avaialbe frame times. If there are not any avaiable frame times, it will create a new object"""
+    _cache: Dict[int, List[FrameRange]]
 
-    def __init__(self, objs: List[bpy.types.Object]) -> None:
-        """initializes a type List[bpy.types.Object] to the cache instance."""
-        self._cache = objs
-
-    def returnObject(self, obj: bpy.types.Object) -> None:
-        """returns a bpy.types.Object back to the cache. This is the method to use when you are done with the object"""
-        self._cache.append(obj)
+    def __init__(self):
+        self._cache = {}
     
-    def getObject(self) -> bpy.types.Object:
-        """takes out a bpy.types.Object from the cache. This is the method to use when you want to take an object out
-        
-        :return: the reusable bpy.types.Object
+    def findRange(self, frameRange: FrameRange):
+        """finds a index for the given frameRange
+
+        :param FrameRange frameRange: the FrameRange to insert
+        :return int: the index key at which the FrameRange will be inserted into self._cache
         """
-        obj = self._cache.pop()
-        return obj
+        for cacheIndex in self._cache:
+            cacheRanges = self._cache[cacheIndex]
+            
+            latestRange = cacheRanges[-1]
+            if latestRange.endFrame > frameRange.startFrame:
+                # this spot is already used, continue on with the loop
+                continue
+            else:
+                # this spot is available and can be used 
+                return cacheIndex
+        
+        
+        # if we haven't exited with return, then we need to add a new object (addObject will append it to the list)
+        index = len(self._cache)
+        self._cache[index] = []
+        
+        return index
+    
+    def addObject(self, frameRange: FrameRange):
+        """adds FrameRange to the cache."""
+        indexToAdd = self.findRange(frameRange)
+        self._cache[indexToAdd].append(frameRange)
+
+    def getCache(self):
+        """gets the entire cache
+
+        :return Dict[int, List[FrameRange]]: the cache instance dictionary with all of the indicies and `FrameRange`s
+        """
+        return self._cache
+
+    def getStartTime(self):
+        """gets the first start time in the cache.
+        If there isn't any data yet, it will be 0.
+
+        :return float: the first start time
+        """
+        if len(self._cache) == 0:
+            return 0
+        
+        # this gets the key of 0 of the first element of the list
+        # this doesnt need to be computed every time.. is there a way around this?
+        return self._cache[0][0].startFrame

@@ -4,7 +4,7 @@
 
 There are 2 different approaches to driving a music animation:
 
-1. FFT based approach- where you input an audio file (.wav, .mp3, etc) and have the visual elements react to the audio data. The audio data is filtered with steep inverse notch filters on selected frequencies. With the filtered data, you can then use the amplitude of the signal to drive animation parameters.
+1. FFT based approach- where you input an audio file (.wav, .mp3, etc) and have the visual elements react to the audio data. The audio data is filtered with steep inverse notch filters on selected frequencies. With the filtered data, you can then use the amplitude of the signal to drive animation parameters. This feature is [built into Blender.](https://docs.blender.org/manual/en/latest/editors/graph_editor/fcurves/editing.html#bake-sound-to-f-curves)
 
 2. Preactive approach using a MIDI file. A MIDI file is read in and broken down into its components. Animation curves get “copied” throughout the duration of the MIDI file, based on sets of parameters, typically determined by the notes in the MIDI file. The MIDI file determines when animations are being copied. This is the way MIDIAnimator works.
 
@@ -46,28 +46,15 @@ To start adding instruments, instance a `MIDIAnimatorNode()` object
 
 * Use the `MIDIAnimatorNode.addInsturment()` method to add an instrument.
     * Takes a `MIDITrack`, `bpy.types.Collection`.
-	* On instrument creation, `makeObjToFCurvesDict()` is called
-	    * Gets each Blender Object in a collection, gets their FCurves and creates `ObjectFCurves()` objects
-	* & `createNoteToBlenderObject()` is called
-	    *  Gets all Blender Objects in a collection, and creates `BlenderObject()` (a wrapper for a `bpy.types.Object`) objects, 
-        & adds their corresponding `ObjectFCurves` objects
 
 Call the `MIDIAnimatorNode.animate()` method to animate all instruments.
 
 * Given each instrument in the `MIDIAnimatorNode()` instruments list: 
-    * `preFrameLoop()` is called 
-        * `createFrameRanges()` is called
-        	* creates `FrameRange()` objects with the starting and ending frame for each note (based on its FCurve), and finds its corresponding Blender object.
-        * `preAnimate()` is called
-        	* `pass` by default.
-    * `animateFrames()` is called
-    	* `instrument.updateActiveObjectList()` gets called for every frame in the MIDI file
-    		* Removes and adds objects in the list of things being animated
-    	* `instrument.animate()` gets called for every frame in the MIDIFile
-    		* Looks at all objects in the active object list	
-    		* Loops over all objects, and applies the animation to them
-    * `postFrameLoop()` is called
-    	* Deletes all unnecessary information left over (clears all instance variables)
+    * `preAnimate()` is called
+        * `pass` by default.
+    * `instrument.animate()` gets called for every note in the MIDIFile
+        * Takes note and caclulates its keyframe data for it (applies time mappers, velocity, etc.)
+        * Adds together in the list of already created keyframes
 
 ## Dealing with overlapping animation:
 In Figure A, we are given a simple dampened oscillation function.

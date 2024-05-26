@@ -1,15 +1,8 @@
-# __all__ = [
-#     "noteToName",
-#     "nameToNote",
-#     "gmProgramToName",
-#     "removeDuplicates",
-#     "rotateAroundCircle",
-# ]
-
 from . gmInstrumentMap import _gmInst
-from math import sin, cos, pi, e, sqrt, asin, log
+from math import sin, cos, pi, e, sqrt, asin, atan, log
 from typing import Tuple, List
 from re import search as reSearch
+from mathutils import Vector
 
 
 def noteToName(nVal: int) -> str:
@@ -39,7 +32,13 @@ def nameToNote(nStr: str) -> int:
 
 
 def convertNoteNumbers(inputStr: str):
-    """converts a string to an actual type"""
+    """converts a note number string "c4" or "60" to a MIDI Note number (integer)
+    Will work with more than 1 input if the values are seperated via commas
+
+    :param str inputStr: the input note number string, e.g., "c3" or "60"
+    :raises ValueError: if the string is invalid
+    :return int or Tuple[int]: a MIDI Note number (int)
+    """
     if reSearch("^[0-9]+$", inputStr):
         return (int(inputStr),)
     elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
@@ -50,7 +49,13 @@ def convertNoteNumbers(inputStr: str):
         raise ValueError(f"'{inputStr}' has an invalid note number or name.")
 
 def typeOfNoteNumber(inputStr: str):
-    """tells you if a string is a MIDI note number or a name of a note"""
+    """Figures out if a string is a MIDI note number or a name of a note
+    Will work with more than 1 input if the values are seperated via commas
+
+    :param str inputStr: the input note number string, e.g., "c3" or "60", or "c4, 60"
+    :raises ValueError: if the string is invalid
+    :return str or Tuple[str]: returns "note" or "name" for the corresponding values, or a tuple if there are multiple values seperated by commas 
+    """
     if reSearch("^[0-9]+$", inputStr):
         return ("note",)
     elif reSearch("^[A-Ga-g]-?#?-?[0-8]+$", inputStr):
@@ -103,42 +108,137 @@ def removeDuplicates(vals: list) -> list:
     return sorted([n for i, n in enumerate(vals) if n not in vals[:i]])
 
 def rotateAroundCircle(radius, angle) -> Tuple[int]:
-    """Takes a radius (x) and an angle (y) and returns it's X & Y."""
+    """Takes a radius (x) and an angle (y) and will return its X and Y.
+
+    :param float radius: radius of the circle
+    :param float angle: angle of the circle
+    :return Tuple[int]: X and Y of the point
+    """
     x = cos(angle) * radius
     y = sin(angle) * radius
     
     return x, y
+
+def animateAlongTwoPoints(firstPoint: Vector, secondPoint: Vector, xComponent: float):
+    x1, y1 = firstPoint.x, firstPoint.y
+    x2, y2 = secondPoint.x, secondPoint.y
+
+    angle = 2*atan((y2-y1)/(x2-x1 + sqrt((x2-x1)**2 + (y2-y1)**2)))
+    
+    xCos = cos(angle) * xComponent + x1
+    ySin = sin(angle) * xComponent + y1
+
+    return xCos, ySin
+
 
 # All mapRange() functions equations originate from here:
 # https://www.desmos.com/calculator/pw9tgtcq16
 # thank you to rgm on Stack Overflow for the graph
 # https://stackoverflow.com/questions/5731863/mapping-a-numeric-range-onto-another#comment119982185_5732390
 
-def mapRangeLinear(value, inMin, inMax, outMin, outMax):
+def mapRangeLinear(value: float, inMin: float, inMax: float, outMin: float, outMax: float) -> float:
+    """maps a range linearly. Useful when mapping one range of values to another.
+    
+    e.g., if I want to map the value 20 with the in range (0, 100) to the out range (0, 200), the return value will be 40
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     try:
         return outMin + (((value - inMin) / (inMax - inMin)) * (outMax - outMin))
     except ZeroDivisionError:
         return 1
 
 def mapRangeSin(value, inMin, inMax, outMin, outMax):
+    """maps a range sinusoidally. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     return (-((outMax - outMin) / 2)) * cos((pi * (inMin - value)) / (inMin - inMax)) + ((outMax + outMin) / 2)
     
 def mapRangeArcSin(value, inMin, inMax, outMin, outMax):
+    """maps a range using an inverse sinusoidal curve. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     return ((outMax - outMin) / pi) * asin((2 / (inMax - inMin)) * (value - ((inMin + inMax) / 2))) + ((outMax + outMin) / 2)
 
 def mapRangeExp(value, inMin, inMax, outMin, outMax):
+    """maps a range exponentially. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     if outMin <= outMax: s = 1
     else: s = -1
     return (-s * (abs(outMin - outMax - s)) ** ((value - inMax) / (inMin - inMax))) + outMax + s
 
 def mapRangeLog(value, inMin, inMax, outMin, outMax):
+    """maps a range logarithmically. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     if inMin <= inMax: p = 1
     else: p = -1
     return ((outMax - outMin) * log(abs(value - inMin + p))) / log(abs(inMax - inMin + p)) + outMin
 
 def mapRangePara(value, inMin, inMax, outMin, outMax):
+    """maps a range parabolically. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     return (((outMin - outMax) * ((value - inMax) ** 2)) / (inMax - inMin) ** 2) + outMax 
 
 def mapRangeRoot(value, inMin, inMax, outMin, outMax):
+    """maps a range with a square root. Useful when mapping one range of values to another.
+    
+    taken from here: https://www.desmos.com/calculator/pw9tgtcq16
+
+    :param float value: value to evaluate from
+    :param float inMin: in minimum
+    :param float inMax: in maximum 
+    :param float outMin: out minimum 
+    :param float outMax: out maximum
+    :return float: the resulting value mapped linearlly
+    """
     return (((outMax - outMin) / sqrt(inMax - inMin)) * sqrt(value - inMin)) + outMin
 
