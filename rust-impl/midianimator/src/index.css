@@ -3,7 +3,9 @@
 @tailwind utilities;
 
 .mac-traffic-lights-container {
-    padding: 20px;
+    padding-left: 10px;
+    padding-right: 10px;
+    align-items: center;
     display: flex;
     flex-direction: row;
     justify-content: left;
@@ -18,17 +20,37 @@
 }
 
 .red {
-    background-color: #FF5F57;
+    background-color: #ff5f57;
 }
 
 .yellow {
-    background-color: #FEBC2E;
+    background-color: #febc2e;
 }
 
 .green {
-    background-color: #28C840;
+    background-color: #28c840;
 }
 
-.menu-bar {
-    background-color: white;
+.helvetica {
+    font-family: 'Helvetica', sans-serif;
+}
+
+.blender {
+    background: url(blender.png);
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+/* prevent overscroll bounce */
+body {
+    overflow: hidden;
+}
+
+#gtx-trans {
+    display: none;
+}
+
+img {
+    user-select: none;
+    pointer-events: none;
 }
