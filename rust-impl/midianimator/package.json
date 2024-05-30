@@ -25,6 +25,7 @@
     "postcss": "^8.4.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1",
     "react-scripts": "^5.0.1",
     "reactflow": "^11.11.3",
     "rete": "^2.0.3",
