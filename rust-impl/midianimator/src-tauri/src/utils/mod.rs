@@ -13,16 +13,12 @@ pub fn print_type_of<T>(_: &T) {
 pub fn note_to_name(n_val: i32) -> String {
     assert!(n_val >= 0 && n_val <= 127, "MIDI note number out of range!");
 
-    let names = [
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-    ];
-    return format!("{}{}", names[n_val as usize % 12], n_val / 12 - 2);
+    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    return format!("{}{}", names[n_val as usize % 12], n_val / 12 - 2)
 }
 
 pub fn name_to_note(n_str: &str) -> i32 {
-    let names = [
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-    ];
+    let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     let mut note = names.iter().position(|&s| s == &n_str[..1]).unwrap() as i32;
     let offset = if n_str.len() > 1 && &n_str[1..2] == "#" {
         note += 1;
@@ -49,9 +45,7 @@ pub fn convert_note_numbers(input_str: &str) -> Result<Vec<i32>, String> {
             .collect();
         Ok(nums)
     } else {
-        Err(String::from(
-            "'{input_str}' has an invalid note number or name.",
-        ))
+        Err(String::from("'{input_str}' has an invalid note number or name."))
     }
 }
 
@@ -71,18 +65,13 @@ pub fn type_of_note_number(input_str: &str) -> Result<Vec<&str>, String> {
             .collect();
         Ok(types)
     } else {
-        Err(String::from(
-            "'{input_str}' has an invalid note number or name.",
-        ))
+        Err(String::from("'{input_str}' has an invalid note number or name."))
     }
 }
 
 pub fn gm_program_to_name(pc_num: i32) -> String {
-    assert!(
-        pc_num >= 0 && pc_num <= 127,
-        "Program change number out of range!"
-    );
-    return GM_INST.get(&(pc_num)).unwrap().to_string();
+    assert!(pc_num >= 0 && pc_num <= 127, "Program change number out of range!");
+    return GM_INST.get(&(pc_num)).unwrap().to_string()
 }
 
 pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f64) {
@@ -111,7 +100,7 @@ pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f
         }
     }
     // return last tempo tuple
-    return vals[vals.len() - 1];
+    return vals[vals.len() - 1]
 }
 
 pub fn remove_duplicates(vals: &[i32]) -> Vec<i32> {
@@ -135,16 +124,11 @@ pub fn rotate_around_circle(radius: f64, angle: f64) -> (f64, f64) {
     (x, y)
 }
 
-pub fn animate_along_two_points(
-    first_point: (f64, f64),
-    second_point: (f64, f64),
-    x_component: f64,
-) -> (f64, f64) {
+pub fn animate_along_two_points(first_point: (f64, f64), second_point: (f64, f64), x_component: f64) -> (f64, f64) {
     let (x1, y1) = first_point;
     let (x2, y2) = second_point;
 
-    let angle =
-        2.0 * ((y2 - y1) / (x2 - x1 + ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())).atan();
+    let angle = 2.0 * ((y2 - y1) / (x2 - x1 + ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())).atan();
 
     let x_cos = angle.cos() * x_component + x1;
     let y_sin = angle.sin() * x_component + y1;
@@ -157,29 +141,21 @@ pub fn map_range_linear(value: f64, in_min: f64, in_max: f64, out_min: f64, out_
 }
 
 pub fn map_range_sin(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
-    -((out_max - out_min) / 2.0) * ((PI * (in_min - value)) / (in_min - in_max)).cos()
-        + ((out_max + out_min) / 2.0)
+    -((out_max - out_min) / 2.0) * ((PI * (in_min - value)) / (in_min - in_max)).cos() + ((out_max + out_min) / 2.0)
 }
 
 pub fn map_range_arc_sin(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
-    ((out_max - out_min) / PI)
-        * ((2.0 / (in_max - in_min)) * (value - ((in_min + in_max) / 2.0))).asin()
-        + ((out_max + out_min) / 2.0)
+    ((out_max - out_min) / PI) * ((2.0 / (in_max - in_min)) * (value - ((in_min + in_max) / 2.0))).asin() + ((out_max + out_min) / 2.0)
 }
 
 pub fn map_range_exp(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
     let s = if out_min <= out_max { 1.0 } else { -1.0 };
-    -s * (out_min - out_max - s)
-        .abs()
-        .powf((value - in_max) / (in_min - in_max))
-        + out_max
-        + s
+    -s * (out_min - out_max - s).abs().powf((value - in_max) / (in_min - in_max)) + out_max + s
 }
 
 pub fn map_range_log(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
     let p = if in_min <= in_max { 1.0 } else { -1.0 };
-    ((out_max - out_min) * (value - in_min + p).abs().ln()) / (in_max - in_min + p).abs().ln()
-        + out_min
+    ((out_max - out_min) * (value - in_min + p).abs().ln()) / (in_max - in_min + p).abs().ln() + out_min
 }
 
 pub fn map_range_para(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {

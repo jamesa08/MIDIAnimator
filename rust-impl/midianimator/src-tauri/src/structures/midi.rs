@@ -1,9 +1,10 @@
-use core::panic;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use core::panic;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::utils::{closest_tempo, gm_program_to_name};
+
 
 // TODO eventually refactor into more of The Rust Way
 // MARK: - MIDINote
@@ -45,6 +46,7 @@ impl PartialEq for MIDINote {
         self.time_on == other.time_on
     }
 }
+
 
 // comparison
 impl PartialOrd for MIDINote {
@@ -133,16 +135,17 @@ impl MIDITrack {
     }
 
     pub fn add_note_off(&mut self, channel: u8, note_number: u8, _velocity: u8, time_off: f64) {
+        
         // find matching note on message
         let key = (channel, note_number);
         if let Some(table) = self.note_table.get_mut(&key) {
             // assume the first note on message for this note is the one that matches with this note off
             if let Some(note_from_tb) = table.first_mut() {
                 note_from_tb.time_off = time_off;
-
+                
                 // remove this note for this note number b/c we have the note off for this note
                 let note = table.remove(0);
-
+                
                 // after note is deleted from the table, add it to the actual notes list
                 self.notes.push(note);
             } else {
@@ -177,8 +180,8 @@ impl MIDITrack {
 
     pub fn all_used_notes(&self) -> Vec<u8> {
         let mut used_notes: Vec<u8> = self.notes.iter().map(|note| note.note_number).collect();
-        used_notes.sort_unstable(); // sort
-        used_notes.dedup(); // remove duplicates
+        used_notes.sort_unstable();  // sort
+        used_notes.dedup();  // remove duplicates
         used_notes
     }
 }
@@ -213,6 +216,7 @@ impl fmt::Display for MIDITrack {
     }
 }
 
+
 // MARK: - MIDIFile
 
 #[derive(Debug, Clone)]
@@ -227,15 +231,15 @@ impl MIDIFile {
 
         let bytes = std::fs::read(midi_file)?;
         let smf = Smf::parse(&bytes)?;
-
+        
         let midi_type = smf.header.format;
         let mut midi_tracks: &mut Vec<MIDITrack> = &mut Vec::new();
         let mut temp_tracks: Vec<MIDITrack> = Vec::new();
-
+        
         let mut tempo_map: Vec<(f64, f64)> = Vec::new();
-
+        
         let ticks_per_beat = match smf.header.timing {
-            midly::Timing::Metrical(tpq) => tpq.as_int() as f64, // normal ticks per beat
+            midly::Timing::Metrical(tpq) => tpq.as_int() as f64,  // normal ticks per beat
             midly::Timing::Timecode(fps, tpf) => {
                 let ticks_per_second = (fps.as_f32() * tpf as f32) as u32;
                 let beats_per_minute = 120;
@@ -246,7 +250,7 @@ impl MIDIFile {
         if midi_type == midly::Format::Sequential {
             panic!("Type 2 / Sequential format are not supported!");
         }
-        let mut new_tracks;
+        let mut new_tracks; 
         if midi_type == midly::Format::SingleTrack {
             // Type 0
             // Tracks depend on MIDI channels for the different tracks
@@ -256,7 +260,7 @@ impl MIDIFile {
         } else {
             // Type 1
             // Tracks are independent of MIDI channels
-
+            
             // get tempo map first
             let mut time: f64 = 0.0;
             let mut current_tempo: f64 = 500000.0;
@@ -265,9 +269,9 @@ impl MIDIFile {
                 for msg in track {
                     // TODO investigate if we need to add time first or last, also in main for loop
                     time += tick2second(msg.delta.as_int(), ticks_per_beat, current_tempo);
-
+                    
                     if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = msg.kind {
-                        current_tempo = tempo.as_int() as f64; // FIXME I think this is needed, not in original implementation
+                        current_tempo = tempo.as_int() as f64;  // FIXME I think this is needed, not in original implementation
                         tempo_map.push((time, current_tempo));
                     }
                     // update time with new tempo
@@ -285,17 +289,13 @@ impl MIDIFile {
             if midi_type == midly::Format::SingleTrack {
                 // Type 0
                 current_track = &mut midi_tracks[0];
-            } // type 1 is already handled
+            }  // type 1 is already handled
 
             for msg in track {
                 time += tick2second(msg.delta.as_int(), ticks_per_beat, tempo);
                 println!("{:?}", time);
                 // channel messages
-                if let TrackEventKind::Midi {
-                    channel,
-                    message: _,
-                } = msg.kind
-                {
+                if let TrackEventKind::Midi { channel, message: _ } = msg.kind {
                     current_channel = channel.as_int() as i32;
                     // only update type 0 tracks, as type 1 tracks are independent of channels
                     if midi_type == midly::Format::SingleTrack {
@@ -305,6 +305,7 @@ impl MIDIFile {
                         i += 1;
                         current_track.name = format!("Track {}", i);
                     }
+
                 }
                 // meta messages
                 if let TrackEventKind::Meta(meta_message) = msg.kind {
@@ -321,27 +322,12 @@ impl MIDIFile {
                     if let MidiMessage::NoteOn { key, vel } = message {
                         // velocity 0 note_on messages need to be note_off
                         if vel == 0 {
-                            current_track.add_note_off(
-                                channel.as_int() as u8,
-                                key.as_int() as u8,
-                                vel.as_int() as u8,
-                                time as f64,
-                            );
+                            current_track.add_note_off(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
                         } else {
-                            current_track.add_note_on(
-                                channel.as_int() as u8,
-                                key.as_int() as u8,
-                                vel.as_int() as u8,
-                                time as f64,
-                            );
+                            current_track.add_note_on(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
                         }
                     } else if let MidiMessage::NoteOff { key, vel } = message {
-                        current_track.add_note_off(
-                            channel.as_int() as u8,
-                            key.as_int() as u8,
-                            vel.as_int() as u8,
-                            time as f64,
-                        );
+                        current_track.add_note_off(channel.as_int() as u8, key.as_int() as u8, vel.as_int() as u8, time as f64);
                     } else if let MidiMessage::ProgramChange { program } = message {
                         // General MIDI name
                         let mut gm_name: String = gm_program_to_name(program.as_int() as i32);
@@ -350,36 +336,16 @@ impl MIDIFile {
                             gm_name = "Drumset".to_string();
                         }
                         // If track name is empty or default, set it to the GM name (if it's a GM instrument)
-                        if current_track.name.len() == 0
-                            || (midi_type == midly::Format::SingleTrack
-                                && current_track.name
-                                    == format!(
-                                        "Track {current_channel}",
-                                        current_channel = channel.as_int()
-                                    ))
-                        {
+                        if current_track.name.len() == 0 || (midi_type == midly::Format::SingleTrack && current_track.name == format!("Track {current_channel}", current_channel = channel.as_int())) {
                             current_track.name = gm_name.clone();
                         }
                     } else if let MidiMessage::Controller { controller, value } = message {
-                        current_track.add_control_change(
-                            controller.as_int() as u8,
-                            channel.as_int() as u8,
-                            value.as_int() as u8,
-                            time as f64,
-                        );
+                        current_track.add_control_change(controller.as_int() as u8, channel.as_int() as u8, value.as_int() as u8, time as f64);
                     } else if let MidiMessage::PitchBend { bend } = message {
-                        current_track.add_pitchwheel(
-                            channel.as_int() as u8,
-                            bend.0.as_int() as f64 / 8192.0 - 1.0,
-                            time as f64,
-                        );
+                        current_track.add_pitchwheel(channel.as_int() as u8, bend.0.as_int() as f64 / 8192.0 - 1.0, time as f64);
                     } else if let MidiMessage::Aftertouch { key, vel } = message {
                         // FIXME fix this, need to add key
-                        current_track.add_aftertouch(
-                            channel.as_int() as u8,
-                            vel.as_int() as f64 / 127.0,
-                            time as f64,
-                        );
+                        current_track.add_aftertouch(channel.as_int() as u8, vel.as_int() as f64 / 127.0, time as f64);
                     }
                     if midi_type == midly::Format::Parallel {
                         tempo = closest_tempo(&tempo_map, time, false).1;
@@ -393,12 +359,14 @@ impl MIDIFile {
                         if let MetaMessage::EndOfTrack = meta_message {
                             // push current track to ins var tracks
                             temp_tracks.push(current_track.clone());
+                            
                         }
                     }
                 }
+
             }
         }
-
+        
         // EOF for type 0
         if midi_type == midly::Format::SingleTrack {
             // push all midi_tracks into temp_tracks
@@ -412,16 +380,18 @@ impl MIDIFile {
                 // sort notes
                 let mut notes = track.notes.clone();
                 notes.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
+                
                 let mut track = track.clone();
                 track.notes = notes;
-
+                
                 tracks.push(track.clone());
             }
         }
+        
 
         Ok(MIDIFile { tracks })
     }
+
 
     pub fn get_midi_tracks(&self) -> &Vec<MIDITrack> {
         &self.tracks
@@ -435,44 +405,23 @@ impl MIDIFile {
         self.tracks.iter().map(|track| track.name.clone()).collect()
     }
 
-    pub fn merge_tracks(
-        &self,
-        track1: &MIDITrack,
-        track2: &MIDITrack,
-        name: Option<&str>,
-    ) -> MIDITrack {
+    pub fn merge_tracks(&self, track1: &MIDITrack, track2: &MIDITrack, name: Option<&str>) -> MIDITrack {
         let mut merged_track = MIDITrack::new(name.unwrap_or(""));
 
         merged_track.notes.extend(track1.notes.iter().cloned());
         merged_track.notes.extend(track2.notes.iter().cloned());
         merged_track.notes.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        merged_track
-            .control_change
-            .extend(track1.control_change.iter().map(|(k, v)| (*k, v.clone())));
-        merged_track
-            .control_change
-            .extend(track2.control_change.iter().map(|(k, v)| (*k, v.clone())));
+        merged_track.control_change.extend(track1.control_change.iter().map(|(k, v)| (*k, v.clone())));
+        merged_track.control_change.extend(track2.control_change.iter().map(|(k, v)| (*k, v.clone())));
 
-        merged_track
-            .pitchwheel
-            .extend(track1.pitchwheel.iter().cloned());
-        merged_track
-            .pitchwheel
-            .extend(track2.pitchwheel.iter().cloned());
-        merged_track
-            .pitchwheel
-            .sort_by(|a, b| a.partial_cmp(b).unwrap());
+        merged_track.pitchwheel.extend(track1.pitchwheel.iter().cloned());
+        merged_track.pitchwheel.extend(track2.pitchwheel.iter().cloned());
+        merged_track.pitchwheel.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        merged_track
-            .aftertouch
-            .extend(track1.aftertouch.iter().cloned());
-        merged_track
-            .aftertouch
-            .extend(track2.aftertouch.iter().cloned());
-        merged_track
-            .aftertouch
-            .sort_by(|a, b| a.partial_cmp(b).unwrap());
+        merged_track.aftertouch.extend(track1.aftertouch.iter().cloned());
+        merged_track.aftertouch.extend(track2.aftertouch.iter().cloned());
+        merged_track.aftertouch.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         merged_track
     }

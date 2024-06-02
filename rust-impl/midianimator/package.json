@@ -4,16 +4,7 @@
   "private": true,
   "dependencies": {
     "@craco/craco": "^7.1.0",
-    "@tauri-apps/api": "^2.0.0-beta.12",
-    "@tauri-apps/plugin-clipboard-manager": "^2.1.0-beta.1",
-    "@tauri-apps/plugin-dialog": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-fs": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-global-shortcut": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-http": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-notification": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-os": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-process": "^2.0.0-beta.3",
-    "@tauri-apps/plugin-shell": "^2.0.0-beta.4",
+    "@tauri-apps/api": "^1.5.5",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
@@ -43,6 +34,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "bundle": "tauri build"
+
   },
   "eslintConfig": {
     "extends": [
@@ -63,9 +55,9 @@
     ]
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0-beta.18",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.3.0",
+    "@tauri-apps/cli": "^1.5.11",
     "@vitejs/plugin-react": "^4.3.0",
     "postcss-cli": "^11.0.0",
     "tailwindcss": "^3.4.3",

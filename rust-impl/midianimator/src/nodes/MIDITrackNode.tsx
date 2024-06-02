@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Handle, Position } from 'reactflow';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/api/dialog';
 
 
 const handleStyle = { left: 10};

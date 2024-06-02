@@ -1,7 +1,7 @@
 #[cfg(test)]
-// run from /src-tauri
+// run from /src-tauri 
 // cargo test
-mod tests {
+mod tests { 
     use lazy_static::lazy_static;
     use MIDIAnimator::structures::midi::MIDIFile;
 
@@ -66,4 +66,5 @@ mod tests {
         let merged_track = midi_file.merge_tracks(track1, track2, Some("Merged Track"));
         assert_eq!(merged_track.name, "Merged Track");
     }
+
 }

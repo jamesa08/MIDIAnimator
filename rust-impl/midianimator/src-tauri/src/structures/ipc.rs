@@ -1,11 +1,11 @@
+use std::io::{BufReader, Write, Read};
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -29,11 +29,8 @@ static PORT: &str = "6577";
 // this is necessary because the server needs to be accessed across threads, and in other functions
 static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
     // create a TCP listener on the specified port
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}", port = PORT)).unwrap();
-    println!(
-        "MIDIAnimator IPC server started. Listening on port {:?}",
-        PORT
-    );
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}", port=PORT)).unwrap();
+    println!("MIDIAnimator IPC server started. Listening on port {:?}", PORT);
 
     // create a server instance
     let server = Server {
@@ -41,10 +38,10 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
         message_map: Arc::new(Mutex::new(HashMap::new())),
     };
     let server = Arc::new(Mutex::new(server));
-
+    
     // clone the server instance to be used in the thread
     let server_clone = Arc::clone(&server);
-
+    
     thread::spawn(move || {
         for stream in listener.incoming() {
             match stream {
@@ -52,10 +49,10 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     println!("New client connected {:?}", stream.peer_addr().unwrap());
                     let server = Arc::clone(&server_clone);
                     let server_unwrapped = server.lock().unwrap();
-
+                    
                     // lock the clients list and add the new client
                     let mut clients = server_unwrapped.clients.lock().unwrap();
-
+                    
                     clients.push(stream.try_clone().unwrap());
                     drop(clients); // drop lock to avoid deadlock
 
@@ -83,37 +80,33 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
 
     // keep reading messages from the client until the connection is closed
     let mut data = Vec::new();
-
+    
     loop {
         let mut buf = [0; 4096]; // 4 KiB buffer
 
-        // need to loop over until we find the full `uuid` string with ending brace `}`.
+        // need to loop over until we find the full `uuid` string with ending brace `}`. 
         // This is to ensure we have read the full message.
         // if the message itself contains a uuid message, this is not a valid message.
         match reader.read(&mut buf) {
             Ok(0) => break, // connection closed
             Ok(n) => {
                 data.extend_from_slice(&buf[..n]); // add the read bytes to data
-
+                
                 // convert the accumulated data to a string and parse it as JSON
                 if let Ok(data_str) = String::from_utf8(data.clone()) {
                     // similar code is in python add-on
-                    let check: Vec<&str> =
-                        data_str.split("\"}").filter(|s| !s.is_empty()).collect();
-                    if check.len() >= 2
-                        && check.last() == Some(&"\n")
-                        && check[check.len() - 2].contains("\"uuid\":")
-                    {
+                    let check: Vec<&str> = data_str.split("\"}").filter(|s| !s.is_empty()).collect();
+                    if check.len() >= 2 && check.last() == Some(&"\n") && check[check.len() - 2].contains("\"uuid\":") {
                         // valid msg, continue
-
+                        
                         if let Ok(message) = serde_json::from_str::<Message>(&data_str) {
                             // find the tx sender from send_message using the UUID
                             let tx = {
                                 let server_lock = server.lock().unwrap();
                                 let mut message_map = server_lock.message_map.lock().unwrap();
-                                message_map.remove(&message.uuid) // this gets the tx sender from send_message
+                                message_map.remove(&message.uuid)  // this gets the tx sender from send_message
                             };
-
+                            
                             if let Some(tx) = tx {
                                 tx.send(message.message).unwrap();
                             }
@@ -161,11 +154,7 @@ pub async fn send_message(message: String) -> Option<String> {
 
     // create a channel to receive the response, and insert it into the message_map
     let (tx, rx) = mpsc::channel();
-    server
-        .message_map
-        .lock()
-        .unwrap()
-        .insert(msg_struct.uuid.clone(), tx);
+    server.message_map.lock().unwrap().insert(msg_struct.uuid.clone(), tx);
     drop(server);
 
     // loop until a response is received or the timeout is reached
