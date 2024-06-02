@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const WebviewWindow = window.__TAURI__.webviewWindow.WebviewWindow;
+const WebviewWindow = window.__TAURI__.window.WebviewWindow;
 
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
   const navigate = useNavigate();
