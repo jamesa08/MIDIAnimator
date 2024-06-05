@@ -1,10 +1,10 @@
 import { BrowserRouter as Router, Route, Routes, createBrowserRouter, RouterProvider } from "react-router-dom";
-import MenuBar from "./ui-components/MenuBar";
-import ToolBar from "./ui-components/ToolBar";
-import Panel from "./ui-components/Panel";
-import NodeGraph from "./ui-components/NodeGraph";
-import StatusBar from "./ui-components/StatusBar";
-import PanelContent from "./ui-components/PanelContent";
+import MenuBar from "./components/MenuBar";
+import ToolBar from "./components/ToolBar";
+import Panel from "./components/Panel";
+import NodeGraph from "./components/NodeGraph";
+import StatusBar from "./components/StatusBar";
+import PanelContent from "./components/PanelContent";
 
 function App() {
     return (
