@@ -5,6 +5,7 @@ import { HashRouter as Router, Route, Routes } from "react-router-dom";
 import reportWebVitals from "./reportWebVitals";
 import "./index.css";
 import PanelContent from "./components/PanelContent";
+import Settings from "./windows/Settings";
 
 const rootElement = document.getElementById("root");
 
@@ -16,6 +17,7 @@ if (rootElement) {
                 <Routes>
                     <Route path="/" element={<App />} />
                     <Route path="/panel/:id" element={<PanelContent />} />
+                    <Route path="/settings" element={<Settings />} />
                 </Routes>
             </Router>
         </React.StrictMode>

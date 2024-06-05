@@ -5,8 +5,25 @@ import Panel from "./components/Panel";
 import NodeGraph from "./components/NodeGraph";
 import StatusBar from "./components/StatusBar";
 import PanelContent from "./components/PanelContent";
+import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/window";
+
 
 function App() {
+    useEffect(() => {
+        // listner for window creation
+        const windowEventListener = listen(`open-window`, (event: any) => {
+            const window = new WebviewWindow(`${event.payload["title"]}`, event.payload);
+
+            window.show();
+        });
+
+        return () => {
+            windowEventListener.then((f) => f());
+        };
+    }, []);
+
     return (
         <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div className="head flex-initial">

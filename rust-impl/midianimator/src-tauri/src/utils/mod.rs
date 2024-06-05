@@ -3,7 +3,9 @@
 use regex::Regex;
 use std::f64::consts::PI;
 
-mod gm_instrument_map;
+pub mod gm_instrument_map;
+pub mod ui;
+
 use gm_instrument_map::GM_INST;
 
 pub fn print_type_of<T>(_: &T) {

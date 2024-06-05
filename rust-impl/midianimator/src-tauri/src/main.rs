@@ -3,11 +3,13 @@
 #![allow(non_snake_case)]
 
 use lazy_static::lazy_static;
-// use tauri::{command, generate_handler, Builder};
 
 // use MIDIAnimator::structures::midi::MIDIFile;
 use MIDIAnimator::structures::ipc;
 use MIDIAnimator::build_scene;
+use MIDIAnimator::ui::menu;
+
+use tauri::generate_context;
 
 lazy_static! {
     static ref MIDI_FILE_STR: &'static str = "/Users/james/github/MIDIFiles/testMidi/test_midi_2_rs_4_14_24.mid";
@@ -17,8 +19,14 @@ lazy_static! {
 async fn main() {
     ipc::start_server();
 
+    let context = generate_context!();
+
     tauri::Builder::default()
-    .run(tauri::generate_context!())
+    .menu(menu::build_menu(&context.package_info().name))
+    .on_menu_event(|event| {
+        menu::handle_menu_event(event);
+    })
+    .run(context)
     .expect("error while launching MIDIAnimator!");
 
     // count down timer

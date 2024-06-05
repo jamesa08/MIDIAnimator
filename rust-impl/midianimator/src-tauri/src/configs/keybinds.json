@@ -1,0 +1,58 @@
+{
+    "settings": {
+        "name": "Settings",
+        "description": "Open Settings window",
+        "key": "CmdOrCtrl+,"
+    },
+    "open": {
+        "name": "Open",
+        "description": "Open a file",
+        "key": "CmdOrCtrl+O"
+    },
+    "close": {
+        "name": "Close",
+        "description": "Close the current file",
+        "key": "CmdOrCtrl+W"
+    },
+    "save": {
+        "name": "Save",
+        "description": "Save the current file",
+        "key": "CmdOrCtrl+S"
+    },
+    "save_as": {
+        "name": "Save As",
+        "description": "Save the current file as a new file",
+        "key": "CmdOrCtrl+Shift+S"
+    },
+    "undo": {
+        "name": "Undo",
+        "description": "Undo the last action",
+        "key": "CmdOrCtrl+Z"
+    },
+    "redo": {
+        "name": "Redo",
+        "description": "Redo the last action",
+        "key": "CmdOrCtrl+Shift+Z"
+    },
+    "cut": {
+        "name": "Cut",
+        "description": "Cut the selected text",
+        "key": "CmdOrCtrl+X"
+    },
+    "copy": {
+        "name": "Copy",
+        "description": "Copy the selected text",
+        "key": "CmdOrCtrl+C"
+    },
+    "paste": {
+        "name": "Paste",
+        "description": "Paste the copied text",
+        "key": "CmdOrCtrl+V"
+    },
+    "select_all": {
+        "name": "Select All",
+        "description": "Select all",
+        "key": "CmdOrCtrl+A"
+    }
+
+}
