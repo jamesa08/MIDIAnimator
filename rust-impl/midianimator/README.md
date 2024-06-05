@@ -26,3 +26,17 @@
 
 `npm run bundle` to package up Tauri application into installers 
 
+
+## Built with the following technologies:
+
+- Rust
+    - midly
+- Typescript/Javascript
+- Python
+- Tauri
+    - drag-rs
+- Vite
+- React.js
+    - react-router
+    - React Flow
+- TailwindCSS
