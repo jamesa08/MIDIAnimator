@@ -16,7 +16,7 @@ function MenuBar() {
             </div>
 
             {/* other icons here */}
-            
+
             {/* right aligned items */}
             <div className="ml-auto flex">
                 <Tool type="run" />
