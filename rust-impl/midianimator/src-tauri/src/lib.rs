@@ -15,6 +15,7 @@ pub mod ui {
     pub mod keybinds;
 }
 
-pub mod command {
+pub mod api {
     pub mod event;
+    pub mod ipc;
 }
