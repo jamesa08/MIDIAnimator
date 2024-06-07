@@ -1,15 +1,15 @@
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
+use serde::{Deserialize, Serialize};
 use core::panic;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::utils::{closest_tempo, gm_program_to_name};
 
-
 // TODO eventually refactor into more of The Rust Way
 // MARK: - MIDINote
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIDINote {
     pub channel: u8,
     pub note_number: u8,
@@ -57,7 +57,7 @@ impl PartialOrd for MIDINote {
 
 // MARK: - MIDIEvent
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIDIEvent {
     pub channel: u8,
     pub value: f64,
@@ -102,7 +102,7 @@ fn tick2second(tick: u32, ticks_per_beat: f64, tempo: f64) -> f64 {
 }
 // MARK: - MIDITrack
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIDITrack {
     pub name: String,
     pub notes: Vec<MIDINote>,
@@ -219,7 +219,7 @@ impl fmt::Display for MIDITrack {
 
 // MARK: - MIDIFile
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIDIFile {
     tracks: Vec<MIDITrack>,
 }
