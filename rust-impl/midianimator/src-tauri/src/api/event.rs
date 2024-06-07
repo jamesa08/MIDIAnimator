@@ -1,9 +1,8 @@
-use tauri::{command, WindowMenuEvent};
+use tauri::WindowMenuEvent;
 use serde_json::json;
 
 use crate::utils::ui::get_logical_size;
 
-#[command]
 pub fn open_settings(event: WindowMenuEvent) {
     // payload must conform to interface WindowOptions
     let win_size = get_logical_size(&event.window());
