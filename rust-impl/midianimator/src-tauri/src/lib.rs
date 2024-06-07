@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+#![allow(dead_code)]
 
 pub mod utils;
 
@@ -18,6 +19,7 @@ pub mod ui {
 pub mod api {
     pub mod event;
     pub mod ipc;
+    pub mod midi;
 }
 
 pub mod auto_commands;
