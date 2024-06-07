@@ -19,3 +19,5 @@ pub mod api {
     pub mod event;
     pub mod ipc;
 }
+
+pub mod auto_commands;
