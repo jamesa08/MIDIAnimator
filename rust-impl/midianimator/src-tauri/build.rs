@@ -60,6 +60,13 @@ pub fn get_cmds() -> impl Fn(tauri::Invoke<tauri::Wry>) + Send + Sync + 'static 
     return {};
 }}", handler);
 
+    // check if the file is identical to the generated code
+    let current_code = fs::read_to_string(&out_path).unwrap_or("".to_string());
+    if current_code == generated_code {
+        println!("cargo:warning=generated code is identical to current code, skipping write");
+        return;
+    }
+    
     fs::write(out_path, generated_code).expect("failed to write auto_command.rs");
 
     println!("cargo:warning=written generated code to src/auto_command.rs");
