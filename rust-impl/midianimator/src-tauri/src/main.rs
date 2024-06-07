@@ -1,19 +1,12 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![allow(non_snake_case)]
+#![allow(dead_code)]
 
-use lazy_static::lazy_static;
-
-// use MIDIAnimator::structures::midi::MIDIFile;
 use MIDIAnimator::structures::ipc;
-use MIDIAnimator::build_scene;
 use MIDIAnimator::ui::menu;
 
 use tauri::generate_context;
-
-lazy_static! {
-    static ref MIDI_FILE_STR: &'static str = "/Users/james/github/MIDIFiles/testMidi/test_midi_2_rs_4_14_24.mid";
-}
 
 #[tokio::main]
 async fn main() {
@@ -29,54 +22,4 @@ async fn main() {
     })
     .run(context)
     .expect("error while launching MIDIAnimator!");
-
-    // count down timer
-    // let mut count = 3;
-    // while count > 0 {
-    //     println!("waiting {}", count);
-    //     count -= 1;
-    //     std::thread::sleep(std::time::Duration::from_secs(1));
-    // }
-    // let scenes = build_scene::get_scene_data().await;
-
-    // println!("{:?}", scenes);
-
-    // build_scene::send_scene_data(scenes).await;
-
-
-//     let message = r#"def get_object_name():
-//     return bpy.data.objects['Cube'].name_full
-
-// def execution():
-//     return get_object_name()
-// "#;
-
-//     if let Some(response) = ipc::send_message(message.to_string()).await {
-//         println!("Received response: {}", response);
-//     }
-    // let mut count = 0;
-
-    // loop {
-    //     std::thread::sleep(std::time::Duration::from_millis(500));
-    //     if count == 100 {
-    //         break;
-    //     }
-    //     count += 1;
-    // }
 }
-
-
-// example of a tauri front -> backend command
-// #[command]
-// fn greet() -> String {
-//     let midi_file = MIDIFile::new(&MIDI_FILE_STR).unwrap();
-//     for track in midi_file {
-//         println!("Track name: {}", track.name);
-//         for note in &track.notes {
-//             println!("{:?}", note);
-//         }
-//         return format!("{:?}", track.all_used_notes()).to_string();
-//         // println!("{:?}", track.all_used_notes());
-//     }
-//     return "".to_string();
-// }
