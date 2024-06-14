@@ -2,23 +2,28 @@ import { createContext, useContext, useState } from "react";
 
 export const StateContext = createContext<StateContext | null>(null);
 
-const defaultState = { "ready": false };
+const defaultBackendState = { ready: false };
+const defaultFrontendState = { panelsShown: [1, 2] };
 
 type StateContextProviderProps = {
     children: React.ReactNode;
 };
-
 type StateContext = {
-    state: any;
-    setState: React.Dispatch<React.SetStateAction<any>>;
+    backEndState: any;
+    setBackEndState: React.Dispatch<React.SetStateAction<any>>;
+    frontEndState: any;
+    setFrontEndState: React.Dispatch<React.SetStateAction<any>>;
 };
 
+// create a context provider
 const StateContextProvider = ({ children }: StateContextProviderProps) => {
-    const [state, setState] = useState(defaultState);
+    const [backendState, setBackEndState] = useState(defaultBackendState);
+    const [frontendState, setFrontEndState] = useState(defaultFrontendState);   
 
-    return <StateContext.Provider value={{ state, setState }}>{children}</StateContext.Provider>;
+    return <StateContext.Provider value={{ backEndState: backendState, setBackEndState: setBackEndState, frontEndState: frontendState, setFrontEndState: setFrontEndState }}>{children}</StateContext.Provider>;
 };
 
+// custom state hook
 export const useStateContext = () => {
     const contextObj = useContext(StateContext);
 
