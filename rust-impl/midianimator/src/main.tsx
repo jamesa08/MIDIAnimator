@@ -6,6 +6,7 @@ import reportWebVitals from "./reportWebVitals";
 import "./index.css";
 import PanelContent from "./components/PanelContent";
 import Settings from "./windows/Settings";
+import StateContextProvider from "./contexts/StateContext";
 
 const rootElement = document.getElementById("root");
 
@@ -13,13 +14,15 @@ if (rootElement) {
     const root = ReactDOM.createRoot(rootElement);
     root.render(
         <React.StrictMode>
-            <Router>
-                <Routes>
-                    <Route path="/" element={<App />} />
-                    <Route path="/panel/:id" element={<PanelContent />} />
-                    <Route path="/settings" element={<Settings />} />
-                </Routes>
-            </Router>
+            <StateContextProvider>
+                <Router>
+                    <Routes>
+                        <Route path="/" element={<App />} />
+                        <Route path="/panel/:id" element={<PanelContent />} />
+                        <Route path="/settings" element={<Settings />} />
+                    </Routes>
+                </Router>
+            </StateContextProvider>
         </React.StrictMode>
     );
 }
