@@ -15,7 +15,6 @@ fn create_tauri_handlers() {
     let out_path = Path::new("src/auto_commands.rs");
     
     println!("cargo:warning=creating tauri handlers in {:?}", out_path);
-    println!("cargo:warning={:?}", env::var("OUT_DIR").unwrap());
 
     let mut commands: Vec<String> = Vec::new();
     // god this regex was a pain to write
@@ -25,6 +24,10 @@ fn create_tauri_handlers() {
     for entry in WalkDir::new("src").into_iter().filter_map(|e| e.ok()) {
         if entry.path().extension().map_or(false, |ext| ext == "rs") {
             let content = fs::read_to_string(entry.path()).unwrap();
+            
+            // tell cargo to rerun the build script if any of the files change, i think it was caching the file results
+            println!("cargo:rerun-if-changed={}", entry.path().display());
+            
             for capture in re.captures_iter(&content) {
                 if let Some(command_name) = capture.get(2) {
                     // format: crate_name::path::command_name
