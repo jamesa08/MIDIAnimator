@@ -6,6 +6,7 @@ pub mod utils;
 pub mod structures { 
     pub mod midi; 
     pub mod ipc;
+    pub mod state;
 }
 pub mod scene_generics;
 
