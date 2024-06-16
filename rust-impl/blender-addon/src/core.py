@@ -52,7 +52,7 @@ class Server(metaclass=ServerMeta):
     def send_message(self, message, uuid):
         if not self.socket:
             raise Exception("Not connected to server")
-        message_json = json.dumps({"sender": "client", "message": message, "uuid": uuid}) + '\n'
+        message_json = json.dumps({"sender": "client", "message": str(message), "uuid": uuid}) + '\n'
         print(message_json)
         data = message_json.encode()
         
