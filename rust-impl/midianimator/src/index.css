@@ -17,7 +17,7 @@
     height: 12px;
     border-radius: 50%;
     display: inline-block;
-    background-color: transparent!important;  /* FIXME eventually remove this  */
+    /* background-color: transparent!important;  FIXME eventually remove this  */
 }
 
 .red {
