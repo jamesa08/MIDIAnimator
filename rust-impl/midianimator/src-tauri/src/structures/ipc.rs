@@ -4,10 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 use uuid::Uuid;
+
+use crate::structures::state::{STATE, update_state};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -18,7 +21,7 @@ pub struct Message {
 
 struct Server {
     clients: Arc<Mutex<Vec<TcpStream>>>,
-    message_map: Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>,
+    message_map: Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>
 }
 
 static PORT: &str = "6577";
@@ -43,10 +46,19 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
     let server_clone = Arc::clone(&server);
     
     thread::spawn(move || {
+        let rt = Runtime::new().unwrap();
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
                     println!("New client connected {:?}", stream.peer_addr().unwrap());
+
+                    // we are connected to the client
+                    let mut state = STATE.lock().unwrap();
+                    state.connected = true;
+                    // also need to call get_client_info here to get the connected application info
+                    drop(state);
+                    update_state();
+
                     let server = Arc::clone(&server_clone);
                     let server_unwrapped = server.lock().unwrap();
                     
@@ -57,7 +69,14 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     drop(clients); // drop lock to avoid deadlock
 
                     let server_clone = Arc::clone(&server);
-                    thread::spawn(move || handle_client(stream, server_clone));
+                    // when spawnning a new thread, get the client information as well
+                    rt.spawn(async move {
+                        request_client_info().await;
+                    });
+
+                    thread::spawn(move || { 
+                        handle_client(stream, server_clone);
+                    });
                 }
                 Err(e) => {
                     println!("Error: {}", e);
@@ -71,6 +90,31 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
 #[allow(unused_must_use)]
 pub fn start_server() {
     SERVER.lock().unwrap();
+}
+
+pub async fn request_client_info() {
+    println!("Hello printing from request_client_info");
+    let script = r"import bpy
+def execute():
+    version = bpy.app.version_string
+    file_name = bpy.data.filepath.split('/')[-1]
+    return {'version': version, 'file_name': file_name}";
+
+    let result = match send_message(script.to_string()).await {
+        Some(result) => result.replace("'", "\""),
+        None => "".to_string()
+    };
+
+    let map_object: HashMap<String, String> = serde_json::from_str(result.as_str()).unwrap();
+    let version = map_object.get("version").unwrap().to_string();
+    let file_name = map_object.get("file_name").unwrap().to_string();
+
+    let mut state = STATE.lock().unwrap();
+    state.connected_application = "blender".to_string();
+    state.connected_version = version;
+    state.connected_file_name = file_name;
+    drop(state);
+    update_state();
 }
 
 // handle a client connection
@@ -129,6 +173,16 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     }
 
     // if disconnected, remove the client from the server
+    // clear all previous info
+    println!("client disconnected");
+    let mut state = STATE.lock().unwrap();
+    state.connected = false;
+    state.connected_application = "".to_string();
+    state.connected_version = "".to_string();
+    state.connected_file_name = "".to_string();
+    drop(state);
+    update_state();
+
     let server = server.lock().unwrap();
     let mut clients = server.clients.lock().unwrap();
     clients.retain(|c| !c.peer_addr().unwrap().eq(&writer.peer_addr().unwrap()));
