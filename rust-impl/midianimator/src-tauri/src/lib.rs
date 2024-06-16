@@ -19,7 +19,6 @@ pub mod ui {
 
 pub mod api {
     pub mod event;
-    pub mod ipc;
     pub mod midi;
 }
 
