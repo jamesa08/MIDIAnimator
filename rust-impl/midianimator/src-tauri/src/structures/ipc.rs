@@ -10,6 +10,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 use uuid::Uuid;
 
+use crate::api::build_scene;
 use crate::structures::state::{STATE, update_state};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -72,6 +73,7 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     // when spawnning a new thread, get the client information as well
                     rt.spawn(async move {
                         request_client_info().await;
+                        request_scene_data().await;
                     });
 
                     thread::spawn(move || { 
@@ -115,6 +117,16 @@ def execute():
     state.connected_file_name = file_name;
     drop(state);
     update_state();
+}
+
+pub async fn request_scene_data() {
+    let result = build_scene::get_scene_data().await;
+    println!("Scene data: {:?}", result);
+    let mut state = STATE.lock().unwrap();
+    state.scene_data = result;
+    drop(state);
+    update_state();
+
 }
 
 // handle a client connection
