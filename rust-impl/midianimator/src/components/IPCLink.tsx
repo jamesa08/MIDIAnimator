@@ -25,7 +25,6 @@ function IPCLink() {
     }
 
     function disconnect() {
-        invoke("disconnect_alL_clients");
         console.log("disconnect button pushed");
     }
 
