@@ -13,8 +13,6 @@ import { useStateContext } from "./contexts/StateContext";
 function App() {
     const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
 
-    console.log(frontEndState.panels);
-
     useEffect(() => {
         // listner for window creation
         const windowEventListener = listen(`open-window`, (event: any) => {
