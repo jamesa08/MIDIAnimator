@@ -1,5 +1,9 @@
+// @ts-nocheck
+
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import nodeTypes from "../nodes/NodeTypes";
+import { ReactFlowProvider } from "reactflow";
 
 interface PanelProps {
     id: string;
@@ -58,10 +62,28 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         navigate(`/#/panel/${id}`);
     };
 
+    function windowIfNodes() {
+        if (name == "Nodes") {
+            return (
+                <ReactFlowProvider>
+                    {Object.entries(nodeTypes).map(([key, value]) => {
+                        const Node = value;
+                        return <Node data="preview" />;
+                    })}
+                </ReactFlowProvider>
+            );
+        }
+    }
+
     return (
         <div className="panel w-60 select-none">
-            <div className="panel-header h-8 border-b border-black flex items-center pl-2 pr-2">{name}</div>
-            <button onClick={createWindow}>Create Window</button>
+            <div className="panel-header h-8 border-b border-black flex items-center pl-2 pr-2">
+                <span className="mr-auto">{name}</span>
+                <button className="float-right" onClick={createWindow}>
+                    Popout
+                </button>
+            </div>
+            {windowIfNodes()}
         </div>
     );
 };
