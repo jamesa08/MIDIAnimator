@@ -17,7 +17,11 @@
     height: 12px;
     border-radius: 50%;
     display: inline-block;
-    /* background-color: transparent!important;  FIXME eventually remove this  */
+}
+
+/* FIXME eventually remove mac traffic lights */
+.mac-traffic-lights-container div {
+    background: transparent!important;
 }
 
 .red {
@@ -54,4 +58,56 @@ body {
 img {
     user-select: none;
     pointer-events: none;
+}
+
+/* sorry */
+.react-flow__attribution {
+    display: none;
+}
+
+.node {
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    /* background: #303030; */
+    background: #fcfcfc;
+    width: 200px;
+    border: 1px solid #0f1010;
+    color: black;
+}
+
+.node.preview {
+    /* enable dragging preview components */
+    cursor: grab;
+    position: relative;
+
+    /* scale temporary for now, will be managed by JS later */
+    transform: scale(0.5);
+    transform-origin: top left;
+}
+
+/* all preview components inside should not be able to be selected. This is to "disable them" essentially */
+.node.preview * {
+    user-select: none;
+    pointer-events: none;
+}
+
+.node {
+    font-size: 12px;
+}
+
+.node .node-inner {
+    margin: 2px 0px 4px;
+}
+
+.node .node-field {
+    position: relative;
+    margin: 2px 12px;
+}
+
+.node-header {
+    color: #fff;
+    padding: 4px 8px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    box-shadow: inset 0 -1 rgba(0,0,0,0.4);
 }
