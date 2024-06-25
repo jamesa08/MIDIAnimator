@@ -1,4 +1,4 @@
-use crate::structures::midi::MIDIFile;
+use crate::structures::{midi::MIDIFile, state::STATE};
 
 #[tauri::command]
 pub fn get_midi_file(file: &str) -> MIDIFile {
@@ -20,4 +20,15 @@ pub fn get_midi_file_statistics(file: &str) -> String {
     // get track count
     return format!("{} tracks, \n{} minutes", track_count, time_constant).to_string();
     
+}
+
+#[tauri::command]
+pub fn execute_graph() {
+    let state = STATE.lock().unwrap();
+    // if state.connected {
+    let rf_instance = state.rf_instance.clone();
+    let edges = rf_instance.get("edges").unwrap();
+    println!("{:#?}", edges);
+
+    drop(state);
 }

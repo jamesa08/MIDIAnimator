@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/tauri";
+
 function Tool({ type }: { type: string }) {
     var icon;
     if (type == "run") {
@@ -12,7 +14,18 @@ function Tool({ type }: { type: string }) {
         icon = <img src="src/collapse-right.png" alt="collapse-right" className="size-6 h-5" />;
     }
 
-    return <div className="toolbar-button flex items-center pr-1 pl-1">{icon}</div>;
+    return (
+        <div
+            className="toolbar-button flex items-center pr-1 pl-1"
+            onClick={() => {
+                if (type == "run") {
+                    invoke("execute_graph", {});
+                }
+            }}
+        >
+            {icon}
+        </div>
+    );
 }
 
 export default Tool;
