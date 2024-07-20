@@ -21,6 +21,7 @@ pub mod api {
     pub mod event;
     pub mod midi;
     pub mod build_scene;
+    pub mod javascript;
 }
 
 pub mod auto_commands;
