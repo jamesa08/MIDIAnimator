@@ -13,7 +13,11 @@
     },
     "tauri": {
         "allowlist": {
-            "all": true
+            "all": true,
+            "fs": {
+                "readFile": true,
+                "scope": ["**", "**/*", "/**/*"]
+            }
         },
         "bundle": {
             "active": true,
@@ -54,7 +58,7 @@
                 "height": 600,
                 "resizable": true,
                 "title": "MIDIAnimator",
-                "width": 800,
+                "width": 1100,
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true
             }

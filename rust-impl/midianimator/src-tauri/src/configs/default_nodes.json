@@ -1,0 +1,56 @@
+{
+    "nodes": [
+        {
+            "id": "get_midi_file",
+            "name": "Get MIDI File",
+            "description": "Gets a MIDI provided a path to the file with the file picker.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "file_path",
+                        "name": "File Path",
+                        "type": "String"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "tracks",
+                        "name": "Tracks",
+                        "type": "Array<MIDITrack>"
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "get_midi_track",
+            "name": "Get MIDI Track",
+            "description": "Gets a MIDI track from an array of MIDI Tracks.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "tracks",
+                        "name": "Tracks",
+                        "type": "Array<MIDITrack>"
+                    },
+                    {
+                        "id": "track_name",
+                        "name": "Track Name",
+                        "type": "String"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "track",
+                        "name": "Track",
+                        "type": "MIDITrack"
+                    }
+                ]
+            }
+        }
+    ]
+}
