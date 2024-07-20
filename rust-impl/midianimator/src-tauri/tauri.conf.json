@@ -33,7 +33,7 @@
                 "providerShortName": null,
                 "signingIdentity": null
             },
-            "resources": [],
+            "resources": ["src/configs/default_nodes.json"],
             "shortDescription": "",
             "targets": "all",
             "windows": {
