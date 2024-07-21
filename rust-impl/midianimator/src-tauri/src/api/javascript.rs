@@ -43,7 +43,6 @@ pub async fn evaluate_js(code: String) -> String {
             code,
             random
         );
-        println!("WRAPPER CODE: {}", wrapper_code);
 
         // eval javascript code blindly on the window. MUST be non-blocking for it to execute and for the event to get picked up (hence async)
         let _ = window.as_ref().unwrap().eval(&wrapper_code);
