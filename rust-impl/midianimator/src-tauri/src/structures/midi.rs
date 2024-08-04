@@ -229,7 +229,7 @@ impl MIDIFile {
         // instance variables
         let mut tracks: Vec<MIDITrack> = Vec::new();
 
-        let bytes = std::fs::read(midi_file)?;
+        let bytes = std::fs::read(midi_file.trim_matches('\"'))?;
         let smf = Smf::parse(&bytes)?;
         
         let midi_type = smf.header.format;
@@ -277,7 +277,6 @@ impl MIDIFile {
                     // update time with new tempo
                 }
             }
-            println!("{:?}", tempo_map);
         }
         let mut i = 0;
         for track in smf.tracks.iter() {
@@ -293,7 +292,6 @@ impl MIDIFile {
 
             for msg in track {
                 time += tick2second(msg.delta.as_int(), ticks_per_beat, tempo);
-                println!("{:?}", time);
                 // channel messages
                 if let TrackEventKind::Midi { channel, message: _ } = msg.kind {
                     current_channel = channel.as_int() as i32;
@@ -349,7 +347,6 @@ impl MIDIFile {
                     }
                     if midi_type == midly::Format::Parallel {
                         tempo = closest_tempo(&tempo_map, time, false).1;
-                        println!("{:?}", tempo);
                     }
                 }
 
@@ -383,6 +380,10 @@ impl MIDIFile {
                 
                 let mut track = track.clone();
                 track.notes = notes;
+
+                // delete note table (temporary anyway) to comply with JSON serialization
+                // you cannot serialize a HashMap with a tuple as a key
+                track.note_table.clear();
                 
                 tracks.push(track.clone());
             }
