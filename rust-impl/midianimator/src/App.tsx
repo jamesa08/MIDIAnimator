@@ -25,6 +25,11 @@ function App() {
             setBackEndState(event.payload);
         });
 
+        const executionRunner = listen("execute_function", (event: any) => {
+            invoke(event.payload["function"], event.payload["args"]).then((res: any) => {
+            });
+        })
+
         // tell the backend we're ready & get the initial state
         invoke("ready").then((res: any) => {
             if (res !== null) {
@@ -35,6 +40,7 @@ function App() {
         return () => {
             windowEventListener.then((f) => f());
             stateListner.then((f) => f());
+            executionRunner.then((f) => f());
         };
     }, []);
 
