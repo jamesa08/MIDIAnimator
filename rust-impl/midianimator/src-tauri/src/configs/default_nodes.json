@@ -19,6 +19,11 @@
                         "id": "tracks",
                         "name": "Tracks",
                         "type": "Array<MIDITrack>"
+                    },
+                    {
+                        "id": "stats",
+                        "name": "MIDI Stats",
+                        "type": "String"
                     }
                 ]
             }
