@@ -1,2 +1,2 @@
-export { default as MIDIFileNode } from "./MIDIFile";
-export { default as MIDITrackNode } from "./MIDITrack";
+export { default as GetMIDIFileNode } from "./GetMIDIFileNode";
+export { default as GetMIDITrackNode } from "./GetMIDITrackNode";
