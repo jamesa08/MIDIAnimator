@@ -19,7 +19,7 @@ function Tool({ type }: { type: string }) {
             className="toolbar-button flex items-center pr-1 pl-1"
             onClick={() => {
                 if (type == "run") {
-                    invoke("execute_graph", {});
+                    invoke("execute_graph", { realtime: false });
                 }
             }}
         >
