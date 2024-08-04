@@ -95,7 +95,6 @@ pub fn start_server() {
 }
 
 pub async fn request_client_info() {
-    println!("Hello printing from request_client_info");
     let script = r"import bpy
 def execute():
     version = bpy.app.version_string
