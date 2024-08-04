@@ -7,7 +7,6 @@ pub mod structures {
     pub mod midi; 
     pub mod ipc;
     pub mod state;
-    pub mod node;
 }
 pub mod scene_generics;
 
