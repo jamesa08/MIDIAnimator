@@ -3,7 +3,7 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import nodeTypes from "../nodes/NodeTypes";
-import { ReactFlowProvider } from "reactflow";
+import { ReactFlowProvider } from "@xyflow/react";
 
 interface PanelProps {
     id: string;
