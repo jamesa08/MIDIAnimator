@@ -6,6 +6,7 @@ version = 3
 name = "MIDIAnimator"
 version = "0.5.0"
 dependencies = [
+ "async-recursion",
  "lazy_static",
  "midly",
  "once_cell",
