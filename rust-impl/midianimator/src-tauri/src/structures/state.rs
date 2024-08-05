@@ -1,6 +1,4 @@
 use std::collections::HashSet;
-use std::default;
-use std::hash::Hash;
 use std::io::Read;
 use std::{collections::HashMap, sync::Mutex};
 use serde::{Deserialize, Serialize};
@@ -144,13 +142,9 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
         let default_node = default_nodes["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_id).unwrap();
 
         let node_data = node["data"].as_object().unwrap().clone();
-        let mut result = Map::new();
         
         let incoming_edges = rf_instance["edges"].as_array().unwrap().iter().filter(|edge| edge["source"] == node_id);
 
-        // result.insert("inputs".to_string(), serde_json::Value::Object(Map::new()));
-
-        
         println!("INCOMING EDGES: {:#?} FOR {:?}", incoming_edges, node_id);
         
         // add the node id to inputs
@@ -194,7 +188,6 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
                     });
                 }
             }
-            // inputs.insert(node_id.clone(), node_data["inputs"].clone());
         }
 
         // add the node to visited after we have computed the inputs 
