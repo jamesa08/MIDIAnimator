@@ -7,8 +7,8 @@ import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
 
 const initialNodes = [
-    { id: "get_midi_file", position: { x: 0, y: 0 }, data: { file_path: {} }, type: "get_midi_file" },
-    { id: "get_midi_track", position: { x: 300, y: 0 }, data: { testing: {} }, type: "get_midi_track" },
+    { id: "get_midi_file", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
+    { id: "get_midi_track", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track" },
 ];
 const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */

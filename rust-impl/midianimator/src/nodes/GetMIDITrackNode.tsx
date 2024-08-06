@@ -15,7 +15,7 @@ function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isC
 
     useEffect(() => {
         getNodeData("get_midi_track").then(setNodeData);
-        updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: "Test" } });
+        updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: "" } });
     }, []);
 
 
