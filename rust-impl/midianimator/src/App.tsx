@@ -26,9 +26,8 @@ function App() {
         });
 
         const executionRunner = listen("execute_function", (event: any) => {
-            invoke(event.payload["function"], event.payload["args"]).then((res: any) => {
-            });
-        })
+            invoke(event.payload["function"], event.payload["args"]).then((res: any) => {});
+        });
 
         // tell the backend we're ready & get the initial state
         invoke("ready").then((res: any) => {
