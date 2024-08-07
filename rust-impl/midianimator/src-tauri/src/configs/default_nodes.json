@@ -56,6 +56,24 @@
                     }
                 ]
             }
+        },
+
+        {
+            "id": "viewer",
+            "name": "Viewer",
+            "description": "Display node results",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "data",
+                        "name": "Input",
+                        "type": "Any"
+                    }
+                ],
+                "outputs": []
+            }
         }
     ]
 }

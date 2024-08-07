@@ -85,3 +85,15 @@ pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<Str
     
     return outputs;
 }
+
+/// Node: viewer
+/// 
+/// inputs:
+/// "data": `Any`
+/// 
+/// outputs: 
+/// None
+#[tauri::command]
+pub fn viewer(inputs: HashMap<String, serde_json::Value>) {
+    // :) 
+}
