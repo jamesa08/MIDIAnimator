@@ -4,6 +4,7 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
+import { invoke } from "@tauri-apps/api/tauri";
 
 
 function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
@@ -18,6 +19,13 @@ function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isC
         updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: "" } });
     }, []);
 
+    function arraysEqual(arr1: any[], arr2: string | any[]) {
+        if (arr1.length !== arr2.length) return false;
+        
+        return arr1.every((item, index) => {
+          return item === arr2[index];
+        });
+      }
 
     useEffect(() => {
         var trackNames = [];
@@ -30,7 +38,10 @@ function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isC
             if (trackNames.length == 0) {
                 trackNames = ["No track names found"];
             }
-            setTrackNamesState(trackNames);
+            if (!arraysEqual(trackNames, trackNamesState)) {
+                setTrackNamesState(trackNames);
+                updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: trackNames[0] } });
+            }
         } else {
             setTrackNamesState(["No track names found"]);
         }
