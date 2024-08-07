@@ -10,6 +10,7 @@ import ConnectionLine from "./ConnectionLine";
 const initialNodes = [
     { id: "get_midi_file", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
     { id: "get_midi_track", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track" },
+    { id: "viewer", position: { x: 600, y: 0 }, data: {}, type: "viewer" },
 ];
 const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */
