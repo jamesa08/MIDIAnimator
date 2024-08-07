@@ -111,3 +111,9 @@ img {
     border-top-right-radius: 5px;
     box-shadow: inset 0 -1 rgba(0,0,0,0.4);
 }
+
+.react-flow__node.selected .node {
+    border: 1px solid rgb(29, 198, 255);
+    -webkit-box-sizing: border-box!important;
+    box-sizing: border-box!important;
+}
