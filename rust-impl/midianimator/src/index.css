@@ -117,3 +117,7 @@ img {
     -webkit-box-sizing: border-box!important;
     box-sizing: border-box!important;
 }
+
+.react-flow__pane.draggable {
+    cursor: default;
+}
