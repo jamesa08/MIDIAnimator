@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
+import ConnectionLine from "./ConnectionLine";
 
 const initialNodes = [
     { id: "get_midi_file", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
@@ -14,10 +15,12 @@ const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */
 ];
 
-function NodeGraph() {
+function NodeGraphNoProvider() {
     const [nodes, setNodes] = useNodesState(undefined as any);
     const [edges, setEdges] = useEdgesState(undefined as any);
-    
+
+    const { getNodes, getEdges } = useReactFlow();
+
     const [rfInstance, setRfInstance] = useState(null as ReactFlowInstance | null);
     const [updateTrigger, setUpdateTrigger] = useState(false);
 
@@ -29,7 +32,7 @@ function NodeGraph() {
             // send update to backend
             let newState = { ...state, rf_instance: rfInstance?.toObject() };
             setState(newState);
-            invoke("js_update_state", { state: JSON.stringify(newState) });            
+            invoke("js_update_state", { state: JSON.stringify(newState) });
             setUpdateTrigger(false);
 
             // execute real-time nodes
@@ -101,11 +104,46 @@ function NodeGraph() {
         setUpdateTrigger(true);
     }, []);
 
+
+    // prevent cyclitic connections
+    const isValidConnection = useCallback(
+        (connection: { target: string; source: string }) => {
+            // we are using getNodes and getEdges helpers here
+            // to make sure we create isValidConnection function only once
+            const nodes = getNodes();
+            const edges = getEdges();
+
+            const target = nodes.find((node) => node.id === connection.target);
+            const hasCycle = (node: any, visited = new Set()) => {
+                if (visited.has(node.id)) return false;
+
+                visited.add(node.id);
+
+                for (const outgoer of getOutgoers(node, nodes, edges)) {
+                    if (outgoer.id === connection.source) return true;
+                    if (hasCycle(outgoer, visited)) return true;
+                }
+            };
+
+            if (target?.id === connection.source) return false;
+            return !hasCycle(target);
+        },
+        [getNodes, getEdges]
+    );
+
     return (
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={nodeTypes} onInit={onInit} fitView>
+        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} fitView>
             <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
             <Controls />
         </ReactFlow>
+    );
+}
+
+function NodeGraph() {
+    return (
+        <ReactFlowProvider>
+            <NodeGraphNoProvider />
+        </ReactFlowProvider>
     );
 }
 
