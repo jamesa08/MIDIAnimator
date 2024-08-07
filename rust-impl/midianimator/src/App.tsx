@@ -1,7 +1,6 @@
 import MenuBar from "./components/MenuBar";
 import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
-import NodeGraph from "./components/NodeGraph";
 import StatusBar from "./components/StatusBar";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -9,6 +8,7 @@ import { WebviewWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/tauri";
 
 import { useStateContext } from "./contexts/StateContext";
+import NodeGraph from "./components/NodeGraph";
 
 function App() {
     const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
