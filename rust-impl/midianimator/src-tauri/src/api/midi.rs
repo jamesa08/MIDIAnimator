@@ -94,6 +94,6 @@ pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<Str
 /// outputs: 
 /// None
 #[tauri::command]
-pub fn viewer(inputs: HashMap<String, serde_json::Value>) {
+pub fn viewer(_inputs: HashMap<String, serde_json::Value>) {
     // :) 
 }
