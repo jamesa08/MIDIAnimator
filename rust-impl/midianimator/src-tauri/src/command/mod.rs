@@ -3,6 +3,4 @@
 // using [tauri::command] and possibly either lua or python scripts to interact with the backend
 
 pub mod event;
-pub mod ipc;
-pub mod midi;
 pub mod javascript;

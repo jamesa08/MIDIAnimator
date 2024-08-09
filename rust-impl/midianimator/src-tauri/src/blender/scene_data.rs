@@ -1,11 +1,11 @@
 use crate::scene_generics;
-use crate::structures::ipc;
+use crate::ipc;
 use std::collections::HashMap;
 use serde_json::{self, Value};
 
 
-static SCENE_BUILDER_PY: &str = include_str!("../blender_python/blender_scene_builder.py");
-static SCENE_SENDER_PY: &str = include_str!("../blender_python/blender_scene_sender.py");
+static SCENE_BUILDER_PY: &str = include_str!("../blender/python/blender_scene_builder.py");
+static SCENE_SENDER_PY: &str = include_str!("../blender/python/blender_scene_sender.py");
 
 pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
     let scene_data = match ipc::send_message(SCENE_BUILDER_PY.to_string()).await {

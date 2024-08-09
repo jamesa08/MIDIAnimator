@@ -3,7 +3,7 @@
 // cargo test
 mod tests { 
     use lazy_static::lazy_static;
-    use MIDIAnimator::structures::midi::MIDIFile;
+    use MIDIAnimator::midi::MIDIFile;
 
     lazy_static! {
         static ref TYPE_0: &'static str = "./tests/test_midi_type_0_rs_4_14_24.mid";

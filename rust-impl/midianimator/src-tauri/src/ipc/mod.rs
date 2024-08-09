@@ -10,8 +10,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::api::build_scene;
-use crate::structures::state::{STATE, update_state};
+use crate::blender::scene_data;
+use crate::state::{STATE, update_state};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -119,7 +119,7 @@ def execute():
 }
 
 pub async fn request_scene_data() {
-    let result = build_scene::get_scene_data().await;
+    let result = scene_data::get_scene_data().await;
     println!("Scene data: {:?}", result);
     let mut state = STATE.lock().unwrap();
     state.scene_data = result;

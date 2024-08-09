@@ -1,6 +1,6 @@
 use tauri::{CustomMenuItem, Menu, MenuEntry, WindowMenuEvent};
 use crate::ui::keybinds;
-use crate::api::event;
+use crate::command::event;
 
 static KEYBINDS: &str = include_str!("../configs/keybinds.json");
 

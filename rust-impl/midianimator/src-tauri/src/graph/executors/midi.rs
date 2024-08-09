@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::structures::midi::MIDIFile;
+use crate::midi::MIDIFile;
 
 pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     let track_count = midi_file.get_midi_tracks().len();
@@ -84,16 +84,4 @@ pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<Str
     println!("GET MIDI TRACK OUTPUTS {:?}", outputs);
     
     return outputs;
-}
-
-/// Node: viewer
-/// 
-/// inputs:
-/// "data": `Any`
-/// 
-/// outputs: 
-/// None
-#[tauri::command]
-pub fn viewer(_inputs: HashMap<String, serde_json::Value>) {
-    // :) 
 }

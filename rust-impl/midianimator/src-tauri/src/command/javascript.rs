@@ -1,4 +1,4 @@
-use crate::structures::state::WINDOW;
+use crate::state::WINDOW;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 

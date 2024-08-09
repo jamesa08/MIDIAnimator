@@ -3,9 +3,9 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-use MIDIAnimator::structures::ipc::start_server;
-use MIDIAnimator::{structures::state::update_state, ui::menu};
-use MIDIAnimator::structures::state::WINDOW;
+use MIDIAnimator::ipc::start_server;
+use MIDIAnimator::state::{WINDOW, update_state};
+use MIDIAnimator::ui::menu;
 
 use tauri::{generate_context, Manager};
 #[derive(Clone, serde::Serialize)]
