@@ -30,7 +30,7 @@ fn create_tauri_handlers() {
             for capture in re.captures_iter(&content) {
                 if let Some(command_name) = capture.get(2) {
                     // format: crate_name::path::command_name
-                    let path = entry.path().strip_prefix("src").unwrap().to_str().unwrap().replace("/", "::").replace(".rs", "");
+                    let path = entry.path().strip_prefix("src").unwrap().to_str().unwrap().replace("/mod", "").replace("/", "::").replace(".rs", "");
                     println!("cargo:warning=found path: {}", entry.path().to_str().unwrap());
                     println!("cargo:warning=found command: {}", command_name.as_str());
                     if path != "main" {  // sorry, main.rs, you're not allowed to have commands
