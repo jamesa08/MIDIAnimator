@@ -69,8 +69,9 @@ img {
     border-radius: 6px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.2);
     /* background: #303030; */
+    min-width: 200px;
+    max-width: 1000px;
     background: #fcfcfc;
-    width: 200px;
     border: 1px solid #0f1010;
     color: black;
 }
@@ -120,4 +121,9 @@ img {
 
 .react-flow__pane.draggable {
     cursor: default;
+}
+
+.react-flow__resize-control.line.right {
+    border-right-width: 8px;
+    border-right-color: #ffffff00;
 }

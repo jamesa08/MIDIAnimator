@@ -1,8 +1,11 @@
 // @ts-nocheck
 import React, { ReactNode, useCallback, useState, useEffect } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, NodeResizeControl, Position } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
+import { memo } from "react";
+import { useDimensions } from "../hooks/useDimensions";
+
 
 const handleStyle = {
     width: "16px",
@@ -24,7 +27,6 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
     // iterate over handles
     let handleObjects = [];
 
-    useEffect(() => {}, []);
 
     if (nodeData != null) {
         for (let handleType in nodeData["handles"]) {
@@ -65,9 +67,10 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
     return (
         <div className={`node${preview ? " preview" : ""}`} draggable={preview}>
             <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={"TRANSFORM"} />
+            <NodeResizeControl minWidth={200} maxWidth={1000} variant="line"/>
             <div className="node-inner flex flex-col">{handleObjects.map((handle) => handle)}</div>
         </div>
     );
 }
 
-export default BaseNode;
+export default memo(BaseNode);
