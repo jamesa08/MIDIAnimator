@@ -33,7 +33,9 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
         }
     
         let node = rf_instance["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_id).unwrap();
-        let default_node = default_nodes["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_id).unwrap();
+        let node_no_uuid = node_id.split("-").collect::<Vec<&str>>()[0];
+        
+        let default_node = default_nodes["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_no_uuid).unwrap();
 
         let node_data = node["data"].as_object().unwrap().clone();
         
@@ -131,7 +133,7 @@ function execute() {{
     let mut visited: HashSet<String> = HashSet::new();
     let mut results: HashMap<String, serde_json::Value> = HashMap::new();
     let mut inputs: HashMap<String, serde_json::Value> = HashMap::new();
-    execute_dfs("get_midi_file".to_string(), &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
+    execute_dfs("get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56".to_string(), &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
     
     println!("FINAL RESULTS: {:#?}", results);
 
