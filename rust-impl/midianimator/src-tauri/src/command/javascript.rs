@@ -31,11 +31,10 @@ pub async fn evaluate_js(code: String) -> String {
         (function() {{
                 try {{
                     execute().then((result) => {{
-                        console.log("JS result", result);
                         window.__TAURI__.window.appWindow.emit("__js_result_{1}", {{ result: result }})
                     }});
                 }} catch (error) {{
-                    console.log("ERROR:", error);
+                    console.log("JS ERROR:", error);
                     window.__TAURI__.window.appWindow.emit("__js_result_{1}", {{ result: JSON.stringify({{ error: error.toString() }}) }})
                 }}
             }})();
