@@ -133,8 +133,25 @@ function execute() {{
     let mut visited: HashSet<String> = HashSet::new();
     let mut results: HashMap<String, serde_json::Value> = HashMap::new();
     let mut inputs: HashMap<String, serde_json::Value> = HashMap::new();
-    execute_dfs("get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56".to_string(), &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
-    
+
+    // find the root nodes
+    let nodes: HashSet<String> = rf_instance["nodes"].as_array().unwrap().iter().map(|node| node["id"].as_str().unwrap().to_string()).collect();
+
+    let mut target_nodes: HashSet<String> = HashSet::new();
+
+    // find nodes with incoming edges
+    for edge in rf_instance["edges"].as_array().unwrap() {
+        target_nodes.insert(edge["source"].as_str().unwrap().to_string());
+    }
+
+    let root_nodes = nodes.difference(&target_nodes).map(|node| node.clone()).collect::<Vec<String>>();
+
+    println!("ROOT NODES: {:#?}", root_nodes);
+
+    for node_id in root_nodes {
+        execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
+    }
+
     println!("FINAL RESULTS: {:#?}", results);
 
 
