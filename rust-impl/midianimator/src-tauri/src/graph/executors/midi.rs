@@ -73,6 +73,13 @@ pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<Str
 
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     println!("GET MIDI TRACK INPUTS {:?}", inputs);
+    
+    if !inputs.contains_key("tracks") || !inputs.contains_key("track_name") {
+        // empty array, no data
+        outputs.insert("track".to_string(), serde_json::Value::Object(serde_json::Map::new()));
+        return outputs;
+    }
+
     let tracks_unwrapped = inputs["tracks"].as_array().expect("in get_midi_track, tracks is not an array").clone();
 
     for track in tracks_unwrapped {
