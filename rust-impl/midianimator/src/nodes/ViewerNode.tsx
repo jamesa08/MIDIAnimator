@@ -17,16 +17,8 @@ function ViewerNode({ id, data, isConnectable }: { id: any; data: any; isConnect
         var tempViewerData: any = "";
         if (state != undefined && state.executed_results != undefined && id != undefined) {
             if (id in state.executed_inputs && id in state.executed_results) {
-                console.log(state.executed_inputs);
-                tempViewerData = stringify(state.executed_inputs[id]["data"]);
-                // if (state.executed_inputs[id]["data"] == null || state.executed_inputs[id]["data"].length == 0) {
-                //     console.log("no executed inputs");
-                //     viewerData = "null";
-                // } else {
-                //     for (let line of state.executed_inputs[id]["data"]) {
-                //         viewerData += stringify(line) + "\n";
-                //     }
-                // }
+                tempViewerData = stringify(state.executed_inputs[id]["data"], undefined, 4);
+
                 if (tempViewerData != viewerData) {
                     setViewerData(tempViewerData);
                 }
@@ -42,7 +34,14 @@ function ViewerNode({ id, data, isConnectable }: { id: any; data: any; isConnect
 
     const viewerComponent = (
         <>
-            <div className="node-field node-viewer">{viewerData}</div>
+            <div className="node-field node-viewer" style={{fontFamily: "monospace", whiteSpace: "pre-wrap"}}>
+                {viewerData?.split("\n").map((line: any, _: any) => (
+                    <>
+                        {line}
+                        <br />
+                    </>
+                ))}
+            </div>
         </>
     );
 
