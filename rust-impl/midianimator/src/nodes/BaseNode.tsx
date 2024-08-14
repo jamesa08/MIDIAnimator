@@ -52,7 +52,7 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
                             <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
-                            <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-20px" } : { ...handleStyle, right: "-20px" }} isConnectable={true}></Handle>
+                            <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-20px" } : { ...handleStyle, right: "-20px" }} ></Handle>
                         </div>
                         {uiInject}
                     </>
