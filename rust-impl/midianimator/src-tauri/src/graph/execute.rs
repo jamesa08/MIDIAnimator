@@ -6,14 +6,20 @@ use crate::state::{STATE, update_state};
 use crate::command::javascript::evaluate_js;
 
 #[tauri::command]
-pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {    
+pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
     let now = std::time::Instant::now();
 
-    // get current nodes & edges
-    let rf_instance: HashMap<String, serde_json::Value> = tokio::task::spawn_blocking(move || {
-        let state = STATE.lock().map_err(|e| e.to_string()).unwrap();
-        return state.rf_instance.clone()
+    let state = tokio::task::spawn_blocking(move || {
+        let state = STATE.lock().unwrap();
+        return state.clone();
     }).await.map_err(|e| e.to_string()).unwrap();
+
+    if state.connected {
+        println!("CONNECTED TO 3D SOFTWARE {}", state.connected_application);
+    }
+
+    // get current nodes & edges
+    let rf_instance: HashMap<String, serde_json::Value> = state.rf_instance.clone();
 
     // get the default nodes
     let resource_path = handle.path_resolver().resolve_resource("src/configs/default_nodes.json").unwrap();
