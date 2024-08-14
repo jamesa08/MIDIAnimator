@@ -126,8 +126,10 @@ function NodeGraphNoProvider() {
                 }
             };
 
+            const targetHasConnection = edges.filter((edge) => edge.target === connection.target).length === 1;
+
             if (target?.id === connection.source) return false;
-            return !hasCycle(target);
+            return !hasCycle(target) && !targetHasConnection;
         },
         [getNodes, getEdges]
     );
