@@ -92,12 +92,12 @@ def execute():
     scene_data = {}
 
     for scene in bpy.data.scenes:
-        scene_key = f"Scene('{scene.name}')"
+        scene_key = f"{scene.name}"
         scene_data[scene_key] = {}
         scene_data[scene_key]["object_group"] = {}
 
         for collection in scene.collection.children:
-            collection_key = f"ObjectGroup('{collection.name}')"
+            collection_key = f"{collection.name}"
             scene_data[scene_key]["object_group"][collection_key] = {
                 "objects": get_all_objects_in_collection(collection)
             }
