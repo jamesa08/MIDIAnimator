@@ -74,6 +74,29 @@
                 ],
                 "outputs": []
             }
+        }, 
+        
+        {
+            "id": "scene_link",
+            "name": "Scene Link",
+            "description": "Provide access to the scene",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [],
+                "outputs": [
+                    {
+                        "id": "name",
+                        "name": "Name",
+                        "type": "String"
+                    },
+                    {
+                        "id": "object_groups",
+                        "name": "Object Groups",
+                        "type": "Array<ObjectGroup>"
+                    }
+                ]
+            }
         }
     ]
 }
