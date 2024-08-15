@@ -54,11 +54,7 @@ function GetMIDIFileNode({ id, data, isConnectable }: { id: any; data: any; isCo
                 Pick MIDI File
             </button>
             <div className="node-field">{fileName}</div>
-        </>
-    );
-
-    const fileStatsComponent = (
-        <>
+            
             {Object.keys(fileStatsState).length != 0 && fileStatsState.tracks != 0 ? (
                 <>
                     <div className="node-field">
@@ -74,7 +70,6 @@ function GetMIDIFileNode({ id, data, isConnectable }: { id: any; data: any; isCo
 
     const uiInject = {
         file_path: filePathComponent,
-        stats: fileStatsComponent,
     };
 
     const hiddenHandles = {
