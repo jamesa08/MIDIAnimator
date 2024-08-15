@@ -29,11 +29,13 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
 
 
     if (nodeData != null) {
-        for (let handleType in nodeData["handles"]) {
+        const handleTypes = ["outputs", "inputs"];
+        for (let handleType of handleTypes) {
             let rfHandleType: boolean = false;
             if (handleType == "inputs") {
                 rfHandleType = true;
             }
+
             for (let handleIndex in nodeData["handles"][handleType]) {
                 let handle = nodeData["handles"][handleType][handleIndex];
 
