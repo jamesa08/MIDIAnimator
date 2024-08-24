@@ -23,7 +23,7 @@ const handleStyle = {
 /// @param executor: function to execute when the node is executed. only should be used for nodes that use JS execution
 /// @param data: reactflow data
 /// @param children: may be removed later
-function BaseNode({ nodeData, inject, hidden, executor, data, children }: { nodeData: any; inject: any; executor?: any; hidden: any; data: any; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, data, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; data: any; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
