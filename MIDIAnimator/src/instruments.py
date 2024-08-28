@@ -540,7 +540,12 @@ class EvaluateInstrument(Instrument):
         )
         MIDIAnimatorObjectProperties.anim_overlap = bpy.props.EnumProperty(
             items=[
-                ("add", "Add", "Curves will add motion. More options will be added in the future")
+                ("add", "Add", "Curves will add motion."),
+                ("min", "Min", ""),
+                ("max", "Min", ""),
+                ("prev", "Previous", ""),
+                ("next", "Next", ""),
+                ("prune", "Keyframe Pruning", ""),
             ],
             name="Animation Overlap",
             default="add",
