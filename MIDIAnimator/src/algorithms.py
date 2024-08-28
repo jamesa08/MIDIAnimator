@@ -229,7 +229,7 @@ def addKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None
             # out of range to the right of the list
             return (keyList[-1], keyList[-1])
         
-        for i in range(len(keyList)):
+        for i in range(len(keyList) - 1):
             if keyList[i].frame <= frame <= keyList[i+1].frame:
                 return (keyList[i], keyList[i+1])
 
@@ -262,3 +262,24 @@ def addKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None
     keysOverlapping.sort(key=lambda keyframe: keyframe.frame)
 
     insertedKeys.extend(keysOverlapping)
+
+
+def minKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
+
+def maxKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
+def previousKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
+def nextKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
+def restValueCrossingKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
+def keyPruningKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+    return
+
