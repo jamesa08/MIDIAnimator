@@ -267,11 +267,10 @@ def addKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None
 def minKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     return
 
-
 def maxKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     return
 
-def previousKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+def prevKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     return
 
 def nextKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
@@ -280,6 +279,6 @@ def nextKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> Non
 def restValueCrossingKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     return
 
-def keyPruningKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
+def pruneKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     return
 
