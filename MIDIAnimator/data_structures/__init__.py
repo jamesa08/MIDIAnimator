@@ -104,6 +104,8 @@ class ObjectWrapper:
         """
 
         for noteOnCurve in self.noteOnCurves:
+
+            # This doesn't handle note off curves
             curveStart, curveEnd = noteOnCurve.range()
             if self.startFrame is None or curveStart < self.startFrame:
                 self.startFrame = curveStart
