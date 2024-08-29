@@ -540,7 +540,13 @@ class EvaluateInstrument(Instrument):
         )
         MIDIAnimatorObjectProperties.anim_overlap = bpy.props.EnumProperty(
             items=[
-                ("add", "Add", "Curves will add motion. More options will be added in the future")
+                ("add", "Add", "Curves will add motion."),
+                ("min", "Min", ""),
+                ("max", "Max", ""),
+                ("prev", "Previous", ""),
+                ("next", "Next", ""),
+                ("rvc", "Rest Value Crossing", ""),
+                ("prune", "Keyframe Pruning", ""),
             ],
             name="Animation Overlap",
             default="add",
@@ -736,6 +742,18 @@ class EvaluateInstrument(Instrument):
                         # take keyframes that are next and "add" them to the already insrted keyframes
                         if obj.midi.anim_overlap == "add":
                             addKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "min":
+                            minKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "max":
+                            maxKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "prev":
+                            prevKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "next":
+                            nextKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "rvc":
+                            restValueCrossingKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "prune":
+                            pruneKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
                 
                 elif obj.midi.anim_type == "osc":
                     # for now, we're going to use a keyframed object to determine which channels to keyframe to

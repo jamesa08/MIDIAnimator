@@ -291,7 +291,6 @@ class MIDIFile:
                     tempo = msg.tempo
                     tempoMap.append((time, msg.tempo))
 
-            print(tempoMap)
         for track in midiFile.tracks:
             time = 0
             tempo = 500000
@@ -308,7 +307,6 @@ class MIDIFile:
 
             for msg in mido.merge_tracks([track]):
                 time += mido.tick2second(msg.time, midiFile.ticks_per_beat, tempo)
-                print(time)
                 curType = msg.type
 
                 # channel messages

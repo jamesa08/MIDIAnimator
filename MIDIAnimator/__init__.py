@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 bl_info = {
-    "name": "MIDIAnimator beta4.0",
+    "name": "MIDIAnimator beta4.1",
     "description": "A cohesive, open-source solution to animating Blender objects using a MIDI file.",
     "author": "James Alt (et al.)",
-    "version": (1, 0, 0),
+    "version": (0, 4, 1),
     "blender": (3, 0, 0),
     "location": "Scripting Space",
     "doc_url": "https://midianimatordocs.readthedocs.io/en/latest/",
