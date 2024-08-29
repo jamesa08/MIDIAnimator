@@ -542,7 +542,7 @@ class EvaluateInstrument(Instrument):
             items=[
                 ("add", "Add", "Curves will add motion."),
                 ("min", "Min", ""),
-                ("max", "Min", ""),
+                ("max", "Max", ""),
                 ("prev", "Previous", ""),
                 ("next", "Next", ""),
                 ("rvc", "Rest Value Crossing", ""),
