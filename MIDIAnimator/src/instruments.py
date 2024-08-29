@@ -545,6 +545,7 @@ class EvaluateInstrument(Instrument):
                 ("max", "Min", ""),
                 ("prev", "Previous", ""),
                 ("next", "Next", ""),
+                ("rvc", "Rest Value Crossing", ""),
                 ("prune", "Keyframe Pruning", ""),
             ],
             name="Animation Overlap",
@@ -749,6 +750,8 @@ class EvaluateInstrument(Instrument):
                             prevKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
                         elif obj.midi.anim_overlap == "next":
                             nextKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
+                        elif obj.midi.anim_overlap == "rvc":
+                            restValueCrossingKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
                         elif obj.midi.anim_overlap == "prune":
                             pruneKeyframes(insertedKeys=keyframes, nextKeys=nextKeys)
                 
