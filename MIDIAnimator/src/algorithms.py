@@ -282,23 +282,21 @@ def minKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None
         if inv1 is None and inv2 is None: continue
         insertedKeysInterValues.append(Keyframe(key.frame, getValue(inv1, inv2, key.frame)))
 
-    # most important part: do the thing
+    # now compare the keyframe values and keep the maximum value
     for key, interp in zip(keysOverlapping, insertedKeysInterValues):
-        # check if the value is less than the interpolated value
-        if key.value < interp.value:
-            key.value = interp.value
+        # if they're resting, who cares
+        if interp.value != 0 and key.value != 0:
+            print(key.value, interp.value)
+            key.value = min(key.value, interp.value)
 
     for key, interp in zip(nextKeys, nextKeysInterValues):
-        # check if the value is less than the interpolated value
-        if key.value < interp.value:
-            key.value = interp.value
+        if interp.value != 0 and key.value != 0:
+            key.value = min(key.value, interp.value)
 
-    # extend the lists 
-    # TODO (need a better method to ensure the keyframes before get cut off and then start )
-    keysOverlapping.extend(nextKeys)
-    keysOverlapping.sort(key=lambda keyframe: keyframe.frame)
-
-    insertedKeys.extend(keysOverlapping)
+    # extend the lists (insert nextKeys only if they don't already exist in insertedKeys)
+    non_overlapping_keys = [key for key in nextKeys if key.frame not in [k.frame for k in keysOverlapping]]
+    insertedKeys.extend(non_overlapping_keys)
+    insertedKeys.sort(key=lambda keyframe: keyframe.frame)
 
 
 def maxKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
@@ -318,36 +316,26 @@ def maxKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None
         if inv1 is None and inv2 is None: continue
         insertedKeysInterValues.append(Keyframe(key.frame, getValue(inv1, inv2, key.frame)))
 
-    # most important part: do the thing
+    # now compare the keyframe values and keep the maximum value
     for key, interp in zip(keysOverlapping, insertedKeysInterValues):
-        # check if the value is more than the interpolated value
-        if key.value > interp.value:
-            key.value = interp.value
+        key.value = max(key.value, interp.value)
 
     for key, interp in zip(nextKeys, nextKeysInterValues):
-        # check if the value is more than the interpolated value
-        if key.value > interp.value:
-            key.value = interp.value
+        key.value = max(key.value, interp.value)
 
-    # extend the lists 
-    # TODO (need a better method to ensure the keyframes before get cut off and then start )
-    keysOverlapping.extend(nextKeys)
-    keysOverlapping.sort(key=lambda keyframe: keyframe.frame)
-
-    insertedKeys.extend(keysOverlapping)
+    # extend the lists (insert nextKeys only if they don't already exist in insertedKeys)
+    non_overlapping_keys = [key for key in nextKeys if key.frame not in [k.frame for k in keysOverlapping]]
+    insertedKeys.extend(non_overlapping_keys)
+    insertedKeys.sort(key=lambda keyframe: keyframe.frame)
 
 def prevKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
     keysOverlapping = findOverlap(insertedKeys, nextKeys)
 
-    # maintain the value from the first set during overlap
-    for key in keysOverlapping:
-        for nextKey in nextKeys:
-            if key.frame == nextKey.frame:
-                nextKey.value = key.value
+    # if there are ANY overlapping keyframes, ignore the nextKeys
+    if not keysOverlapping:
+        insertedKeys.extend(nextKeys)
 
-    # append non-overlapping keyframes from nextKeys to insertedKeys
-    nonOverlappingNextKeys = [key for key in nextKeys if key.frame not in [k.frame for k in keysOverlapping]]
-    insertedKeys.extend(nonOverlappingNextKeys)
+    # sort keys
     insertedKeys.sort(key=lambda keyframe: keyframe.frame)
 
 
@@ -355,33 +343,19 @@ def nextKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> Non
     # Find overlapping keyframes between insertedKeys and nextKeys
     keysOverlapping = findOverlap(insertedKeys, nextKeys)
 
-    # Replace values from insertedKeys with nextKeys during overlap
-    for key in keysOverlapping:
-        for nextKey in nextKeys:
-            if key.frame == nextKey.frame:
-                key.value = nextKey.value
+    # if there are overlapping keyframes, we need to start from the first overlapping keyframe, and remove all keyframes after it in the insertedKeys
+    if keysOverlapping:
+        firstOverlapFrame = keysOverlapping[0].frame
+        # go backward and pop each element until we reach the last overlapping keyframe
+        for key in reversed(insertedKeys):
+            if key.frame > firstOverlapFrame:
+                insertedKeys.pop()
+            else:
+                break
 
-    # Identify keyframes in nextKeys that are not in the overlap
-    nonOverlappingNextKeys = [key for key in nextKeys if key.frame not in [k.frame for k in keysOverlapping]]
-
-    # Combine non-overlapping nextKeys with all the original insertedKeys
-    finalKeyframes = []
-    i, j = 0, 0
-    while i < len(insertedKeys) and j < len(nonOverlappingNextKeys):
-        if insertedKeys[i].frame < nonOverlappingNextKeys[j].frame:
-            finalKeyframes.append(insertedKeys[i])
-            i += 1
-        else:
-            finalKeyframes.append(nonOverlappingNextKeys[j])
-            j += 1
-
-    # Add remaining keyframes
-    finalKeyframes.extend(insertedKeys[i:])
-    finalKeyframes.extend(nonOverlappingNextKeys[j:])
-
-    # Clear the insertedKeys list and replace it with finalKeyframes
-    insertedKeys.clear()
-    insertedKeys.extend(finalKeyframes)
+    # extend the next keys regardless if its overlapping or not
+    insertedKeys.extend(nextKeys)
+    insertedKeys.sort(key=lambda keyframe: keyframe.frame)
 
 
 def restValueCrossingKeyframes(insertedKeys: List[Keyframe], nextKeys: List[Keyframe]) -> None:
