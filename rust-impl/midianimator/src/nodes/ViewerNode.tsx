@@ -16,7 +16,7 @@ function customStringify(obj: any, depth = 0, maxDepth = 1, maxLength = 300): an
 
         // Truncate if string exceeds maxLength
         if (str != undefined && str != null && str.length > maxLength) {
-            str = str.substr(0, maxLength) + "...";
+            str = str.slice(0, maxLength) + "...";
         }
         return str;
     };

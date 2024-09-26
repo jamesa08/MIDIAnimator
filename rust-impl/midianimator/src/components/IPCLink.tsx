@@ -8,10 +8,9 @@ declare global {
     }
 }
 
-// why oh why is this not a built-in function in JS?
 String.prototype.toProperCase = function () {
     return this.replace(/\w\S*/g, function (txt) {
-        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+        return txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase();
     });
 };
 
