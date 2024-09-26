@@ -4,7 +4,6 @@ import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
-import { stringify } from "flatted";
 
 function SceneLink({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
