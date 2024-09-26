@@ -30,9 +30,9 @@
         },
 
         {
-            "id": "get_midi_track",
-            "name": "Get MIDI Track",
-            "description": "Gets a MIDI track from an array of MIDI Tracks.",
+            "id": "get_midi_track_data",
+            "name": "Get MIDI Track Data",
+            "description": "Gets a MIDI track's data from an array of MIDI Tracks.",
             "executor": "rust",
             "realtime": true,
             "handles": {
@@ -50,9 +50,24 @@
                 ],
                 "outputs": [
                     {
-                        "id": "track",
-                        "name": "Track",
-                        "type": "MIDITrack"
+                        "id": "notes",
+                        "name": "Notes",
+                        "type": "Array<MIDINote>"
+                    },
+                    {
+                        "id": "control_change",
+                        "name": "Control Change",
+                        "type": "HashMap<u8, Array<MIDIEvent>>"
+                    },
+                    {
+                        "id": "pitchwheel",
+                        "name": "Pitchwheel",
+                        "type": "Array<MIDIEvent>"
+                    },
+                    {
+                        "id": "aftertouch",
+                        "name": "Aftertouch",
+                        "type": "Array<MIDIEvent>"
                     }
                 ]
             }

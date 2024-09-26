@@ -60,19 +60,21 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
     return outputs;
 }
 
-/// Node: get_midi_track
+/// Node: get_midi_track_data
 /// 
 /// inputs: 
 /// "tracks": `Array<MIDITrack>`,
 /// "track_name": `String`
 /// 
 /// outputs:
-/// "track": `MIDITrack`
+/// "notes": `Array<MIDINote>`,
+/// "control_change": `HashMap<u8, Array<MIDIEvent>>`,
+/// "pitchwheel": `Array<MIDIEvent>`,
+/// "aftertouch": `Array<MIDIEvent>`
 #[tauri::command]
-pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
+pub fn get_midi_track_data(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
 
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
-    println!("GET MIDI TRACK INPUTS {:?}", inputs);
     
     if !inputs.contains_key("tracks") || !inputs.contains_key("track_name") {
         // empty array, no data
@@ -83,12 +85,15 @@ pub fn get_midi_track(inputs: HashMap<String, serde_json::Value>) -> HashMap<Str
     let tracks_unwrapped = inputs["tracks"].as_array().expect("in get_midi_track, tracks is not an array").clone();
 
     for track in tracks_unwrapped {
-        if track.as_object().unwrap().get_key_value("name").unwrap().1.as_str().unwrap() == inputs["track_name"].as_str().unwrap() {
-            outputs.insert("track".to_string(), track);
+        let track_object = track.as_object().unwrap();
+        if track_object.get_key_value("name").unwrap().1.as_str().unwrap() == inputs["track_name"].as_str().unwrap() {
+            outputs.insert("notes".to_string(), track_object.get("notes").unwrap().clone());
+            outputs.insert("control_change".to_string(), track_object.get("control_change").unwrap().clone());
+            outputs.insert("pitchwheel".to_string(), track_object.get("pitchwheel").unwrap().clone());
+            outputs.insert("aftertouch".to_string(), track_object.get("aftertouch").unwrap().clone());
             break;
         }
     }
-    println!("GET MIDI TRACK OUTPUTS {:?}", outputs);
     
     return outputs;
 }

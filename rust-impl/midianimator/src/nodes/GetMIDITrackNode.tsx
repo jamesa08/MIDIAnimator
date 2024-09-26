@@ -15,7 +15,7 @@ function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isC
     const [trackNamesState, setTrackNamesState] = useState<any>([""]);
 
     useEffect(() => {
-        getNodeData("get_midi_track").then(setNodeData);
+        getNodeData("get_midi_track_data").then(setNodeData);
         updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: "" } });
     }, []);
 

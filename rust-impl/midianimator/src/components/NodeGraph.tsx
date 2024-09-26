@@ -9,7 +9,7 @@ import ConnectionLine from "./ConnectionLine";
 
 const initialNodes = [
     { id: "get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
-    { id: "get_midi_track-5747a465-beac-45ab-b7ec-72d9e9d35947", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track" },
+    { id: "get_midi_track_data-5747a465-beac-45ab-b7ec-72d9e9d35947", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track_data" },
     { id: "viewer-65630ce3-b9d1-4491-9936-d4e4c1d501d3", position: { x: 600, y: 0 }, data: {}, type: "viewer" },
     { id: "scene_link-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 800, y: 0 }, data: {}, type: "scene_link" },
 ];
