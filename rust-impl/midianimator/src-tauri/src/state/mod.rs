@@ -67,7 +67,7 @@ pub fn ready() -> AppState {
 #[tauri::command]
 pub fn js_update_state(state: String) {
     println!("FRONTEND STATE UPDATE");
-    println!("{:#?}", state);
+    // println!("{:#?}", state);
     let mut cur_state = STATE.lock().unwrap();
 
     // re-serealize the state

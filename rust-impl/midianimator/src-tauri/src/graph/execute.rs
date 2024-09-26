@@ -31,10 +31,10 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
 
     #[async_recursion::async_recursion]
     async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool) {
-        println!("EXECUTING NODE {:?}", node_id);
+        // println!("EXECUTING NODE {:?}", node_id);
 
         if visited.contains(&node_id) {
-            println!("ALREADY EXECUTED {:?}", node_id);
+            // println!("ALREADY EXECUTED {:?}", node_id);
             return;
         }
     
@@ -47,7 +47,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
         
         let incoming_edges = rf_instance["edges"].as_array().unwrap().iter().filter(|edge| edge["source"] == node_id);
 
-        println!("INCOMING EDGES: {:#?} FOR {:?}", incoming_edges, node_id);
+        // println!("INCOMING EDGES: {:#?} FOR {:?}", incoming_edges, node_id);
         
         // add the node id to inputs
         inputs.insert(node_id.clone(), serde_json::Value::Object(Map::new()));
@@ -70,7 +70,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
                     Some(())
                 });
             } else {
-                println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge["target"], node_id);
+                // println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge["target"], node_id);
                 
                 // return early  as we don't want to continue execution
                 execute_dfs(edge["target"].to_string(), visited, results, inputs, rf_instance, default_nodes, realtime).await;
@@ -80,7 +80,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
 
         // this comes from the front end (user input)
         if node_data.contains_key("inputs") {
-            println!("FOUND COMPUTED INPUT DATA {:?}", node_id);
+            // println!("FOUND COMPUTED INPUT DATA {:?}", node_id);
             for (handle_name, handle_value) in node_data["inputs"].as_object().unwrap() {
                 // we don't want to insert if a handle is connected to a socket, whether its computed or not (the handle should be hidden if you want to use computed data)
                 if !inputs[&node_id].as_object().unwrap().contains_key(handle_name) {
@@ -97,7 +97,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
 
         // before executing the node, check if the node is realtime
         if (*realtime) && node["realtime"] == false {
-            println!("REALTIME MODE, NODE NOT REALTIME, skipping {:?}", node_id);
+            // println!("REALTIME MODE, NODE NOT REALTIME, skipping {:?}", node_id);
             return;
         }
 
@@ -114,7 +114,7 @@ function execute() {{
         return result;
     }});
 }}"#, default_node["id"], inputs[&node_id].to_string());
-            println!("{}", code);
+            // println!("{}", code);
             
             let executor_result = evaluate_js(code.to_string()).await;
             let wrapped_map: serde_json::Value = serde_json::from_str(&executor_result).unwrap();
@@ -152,13 +152,13 @@ function execute() {{
 
     let root_nodes = nodes.difference(&target_nodes).map(|node| node.clone()).collect::<Vec<String>>();
 
-    println!("ROOT NODES: {:#?}", root_nodes);
+    // println!("ROOT NODES: {:#?}", root_nodes);
 
     for node_id in root_nodes {
         execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
     }
 
-    println!("FINAL RESULTS: {:#?}", results);
+    // println!("FINAL RESULTS: {:#?}", results);
 
 
 
