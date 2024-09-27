@@ -6,7 +6,6 @@ import NodeHeader from "./NodeHeader";
 import { memo } from "react";
 import { useDimensions } from "../hooks/useDimensions";
 
-
 const handleStyle = {
     width: "16px",
     height: "16px",
@@ -21,14 +20,14 @@ const handleStyle = {
 /// @param inject: map of handles with ui elements to inject into the handle
 /// @param hidden: map of handles to hide, good for when you want to hide a handle but want to write data to it (ui element)
 /// @param executor: function to execute when the node is executed. only should be used for nodes that use JS execution
+/// @param dynamicHandles: map of handles to add to the node. looks exactly like handles found in `default_nodes.json`. good for when you want to add handles to a node that are not in the node data, dynamically as a UI feature
 /// @param data: reactflow data
 /// @param children: may be removed later
-function BaseNode({ nodeData, inject, hidden, executor, data, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; data: any; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
-    
-    let preview = data != undefined && data == "preview" ? true : false;
 
+    let preview = data != undefined && data == "preview" ? true : false;
 
     if (nodeData != null) {
         const handleTypes = ["outputs", "inputs"];
@@ -38,9 +37,9 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
                 rfHandleType = true;
             }
 
-            for (let handleIndex in nodeData["handles"][handleType]) {
-                let handle = nodeData["handles"][handleType][handleIndex];
-
+            let dynHandleArray = dynamicHandles == null || dynamicHandles[handleType] == undefined ? [] : dynamicHandles[handleType];
+            
+            for (let handle of [...nodeData["handles"][handleType], ...dynHandleArray]) {
                 let uiInject = <></>;
                 let uiHidden = false;
 
@@ -56,7 +55,7 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
                             <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
-                            {preview ? <></> : <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-20px" } : { ...handleStyle, right: "-20px" }} ></Handle>}
+                            {preview ? <></> : <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-20px" } : { ...handleStyle, right: "-20px" }}></Handle>}
                         </div>
                         {uiInject}
                     </>
@@ -66,11 +65,10 @@ function BaseNode({ nodeData, inject, hidden, executor, data, children }: { node
         }
     }
 
-
     return (
         <div className={`node${preview ? " preview" : ""}`} draggable={preview}>
             <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={"TRANSFORM"} />
-            <NodeResizeControl minWidth={200} maxWidth={1000} variant="line"/>
+            <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
             <div className="node-inner flex flex-col">{handleObjects.map((handle) => handle)}</div>
         </div>
     );
