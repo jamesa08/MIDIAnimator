@@ -61,7 +61,7 @@ function NodeGraphNoProvider() {
                 return;
             }
             for (let change of changes) {
-                if (change["type"] == "replace") { 
+                if (change["type"] == "replace") {
                     // update backend, node got replaced
                     setUpdateTrigger(true);
                 }
@@ -107,7 +107,6 @@ function NodeGraphNoProvider() {
         setUpdateTrigger(true);
     }, []);
 
-
     // prevent cyclitic connections
     const isValidConnection = useCallback(
         (connection: { target: string; source: string }) => {
@@ -128,7 +127,7 @@ function NodeGraphNoProvider() {
                 }
             };
 
-            const targetHasConnection = edges.filter((edge) => edge.target === connection.target).length === 1;
+            const targetHasConnection = edges.filter((edge) => edge.source === connection.source).length === 1;
 
             if (target?.id === connection.source) return false;
             return !hasCycle(target) && !targetHasConnection;
