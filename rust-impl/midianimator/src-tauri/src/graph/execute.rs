@@ -110,7 +110,7 @@ function execute() {{
     return window.__TAURI__.invoke({0}, {{
         inputs: {1}
     }}).then((result) => {{
-        console.log(result); 
+        // console.log(result); 
         return result;
     }});
 }}"#, default_node["id"], inputs[&node_id].to_string());
