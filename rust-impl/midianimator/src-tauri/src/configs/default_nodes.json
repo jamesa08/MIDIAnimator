@@ -74,6 +74,40 @@
         },
 
         {
+            "id": "keyframes_from_object",
+            "name": "Keyframes from Object",
+            "description": "Get keyframes from an object in the scene.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_groups",
+                        "name": "ObjectGroups",
+                        "type": "Array<ObjectGroup>"
+                    },
+                    {
+                        "id": "object_group_name",
+                        "name": "Object Group Name",
+                        "type": "String"
+                    },
+                    {
+                        "id": "object_name",
+                        "name": "Object Name",
+                        "type": "String"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "dyn_output",
+                        "name": "Dynamic Output",
+                        "type": "Dyn<Array<Keyframe>>"
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "viewer",
             "name": "Viewer",
             "description": "Display node results",
@@ -89,8 +123,8 @@
                 ],
                 "outputs": []
             }
-        }, 
-        
+        },
+
         {
             "id": "scene_link",
             "name": "Scene Link",
