@@ -71,7 +71,7 @@ pub fn js_update_state(state: String) {
     let mut cur_state = STATE.lock().unwrap();
 
     // re-serealize the state
-    let new_state: AppState = serde_json::from_str(&state).expect("Failed to deserialize state");
+    let new_state: AppState = serde_json::from_str(&state).unwrap_or_default();
 
     // replace the current state with the new state
     std::mem::replace(&mut *cur_state, new_state);
