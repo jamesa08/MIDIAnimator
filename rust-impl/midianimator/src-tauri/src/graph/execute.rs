@@ -119,9 +119,10 @@ function execute() {{
             let executor_result = evaluate_js(code.to_string()).await;
             let wrapped_map: serde_json::Value = serde_json::from_str(&executor_result).unwrap();
             if let serde_json::Value::Object(actual_result) = &wrapped_map["result"] {
+                println!("Successful execution of node '{}'", node_id);
                 exec_result.extend(actual_result.clone());
             } else {
-                println!("ERROR while deserializing:, expected result to be an object but was not :(");
+                println!("ERROR while deserializing node '{}':, expected result to be an object but was not. Result: '{}'", node_id, wrapped_map["result"]);
             }
         }
 
