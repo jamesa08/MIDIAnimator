@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
-use serde_json::Map;
+use serde_json::{Map, json};
 
 use crate::state::{STATE, update_state};
-use crate::command::javascript::evaluate_js;
+use crate::node_registry::get_node_registry;
 
 #[tauri::command]
 pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
@@ -29,8 +29,10 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
     file.read_to_string(&mut data).unwrap();
     let default_nodes: HashMap<String, serde_json::Value> = serde_json::from_str(&data).unwrap();
 
+    let node_registry = get_node_registry();
+
     #[async_recursion::async_recursion]
-    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool) {
+    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool, node_registry: &HashMap<String, fn(HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value>>) {
         // println!("EXECUTING NODE {:?}", node_id);
 
         if visited.contains(&node_id) {
@@ -73,7 +75,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
                 // println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge["target"], node_id);
                 
                 // return early  as we don't want to continue execution
-                execute_dfs(edge["target"].to_string(), visited, results, inputs, rf_instance, default_nodes, realtime).await;
+                execute_dfs(edge["target"].to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
                 return;
             }
         }
@@ -105,25 +107,20 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
         let mut exec_result: serde_json::Map<String, serde_json::Value> = serde_json::Map::new(); 
         
         if default_node["executor"] == "rust" {
-            let code = format!(r#"
-function execute() {{
-    return window.__TAURI__.invoke({0}, {{
-        inputs: {1}
-    }}).then((result) => {{
-        // console.log(result); 
-        return result;
-    }});
-}}"#, default_node["id"], inputs[&node_id].to_string());
-            // println!("{}", code);
+            // let node_name = default_node["id"].as_str().unwrap();
+            let input_value = inputs[&node_id].as_object().unwrap_or(&serde_json::Map::new()).clone();
             
-            let executor_result = evaluate_js(code.to_string()).await;
-            let wrapped_map: serde_json::Value = serde_json::from_str(&executor_result).unwrap();
-            if let serde_json::Value::Object(actual_result) = &wrapped_map["result"] {
+            if let Some(node_func) = node_registry.get(node_no_uuid) {
+                let input_hashmap: HashMap<String, serde_json::Value> = input_value.into_iter().collect();
+                let output_hashmap = node_func(input_hashmap);
+                let output_value = json!(output_hashmap);
+                exec_result.extend(output_value.as_object().unwrap().clone());
                 println!("Successful execution of node '{}'", node_id);
-                exec_result.extend(actual_result.clone());
             } else {
-                println!("ERROR while deserializing node '{}':, expected result to be an object but was not. Result: '{}'", node_id, wrapped_map["result"]);
+                println!("ERROR: Node '{}' not found in registry", node_id);
             }
+        } else {
+            println!("ERROR: javascript execution not implemented");
         }
 
         // after successful execution, add to results
@@ -131,7 +128,7 @@ function execute() {{
 
         for edge in rf_instance["edges"].as_array().unwrap() {
             if edge["target"] == node_id {
-                execute_dfs(edge["source"].as_str().unwrap().to_string(), visited, results, inputs, rf_instance, default_nodes, realtime).await;
+                execute_dfs(edge["source"].as_str().unwrap().to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
             }
         }
     }
@@ -156,7 +153,7 @@ function execute() {{
     // println!("ROOT NODES: {:#?}", root_nodes);
 
     for node_id in root_nodes {
-        execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime).await;
+        execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime, &node_registry).await;
     }
 
     // println!("FINAL RESULTS: {:#?}", results);

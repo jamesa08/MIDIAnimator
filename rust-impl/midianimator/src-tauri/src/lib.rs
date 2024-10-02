@@ -20,3 +20,5 @@ pub mod ui;
 pub mod utils;
 
 pub mod auto_commands;
+
+pub mod node_registry;

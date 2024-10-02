@@ -10,6 +10,7 @@ use std::collections::HashMap;
 /// outputs:
 /// "dyn_output": `Dyn<Array<Keyframe>>`
 #[tauri::command]
+#[node_registry::node]
 pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     
@@ -79,6 +80,7 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[tauri::command]
+#[node_registry::node]
 pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     

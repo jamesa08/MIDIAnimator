@@ -9,6 +9,7 @@ dependencies = [
  "async-recursion",
  "lazy_static",
  "midly",
+ "node_registry",
  "once_cell",
  "regex",
  "serde",
@@ -2199,6 +2200,15 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "memoffset 0.9.1",
+]
+
+[[package]]
+name = "node_registry"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]

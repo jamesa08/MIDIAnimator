@@ -11,6 +11,7 @@ use crate::state::STATE;
 /// "name": `String`
 /// "object_groups": `Array<ObjectGroup>`
 #[tauri::command]
+#[node_registry::node]
 pub fn scene_link(_inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     

@@ -45,6 +45,7 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
 /// "tracks": `Array<MIDITrack>`,
 /// "stats": `String`
 #[tauri::command]
+#[node_registry::node]
 pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     if !inputs.contains_key("file_path") {
@@ -72,6 +73,7 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
 /// "pitchwheel": `Array<MIDIEvent>`,
 /// "aftertouch": `Array<MIDIEvent>`
 #[tauri::command]
+#[node_registry::node]
 pub fn get_midi_track_data(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
 
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();

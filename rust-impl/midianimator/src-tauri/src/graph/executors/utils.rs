@@ -7,6 +7,8 @@ use std::collections::HashMap;
 /// outputs: 
 /// None
 #[tauri::command]
+#[node_registry::node]
 pub fn viewer(_inputs: HashMap<String, serde_json::Value>) {
     // :) 
+    return HashMap::new();
 }
