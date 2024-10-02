@@ -13,6 +13,7 @@ const initialNodes = [
     { id: "viewer-65630ce3-b9d1-4491-9936-d4e4c1d501d3", position: { x: 600, y: 0 }, data: {}, type: "viewer" },
     { id: "scene_link-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 0 }, data: {}, type: "scene_link" },
     { id: "keyframes_from_object-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 0 }, data: {}, type: "keyframes_from_object" },
+    { id: "animation_generator-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 1200, y: 0 }, data: {}, type: "animation_generator" },
 ];
 const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */

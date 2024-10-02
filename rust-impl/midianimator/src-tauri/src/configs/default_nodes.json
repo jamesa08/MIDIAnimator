@@ -108,6 +108,70 @@
         },
 
         {
+            "id": "animation_generator",
+            "name": "Animation Generator",
+            "description": "Create animation generators based on keyframed data",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "note_on_keyframes",
+                        "name": "Note On Keyframes",
+                        "type": "Array<Keyframe>"
+                    },
+                    {
+                        "id": "note_on_anchor_point",
+                        "name": "Note On Anchor Point",
+                        "type": "f64"
+                    },
+                    {
+                        "id": "note_off_keyframes",
+                        "name": "Note Off Keyframes",
+                        "type": "Array<Keyframe>"
+                    },
+                    {
+                        "id": "note_off_anchor_point",
+                        "name": "Note Off Anchor Point",
+                        "type": "f64"
+                    },
+                    {
+                        "id": "time_mapper",
+                        "name": "Time Mapper",
+                        "type": "String"
+                    },
+                    {
+                        "id": "amplitude_mapper",
+                        "name": "Amplitude Mapper",
+                        "type": "String"
+                    },
+                    {
+                        "id": "velocity_intensity",
+                        "name": "Velocity Intensity",
+                        "type": "f64"
+                    },
+                    {
+                        "id": "animation_overlap",
+                        "name": "Animation Overlap",
+                        "type": "String"
+                    },
+                    {
+                        "id": "animation_property",
+                        "name": "Animation Property",
+                        "type": "String"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "generator",
+                        "name": "Generator",
+                        "type": "AnimationGenerator"
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "viewer",
             "name": "Viewer",
             "description": "Display node results",

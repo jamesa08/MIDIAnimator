@@ -7,6 +7,7 @@ const nodeTypes = {
     viewer: Nodes.ViewerNode,
     scene_link: Nodes.SceneLink,
     keyframes_from_object: Nodes.KeyframesFromObjectNode,
+    animation_generator: Nodes.AnimationGeneratorNode,
 };
 
 export default nodeTypes;
