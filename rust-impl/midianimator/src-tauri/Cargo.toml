@@ -28,7 +28,6 @@ once_cell = "1.19.0"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 async-recursion = "1.1.1"
 node_registry = { path = "./node_registry" }
-devtools = "0.3.3"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.
