@@ -1,22 +1,14 @@
-// @ts-nocheck
-
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
+import { WebviewWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 interface PanelProps {
     id: string;
     name: string;
 }
-
-declare global {
-    interface Window {
-        __TAURI__: any;
-    }
-}
-
-const WebviewWindow = window.__TAURI__.window.WebviewWindow;
 
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const navigate = useNavigate();
@@ -28,7 +20,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
 
         const setupListener = async () => {
             try {
-                const unlisten = await window.__TAURI__.event.listen("clicked", handleClick);
+                const unlisten = await listen("clicked", handleClick);
                 return () => {
                     unlisten();
                 };
@@ -67,7 +59,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
             return (
                 <ReactFlowProvider>
                     {Object.entries(nodeTypes).map(([key, value]) => {
-                        const Node = value;
+                        const Node: any = value;
                         return <Node data="preview" />;
                     })}
                 </ReactFlowProvider>
