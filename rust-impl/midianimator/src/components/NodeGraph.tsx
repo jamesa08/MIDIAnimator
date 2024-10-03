@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import nodeTypes from "../nodes/NodeTypes";
+import nodeTypes  from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
 import ConnectionLine from "./ConnectionLine";
 

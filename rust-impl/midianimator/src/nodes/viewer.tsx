@@ -36,7 +36,7 @@ function customStringify(obj: any, depth = 0, maxDepth = 1, maxLength = 300): an
     return compactStringify(obj);
 }
 
-function ViewerNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
@@ -84,4 +84,4 @@ function ViewerNode({ id, data, isConnectable }: { id: any; data: any; isConnect
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
 }
 
-export default ViewerNode;
+export default viewer;

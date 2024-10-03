@@ -6,12 +6,11 @@ import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/tauri";
 
-
-function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const [nodeData, setNodeData] = useState<any | null>(null);
     const { backEndState: state, setBackEndState: setState } = useStateContext();
-    
+
     const [trackNamesState, setTrackNamesState] = useState<any>([""]);
 
     useEffect(() => {
@@ -21,11 +20,11 @@ function GetMIDITrackNode({ id, data, isConnectable }: { id: any; data: any; isC
 
     function arraysEqual(arr1: any[], arr2: string | any[]) {
         if (arr1.length !== arr2.length) return false;
-        
+
         return arr1.every((item, index) => {
-          return item === arr2[index];
+            return item === arr2[index];
         });
-      }
+    }
 
     useEffect(() => {
         var trackNames = [];
@@ -84,4 +83,4 @@ function execute(input: any): any {
     };
 }
 
-export default GetMIDITrackNode;
+export default get_midi_track_data;

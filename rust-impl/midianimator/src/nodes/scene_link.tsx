@@ -5,7 +5,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
 
-function SceneLink({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function scene_link({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
@@ -16,7 +16,7 @@ function SceneLink({ id, data, isConnectable }: { id: any; data: any; isConnecta
             if (id in state.executed_inputs && id in state.executed_results) {
                 // executed
             } else {
-                // not executed   
+                // not executed
             }
         }
     }, [state.executed_results]);
@@ -25,7 +25,6 @@ function SceneLink({ id, data, isConnectable }: { id: any; data: any; isConnecta
         getNodeData("scene_link").then(setNodeData);
     }, []);
 
-
     const uiInject = {};
 
     const hiddenHandles = {};
@@ -33,4 +32,4 @@ function SceneLink({ id, data, isConnectable }: { id: any; data: any; isConnecta
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
 }
 
-export default SceneLink;
+export default scene_link;

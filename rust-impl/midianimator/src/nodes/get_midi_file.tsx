@@ -7,7 +7,7 @@ import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
 import { invoke } from "@tauri-apps/api/tauri";
 
-function GetMIDIFileNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
@@ -54,7 +54,7 @@ function GetMIDIFileNode({ id, data, isConnectable }: { id: any; data: any; isCo
                 Pick MIDI File
             </button>
             <div className="node-field">{fileName}</div>
-            
+
             {Object.keys(fileStatsState).length != 0 && fileStatsState.tracks != 0 ? (
                 <>
                     <div className="node-field">
@@ -93,4 +93,4 @@ async function onMIDIFilePick() {
     return selected;
 }
 
-export default GetMIDIFileNode;
+export default get_midi_file;

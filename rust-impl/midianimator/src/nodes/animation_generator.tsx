@@ -7,7 +7,7 @@ import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
 import { invoke } from "@tauri-apps/api/tauri";
 
-function AnimationGeneratorNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
@@ -51,7 +51,7 @@ function AnimationGeneratorNode({ id, data, isConnectable }: { id: any; data: an
     //             Pick MIDI File
     //         </button>
     //         <div className="node-field">{fileName}</div>
-            
+
     //         {Object.keys(fileStatsState).length != 0 && fileStatsState.tracks != 0 ? (
     //             <>
     //                 <div className="node-field">
@@ -76,4 +76,4 @@ function AnimationGeneratorNode({ id, data, isConnectable }: { id: any; data: an
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
 }
 
-export default AnimationGeneratorNode;
+export default animation_generator;

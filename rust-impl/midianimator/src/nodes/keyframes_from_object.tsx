@@ -5,7 +5,7 @@ import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 
-function KeyframesFromObjectNode({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const [nodeData, setNodeData] = useState<any | null>(null);
     const { backEndState: state, setBackEndState: setState } = useStateContext();
@@ -117,7 +117,7 @@ function KeyframesFromObjectNode({ id, data, isConnectable }: { id: any; data: a
             >
                 {objectGroupNameState.map((track: any) => {
                     return (
-                        <option value={track} selected={state.executed_inputs != undefined  && state.executed_inputs[id] != undefined && state.executed_inputs[id]["object_group_name"] != undefined && state.executed_inputs[id]["object_group_name"] == track}>
+                        <option value={track} selected={state.executed_inputs != undefined && state.executed_inputs[id] != undefined && state.executed_inputs[id]["object_group_name"] != undefined && state.executed_inputs[id]["object_group_name"] == track}>
                             {track}
                         </option>
                     );
@@ -160,4 +160,4 @@ function KeyframesFromObjectNode({ id, data, isConnectable }: { id: any; data: a
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} data={data} />;
 }
 
-export default KeyframesFromObjectNode;
+export default keyframes_from_object;
