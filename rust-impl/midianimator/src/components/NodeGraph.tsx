@@ -47,12 +47,25 @@ function NodeGraphNoProvider() {
     const onConnect = useCallback(
         (params: Edge | Connection) => {
             console.log("onConnect", params);
-            setEdges((eds) => addEdge(params, eds));
 
-            invoke("log", { message: "EDGE ADDED" });
+            // check if the connection is already present (target has an incoming edge)
+            const existingEdgeIndex = edges.findIndex((edge) => edge.source == params.source && edge.sourceHandle == params.sourceHandle);
+
+            if (existingEdgeIndex !== -1) {
+                // if an edge exists to the target handle, replace it with the new connection
+                setEdges((eds) => {
+                    const updatedEdges = [...eds];
+                    updatedEdges[existingEdgeIndex] = { ...params, id: updatedEdges[existingEdgeIndex].id };
+                    return updatedEdges;
+                });
+            } else {
+                // if no existing edge, simply add the new connection
+                setEdges((eds) => addEdge(params, eds));
+            }
+
             setUpdateTrigger(true);
         },
-        [setEdges, state]
+        [edges, setEdges, state, setUpdateTrigger]
     );
 
     const onNodesChange = useCallback(
@@ -128,10 +141,9 @@ function NodeGraphNoProvider() {
                 }
             };
 
-            const targetHasConnection = edges.filter((edge) => edge.source === connection.source).length === 1;
-
+            // prevent connecting to source node
             if (target?.id === connection.source) return false;
-            return !hasCycle(target) && !targetHasConnection;
+            return !hasCycle(target);
         },
         [getNodes, getEdges]
     );
