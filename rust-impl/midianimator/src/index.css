@@ -127,3 +127,7 @@ img {
     border-right-width: 8px;
     border-right-color: #ffffff00;
 }
+
+* {
+    user-select: none;
+}
