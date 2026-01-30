@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check Out branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
         # thank you to https://brandur.org/fragments/github-actions-env-vars-in-env-vars for the tip on using enviroment files!
       - name: Set enviroment variables
@@ -27,8 +27,8 @@ jobs:
           echo 'creating ${{ env.ZIPNAME }} in ${{ github.workspace }}/artifacts/'
           cp -a MIDIAnimator/ ${{ github.workspace }}/artifacts/${{ env.ZIPNAME }}
       
-      - name: Download all workflow run artifacts
-        uses: actions/upload-artifact@v3
+      - name: Upload all workflow run artifacts
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.ZIPNAME }}
           path: ${{ github.workspace }}/artifacts/${{ env.ZIPNAME }}
