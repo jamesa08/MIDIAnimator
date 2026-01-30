@@ -3,6 +3,7 @@ from contextlib import suppress
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 from typing import Any, Tuple, List, Union, Set, TYPE_CHECKING
+from bpy_extras import anim_utils
 
 if TYPE_CHECKING:
     from ..data_structures import ObjectShapeKey
@@ -32,7 +33,13 @@ def FCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
     if obj.animation_data is None: return []
     if obj.animation_data.action is None: return []
     
-    return list(obj.animation_data.action.fcurves)
+    if bpy.app.version < (5, 0, 0):
+        return list(obj.animation_data.action.fcurves)
+    else:
+        anim_data = obj.animation_data
+        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+        return list(channelbag.fcurves) if channelbag else []
+
 
 def shapeKeyFCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
     """Gets shape key (`bpy.types.ShapeKey`) FCurves from a object (`bpy.types.Object`).
@@ -44,7 +51,12 @@ def shapeKeyFCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
         if obj.data.shape_keys is None: return []
         if obj.data.shape_keys.animation_data.action is None: return []
         
-        return list(obj.data.shape_keys.animation_data.action.fcurves)
+        if bpy.app.version < (5, 0, 0):
+            return list(obj.data.shape_keys.animation_data.action.fcurves)
+        else:
+            anim_data = obj.data.shape_keys.animation_data
+            channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+            return list(channelbag.fcurves) if channelbag else []
     return []
 
 def validateFCurves(noteOnFCurves: List[Union[bpy.types.FCurve, 'ObjectShapeKey']], noteOffFCurves: List[Union[bpy.types.FCurve, 'ObjectShapeKey']], haveSorted: bool=False) -> bool:
@@ -87,12 +99,31 @@ def cleanKeyframes(obj: bpy.types.Object, channels: Set={"all_channels"}):
     """
     fCurves = FCurvesFromObject(obj)
     
-    for fCurve in fCurves:
-        if {fCurve.data_path, "all_channels"}.intersection(channels):
-            obj.animation_data.action.fcurves.remove(fCurve)
-    
-    for fCurve in shapeKeyFCurvesFromObject(obj):
-        obj.data.shape_keys.animation_data.action.fcurves.remove(fCurve)
+    if bpy.app.version < (5, 0, 0):
+        for fCurve in fCurves:
+            if {fCurve.data_path, "all_channels"}.intersection(channels):
+                obj.animation_data.action.fcurves.remove(fCurve)
+        
+        for fCurve in shapeKeyFCurvesFromObject(obj):
+            obj.data.shape_keys.animation_data.action.fcurves.remove(fCurve)
+    else:
+        # Object fcurves
+        anim_data = obj.animation_data
+        if anim_data and anim_data.action:
+            channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+            if channelbag:
+                for fCurve in fCurves:
+                    if {fCurve.data_path, "all_channels"}.intersection(channels):
+                        channelbag.fcurves.remove(fCurve)
+        
+        # Shape key fcurves
+        if obj.data.shape_keys and obj.data.shape_keys.animation_data:
+            sk_anim_data = obj.data.shape_keys.animation_data
+            if sk_anim_data.action:
+                sk_channelbag = anim_utils.action_get_channelbag_for_slot(sk_anim_data.action, sk_anim_data.action_slot)
+                if sk_channelbag:
+                    for fCurve in shapeKeyFCurvesFromObject(obj):
+                        sk_channelbag.fcurves.remove(fCurve)
 
 def secToFrames(sec: float) -> float:
     """converts (using the Blender scene's FPS) specified time (in seconds) to frames

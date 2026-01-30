@@ -1,5 +1,6 @@
 import json
 import bpy
+from bpy_extras import anim_utils
 
 def shape_keys_from_object(obj):
     """gets shape keys from object
@@ -26,7 +27,12 @@ def FCurvesFromObject(obj):
     if obj.animation_data is None: return []
     if obj.animation_data.action is None: return []
     
-    return list(obj.animation_data.action.fcurves)
+    if bpy.app.version < (5, 0, 0):
+        return list(obj.animation_data.action.fcurves)
+    else:
+        anim_data = obj.animation_data
+        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+        return list(channelbag.fcurves) if channelbag else []
 
 def get_fcurve_data(fcurve):
     """Converts an FCurve into a dictionary representation.
