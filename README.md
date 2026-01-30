@@ -21,7 +21,8 @@
   <h3 align="center">MIDIAnimator</h3>
 
   <p align="center">
-    Procedurally animate a MIDI file using Blender. 
+    Procedurally animate a MIDI file using Blender.
+    Works with Blender 3.0, 4.0, and 5.0.
     <h1><a href="https://github.com/jamesa08/MIDIAnimator/?tab=readme-ov-file#future-of-midianimator">⚠️ Read Updates Here 🚧</a></h1>
     <br />
     <a href="https://midianimatordocs.readthedocs.io/en/latest/"><strong>Explore the docs »</strong></a>
