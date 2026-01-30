@@ -4,14 +4,20 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use tauri::async_runtime::block_on;
+use tauri::Invoke;
 use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 use uuid::Uuid;
 
+
 use crate::blender::scene_data;
+use crate::command::javascript::evaluate_js_oneshot;
+use crate::scene_generics;
 use crate::state::{STATE, update_state};
+use crate::graph::execute::execute_graph;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -128,6 +134,7 @@ pub async fn request_scene_data() {
 
 }
 
+
 // handle a client connection
 fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
@@ -155,7 +162,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                         // valid msg, continue
                         
                         if let Ok(message) = serde_json::from_str::<Message>(&data_str) {
-                            // find the tx sender from send_message using the UUID
+                            // Check if this message is a response to a message we sent
                             let tx = {
                                 let server_lock = server.lock().unwrap();
                                 let mut message_map = server_lock.message_map.lock().unwrap();
@@ -163,10 +170,39 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                             };
                             
                             if let Some(tx) = tx {
+                                // This is a response to a message we sent
                                 tx.send(message.message).unwrap();
+                            } else {
+                                // This is an unsolicited message (like a scene update)
+                                // Try to parse the message content to see if it's scene data
+                                let message_str = &message.message;
+                                
+                                // Check if the message contains scene data structure
+                                if message_str.contains("\"object_groups\"") {
+                                    // This looks like scene data
+                                    println!("Received scene update from Blender with UUID: {}", message.uuid);
+                                    println!("Received scene update from Blender with UUID: {}", message.message);
+
+                                    
+                                    // Parse the scene data and update application state
+                                    if let Ok(scene_data) = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message_str) {
+                                        let mut state = STATE.lock().unwrap();
+                                        state.scene_data = scene_data;
+                                        drop(state);
+                                        update_state();
+                                        // tell front end to execute the graph
+                                        evaluate_js_oneshot("window.__TAURI__.invoke('execute_graph', { realtime: true });".to_string());
+                                        
+                                    } else {
+                                        println!("Failed to parse scene data JSON");
+                                    }   
+                                } else {
+                                    // Handle other types of unsolicited messages if needed
+                                    println!("Received unsolicited message: UUID={}", message.uuid);
+                                }
                             }
-                            // remove remaining data
-                            // FIXME: (might want to remove just the message, but idk just yet)
+                            
+                            // Remove processed data
                             data.clear();
                         }
                     }

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::midi::MIDINote;
+
 /// Node: keyframes_from_object
 /// 
 /// inputs: 
@@ -113,4 +115,260 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
 
     outputs.insert("generator".to_string(), serde_json::to_value(generator).unwrap());
     return outputs;
+}
+
+
+pub fn pad_nums(mut nums: Vec<u8>, pad_amount: usize) -> Vec<u8> {
+    if nums.is_empty() {
+        return Vec::new();
+    }
+    
+    // remove duplicates and sort
+    nums.sort();
+    nums.dedup();
+    let mut result = nums.clone();
+
+    if result.len() >= pad_amount {
+        return result[..pad_amount].to_vec();
+    }
+
+    // pad within bounds first
+    let mut i = 0;
+    while result.len() < pad_amount && i < nums.len() - 1 {
+        let current = nums[i];
+        let next_num = nums[i + 1];
+        let gap = next_num - current - 1;
+
+        if gap > 0 {
+            let to_add = (pad_amount - result.len()).min(gap as usize);
+            let step = gap as f32 / (to_add as f32 + 1.0);
+            for j in 1..=to_add {
+                let padded_num = (current as f32 + j as f32 * step).round() as u8;
+                if !result.contains(&padded_num) {
+                    result.push(padded_num);
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // if we still need more numbers, add them below and above alternately
+    while result.len() < pad_amount {
+        if result.len() % 2 == 0 {
+            // add below
+            let mut new_num = *result.iter().min().unwrap() - 1;
+            while result.contains(&new_num) {
+                new_num -= 1;
+            }
+            result.push(new_num);
+        } else {
+            // add above
+            let mut new_num = *result.iter().max().unwrap() + 1;
+            while result.contains(&new_num) {
+                new_num += 1;
+            }
+            result.push(new_num);
+        }
+    }
+
+    result.sort();
+    return result;
+}
+
+// FIXME make static from midi/mod.rs
+pub fn all_used_notes_from_array(notes: &[MIDINote]) -> Vec<u8> {
+    let mut used_notes: Vec<u8> = notes.iter().map(|note| note.note_number).collect();
+    used_notes.sort_unstable();
+    used_notes.dedup();
+    used_notes
+}
+
+/// Node: assign_notes_to_objects
+/// read assign_midi_notes_to_objects.md for more information
+/// 
+/// inputs:
+/// "object_groups": `Array<ObjectGroup>`,
+/// "object_group_name": `String`,
+/// "midi_notes": `Array<MIDINote>`,
+/// "generator": `AnimationGenerator`
+/// 
+/// outputs:
+/// "object_map": `ObjectMap`
+
+/*
+# Methods for Assigning MIDI Note Numbers to Objects
+
+There are five main ways to assign MIDI note numbers to objects. Each method has its own advantages and use cases.
+
+Methods 1-4 use the `Assign Notes to Object` node while method 5 uses the `Visual Note Map` node.
+
+## 1. Object Name with Embedded Note Number
+
+In this method, the note number is directly embedded in the object's name, separated by an underscore.
+
+- **Format**: ObjectName_NoteNumber
+- **Example**:
+
+```other
+Cube_60 => Note 60
+Cube_61 => Note 61
+Cube_62 => Note 62
+Cube_63 => Note 63
+```
+
+- **Pros**: Simple and straightforward
+- **Cons**: Inflexible, requires consistent naming convention
+
+## 2. Direct Assignment from MIDI Track
+
+This method assigns note numbers based on the order of unique notes in a MIDI track.
+
+- **Input**: MIDI track with unique note numbers [60, 61, 62, 63]
+- **Assignment**:
+
+```other
+Cube.000 => Note 60
+Cube.001 => Note 61
+Cube.002 => Note 62
+Cube.003 => Note 63
+```
+
+- **Pros**: Flexible, allows for dynamic assignment
+- **Cons**: Requires exact match between number of objects and unique MIDI notes
+
+## 3. Flexible Assignment with Padding
+
+This method is similar to the second, but adds flexibility when the number of objects doesn't match the number of unique MIDI notes.
+
+### Example A: Fewer MIDI notes than objects
+
+- **Input**: MIDI track with unique note numbers [60, 63]
+- **Padding**: Function expands to [60, 61, 62, 63]
+- **Assignment**:
+
+```other
+Cube.000 => Note 60
+Cube.001 => Note 61
+Cube.002 => Note 62
+Cube.003 => Note 63
+```
+
+### Example B: More MIDI notes than objects
+
+- **Input**: MIDI track with unique note numbers [60, 61, 62, 63, 64, 65]
+- **Assignment**: Use available notes until objects are exhausted
+
+```other
+Cube.000 => Note 60
+Cube.001 => Note 61
+Cube.002 => Note 62
+Cube.003 => Note 63
+```
+
+- **Pros**: Most flexible, handles mismatches between object count and note count
+- **Cons**: May require additional logic for padding or truncation
+
+## 4. User-Provided Object List
+
+This method allows users to directly input note numbers, but requires that the number of notes matches the number of objects.
+
+**User inputs:** [60, 61, 62, 63]
+
+```other
+Cube.000 => Note 60
+Cube.001 => Note 61
+Cube.002 => Note 62
+Cube.003 => Note 63
+```
+
+**Note:** This input is hidden by default and needs to be enabled in the node properties.
+
+## 5. Visual Mapping Method
+
+This method offers the most flexibility but requires more setup. Unlike the previous methods which assume a 1:1 mapping and one animation curve, the visual mapping approach allows for:
+
+- Assigning multiple notes to objects
+- Applying multiple animations to objects
+
+### Key Features:
+
+- Highly flexible assignment process
+- Can create complex relationships between notes, objects, and animations
+- Ideal for advanced cases which need precise control over the setup
+
+### Use Cases:
+
+- When objects need to respond to multiple MIDI notes
+- For creating layered or complex animations triggered by different notes
+- In scenarios where different parts of an object should animate based on different MIDI inputs
+
+While this method requires more initial setup, it provides the greatest degree of creative control and can be used to create more sophisticated MIDI-driven animations and interactions.
+
+
+*/
+#[tauri::command]
+#[node_registry::node]
+pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
+    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+    
+    // let mut object_map = HashMap::new();
+    
+    // // get all used notes from midi notes
+    // let midi_notes: Vec<MIDINote> = match inputs.get("midi_notes") {
+    //     Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|err| {
+    //         eprintln!("Failed to deserialize midi_notes: {}", err);
+    //         Vec::new()
+    //     }),
+    //     None => Vec::new(),
+    // };
+    // let used_notes = all_used_notes_from_array(&midi_notes);
+
+    // // get the object groups
+    // let object_groups_unwrapped = inputs.get("object_groups").and_then(|v| v.as_array()).unwrap_or(&Vec::new());
+    // let object_group_name = inputs.get("object_group_name").and_then(|v| v.as_str()).unwrap_or_default();
+    // let object_group = object_groups_unwrapped.iter().find(|object_group| {
+    //     object_group.get("name").and_then(|v| v.as_str()).unwrap_or_default() == object_group_name
+    // }).unwrap();
+
+    // // get the generator
+    // let generator = inputs.get("generator").and_then(|v| v.as_object()).unwrap_or(&serde_json::Map::new());
+    
+    // // check for case 2 if the object count is the same as the note count
+    // let object_count = object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).len();
+    // let note_count = used_notes.len();
+    
+    // /*
+    //     {
+    //     "animations": {
+    //         "ANIM_test": Array<Keyframe>
+    //     },
+    //     "objects": {
+    //         "object1": {         
+    //             note_number: 45, 46,
+    //             animations: "ANIM_test"
+    //         },
+    //         ...
+    //         }
+    //     }
+    //  */
+
+    // if object_count == note_count {
+    //     // case 2: direct assignment from MIDI track
+    //     for (i, object) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
+    //         let object_name = object.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+    //         let note_number = used_notes[i];
+    //         object_map.insert(object_name.to_string(), note_number);
+    //     }
+    // } else {
+    //     // case 3: flexible assignment with padding
+    //     let padded_notes = pad_nums(used_notes, object_count);
+    //     for (obj, note_number) in object_group.get("objects").iter().zip(padded_notes.iter()) {
+    //         let mut objects = object_map.get("objects");
+    //         // object_map.insert(obj.get("name").unwrap(), "".to_string());
+    //     }
+    // }
+    // outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
+
+    return outputs;
+    
 }

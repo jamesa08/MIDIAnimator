@@ -1,11 +1,21 @@
 use crate::scene_generics;
 use crate::ipc;
 use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-
+use crate::state::{STATE, update_state};
 
 static SCENE_BUILDER_PY: &str = include_str!("../blender/python/blender_scene_builder.py");
 static SCENE_SENDER_PY: &str = include_str!("../blender/python/blender_scene_sender.py");
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SceneUpdate {
+    pub r#type: String,  // Use 'r#type' to handle 'type' keyword in Rust 
+    pub change_type: Option<String>,
+    pub changed_data: Option<HashMap<String, scene_generics::Scene>>,
+    pub scene_data: HashMap<String, scene_generics::Scene>,
+}
+
 
 pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
     let scene_data = match ipc::send_message(SCENE_BUILDER_PY.to_string()).await {
@@ -144,4 +154,23 @@ pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> 
         panic!("Error from Python file: {:?}", result);
     }
     Ok(())
+}
+
+
+pub fn process_scene_update(json_data: &str) {
+    match serde_json::from_str::<SceneUpdate>(json_data) {
+        Ok(update) => {
+            if update.r#type == "scene_update" {
+                println!("Received scene update: {:?}", update.change_type);
+                
+                let mut state = STATE.lock().unwrap();
+                state.scene_data = update.scene_data;
+                drop(state);
+                update_state();
+            }
+        }
+        Err(e) => {
+            println!("Error processing scene update: {}", e);
+        }
+    }
 }

@@ -73,3 +73,21 @@ pub async fn evaluate_js(code: String) -> String {
     }
 }
 
+
+/// Execute JavaScript code in the window without waiting for or handling results
+/// 
+/// This function simply sends JS code to the window for execution and doesn't
+/// wait for completion or check for errors. Ideal for one-way operations
+/// where you don't need feedback.
+/// 
+/// Example:
+/// ```rust
+/// evaluate_js_oneshot("invoke('execute_graph', { realtime: true });");
+/// ```
+pub fn evaluate_js_oneshot(code: String) {
+    if let Ok(window) = WINDOW.lock() {
+        if let Some(window) = window.as_ref() {
+            let _ = window.eval(&code);
+        }
+    }
+}

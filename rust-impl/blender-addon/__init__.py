@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 from . ui import VIEW3D_PT_server_link, SCENE_OT_connect_to_server, SCENE_OT_disconnect_from_server
+from . src.tracker import SCENE_OT_StartSceneTracker, SCENE_OT_StopSceneTracker
 from . src.core import Server
 import bpy
 
@@ -30,7 +31,7 @@ bl_info = {
     "category": "Animation"
 }
 
-classes = (VIEW3D_PT_server_link, SCENE_OT_connect_to_server, SCENE_OT_disconnect_from_server)
+classes = (VIEW3D_PT_server_link, SCENE_OT_connect_to_server, SCENE_OT_disconnect_from_server, SCENE_OT_StartSceneTracker, SCENE_OT_StopSceneTracker)
 
 # verify singleton
 s1 = Server()
@@ -44,11 +45,12 @@ else:
 def register():
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
-    
+        
 
 def unregister():
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
+
     
     # close the client connection when the addon is unregistered
     client = Server()

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import nodeTypes  from "../nodes/NodeTypes";
+import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
 import ConnectionLine from "./ConnectionLine";
 
@@ -11,9 +11,10 @@ const initialNodes = [
     { id: "get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
     { id: "get_midi_track_data-5747a465-beac-45ab-b7ec-72d9e9d35947", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track_data" },
     { id: "viewer-65630ce3-b9d1-4491-9936-d4e4c1d501d3", position: { x: 600, y: 0 }, data: {}, type: "viewer" },
-    { id: "scene_link-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 0 }, data: {}, type: "scene_link" },
-    { id: "keyframes_from_object-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 0 }, data: {}, type: "keyframes_from_object" },
-    { id: "animation_generator-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 1200, y: 0 }, data: {}, type: "animation_generator" },
+    { id: "scene_link-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 0, y: 300 }, data: {}, type: "scene_link" },
+    { id: "keyframes_from_object-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 300, y: 300 }, data: {}, type: "keyframes_from_object" },
+    { id: "animation_generator-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 600, y: 300 }, data: {}, type: "animation_generator" },
+    { id: "assign_notes_to_objects-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 300 }, data: {}, type: "assign_notes_to_objects" },
 ];
 const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */

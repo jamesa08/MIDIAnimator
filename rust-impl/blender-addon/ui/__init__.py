@@ -58,3 +58,7 @@ class VIEW3D_PT_server_link(MIDIAniamtorPanel, bpy.types.Panel):
             # col.label(text="Connected to Server")
         # col.prop(context.scene, "server_link", text="Server Link")
 
+        col.operator("scene.start_tracker", text="Start Scene Tracker")
+        col.operator("scene.stop_tracker", text="Stop Scene Tracker")
+
+

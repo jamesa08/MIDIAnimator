@@ -347,7 +347,7 @@ class ProjectileInstrument(Instrument):
                 # for now, this is okay
                 if (wpr.startFrame, wpr.endFrame) == (None, None):
                     raise ValueError(f"Refrerence Projectile object `{obj.name}` has no Animation FCurves!")
-
+                
                 startFrame = wpr.startFrame - hit + frame
                 endFrame = wpr.endFrame - hit + frame
 

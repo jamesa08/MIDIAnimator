@@ -172,6 +172,45 @@
         },
 
         {
+            "id": "assign_notes_to_objects",
+            "name": "Assign Notes to Objects",
+            "description": "Assign notes to objects in the scene",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_groups",
+                        "name": "ObjectGroups",
+                        "type": "ObjectGroups"
+                    },
+                    {
+                        "id": "object_group_name",
+                        "name": "Object Group Name",
+                        "type": "String"
+                    },
+                    {
+                        "id": "midi_notes",
+                        "name": "Notes",
+                        "type": "Array<MIDINote>"
+                    },
+                    {
+                        "id": "generator",
+                        "name": "Animation Generator",
+                        "type": "AnimationGenerator"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "type": "ObjectMap"
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "viewer",
             "name": "Viewer",
             "description": "Display node results",
