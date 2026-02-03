@@ -182,7 +182,6 @@ function NodeGraphNoProvider() {
         };
 
         const handleMouseUp = () => {
-            console.log("Mouse up - finalizing position");
             setNewNodeToDrag(null);
             setUpdateTrigger(true);
         };
