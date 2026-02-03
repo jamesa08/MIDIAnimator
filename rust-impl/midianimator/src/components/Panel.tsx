@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
@@ -54,18 +54,54 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         navigate(`/#/panel/${id}`);
     };
 
-    function windowIfNodes() {
-        if (name == "Nodes") {
-            return (
-                <ReactFlowProvider>
-                    {Object.entries(nodeTypes).map(([key, value]) => {
-                        const Node: any = value;
-                        return <Node data="preview" />;
-                    })}
-                </ReactFlowProvider>
-            );
-        }
-    }
+    const ScaledNodeWrapper: React.FC<{ Node: any }> = ({ Node }) => {
+        const nodeRef = useRef<HTMLDivElement>(null);
+        const [isMeasured, setIsMeasured] = useState(false);
+
+        useEffect(() => {
+            if (!nodeRef.current || isMeasured) return;
+
+            const node = nodeRef.current.querySelector(".node.preview") as HTMLElement;
+            if (!node) return;
+
+            const observer = new MutationObserver(() => {
+                const height = node.scrollHeight;
+
+                if (height > 50) {
+                    node.style.marginBottom = `-${height * 0.5}px`;
+                    setIsMeasured(true);
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(node, {
+                childList: true,
+                subtree: true,
+            });
+
+            return () => observer.disconnect();
+        }, [isMeasured]);
+
+        return (
+            <div ref={nodeRef} className="node-container">
+                <Node data="preview" />
+            </div>
+        );
+    };
+
+    const renderNodesPanel = () => {
+        if (name !== "Nodes") return null;
+
+        return (
+            <ReactFlowProvider>
+                <div className="nodes-grid p-2">
+                    {Object.entries(nodeTypes).map(([key, value]) => (
+                        <ScaledNodeWrapper key={key} Node={value} />
+                    ))}
+                </div>
+            </ReactFlowProvider>
+        );
+    };
 
     return (
         <div className="panel w-60 select-none">
@@ -75,7 +111,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
                     Popout
                 </button>
             </div>
-            {windowIfNodes()}
+            {renderNodesPanel()}
         </div>
     );
 };

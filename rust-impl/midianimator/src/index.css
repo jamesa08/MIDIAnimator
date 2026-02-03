@@ -21,7 +21,7 @@
 
 /* FIXME eventually remove mac traffic lights */
 .mac-traffic-lights-container div {
-    background: transparent!important;
+    background: transparent !important;
 }
 
 .red {
@@ -37,7 +37,7 @@
 }
 
 .helvetica {
-    font-family: 'Helvetica', sans-serif;
+    font-family: "Helvetica", sans-serif;
 }
 
 .blender {
@@ -67,7 +67,7 @@ img {
 
 .node {
     border-radius: 6px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
     /* background: #303030; */
     min-width: 200px;
     max-width: 1000px;
@@ -76,14 +76,28 @@ img {
     color: black;
 }
 
+.nodes-grid {
+    column-count: 2;
+    column-gap: 8px;
+}
+
+.node-container {
+    break-inside: avoid;
+    margin-bottom: 8px;
+}
+
 .node.preview {
     /* enable dragging preview components */
     cursor: grab;
     position: relative;
-
-    /* scale temporary for now, will be managed by JS later */
     transform: scale(0.5);
     transform-origin: top left;
+    width: 200%;
+    display: block;
+}
+
+.node-wrapper {
+    display: contents;
 }
 
 /* all preview components inside should not be able to be selected. This is to "disable them" essentially */
@@ -110,13 +124,13 @@ img {
     padding: 4px 8px;
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
-    box-shadow: inset 0 -1 rgba(0,0,0,0.4);
+    box-shadow: inset 0 -1 rgba(0, 0, 0, 0.4);
 }
 
 .react-flow__node.selected .node {
     border: 1px solid rgb(29, 198, 255);
-    -webkit-box-sizing: border-box!important;
-    box-sizing: border-box!important;
+    -webkit-box-sizing: border-box !important;
+    box-sizing: border-box !important;
 }
 
 .react-flow__pane.draggable {
