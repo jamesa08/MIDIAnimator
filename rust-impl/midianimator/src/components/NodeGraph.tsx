@@ -20,17 +20,217 @@ const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */
 ];
 
+function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean; onClose: () => void; onSelect: (nodeType: string) => void; position: { x: number; y: number } }) {
+    const [search, setSearch] = useState("");
+    const searchInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setSearch("");
+        }
+    }, [isOpen]);
+
+    const availableNodeTypes = Object.keys(nodeTypes);
+    const filteredNodes = availableNodeTypes.filter((nodeType) => nodeType.toLowerCase().includes(search.toLowerCase()));
+
+    useEffect(() => {
+        if (isOpen && searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div
+            style={{
+                position: "fixed",
+                left: position.x,
+                top: position.y,
+                backgroundColor: "#2a2a2a",
+                border: "1px solid #444",
+                borderRadius: "4px",
+                width: "250px",
+                maxHeight: "400px",
+                zIndex: 1000,
+                display: "flex",
+                flexDirection: "column",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search nodes..."
+                style={{
+                    padding: "8px",
+                    backgroundColor: "#1a1a1a",
+                    border: "none",
+                    borderBottom: "1px solid #444",
+                    color: "#fff",
+                    outline: "none",
+                }}
+                onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                        onClose();
+                    } else if (e.key === "Enter" && filteredNodes.length > 0) {
+                        onSelect(filteredNodes[0]);
+                    }
+                }}
+            />
+            <div style={{ overflowY: "auto", maxHeight: "350px" }}>
+                {filteredNodes.map((nodeType, index) => (
+                    <div
+                        key={nodeType}
+                        onClick={() => onSelect(nodeType)}
+                        style={{
+                            padding: "8px 12px",
+                            cursor: "pointer",
+                            backgroundColor: index === 0 ? "#4a7ba7" : "transparent",
+                            color: "#fff",
+                            fontSize: "14px",
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#4a7ba7";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = index === 0 ? "#4a7ba7" : "transparent";
+                        }}
+                    >
+                        {nodeType.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function NodeGraphNoProvider() {
     const [nodes, setNodes] = useNodesState(undefined as any);
     const [edges, setEdges] = useEdgesState(undefined as any);
 
-    const { getNodes, getEdges } = useReactFlow();
+    const { getNodes, getEdges, screenToFlowPosition } = useReactFlow();
 
     const [rfInstance, setRfInstance] = useState(null as ReactFlowInstance | null);
     const [updateTrigger, setUpdateTrigger] = useState(false);
 
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+    const [cursorFlowPosition, setCursorFlowPosition] = useState({ x: 0, y: 0 });
+    const mousePositionRef = useRef({ x: 0, y: 0 });
+    const [newNodeToDrag, setNewNodeToDrag] = useState<string | null>(null);
+
     const { backEndState: state, setBackEndState: setState } = useStateContext();
     const initDone = useRef(false);
+
+    // ADD NODE MENU HANDLERS
+    // Add node creation function
+    const addNode = useCallback(
+        (nodeType: string) => {
+            const newNodeId = `${nodeType}-${crypto.randomUUID()}`;
+            const newNode = {
+                id: newNodeId,
+                position: {x: cursorFlowPosition.x + 10, y: cursorFlowPosition.y + 10},
+                data: {},
+                type: nodeType,
+            };
+            setNodes((nds) => [...nds, newNode]);
+            setNewNodeToDrag(newNodeId);
+            setMenuOpen(false);
+        },
+        [cursorFlowPosition, setNodes]
+    );
+
+    // Track mouse position
+    useEffect(() => {
+        const handleMouseMove = (event: MouseEvent) => {
+            mousePositionRef.current = { x: event.clientX, y: event.clientY };
+            // Add this line:
+            if (menuOpen) {
+                const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+                setCursorFlowPosition(flowPosition);
+            }
+        };
+
+        window.addEventListener("mousemove", handleMouseMove);
+        return () => window.removeEventListener("mousemove", handleMouseMove);
+    }, [menuOpen, screenToFlowPosition]);
+
+    useEffect(() => {
+        if (!newNodeToDrag) return;
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const flowPosition = screenToFlowPosition(
+                {
+                    x: event.clientX + 10,
+                    y: event.clientY + 10,
+                },
+                { snapToGrid: false }
+            );
+
+            setNodes((nds) => {
+                const updatedNodes = nds.map((node) => {
+                    if (node.id === newNodeToDrag) {
+                        return { ...node, position: flowPosition };
+                    }
+                    return node;
+                });
+                return updatedNodes;
+            });
+        };
+
+        const handleMouseUp = () => {
+            console.log("Mouse up - finalizing position");
+            setNewNodeToDrag(null);
+            setUpdateTrigger(true);
+        };
+
+        window.addEventListener("mousemove", handleMouseMove);
+        window.addEventListener("mouseup", handleMouseUp);
+
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("mouseup", handleMouseUp);
+        };
+    }, [newNodeToDrag, screenToFlowPosition, setNodes]);
+
+    // Keyboard listener
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.shiftKey && event.key === "A") {
+                event.preventDefault();
+                const { x, y } = mousePositionRef.current;
+                const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
+                setCursorFlowPosition(flowPosition);
+                setMenuPosition({ x, y });
+                setMenuOpen(true);
+            } else if (event.key === "Escape") {
+                setMenuOpen(false);
+            } else if (event.key === "x") {
+                event.preventDefault();
+                // Delete selected nodes and edges
+                setNodes((nds) => nds.filter((node) => !node.selected));
+                setEdges((eds) => eds.filter((edge) => !edge.selected));
+                setUpdateTrigger(true);
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [screenToFlowPosition, setNodes, setEdges]);
+
+    // Close menu on click outside
+    useEffect(() => {
+        const handleClick = () => {
+            if (menuOpen) {
+                setMenuOpen(false);
+            }
+        };
+        window.addEventListener("mousedown", handleClick);
+
+        return () => window.removeEventListener("mousedown", handleClick);
+    }, [menuOpen]);
 
     useEffect(() => {
         if (updateTrigger && rfInstance) {
@@ -150,10 +350,13 @@ function NodeGraphNoProvider() {
     );
 
     return (
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} fitView>
-            <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
-            <Controls />
-        </ReactFlow>
+        <>
+            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} fitView>
+                <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
+                <Controls />
+            </ReactFlow>
+            <NodeAddMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} onSelect={addNode} position={menuPosition} />
+        </>
     );
 }
 
