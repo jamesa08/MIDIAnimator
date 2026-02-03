@@ -51,7 +51,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         var objectNames = [];
         if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
             // check if objectname exists in the executed_inputs
-            invoke("log", state.executed_inputs[id]);
+            invoke("log", {message: JSON.stringify(state.executed_inputs[id])});
             if ("object_name" in state.executed_inputs[id]) {
                 let objectGroupName = state.executed_inputs[id]["object_group_name"];
                 // now iterate over the objects in that object group
