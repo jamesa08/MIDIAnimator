@@ -144,6 +144,7 @@ img {
 
 .react-flow__nodesselection-rect {
     display: none;
+    cursor: default;
 }
 
 .status-bar {
