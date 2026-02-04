@@ -110,6 +110,12 @@ function NodeGraphNoProvider() {
     //emulate 3 button mouse panning
     const [isPanningWithAlt, setIsPanningWithAlt] = useState(false);
 
+    // cancel event params
+    const preOperationStateRef = useRef<{
+        nodes: any[];
+        edges: any[];
+    } | null>(null);
+
     const { backEndState: state, setBackEndState: setState } = useStateContext();
     const initDone = useRef(false);
 
@@ -143,9 +149,33 @@ function NodeGraphNoProvider() {
             );
         }
 
+        // preOperationStateRef.current = null;
         setNewNodeToDrag(null);
         setUpdateTrigger(true);
     }, []);
+
+    // cancel handlers
+
+    // Function to save current state before an operation
+    const savePreOperationState = useCallback(() => {
+        preOperationStateRef.current = {
+            nodes: JSON.parse(JSON.stringify(nodes)),
+            edges: JSON.parse(JSON.stringify(edges)),
+        };
+    }, [nodes, edges]);
+
+    // Function to cancel and restore
+    const cancelOperation = useCallback(() => {
+        if (preOperationStateRef.current) {
+            setNodes(preOperationStateRef.current.nodes);
+            setEdges(preOperationStateRef.current.edges);
+            preOperationStateRef.current = null;
+        }
+
+        setNewNodeToDrag(null);
+        setMenuOpen(false);
+        setUpdateTrigger(true);
+    }, [setNodes, setEdges]);
 
     // ADD NODE MENU HANDLERS
     // Add node creation function
@@ -267,6 +297,7 @@ function NodeGraphNoProvider() {
 
             if (event.shiftKey && event.key === "A") {
                 event.preventDefault();
+                savePreOperationState();
                 const { x, y } = mousePositionRef.current;
                 setMenuPosition({ x, y });
                 setMenuOpen(true);
@@ -282,6 +313,7 @@ function NodeGraphNoProvider() {
                 event.preventDefault();
                 const selectedNodes = nodes.filter((node) => node.selected);
                 if (selectedNodes.length > 0) {
+                    savePreOperationState();
                     const { x, y } = mousePositionRef.current;
                     const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
 
@@ -302,6 +334,8 @@ function NodeGraphNoProvider() {
                 event.preventDefault();
                 const selectedNodes = nodes.filter((node) => node.selected);
                 if (selectedNodes.length === 0) return;
+
+                savePreOperationState();
 
                 const { x, y } = mousePositionRef.current;
                 const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
@@ -367,6 +401,10 @@ function NodeGraphNoProvider() {
                 } else {
                     // If none are selected, select all
                     setNodes((nds) => nds.map((node) => ({ ...node, selected: true })));
+                }
+            } else if (event.key === "Escape") {
+                if (newNodeToDrag || menuOpen) {
+                    cancelOperation();
                 }
             }
         };
@@ -451,6 +489,15 @@ function NodeGraphNoProvider() {
             }
         },
         [newNodeToDrag, stopDragging]
+    );
+
+    // Right Click to cancel
+    const handleContextMenu = useCallback(
+        (event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
+            event.preventDefault();
+            cancelOperation();
+        },
+        [newNodeToDrag, setNodes]
     );
 
     useOnViewportChange({
@@ -566,7 +613,7 @@ function NodeGraphNoProvider() {
 
     return (
         <>
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={handlePaneClick} onNodeClick={handleNodeClickStop} onNodeDrag={handleNodeDrag} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} panOnDrag={isPanningWithAlt ? true : [1]} selectionOnDrag={true} multiSelectionKeyCode={"Shift"} selectionKeyCode={"b"} selectionMode={SelectionMode.Partial} fitView>
+            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={handlePaneClick} onNodeClick={handleNodeClickStop} onNodeDrag={handleNodeDrag} onPaneContextMenu={handleContextMenu} onNodeContextMenu={handleContextMenu} onContextMenu={handleContextMenu} onSelectionContextMenu={handleContextMenu} onEdgeContextMenu={handleContextMenu} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} panOnDrag={isPanningWithAlt ? true : [1]} selectionOnDrag={true} multiSelectionKeyCode={"Shift"} selectionKeyCode={"b"} selectionMode={SelectionMode.Partial} fitView>
                 <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
                 <Controls />
                 <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
