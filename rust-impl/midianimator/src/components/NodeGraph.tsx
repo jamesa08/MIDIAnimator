@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, getNodesBounds, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
@@ -20,6 +20,7 @@ const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */
 ];
 
+// ADD NODE MENU COMPONENT
 function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean; onClose: () => void; onSelect: (nodeType: string) => void; position: { x: number; y: number } }) {
     const [search, setSearch] = useState("");
     const searchInputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +89,7 @@ function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean;
                         style={{
                             padding: "8px 12px",
                             cursor: "pointer",
-                            backgroundColor: index === 0 ? "#4a7ba7" : "transparent",
+                            backgroundColor: "transparent",
                             color: "#fff",
                             fontSize: "14px",
                         }}
@@ -96,7 +97,7 @@ function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean;
                             e.currentTarget.style.backgroundColor = "#4a7ba7";
                         }}
                         onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = index === 0 ? "#4a7ba7" : "transparent";
+                            e.currentTarget.style.backgroundColor = "transparent";
                         }}
                     >
                         {nodeType.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
@@ -112,37 +113,72 @@ function NodeGraphNoProvider() {
     const [edges, setEdges] = useEdgesState(undefined as any);
 
     const { getNodes, getEdges, screenToFlowPosition } = useReactFlow();
+    const store = useStoreApi();
 
     const [rfInstance, setRfInstance] = useState(null as ReactFlowInstance | null);
     const [updateTrigger, setUpdateTrigger] = useState(false);
 
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
-    const [cursorFlowPosition, setCursorFlowPosition] = useState({ x: 0, y: 0 });
     const mousePositionRef = useRef({ x: 0, y: 0 });
     const [newNodeToDrag, setNewNodeToDrag] = useState<string | null>(null);
+    const dragOffsetRef = useRef({ x: 0, y: 0 });
+
+    //emulate 3 button mouse panning
+    const [isPanningWithAlt, setIsPanningWithAlt] = useState(false);
 
     const { backEndState: state, setBackEndState: setState } = useStateContext();
     const initDone = useRef(false);
+
+    const dragStartRef = useRef<{ cursorX: number; cursorY: number; nodes: Array<{ id: string; x: number; y: number }> }>({
+        cursorX: 0,
+        cursorY: 0,
+        nodes: [],
+    });
+
+    const startDragging = useCallback(
+        (nodeId: string, position?: { x: number; y: number }, offset = { x: 0, y: 0 }) => {
+            if (position) {
+                setNodes((nds) => nds.map((node) => (node.id === nodeId ? { ...node, position } : node)));
+            }
+            dragOffsetRef.current = offset;
+            setNewNodeToDrag(nodeId);
+        },
+        [setNodes]
+    );
+
+    const stopDragging = useCallback(() => {
+        setNewNodeToDrag(null);
+        setUpdateTrigger(true);
+    }, []);
 
     // ADD NODE MENU HANDLERS
     // Add node creation function
     const addNode = useCallback(
         (nodeType: string) => {
             const newNodeId = `${nodeType}-${crypto.randomUUID()}`;
+            const flowPosition = screenToFlowPosition(mousePositionRef.current, { snapToGrid: false });
+
             const newNode = {
                 id: newNodeId,
-                position: {x: cursorFlowPosition.x + 10, y: cursorFlowPosition.y + 10},
+                position: { x: flowPosition.x + 10, y: flowPosition.y + 10 },
                 data: {},
                 type: nodeType,
             };
             setNodes((nds) => [...nds, newNode]);
+
+            // Store drag start for the new node
+            dragStartRef.current = {
+                cursorX: flowPosition.x - 10,
+                cursorY: flowPosition.y - 10,
+                nodes: [{ id: newNodeId, x: flowPosition.x, y: flowPosition.y }],
+            };
+
             setNewNodeToDrag(newNodeId);
             setMenuOpen(false);
         },
-        [cursorFlowPosition, setNodes]
+        [setNodes, screenToFlowPosition, startDragging]
     );
-
     // Track mouse position
     useEffect(() => {
         const handleMouseMove = (event: MouseEvent) => {
@@ -150,7 +186,6 @@ function NodeGraphNoProvider() {
             // Add this line:
             if (menuOpen) {
                 const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
-                setCursorFlowPosition(flowPosition);
             }
         };
 
@@ -162,38 +197,69 @@ function NodeGraphNoProvider() {
         if (!newNodeToDrag) return;
 
         const handleMouseMove = (event: MouseEvent) => {
-            const flowPosition = screenToFlowPosition(
-                {
-                    x: event.clientX + 10,
-                    y: event.clientY + 10,
-                },
-                { snapToGrid: false }
-            );
+            const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false });
+
+            // Calculate delta from start position
+            const dx = flowPosition.x - dragStartRef.current.cursorX;
+            const dy = flowPosition.y - dragStartRef.current.cursorY;
 
             setNodes((nds) => {
-                const updatedNodes = nds.map((node) => {
-                    if (node.id === newNodeToDrag) {
-                        return { ...node, position: flowPosition };
+                if (!nds) return nds;
+                return nds.map((node) => {
+                    const draggedNode = dragStartRef.current.nodes.find((n) => n.id === node.id);
+                    if (draggedNode) {
+                        return {
+                            ...node,
+                            position: {
+                                x: draggedNode.x + dx,
+                                y: draggedNode.y + dy,
+                            },
+                        };
                     }
                     return node;
                 });
-                return updatedNodes;
             });
         };
 
-        const handleMouseUp = () => {
-            setNewNodeToDrag(null);
-            setUpdateTrigger(true);
+        const handleMouseDown = (event: MouseEvent) => {
+            stopDragging();
         };
 
         window.addEventListener("mousemove", handleMouseMove);
-        window.addEventListener("mouseup", handleMouseUp);
+        window.addEventListener("mousedown", handleMouseDown);
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
+            window.removeEventListener("mousedown", handleMouseDown);
         };
     }, [newNodeToDrag, screenToFlowPosition, setNodes]);
+
+    // Stop dragging when clicking inside selected nodes. Need a better way to do this in the future.
+    useEffect(() => {
+        const handleMouseDown = (event: MouseEvent) => {
+            if (!newNodeToDrag) return;
+
+            // Get all selected nodes
+            const selectedNodes = nodes.filter((node) => node.selected);
+            if (selectedNodes.length === 0) return;
+
+            // Convert mouse position to flow coordinates
+            const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            const { nodeLookup } = store.getState();
+
+            const bounds = getNodesBounds(selectedNodes, { nodeLookup });
+
+            // Check if click is inside the selection bounds
+            const clickedInsideSelection = flowPosition.x >= bounds.x && flowPosition.x <= bounds.x + bounds.width && flowPosition.y >= bounds.y && flowPosition.y <= bounds.y + bounds.height;
+
+            if (clickedInsideSelection) {
+                stopDragging();
+            }
+        };
+
+        window.addEventListener("mousedown", handleMouseDown, true);
+        return () => window.removeEventListener("mousedown", handleMouseDown, true);
+    }, [newNodeToDrag, nodes, screenToFlowPosition, stopDragging]);
 
     // Keyboard listener
     useEffect(() => {
@@ -202,7 +268,6 @@ function NodeGraphNoProvider() {
                 event.preventDefault();
                 const { x, y } = mousePositionRef.current;
                 const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
-                setCursorFlowPosition(flowPosition);
                 setMenuPosition({ x, y });
                 setMenuOpen(true);
             } else if (event.key === "Escape") {
@@ -213,11 +278,31 @@ function NodeGraphNoProvider() {
                 setNodes((nds) => nds.filter((node) => !node.selected));
                 setEdges((eds) => eds.filter((edge) => !edge.selected));
                 setUpdateTrigger(true);
+            } else if (event.key === "g") {
+                event.preventDefault();
+                const selectedNodes = nodes.filter((node) => node.selected);
+                if (selectedNodes.length > 0) {
+                    const { x, y } = mousePositionRef.current;
+                    const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
+
+                    // Store initial cursor position and ALL selected node positions
+                    dragStartRef.current = {
+                        cursorX: flowPosition.x,
+                        cursorY: flowPosition.y,
+                        nodes: selectedNodes.map((node) => ({
+                            id: node.id,
+                            x: node.position.x,
+                            y: node.position.y,
+                        })),
+                    };
+
+                    setNewNodeToDrag("__multi_drag__"); // Use a special ID for multi-drag
+                }
             }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [screenToFlowPosition, setNodes, setEdges]);
+    }, [screenToFlowPosition, setNodes, setEdges, nodes]);
 
     // Close menu on click outside
     useEffect(() => {
@@ -243,6 +328,58 @@ function NodeGraphNoProvider() {
             invoke("execute_graph", { realtime: true });
         }
     }, [rfInstance, updateTrigger]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Alt") setIsPanningWithAlt(true);
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.key === "Alt") setIsPanningWithAlt(false);
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("keyup", handleKeyUp);
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("keyup", handleKeyUp);
+        };
+    }, []);
+
+    // HANDLERS FOR REACT FLOW EVENTS
+    const handlePaneClick = useCallback(
+        (event: React.MouseEvent) => {
+            if (newNodeToDrag) {
+                stopDragging();
+            }
+        },
+        [newNodeToDrag, stopDragging]
+    );
+
+    const handleNodeClickStop = useCallback(
+        (event: React.MouseEvent, node: any) => {
+            if (newNodeToDrag) {
+                stopDragging();
+            }
+        },
+        [newNodeToDrag, stopDragging]
+    );
+
+    const handleNodeDrag = useCallback(
+        (event: React.MouseEvent, node: any) => {
+            if (newNodeToDrag) {
+                stopDragging();
+            }
+        },
+        [newNodeToDrag, stopDragging]
+    );
+
+    useOnViewportChange({
+        onStart: () => {
+            if (newNodeToDrag) {
+                stopDragging();
+            }
+        },
+    });
 
     const onConnect = useCallback(
         (params: Edge | Connection) => {
@@ -290,7 +427,6 @@ function NodeGraphNoProvider() {
             if (initDone.current && !state.ready && state.rf_instance == undefined && rfInstance == undefined) {
                 return;
             }
-            // console.log(changes);
             for (let change of changes) {
                 if (change["type"] == "remove") {
                     // update backend, node got replaced
@@ -350,9 +486,10 @@ function NodeGraphNoProvider() {
 
     return (
         <>
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} fitView>
+            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={handlePaneClick} onNodeClick={handleNodeClickStop} onNodeDrag={handleNodeDrag} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} panOnDrag={isPanningWithAlt ? true : [1]} selectionOnDrag={true} multiSelectionKeyCode={"Shift"} selectionKeyCode={"b"} selectionMode={SelectionMode.Partial} fitView>
                 <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
                 <Controls />
+                <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
             </ReactFlow>
             <NodeAddMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} onSelect={addNode} position={menuPosition} />
         </>

@@ -142,6 +142,10 @@ img {
     border-right-color: #ffffff00;
 }
 
+.react-flow__nodesselection-rect {
+    display: none;
+}
+
 * {
     user-select: none;
 }
