@@ -146,6 +146,11 @@ img {
     display: none;
 }
 
+.status-bar {
+    border-left: none;
+    border-right: none;
+}
+
 * {
     user-select: none;
 }
