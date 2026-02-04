@@ -264,6 +264,12 @@ function NodeGraphNoProvider() {
     // Keyboard listener
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+            // ignore if focused on input and not keybind
+            const target = event.target as HTMLElement;
+            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+                return;
+            }
+
             if (event.shiftKey && event.key === "A") {
                 event.preventDefault();
                 const { x, y } = mousePositionRef.current;
