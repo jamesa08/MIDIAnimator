@@ -1,5 +1,8 @@
 name: Create MIDIAnimator build
 
+permissions:
+  contents: read
+
 on: [push]
 
 jobs:
