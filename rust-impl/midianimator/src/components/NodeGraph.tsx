@@ -48,15 +48,8 @@ function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean;
                 position: "fixed",
                 left: position.x,
                 top: position.y,
-                backgroundColor: "#2a2a2a",
-                border: "1px solid #444",
-                borderRadius: "4px",
-                width: "250px",
-                maxHeight: "400px",
-                zIndex: 1000,
-                display: "flex",
-                flexDirection: "column",
             }}
+            className="bg-[#2a2a2a] border border-[#444] rounded w-[250px] max-h-[400px] z-[1000] flex flex-col"
             onMouseDown={(e) => e.stopPropagation()}
         >
             <input
@@ -65,14 +58,7 @@ function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean;
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search nodes..."
-                style={{
-                    padding: "8px",
-                    backgroundColor: "#1a1a1a",
-                    border: "none",
-                    borderBottom: "1px solid #444",
-                    color: "#fff",
-                    outline: "none",
-                }}
+                className="px-2 py-1 bg-[#1a1a1a] border-0 border-b border-[#444] text-white outline-none text-[13px]"
                 onKeyDown={(e) => {
                     if (e.key === "Escape") {
                         onClose();
@@ -87,12 +73,9 @@ function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean;
                         key={nodeType}
                         onClick={() => onSelect(nodeType)}
                         style={{
-                            padding: "8px 12px",
-                            cursor: "pointer",
                             backgroundColor: "transparent",
-                            color: "#fff",
-                            fontSize: "14px",
                         }}
+                        className="px-2 py-1 cursor-pointer text-white text-[13px]"
                         onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = "#4a7ba7";
                         }}
