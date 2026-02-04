@@ -148,6 +148,18 @@ function NodeGraphNoProvider() {
     );
 
     const stopDragging = useCallback(() => {
+        // Make sure to keep nodes re-selected after drag
+        if (newNodeToDrag && dragStartRef.current.nodes.length > 0) {
+            const draggedNodeIds = new Set(dragStartRef.current.nodes.map((n) => n.id));
+
+            setNodes((nds) =>
+                nds.map((node) => ({
+                    ...node,
+                    selected: draggedNodeIds.has(node.id) ? true : node.selected,
+                }))
+            );
+        }
+
         setNewNodeToDrag(null);
         setUpdateTrigger(true);
     }, []);
@@ -273,7 +285,6 @@ function NodeGraphNoProvider() {
             if (event.shiftKey && event.key === "A") {
                 event.preventDefault();
                 const { x, y } = mousePositionRef.current;
-                const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
                 setMenuPosition({ x, y });
                 setMenuOpen(true);
             } else if (event.key === "Escape") {
@@ -304,6 +315,63 @@ function NodeGraphNoProvider() {
 
                     setNewNodeToDrag("__multi_drag__"); // Use a special ID for multi-drag
                 }
+            } else if (event.shiftKey && event.key === "D") {
+                event.preventDefault();
+                const selectedNodes = nodes.filter((node) => node.selected);
+                if (selectedNodes.length === 0) return;
+
+                const { x, y } = mousePositionRef.current;
+                const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
+
+                // Create a map of old node IDs to new node IDs
+                const oldToNewIdMap = new Map<string, string>();
+
+                const newNodes = selectedNodes.map((node) => {
+                    const newNodeId = `${node.type}-${crypto.randomUUID()}`;
+                    oldToNewIdMap.set(node.id, newNodeId);
+
+                    return {
+                        ...node,
+                        id: newNodeId,
+                        position: {
+                            x: node.position.x + 20,
+                            y: node.position.y + 20,
+                        },
+                        selected: true,
+                        data: { ...node.data },
+                    };
+                });
+
+                // Duplicate edges that connect duplicated nodes
+                const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+                const newEdges = edges
+                    .filter((edge) => selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target))
+                    .map((edge) => ({
+                        ...edge,
+                        id: `${crypto.randomUUID()}`,
+                        source: oldToNewIdMap.get(edge.source)!,
+                        target: oldToNewIdMap.get(edge.target)!,
+                    }));
+
+                // Deselect originals, add duplicates
+                setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
+
+                // Add duplicated edges
+                setEdges((eds) => [...eds, ...newEdges]);
+
+                // Store drag start positions for all duplicated nodes
+                dragStartRef.current = {
+                    cursorX: flowPosition.x,
+                    cursorY: flowPosition.y,
+                    nodes: newNodes.map((node) => ({
+                        id: node.id,
+                        x: node.position.x,
+                        y: node.position.y,
+                    })),
+                };
+
+                setNewNodeToDrag("__multi_drag__");
+                setUpdateTrigger(true);
             }
         };
         window.addEventListener("keydown", handleKeyDown);
