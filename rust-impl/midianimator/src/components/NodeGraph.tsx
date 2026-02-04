@@ -355,6 +355,19 @@ function NodeGraphNoProvider() {
 
                 setNewNodeToDrag("__multi_drag__");
                 setUpdateTrigger(true);
+            } else if (event.key === "a") {
+                event.preventDefault();
+
+                // Check if any nodes are currently selected
+                const hasSelection = nodes.some((node) => node.selected);
+
+                if (hasSelection) {
+                    // If any are selected, deselect all
+                    setNodes((nds) => nds.map((node) => ({ ...node, selected: false })));
+                } else {
+                    // If none are selected, select all
+                    setNodes((nds) => nds.map((node) => ({ ...node, selected: true })));
+                }
             }
         };
         window.addEventListener("keydown", handleKeyDown);
@@ -417,8 +430,18 @@ function NodeGraphNoProvider() {
             if (newNodeToDrag) {
                 stopDragging();
             }
+
+            // If shift key is not held, deselect all other nodes
+            if (!event.shiftKey) {
+                setNodes((nds) =>
+                    nds.map((n) => ({
+                        ...n,
+                        selected: n.id === node.id,
+                    }))
+                );
+            }
         },
-        [newNodeToDrag, stopDragging]
+        [newNodeToDrag, stopDragging, setNodes]
     );
 
     const handleNodeDrag = useCallback(
