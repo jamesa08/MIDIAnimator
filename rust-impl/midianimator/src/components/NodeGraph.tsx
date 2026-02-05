@@ -151,7 +151,6 @@ function NodeGraphNoProvider() {
 
         // preOperationStateRef.current = null;
         setNewNodeToDrag(null);
-        setUpdateTrigger(true);
     }, []);
 
     // cancel handlers
@@ -174,7 +173,6 @@ function NodeGraphNoProvider() {
 
         setNewNodeToDrag(null);
         setMenuOpen(false);
-        setUpdateTrigger(true);
     }, [setNodes, setEdges]);
 
     // ADD NODE MENU HANDLERS
@@ -613,7 +611,32 @@ function NodeGraphNoProvider() {
 
     return (
         <>
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onPaneClick={handlePaneClick} onNodeClick={handleNodeClickStop} onNodeDrag={handleNodeDrag} onPaneContextMenu={handleContextMenu} onNodeContextMenu={handleContextMenu} onContextMenu={handleContextMenu} onSelectionContextMenu={handleContextMenu} onEdgeContextMenu={handleContextMenu} nodeTypes={nodeTypes} onInit={onInit} connectionLineComponent={ConnectionLine} isValidConnection={isValidConnection} panOnDrag={isPanningWithAlt ? true : [1]} selectionOnDrag={true} multiSelectionKeyCode={"Shift"} selectionKeyCode={"b"} selectionMode={SelectionMode.Partial} fitView>
+            <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onPaneClick={handlePaneClick}
+                onNodeClick={handleNodeClickStop}
+                onNodeDrag={handleNodeDrag}
+                onPaneContextMenu={handleContextMenu}
+                onNodeContextMenu={handleContextMenu}
+                onContextMenu={handleContextMenu}
+                onSelectionContextMenu={handleContextMenu}
+                onEdgeContextMenu={handleContextMenu}
+                nodeTypes={nodeTypes}
+                onInit={onInit}
+                connectionLineComponent={ConnectionLine}
+                isValidConnection={isValidConnection}
+                panOnDrag={isPanningWithAlt ? true : [1]}
+                selectionOnDrag={true}
+                multiSelectionKeyCode={"Shift"}
+                selectionKeyCode={"b"}
+                selectionMode={SelectionMode.Partial}
+                minZoom={0.05}
+                fitView
+            >
                 <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
                 <Controls />
                 <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
