@@ -117,7 +117,7 @@ def cleanKeyframes(obj: bpy.types.Object, channels: Set={"all_channels"}):
                         channelbag.fcurves.remove(fCurve)
         
         # Shape key fcurves
-        if obj.data.shape_keys and obj.data.shape_keys.animation_data:
+        if hasattr(obj.data, "shape_keys") and obj.data.shape_keys and obj.data.shape_keys.animation_data:
             sk_anim_data = obj.data.shape_keys.animation_data
             if sk_anim_data.action:
                 sk_channelbag = anim_utils.action_get_channelbag_for_slot(sk_anim_data.action, sk_anim_data.action_slot)
