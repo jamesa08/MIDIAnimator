@@ -116,6 +116,11 @@
             "handles": {
                 "inputs": [
                     {
+                        "id": "name",
+                        "name": "Name",
+                        "type": "String"
+                    },
+                    {
                         "id": "note_on_keyframes",
                         "name": "Note On Keyframes",
                         "type": "Array<Keyframe>"

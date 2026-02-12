@@ -69,6 +69,7 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
 /// these may change in the future
 /// 
 /// inputs: 
+/// "name": `String`,
 /// "note_on_keyframes": `Array<Keyframe>`,
 /// "note_on_anchor_point": `f64`,
 /// "note_off_keyframes": `Array<Keyframe>`,
@@ -92,6 +93,7 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
     // }
 
     let empty_vec: Vec<serde_json::Value> = Vec::new();
+    let name = inputs.get("name").and_then(|v| v.as_str()).unwrap_or_default();
     let note_on_keyframes = inputs.get("note_on_keyframes").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
     let note_on_anchor_point = inputs.get("note_on_anchor_point").and_then(|v| v.as_f64()).unwrap_or_default();
     let note_off_keyframes = inputs.get("note_off_keyframes").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
@@ -103,6 +105,7 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
     let animation_property = inputs.get("animation_property").and_then(|v| v.as_str()).unwrap_or_default();
 
     let mut generator = HashMap::new();
+    generator.insert("name".to_string(), serde_json::to_value(name).unwrap());
     generator.insert("note_on_keyframes".to_string(), serde_json::to_value(note_on_keyframes).unwrap());
     generator.insert("note_on_anchor_point".to_string(), serde_json::to_value(note_on_anchor_point).unwrap());
     generator.insert("note_off_keyframes".to_string(), serde_json::to_value(note_off_keyframes).unwrap());
