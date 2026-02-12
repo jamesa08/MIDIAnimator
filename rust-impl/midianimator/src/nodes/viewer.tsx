@@ -23,9 +23,11 @@ function customStringify(obj: any, depth = 0, maxDepth = 1, maxLength = 300): an
 
     // Check if we are at the top-level and apply pretty-printing
     if (depth < maxDepth) {
-        if (typeof obj === "object" && obj !== null) {
+        if (typeof obj === "object" && obj !== null && !Array.isArray(obj)) {
             let indent = "  ".repeat(depth);
-            let entries = Object.entries(obj).map(([key, value]) => `${indent}${key}: ${customStringify(value, depth + 1, maxDepth, maxLength)}`);
+            // Sort the keys alphabetically
+            let sortedKeys = Object.keys(obj).sort();
+            let entries = sortedKeys.map((key) => `${indent}${key}: ${customStringify(obj[key], depth + 1, maxDepth, maxLength)}`);
             return `{\n${entries.join(",\n")}\n${indent}}`;
         } else if (Array.isArray(obj)) {
             return `[${obj.map((value) => customStringify(value, depth + 1, maxDepth, maxLength)).join(", ")}]`;
