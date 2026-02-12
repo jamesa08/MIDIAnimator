@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, io::empty};
 
 use crate::midi::MIDINote;
 
@@ -314,64 +314,76 @@ While this method requires more initial setup, it provides the greatest degree o
 pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
     
-    // let mut object_map = HashMap::new();
+    let mut object_map: HashMap<String, serde_json::Value> = HashMap::new();
+    object_map.insert("animations".to_string(), serde_json::json!({}));
+    object_map.insert("objects".to_string(), serde_json::json!({}));
     
-    // // get all used notes from midi notes
-    // let midi_notes: Vec<MIDINote> = match inputs.get("midi_notes") {
-    //     Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|err| {
-    //         eprintln!("Failed to deserialize midi_notes: {}", err);
-    //         Vec::new()
-    //     }),
-    //     None => Vec::new(),
-    // };
-    // let used_notes = all_used_notes_from_array(&midi_notes);
+    // get all used notes from midi notes
+    let midi_notes: Vec<MIDINote> = match inputs.get("midi_notes") {
+        Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|err| {
+            eprintln!("Failed to deserialize midi_notes: {}", err);
+            Vec::new()
+        }),
+        None => Vec::new(),
+    };
+    let used_notes = all_used_notes_from_array(&midi_notes);
 
-    // // get the object groups
-    // let object_groups_unwrapped = inputs.get("object_groups").and_then(|v| v.as_array()).unwrap_or(&Vec::new());
-    // let object_group_name = inputs.get("object_group_name").and_then(|v| v.as_str()).unwrap_or_default();
-    // let object_group = object_groups_unwrapped.iter().find(|object_group| {
-    //     object_group.get("name").and_then(|v| v.as_str()).unwrap_or_default() == object_group_name
-    // }).unwrap();
+    // get the object groups
+    let empty_vec = Vec::new();
+    let object_groups_unwrapped = inputs.get("object_groups").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
+    let object_group_name = inputs.get("object_group_name").and_then(|v| v.as_str()).unwrap_or_default();
+    let object_group = object_groups_unwrapped.iter().find(|object_group| {
+        object_group.get("name").and_then(|v| v.as_str()).unwrap_or_default() == object_group_name
+    }).unwrap_or(&serde_json::Value::Null);
 
-    // // get the generator
-    // let generator = inputs.get("generator").and_then(|v| v.as_object()).unwrap_or(&serde_json::Map::new());
+    println!("object group name: {}", object_group_name);
+
+    // get the generator
+    let empty_map = serde_json::Map::new();
+    let generator = inputs.get("generator").and_then(|v| v.as_object()).unwrap_or(&empty_map);
     
-    // // check for case 2 if the object count is the same as the note count
-    // let object_count = object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).len();
-    // let note_count = used_notes.len();
+    // check for case 2 if the object count is the same as the note count
+    let object_count = object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).len();
+    let note_count = used_notes.len();
     
-    // /*
-    //     {
-    //     "animations": {
-    //         "ANIM_test": Array<Keyframe>
-    //     },
-    //     "objects": {
-    //         "object1": {         
-    //             note_number: 45, 46,
-    //             animations: "ANIM_test"
-    //         },
-    //         ...
-    //         }
-    //     }
-    //  */
+    /*  ObjectMap example:
+        {
+        "animations": {
+            "ANIM_test": AnimationGenerator
+        },
+        "objects": {
+            "object1": {         
+                note_number: 45, 46,
+                animations: "ANIM_test"
+            },
+            ...
+            }
+        }
+     */
 
-    // if object_count == note_count {
-    //     // case 2: direct assignment from MIDI track
-    //     for (i, object) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
-    //         let object_name = object.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-    //         let note_number = used_notes[i];
-    //         object_map.insert(object_name.to_string(), note_number);
-    //     }
-    // } else {
-    //     // case 3: flexible assignment with padding
-    //     let padded_notes = pad_nums(used_notes, object_count);
-    //     for (obj, note_number) in object_group.get("objects").iter().zip(padded_notes.iter()) {
-    //         let mut objects = object_map.get("objects");
-    //         // object_map.insert(obj.get("name").unwrap(), "".to_string());
-    //     }
-    // }
-    // outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
-
+    if object_count == note_count {
+        // case 2: direct assignment from MIDI track
+        println!("case 2: direct assignment from MIDI track");
+        for (i, object) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
+            let object_name = object.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let note_number = used_notes[i];
+            let object_map_lookup = object_map.get_mut("objects").unwrap();
+            object_map_lookup.as_object_mut().unwrap().insert(object_name.to_string(), serde_json::json!(note_number));
+        }
+    } else {
+        // case 3: flexible assignment with padding
+        println!("case 3: flexible assignment with padding");
+        let padded_notes = pad_nums(used_notes, object_count);
+        for (obj, note_number) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().zip(padded_notes.iter()) {        
+            let object_name = obj.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let object_map_lookup = object_map.get_mut("objects").unwrap();
+            object_map_lookup.as_object_mut().unwrap().insert(object_name.to_string(), serde_json::json!(note_number));
+        }        
+    }
+    let animation_generator_name = generator.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+    object_map.get_mut("animations").unwrap().as_object_mut().unwrap().insert(animation_generator_name.to_string(), serde_json::json!(generator.clone()));
+    outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
+    println!("object map: {:?}", serde_json::to_string_pretty(&outputs).unwrap());
     return outputs;
     
 }
