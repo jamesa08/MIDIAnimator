@@ -51,7 +51,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         var objectNames = [];
         if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
             // check if objectname exists in the executed_inputs
-            invoke("log", {message: JSON.stringify(state.executed_inputs[id])});
+            invoke("log", { message: JSON.stringify(state.executed_inputs[id]) });
             if ("object_name" in state.executed_inputs[id]) {
                 let objectGroupName = state.executed_inputs[id]["object_group_name"];
                 // now iterate over the objects in that object group
@@ -111,22 +111,19 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     }, [state.executed_results]);
 
     const objectGroupNameComponent = (
-        <>
-            <select
-                className="node-field nodrag nopan"
-                onChange={(event) => {
-                    updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: event.target.value } });
-                }}
-            >
-                {objectGroupNameState.map((track: any) => {
-                    return (
-                        <option value={track} selected={state.executed_inputs != undefined && state.executed_inputs[id] != undefined && state.executed_inputs[id]["object_group_name"] != undefined && state.executed_inputs[id]["object_group_name"] == track}>
-                            {track}
-                        </option>
-                    );
-                })}
-            </select>
-        </>
+        <select
+            className="node-field nodrag nopan"
+            value={data.inputs?.object_group_name || ""}
+            onChange={(event) => {
+                updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: event.target.value } });
+            }}
+        >
+            {objectGroupNameState.map((track: any, index: any) => (
+                <option key={index} value={track}>
+                    {track}
+                </option>
+            ))}
+        </select>
     );
 
     const objectNameComponent = (
@@ -137,8 +134,12 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
                     updateNodeData(id, { ...data, inputs: { ...data.inputs, object_name: event.target.value } });
                 }}
             >
-                {objectNameState.map((track: any) => {
-                    return <option value={track}>{track}</option>;
+                {objectNameState.map((track: any, index: any) => {
+                    return (
+                        <option key={index} value={track}>
+                            {track}
+                        </option>
+                    );
                 })}
             </select>
         </>

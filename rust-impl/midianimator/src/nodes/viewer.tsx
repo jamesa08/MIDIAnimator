@@ -67,11 +67,11 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
     const viewerComponent = (
         <>
             <div className="node-field node-viewer" style={{ fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {viewerData?.split("\n").map((line: any, _: any) => (
-                    <>
+                {viewerData?.split("\n").map((line: any, index: any) => (
+                    <div key={index}>
                         {line}
                         <br />
-                    </>
+                    </div>
                 ))}
             </div>
         </>

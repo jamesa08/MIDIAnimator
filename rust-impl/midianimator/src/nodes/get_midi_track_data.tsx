@@ -57,8 +57,8 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
                     updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: event.target.value } });
                 }}
             >
-                {trackNamesState.map((track: any) => {
-                    return <option value={track}>{track}</option>;
+                {trackNamesState.map((track: any, index: any) => {
+                    return <option key={index} value={track}>{track}</option>;
                 })}
             </select>
         </>

@@ -69,7 +69,11 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
         <div className={`node${preview ? " preview" : ""}`} draggable={preview}>
             <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={"TRANSFORM"} />
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
-            <div className="node-inner flex flex-col">{handleObjects.map((handle) => handle)}</div>
+            <div className="node-inner flex flex-col">
+                {handleObjects.map((handle, index) => (
+                    <React.Fragment key={index}>{handle}</React.Fragment>
+                ))}
+            </div>
         </div>
     );
 }
