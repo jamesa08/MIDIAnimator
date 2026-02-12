@@ -75,7 +75,7 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
                 // println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge["target"], node_id);
                 
                 // return early  as we don't want to continue execution
-                execute_dfs(edge["target"].to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
+                execute_dfs(edge["target"].as_str().unwrap().to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
                 return;
             }
         }
