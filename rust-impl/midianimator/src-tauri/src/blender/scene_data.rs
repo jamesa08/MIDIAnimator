@@ -1,4 +1,5 @@
 use crate::scene_generics;
+use crate::scene_generics::Scene;
 use crate::ipc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
@@ -173,4 +174,161 @@ pub fn process_scene_update(json_data: &str) {
             println!("Error processing scene update: {}", e);
         }
     }
+}
+
+pub async fn reconnect_with_validation() -> Result<SceneDiff, String> {
+    let state = STATE.lock().unwrap();
+    let saved_scene_data = state.scene_data.clone();
+    drop(state);
+    
+    // Fetch fresh scene data from Blender
+    let fresh_scene_data = get_scene_data().await;
+    
+    // Diff the data
+    let diff = compare_scene_data(&saved_scene_data, &fresh_scene_data);
+    
+    if diff.has_changes() {
+        // Return diff to frontend, let user decide
+        Ok(diff)
+    } else {
+        // No changes, just update and connect
+        let mut state = STATE.lock().unwrap();
+        state.scene_data = fresh_scene_data;
+        state.connected = true;
+        drop(state);
+        update_state();
+        Ok(SceneDiff::empty())
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SceneDiff {
+    pub missing_objects: Vec<String>,      // Objects in saved but not in fresh
+    pub new_objects: Vec<String>,           // Objects in fresh but not in saved
+    pub missing_collections: Vec<String>,
+    pub new_collections: Vec<String>,
+}
+
+impl SceneDiff {
+    pub fn has_changes(&self) -> bool {
+        !self.missing_objects.is_empty() || 
+        !self.new_objects.is_empty() ||
+        !self.missing_collections.is_empty() ||
+        !self.new_collections.is_empty()
+    }
+    
+    pub fn empty() -> Self {
+        Self {
+            missing_objects: vec![],
+            new_objects: vec![],
+            missing_collections: vec![],
+            new_collections: vec![],
+        }
+    }
+}
+
+pub fn compare_scene_data(saved: &HashMap<String, Scene>, fresh: &HashMap<String, Scene>) -> SceneDiff {
+    let mut diff = SceneDiff::empty();
+    
+    // Compare collections and objects
+    for (scene_name, saved_scene) in saved {
+        if let Some(fresh_scene) = fresh.get(scene_name) {
+            let saved_collections: std::collections::HashSet<_> = 
+                saved_scene.object_groups.iter().map(|g| &g.name).collect();
+            let fresh_collections: std::collections::HashSet<_> = 
+                fresh_scene.object_groups.iter().map(|g| &g.name).collect();
+            
+            // Missing collections
+            for coll in saved_collections.difference(&fresh_collections) {
+                diff.missing_collections.push(format!("{}/{}", scene_name, coll));
+            }
+            
+            // New collections
+            for coll in fresh_collections.difference(&saved_collections) {
+                diff.new_collections.push(format!("{}/{}", scene_name, coll));
+            }
+            
+            // Compare objects within matching collections
+            for saved_group in &saved_scene.object_groups {
+                if let Some(fresh_group) = fresh_scene.object_groups.iter()
+                    .find(|g| g.name == saved_group.name) {
+                    
+                    let saved_objects: std::collections::HashSet<_> = 
+                        saved_group.objects.iter().map(|o| &o.name).collect();
+                    let fresh_objects: std::collections::HashSet<_> = 
+                        fresh_group.objects.iter().map(|o| &o.name).collect();
+                    
+                    for obj in saved_objects.difference(&fresh_objects) {
+                        diff.missing_objects.push(
+                            format!("{}/{}/{}", scene_name, saved_group.name, obj)
+                        );
+                    }
+                    
+                    for obj in fresh_objects.difference(&saved_objects) {
+                        diff.new_objects.push(
+                            format!("{}/{}/{}", scene_name, fresh_group.name, obj)
+                        );
+                    }
+                }
+            }
+        }
+    }
+    
+    diff
+}
+
+#[tauri::command]
+pub async fn check_scene_changes() -> Result<SceneDiff, String> {
+    let (saved_scene_data, pending_scene_data) = {
+        let state = STATE.lock().unwrap();
+        
+        if !state.execution_paused {
+            drop(state);
+            return Err("No validation pending".to_string());
+        }
+        
+        let pending = match &state.pending_scene_data {
+            Some(data) => data.clone(),
+            None => {
+                drop(state);
+                return Err("No pending scene data".to_string());
+            }
+        };
+        
+        (state.scene_data.clone(), pending)
+    };
+    
+    let diff = compare_scene_data(&saved_scene_data, &pending_scene_data);
+    Ok(diff)
+}
+
+#[tauri::command]
+pub async fn accept_scene_changes() -> Result<(), String> {
+    let mut state = STATE.lock().unwrap();
+    
+    let fresh_scene_data = match state.pending_scene_data.take() {
+        Some(data) => data,
+        None => {
+            drop(state);
+            return Err("No pending scene data".to_string());
+        }
+    };
+    
+    state.scene_data = fresh_scene_data;
+    state.execution_paused = false;
+    drop(state);
+    
+    update_state();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reject_scene_changes() -> Result<(), String> {
+    let mut state = STATE.lock().unwrap();
+    state.pending_scene_data = None;
+    // Stay paused
+    drop(state);
+    
+    update_state();
+    Ok(())
 }

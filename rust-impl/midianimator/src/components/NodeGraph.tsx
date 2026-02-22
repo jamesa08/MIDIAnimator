@@ -304,8 +304,15 @@ function NodeGraphNoProvider() {
             } else if (event.key === "x") {
                 event.preventDefault();
                 // Delete selected nodes and edges
+                // Get IDs of selected nodes before deleting
+                const selectedNodeIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+
+                // Delete selected nodes
                 setNodes((nds) => nds.filter((node) => !node.selected));
-                setEdges((eds) => eds.filter((edge) => !edge.selected));
+
+                // Delete edges connected to deleted nodes
+                setEdges((eds) => eds.filter((edge) => !edge.selected && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target)));
+
                 setUpdateTrigger(true);
             } else if (event.key === "g") {
                 event.preventDefault();
@@ -424,16 +431,18 @@ function NodeGraphNoProvider() {
 
     useEffect(() => {
         if (updateTrigger && rfInstance) {
-            // send update to backend
             let newState = { ...state, rf_instance: rfInstance?.toObject() };
             setState(newState);
             invoke("js_update_state", { state: JSON.stringify(newState) });
             setUpdateTrigger(false);
 
-            // execute real-time nodes
-            invoke("execute_graph", { realtime: true });
+            // Block execution if paused
+            if (!state.execution_paused) {
+                invoke("execute_graph", { realtime: true });
+            }
         }
-    }, [rfInstance, updateTrigger]);
+    }, [rfInstance, updateTrigger, state.execution_paused]);
+
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -451,6 +460,24 @@ function NodeGraphNoProvider() {
         };
     }, []);
 
+    // Save & Load
+    useEffect(() => {
+        if (state.ready && state.rf_instance && rfInstance) {
+            const storedGraph = state.rf_instance;
+
+            // Check if the stored graph is different from current
+            const currentGraph = rfInstance.toObject();
+            const isDifferent = JSON.stringify(storedGraph) !== JSON.stringify(currentGraph);
+
+            if (isDifferent && storedGraph.nodes && storedGraph.edges) {
+                // Reconstruct from loaded state
+                setNodes(storedGraph.nodes || []);
+                setEdges(storedGraph.edges || []);
+            }
+        }
+    }, [state.rf_instance, state.ready, rfInstance]);
+
+    // MARK: -
     // HANDLERS FOR REACT FLOW EVENTS
     const handlePaneClick = useCallback(
         (event: React.MouseEvent) => {

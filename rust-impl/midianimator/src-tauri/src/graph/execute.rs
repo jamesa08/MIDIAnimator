@@ -39,8 +39,24 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
             // println!("ALREADY EXECUTED {:?}", node_id);
             return;
         }
-    
-        let node = rf_instance["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_id).unwrap();
+        
+
+        // temporary debugging prints
+        println!("Searching for node '{}' in rf_instance", node_id);
+        let node = rf_instance["nodes"].as_array().unwrap().iter().find(|node| {
+            let id = node["id"].as_str().unwrap_or("");
+            println!("  Checking node with id: '{}'", id);
+            node["id"] == node_id
+        }).unwrap_or_else(|| {
+            eprintln!("PANIC: Could not find node '{}'", node_id);
+            eprintln!("Available nodes: {:?}", 
+                rf_instance["nodes"].as_array().unwrap().iter()
+                    .map(|n| n["id"].as_str().unwrap_or("?"))
+                    .collect::<Vec<_>>()
+            );
+            panic!("Node not found");
+        });
+        
         let node_no_uuid = node_id.split("-").collect::<Vec<&str>>()[0];
         
         let default_node = default_nodes["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_no_uuid).unwrap();

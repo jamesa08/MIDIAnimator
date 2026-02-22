@@ -18,6 +18,7 @@ use crate::command::javascript::evaluate_js_oneshot;
 use crate::scene_generics;
 use crate::state::{STATE, update_state};
 use crate::graph::execute::execute_graph;
+use crate::blender::scene_data::compare_scene_data;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -79,7 +80,39 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     // when spawnning a new thread, get the client information as well
                     rt.spawn(async move {
                         request_client_info().await;
-                        request_scene_data().await;
+                        
+                        // Check if we need validation BEFORE fetching new scene data
+                        let (needs_validation, saved_scene_data) = {
+                            let state = STATE.lock().unwrap();
+                            (!state.rf_instance.is_empty(), state.scene_data.clone())
+                        };
+                        
+                        if needs_validation {
+                            // Fetch fresh scene data
+                            let fresh_scene_data = scene_data::get_scene_data().await;
+                            
+                            // Compare old vs new
+                            let diff = compare_scene_data(&saved_scene_data, &fresh_scene_data);
+                            
+                            if diff.has_changes() {
+                                // Store pending data in state
+                                let mut state = STATE.lock().unwrap();
+                                state.pending_scene_data = Some(fresh_scene_data);
+                                state.execution_paused = true;
+                                drop(state);
+                                update_state();
+                                println!("Scene data changes detected, execution paused for validation.");
+                            } else {
+                                // No changes, just update normally
+                                let mut state = STATE.lock().unwrap();
+                                state.scene_data = fresh_scene_data;
+                                drop(state);
+                                update_state();
+                            }
+                        } else {
+                            // Normal connection, no validation needed
+                            request_scene_data().await;
+                        }
                     });
 
                     thread::spawn(move || { 

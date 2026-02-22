@@ -104,8 +104,8 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     };
 
     return (
-        <div className="panel w-60 select-none">
-            <div className="panel-header h-8 border-b border-black flex items-center pl-2 pr-2">
+        <div className="panel w-60 select-none p-0">
+            <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm">
                 <span className="mr-auto">{name}</span>
                 <button className="float-right" onClick={createWindow}>
                     Popout

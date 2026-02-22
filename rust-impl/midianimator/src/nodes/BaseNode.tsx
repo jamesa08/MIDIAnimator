@@ -38,7 +38,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
             }
 
             let dynHandleArray = dynamicHandles == null || dynamicHandles[handleType] == undefined ? [] : dynamicHandles[handleType];
-            
+
             for (let handle of [...nodeData["handles"][handleType], ...dynHandleArray]) {
                 let uiInject = <></>;
                 let uiHidden = false;

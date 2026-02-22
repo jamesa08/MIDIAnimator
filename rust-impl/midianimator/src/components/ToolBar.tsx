@@ -11,8 +11,10 @@ function MenuBar() {
             <div className="spacer h-[inherit] w-[1px] bg-black mr-1" />
 
             {/* left aligned items */}
-            <div className="float-left">
+            <div className="float-left inline-flex">
                 <Tool type="collapse-left" />
+                <Tool type="save" />
+                <Tool type="load" />
             </div>
 
             {/* other icons here */}
