@@ -16,6 +16,10 @@
 
 `cargo run` to run `main.rs`
 
+Note: for macs, install lld for faster build times
+
+`brew install lld`
+
 ---
 
 ## Complete app:
