@@ -17,7 +17,6 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     useEffect(() => {
         getNodeData("keyframes_from_object").then(setNodeData);
-        updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: "", object_name: "" } });
     }, []);
 
     function arraysEqual(arr1: any[], arr2: string | any[]) {
@@ -51,7 +50,6 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         var objectNames = [];
         if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
             // check if objectname exists in the executed_inputs
-            invoke("log", { message: JSON.stringify(state.executed_inputs[id]) });
             if ("object_name" in state.executed_inputs[id]) {
                 let objectGroupName = state.executed_inputs[id]["object_group_name"];
                 // now iterate over the objects in that object group
@@ -69,7 +67,6 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
                 objectNames = ["No Object names found"];
             }
 
-            invoke("log", { message: JSON.stringify(objectNames) });
             // need a more elaborate check, need to just check
             if (!arraysEqual(objectNames, objectNameState)) {
                 setObjectNameState(objectNames);
@@ -115,7 +112,13 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
             className="node-field nodrag nopan"
             value={data.inputs?.object_group_name || ""}
             onChange={(event) => {
-                updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: event.target.value } });
+                updateNodeData(id, {
+                    ...data,
+                    inputs: {
+                        ...data.inputs,
+                        object_group_name: event.target.value,
+                    },
+                });
             }}
         >
             {objectGroupNameState.map((track: any, index: any) => (
@@ -130,8 +133,15 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         <>
             <select
                 className="node-field nodrag nopan"
+                value={data.inputs?.object_name || ""}
                 onChange={(event) => {
-                    updateNodeData(id, { ...data, inputs: { ...data.inputs, object_name: event.target.value } });
+                    updateNodeData(id, {
+                        ...data,
+                        inputs: {
+                            ...data.inputs,
+                            object_name: event.target.value,
+                        },
+                    });
                 }}
             >
                 {objectNameState.map((track: any, index: any) => {
