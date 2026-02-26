@@ -169,7 +169,7 @@
                 "outputs": [
                     {
                         "id": "generator",
-                        "name": "Generator",
+                        "name": "Animation Generator",
                         "type": "AnimationGenerator"
                     }
                 ]
