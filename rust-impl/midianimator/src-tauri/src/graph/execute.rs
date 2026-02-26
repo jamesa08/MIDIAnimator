@@ -1,12 +1,11 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use serde_json::{Map, json};
 
 use crate::state::{STATE, update_state};
 use crate::node_registry::get_node_registry;
 
 #[tauri::command]
-pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
+pub async fn execute_graph(realtime: bool) {
     let now = std::time::Instant::now();
 
     let state = tokio::task::spawn_blocking(move || {
@@ -21,13 +20,8 @@ pub async fn execute_graph(handle: tauri::AppHandle, realtime: bool) {
     // get current nodes & edges
     let rf_instance: HashMap<String, serde_json::Value> = state.rf_instance.clone();
 
-    // get the default nodes
-    let resource_path = handle.path_resolver().resolve_resource("src/configs/default_nodes.json").unwrap();
-    let mut file = std::fs::File::open(resource_path).unwrap();
-    let mut data = String::new();
-
-    file.read_to_string(&mut data).unwrap();
-    let default_nodes: HashMap<String, serde_json::Value> = serde_json::from_str(&data).unwrap();
+    // get default nodes from state:
+    let default_nodes = state.default_nodes.clone();
 
     let node_registry = get_node_registry();
 

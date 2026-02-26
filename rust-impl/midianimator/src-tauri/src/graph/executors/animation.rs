@@ -383,7 +383,7 @@ pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> Ha
     let animation_generator_name = generator.get("name").and_then(|v| v.as_str()).unwrap_or_default();
     object_map.get_mut("animations").unwrap().as_object_mut().unwrap().insert(animation_generator_name.to_string(), serde_json::json!(generator.clone()));
     outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
-    println!("object map: {:?}", serde_json::to_string_pretty(&outputs).unwrap());
+    // println!("object map: {:?}", serde_json::to_string_pretty(&outputs).unwrap());
     return outputs;
     
 }

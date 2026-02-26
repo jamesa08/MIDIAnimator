@@ -35,6 +35,7 @@ pub struct AppState {
     pub rf_instance: HashMap<String, serde_json::Value>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
+    pub default_nodes: HashMap<String, serde_json::Value>,
 }
 
 impl Default for AppState {
@@ -51,6 +52,7 @@ impl Default for AppState {
             rf_instance: HashMap::new(),
             executed_results: HashMap::new(),
             executed_inputs: HashMap::new(),
+            default_nodes: HashMap::new(),
         }
     }
 }

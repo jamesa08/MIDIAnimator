@@ -1,4 +1,4 @@
-use crate::scene_generics;
+use crate::{graph::execute::execute_graph, scene_generics};
 use crate::scene_generics::Scene;
 use crate::ipc;
 use std::collections::HashMap;
@@ -280,7 +280,7 @@ pub fn compare_scene_data(saved: &HashMap<String, Scene>, fresh: &HashMap<String
 #[tauri::command]
 pub async fn check_scene_changes() -> Result<SceneDiff, String> {
     let (saved_scene_data, pending_scene_data) = {
-        let state = STATE.lock().unwrap();
+        let mut state = STATE.lock().unwrap();
         
         if !state.execution_paused {
             drop(state);
@@ -290,7 +290,12 @@ pub async fn check_scene_changes() -> Result<SceneDiff, String> {
         let pending = match &state.pending_scene_data {
             Some(data) => data.clone(),
             None => {
+                state.execution_paused = false;
                 drop(state);
+                update_state();
+                tauri::async_runtime::spawn(async move {
+                    execute_graph(true).await;
+                });
                 return Err("No pending scene data".to_string());
             }
         };
@@ -309,7 +314,12 @@ pub async fn accept_scene_changes() -> Result<(), String> {
     let fresh_scene_data = match state.pending_scene_data.take() {
         Some(data) => data,
         None => {
+            state.execution_paused = false;
             drop(state);
+            update_state();
+            tauri::async_runtime::spawn(async move {
+                    execute_graph(true).await;
+            });
             return Err("No pending scene data".to_string());
         }
     };

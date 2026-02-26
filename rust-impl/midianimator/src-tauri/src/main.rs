@@ -3,8 +3,10 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+
 use MIDIAnimator::ipc::start_server;
-use MIDIAnimator::state::{WINDOW, update_state};
+use MIDIAnimator::state::{STATE, WINDOW, update_state};
 use MIDIAnimator::ui::menu;
 
 use tauri::{generate_context, Manager};
@@ -25,6 +27,11 @@ async fn main() {
         // update the global state with the window
         let window = app.get_window("main").unwrap();
         *WINDOW.lock().unwrap() = Some(window);
+
+        let resource_path = app.path_resolver().resolve_resource("src/configs/default_nodes.json").unwrap();
+        let data = std::fs::read_to_string(resource_path).unwrap();
+        let default_nodes: HashMap<String, serde_json::Value> = serde_json::from_str(&data).unwrap();
+        STATE.lock().unwrap().default_nodes = default_nodes;
         
         // start server and update the state
         tauri::async_runtime::spawn(async move {

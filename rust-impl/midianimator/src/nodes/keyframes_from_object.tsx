@@ -28,82 +28,84 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     }
 
     useEffect(() => {
-        var objectGroupNames = [];
-        if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
-            for (let key in state.executed_inputs[id]["object_groups"]) {
-                let objectGroupName = state.executed_inputs[id]["object_groups"][key]["name"];
-                objectGroupNames.push(objectGroupName);
-            }
-
-            if (objectGroupNames.length == 0) {
-                objectGroupNames = ["No Object Group names found"];
-            }
-
-            // check if we need to update the object group name
-            if (!arraysEqual(objectGroupNames, objectGroupNameState)) {
-                setObjectGroupNameState(objectGroupNames);
-            }
-        } else {
-            setObjectGroupNameState(["No ObjectGroup names found"]);
+        if (state?.executed_inputs == undefined || !(id in state.executed_inputs)) {
+            // No execution data — preserve current values as the sole option
+            const preservedGroup = data.inputs?.object_group_name || "";
+            const preservedObject = data.inputs?.object_name || "";
+            setObjectGroupNameState(preservedGroup ? [preservedGroup] : ["No ObjectGroup names found"]);
+            setObjectNameState(preservedObject ? [preservedObject] : ["No Object names found"]);
+            return;
         }
 
-        var objectNames = [];
-        if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
-            // check if objectname exists in the executed_inputs
-            if ("object_name" in state.executed_inputs[id]) {
-                let objectGroupName = state.executed_inputs[id]["object_group_name"];
-                // now iterate over the objects in that object group
-                for (let key in state.executed_inputs[id]["object_groups"]) {
-                    if (state.executed_inputs[id]["object_groups"][key]["name"] == objectGroupName) {
-                        for (let objectKey in state.executed_inputs[id]["object_groups"][key]["objects"]) {
-                            let objectName = state.executed_inputs[id]["object_groups"][key]["objects"][objectKey]["name"];
-                            objectNames.push(objectName);
-                        }
+        // Object group names
+        const objectGroupNames: string[] = [];
+        for (let key in state.executed_inputs[id]["object_groups"]) {
+            objectGroupNames.push(state.executed_inputs[id]["object_groups"][key]["name"]);
+        }
+
+        if (objectGroupNames.length === 0) {
+            setObjectGroupNameState(data.inputs?.object_group_name ? [data.inputs.object_group_name] : ["No ObjectGroup names found"]);
+        } else if (!arraysEqual(objectGroupNames, objectGroupNameState)) {
+            setObjectGroupNameState(objectGroupNames);
+        }
+
+        // Object names
+        const objectNames: string[] = [];
+        if ("object_name" in state.executed_inputs[id]) {
+            const objectGroupName = state.executed_inputs[id]["object_group_name"];
+            for (let key in state.executed_inputs[id]["object_groups"]) {
+                if (state.executed_inputs[id]["object_groups"][key]["name"] === objectGroupName) {
+                    for (let objectKey in state.executed_inputs[id]["object_groups"][key]["objects"]) {
+                        objectNames.push(state.executed_inputs[id]["object_groups"][key]["objects"][objectKey]["name"]);
                     }
                 }
             }
+        }
 
-            if (objectNames.length == 0) {
-                objectNames = ["No Object names found"];
-            }
-
-            // need a more elaborate check, need to just check
-            if (!arraysEqual(objectNames, objectNameState)) {
-                setObjectNameState(objectNames);
+        if (objectNames.length === 0) {
+            setObjectNameState(data.inputs?.object_name ? [data.inputs.object_name] : ["No Object names found"]);
+        } else if (!arraysEqual(objectNames, objectNameState)) {
+            setObjectNameState(objectNames);
+            // Only update node data if the current value isn't in the new list
+            if (!objectNames.includes(data.inputs?.object_name)) {
                 updateNodeData(id, { ...data, inputs: { ...data.inputs, object_name: objectNames[0] } });
             }
-        } else {
-            setObjectNameState(["No Object names found"]);
         }
     }, [state.executed_inputs]);
 
     let xyz = ["x", "y", "z"];
     // update dynamic handles
     useEffect(() => {
-        var animCurves = [];
-        if (state != undefined && state.executed_results != undefined && id in state.executed_results && state.executed_results[id]["dyn_output"] != undefined) {
-            let animCurvesExecuted = state.executed_results[id]["dyn_output"].length != 0 && state.executed_results[id]["dyn_output"].length != undefined ? state.executed_results[id]["dyn_output"] : [];
-            for (let animCurve of animCurvesExecuted) {
-                let animCurveName = animCurve["data_path"] + "_";
-                // check if the data path is location, rotation, or scale
-                if (["location", "rotation", "scale"].indexOf(animCurve["data_path"]) !== -1) {
-                    // convert to x, y, z
-                    animCurveName += xyz[animCurve["array_index"]];
-                } else {
-                    animCurveName += animCurve["array_index"];
-                }
-                /* prettier-ignore */
-                let animCurveHandle = {
-                    "id": animCurveName,
-                    "name": animCurveName.split("_").join(" ").toProperCase(),
-                    "type": "Array<Keyframe>", 
-                }
-                animCurves.push(animCurveHandle);
-            }
+        if (state?.executed_results == undefined || !(id in state.executed_results)) {
+            // No execution data — preserve current handles as-is
+            return;
+        }
 
-            if (!arraysEqual(animCurves, animCurveState)) {
-                setAnimCurveState(animCurves);
+        const dynOutput = state.executed_results[id]["dyn_output"];
+        if (!dynOutput || dynOutput.length === 0) {
+            return;
+        }
+
+        const animCurves = [];
+        for (let animCurve of dynOutput) {
+            let animCurveName = animCurve["data_path"] + "_";
+            if (["location", "rotation", "scale"].indexOf(animCurve["data_path"]) !== -1) {
+                animCurveName += xyz[animCurve["array_index"]];
+            } else {
+                animCurveName += animCurve["array_index"];
             }
+            animCurves.push({
+                id: animCurveName,
+                name: animCurveName.split("_").join(" ").toProperCase(),
+                type: "Array<Keyframe>",
+            });
+        }
+
+        // Deep compare by id to avoid clobbering identical handles
+        const sameHandles = animCurves.length === animCurveState.length && animCurves.every((c, i) => c.id === animCurveState[i]?.id);
+
+        if (!sameHandles) {
+            setAnimCurveState(animCurves);
         }
     }, [state.executed_results]);
 
