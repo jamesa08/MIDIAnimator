@@ -1,10 +1,10 @@
 // utils/mod.rs
+pub mod gm_instrument_map;
+pub mod ui;
+pub mod animation;
 
 use regex::Regex;
 use std::f64::consts::PI;
-
-pub mod gm_instrument_map;
-pub mod ui;
 
 use gm_instrument_map::GM_INST;
 
