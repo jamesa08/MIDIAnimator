@@ -39,6 +39,12 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
         getNodeData("get_midi_file").then(setNodeData);
     }, []);
 
+    useEffect(() => {
+        if (data.inputs?.file_path) {
+            setFile(data.inputs.file_path);
+        }
+    }, []);
+
     const pick = useCallback(async () => {
         let res = await onMIDIFilePick();
         if (res != null) {
@@ -46,7 +52,7 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
             setFile(res.toString());
             updateNodeData(id, { ...data, inputs: { ...data.inputs, file_path: res.toString() } });
         }
-    }, []);
+    }, [id, data]);
 
     const filePathComponent = (
         <>
