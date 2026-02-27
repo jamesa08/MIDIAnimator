@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
+use crate::blender::scene_data::write_scene_data;
 use crate::midi::MIDINote;
+use crate::utils::animation::{AnimationGenerator, ObjectMap, BlendKeyframe, parse_animation_property, add_keyframes, co_from_json};
 
 /// Node: keyframes_from_object
 /// 
@@ -361,15 +363,27 @@ pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> Ha
             }
         }
      */
+    let animation_generator_name = generator.get("name").and_then(|v| v.as_str()).unwrap_or_default();
 
     if object_count == note_count {
         // case 2: direct assignment from MIDI track
         println!("case 2: direct assignment from MIDI track");
-        for (i, object) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
-            let object_name = object.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+        for (i, obj) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
+            let object_name = obj.get("name").and_then(|v| v.as_str()).unwrap_or_default();
             let note_number = used_notes[i];
             let object_map_lookup = object_map.get_mut("objects").unwrap();
-            object_map_lookup.as_object_mut().unwrap().insert(object_name.to_string(), serde_json::json!(note_number));
+            let object_map_obj = object_map_lookup.as_object_mut().unwrap();
+
+            if let Some(existing_entry) = object_map_obj.get_mut(object_name) {
+                if let Some(note_array) = existing_entry.get_mut("note_number").and_then(|v| v.as_array_mut()) {
+                    note_array.push(serde_json::json!(note_number));
+                }
+            } else {
+                object_map_obj.insert(object_name.to_string(), serde_json::json!({
+                    "note_number": [note_number],
+                    "animations": [animation_generator_name]
+                }));
+            }
         }
     } else {
         // case 3: flexible assignment with padding
@@ -378,13 +392,139 @@ pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> Ha
         for (obj, note_number) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().zip(padded_notes.iter()) {        
             let object_name = obj.get("name").and_then(|v| v.as_str()).unwrap_or_default();
             let object_map_lookup = object_map.get_mut("objects").unwrap();
-            object_map_lookup.as_object_mut().unwrap().insert(object_name.to_string(), serde_json::json!(note_number));
+            let object_map_obj = object_map_lookup.as_object_mut().unwrap();
+
+            if let Some(existing_entry) = object_map_obj.get_mut(object_name) {
+                if let Some(note_array) = existing_entry.get_mut("note_number").and_then(|v| v.as_array_mut()) {
+                    note_array.push(serde_json::json!(note_number));
+                }
+            } else {
+                object_map_obj.insert(object_name.to_string(), serde_json::json!({
+                    "note_number": [note_number],
+                    "animations": [animation_generator_name]
+                }));
+            }
         }        
     }
-    let animation_generator_name = generator.get("name").and_then(|v| v.as_str()).unwrap_or_default();
     object_map.get_mut("animations").unwrap().as_object_mut().unwrap().insert(animation_generator_name.to_string(), serde_json::json!(generator.clone()));
     outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
     // println!("object map: {:?}", serde_json::to_string_pretty(&outputs).unwrap());
     return outputs;
     
+}
+
+
+/// Node: evaluate_instrument
+/// 
+/// inputs:
+/// "object_map": `ObjectMap`,
+/// "midi_notes": `Array<MIDINote>`,`
+/// 
+/// outputs:
+/// None for now, this node will directly apply the animations to the objects in Blender, but in the future we may want to have it output some data that can be used by other nodes
+#[tauri::command]
+#[node_registry::node]
+pub fn evaluate_instrument(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
+    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+
+    let object_map: ObjectMap = serde_json::from_value(inputs["object_map"].clone())
+        .expect("failed to parse object_map");
+
+    let midi_notes: Vec<MIDINote> = serde_json::from_value(inputs["midi_notes"].clone())
+        .expect("failed to parse midi_notes");
+
+
+    let mut note_to_objects: HashMap<u8, Vec<(String, &AnimationGenerator)>> = HashMap::new();
+
+    for (obj_name, entry) in &object_map.objects {
+        for anim_name in &entry.animations {
+            let Some(gen) = object_map.animations.get(anim_name) else {
+                eprintln!("object '{}' references unknown animation '{}'", obj_name, anim_name);
+                continue;
+            };
+            for &note_num in &entry.note_number {
+                note_to_objects
+                    .entry(note_num)
+                    .or_default()
+                    .push((obj_name.clone(), gen));
+            }
+        }
+    }
+
+    let mut obj_BlendKeyframes: HashMap<String, Vec<BlendKeyframe>> = object_map
+        .objects
+        .keys()
+        .map(|name| (name.clone(), vec![]))
+        .collect();
+
+
+        for note in &midi_notes {
+        let Some(targets) = note_to_objects.get(&note.note_number) else { continue; };
+
+        for (obj_name, gen) in targets {
+            // Parse data_path and array_index from animation_property e.g. "location[0]"
+            let (data_path, array_index) = parse_animation_property(&gen.animation_property);
+            
+            // let data_path = "location"; // FIXME overwrite for now
+            // let array_index = 2; // FIXME overwrite for now
+            
+            let mut next_keys: Vec<BlendKeyframe> = gen
+                .note_on_keyframes
+                .iter()
+                .filter_map(|kf| {
+                    let (frame, mut value) = co_from_json(kf)?;
+                    let frame = frame + note.time_on + gen.note_on_anchor_point;
+                    if gen.velocity_intensity != 0.0 {
+                        value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
+                    }
+                    Some(BlendKeyframe::new(frame, value, &data_path, array_index))
+                })
+                .collect();
+
+            let mut note_off_keys: Vec<BlendKeyframe> = gen
+                .note_off_keyframes
+                .iter()
+                .filter_map(|kf| {
+                    let (frame, mut value) = co_from_json(kf)?;
+                    let frame = frame + note.time_off + gen.note_off_anchor_point;
+                    if gen.velocity_intensity != 0.0 {
+                        value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
+                    }
+                    Some(BlendKeyframe::new(frame, value, &data_path, array_index))
+                })
+                .collect();
+
+            next_keys.append(&mut note_off_keys);
+            next_keys.sort_by(|a, b| a.frame.partial_cmp(&b.frame).unwrap());
+
+            if next_keys.is_empty() { continue; }
+
+            let inserted = obj_BlendKeyframes.get_mut(obj_name).unwrap();
+            match gen.animation_overlap.as_str() {
+                "add" | "" => add_keyframes(inserted, &mut next_keys),
+                other => eprintln!("unsupported animation_overlap '{}', skipping", other),
+            }
+        }
+    }
+
+    println!("writing BlendKeyframes to Blender...");
+    let val = serde_json::to_value(obj_BlendKeyframes).expect("failed to serialize BlendKeyframes for writing to Blender");
+
+    let val_for_blender = val.clone();
+    tauri::async_runtime::spawn(async move {
+        let res = write_scene_data(val_for_blender).await;
+        
+        if res.is_err() {
+            eprintln!("failed to write BlendKeyframes to Blender: {}", res.err().unwrap());
+        } else {
+            println!("done writing BlendKeyframes to Blender");
+        }
+    });
+
+    outputs.insert(
+        "BlendKeyframes".to_string(),
+        serde_json::to_value(val).expect("failed to serialize BlendKeyframes"),
+    );
+
+    outputs
 }
