@@ -36,10 +36,8 @@ pub async fn execute_graph(realtime: bool) {
         
 
         // temporary debugging prints
-        println!("Searching for node '{}' in rf_instance", node_id);
         let node = rf_instance["nodes"].as_array().unwrap().iter().find(|node| {
             let id = node["id"].as_str().unwrap_or("");
-            println!("  Checking node with id: '{}'", id);
             node["id"] == node_id
         }).unwrap_or_else(|| {
             eprintln!("PANIC: Could not find node '{}'", node_id);
@@ -108,8 +106,7 @@ pub async fn execute_graph(realtime: bool) {
         visited.insert(node_id.clone());
 
         // before executing the node, check if the node is realtime
-        if (*realtime) && node["realtime"] == false {
-            // println!("REALTIME MODE, NODE NOT REALTIME, skipping {:?}", node_id);
+        if (*realtime) && default_node["realtime"].as_bool().unwrap_or(false) == false {
             return;
         }
 
@@ -125,7 +122,6 @@ pub async fn execute_graph(realtime: bool) {
                 let output_hashmap = node_func(input_hashmap);
                 let output_value = json!(output_hashmap);
                 exec_result.extend(output_value.as_object().unwrap().clone());
-                println!("Successful execution of node '{}'", node_id);
             } else {
                 println!("ERROR: Node '{}' not found in registry", node_id);
             }
