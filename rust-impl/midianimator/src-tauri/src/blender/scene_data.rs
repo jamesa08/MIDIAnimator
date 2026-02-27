@@ -8,6 +8,7 @@ use crate::state::{STATE, update_state};
 
 static SCENE_BUILDER_PY: &str = include_str!("../blender/python/blender_scene_builder.py");
 static SCENE_SENDER_PY: &str = include_str!("../blender/python/blender_scene_sender.py");
+static SCENE_WRITER_PY: &str = include_str!("../blender/python/blender_scene_writer.py");
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SceneUpdate {
@@ -157,6 +158,25 @@ pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> 
     Ok(())
 }
 
+pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<()> {
+    let json_string = serde_json::to_string(&data).unwrap();
+    
+    let injected_script = SCENE_WRITER_PY.replace("JSON_DATA = r\"\"\"\"\"\"", &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string));
+
+    let result = match ipc::send_message(injected_script.to_string()).await {
+        Some(data) => data,
+        None => {
+            panic!("Error writing scene data");
+        }
+    };
+    
+    println!("{:?}", result);
+
+    if result != "OK" {
+        panic!("Error from Python file: {:?}", result);
+    }
+    Ok(())
+}
 
 pub fn process_scene_update(json_data: &str) {
     match serde_json::from_str::<SceneUpdate>(json_data) {

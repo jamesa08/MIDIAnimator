@@ -254,6 +254,35 @@
                     }
                 ]
             }
+        },
+
+        {
+            "id": "evaluate_instrument",
+            "name": "Evaluate Instrument",
+            "description": "evaluate instrument",
+            "executor": "rust",
+            "realtime": false,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "type": "ObjectMap"
+                    },
+                    {
+                        "id": "midi_notes",
+                        "name": "MIDI Notes",
+                        "type": "Array<MIDINote>"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "BlendKeyframes",
+                        "name": "BlendKeyframes",
+                        "type": "HashMap<String, Array<BlendKeyframe>>"
+                    }
+                ]
+            }
         }
     ]
 }
