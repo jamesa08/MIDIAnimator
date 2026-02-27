@@ -113,7 +113,8 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
     generator.insert("time_mapper".to_string(), serde_json::to_value(time_mapper).unwrap());
     generator.insert("amplitude_mapper".to_string(), serde_json::to_value(amplitude_mapper).unwrap());
     generator.insert("velocity_intensity".to_string(), serde_json::to_value(velocity_intensity).unwrap());
-    generator.insert("animation_overlap".to_string(), serde_json::to_value(animation_overlap).unwrap());
+    // generator.insert("animation_overlap".to_string(), serde_json::to_value(animation_overlap).unwrap());
+    generator.insert("animation_overlap".to_string(), serde_json::to_value("add").unwrap());
     generator.insert("animation_property".to_string(), serde_json::to_value(animation_property).unwrap());
 
     outputs.insert("generator".to_string(), serde_json::to_value(generator).unwrap());
