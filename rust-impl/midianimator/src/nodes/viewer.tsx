@@ -113,7 +113,7 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
                 tempViewerData = tempViewerData = customStringify(state.executed_inputs[id]["data"], {
                     maxDepth: 4,
                     compactThreshold: 100,
-                    maxKeysPerObject: 4,
+                    maxKeysPerObject: 10,
                     maxArrayItems: 15,
                 });
 
