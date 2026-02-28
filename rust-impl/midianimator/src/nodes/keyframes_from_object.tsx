@@ -35,6 +35,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         : [];
 
     useEffect(() => {
+        console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
         if (selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) {
             updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: selectedGroupName, object_name: selectedObjectName } });
         }

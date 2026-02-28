@@ -48,6 +48,10 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
                                 "location_y": FCurveData,
                                 "location_z": FCurveData
                             }
+                            "location_x": FCurveData
+                            "location_y": FCurveData,
+                            "location_z": FCurveData
+
                         }
                     */
 
@@ -55,12 +59,16 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
                         let anim_curve_unwrapped = anim_curve.as_object().unwrap();
                         let data_path = anim_curve_unwrapped.get("data_path").unwrap().as_str().unwrap();
                         let array_index = anim_curve_unwrapped.get("array_index").unwrap().as_u64().unwrap();
+                        // let keyframe_points = anim_curve_unwrapped.get("keyframe_points").unwrap().as_array().unwrap();
 
                         let anim_curve_name = if vec!["location", "rotation", "scale"].contains(&data_path) {
                             format!("{}_{}", data_path, xyz[array_index as usize])
                         } else {
                             format!("{}_{}", data_path, array_index)
                         };
+
+                        outputs.insert(anim_curve_name.clone(), serde_json::to_value(anim_curve_unwrapped).unwrap());
+
 
                         dyn_output_map.insert(anim_curve_name, anim_curve.clone());
                     }
