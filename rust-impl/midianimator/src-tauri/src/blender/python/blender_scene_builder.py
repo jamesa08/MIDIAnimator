@@ -34,12 +34,16 @@ def FCurvesFromObject(obj):
         channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
         return list(channelbag.fcurves) if channelbag else []
 
+def frames_to_sec(f, fps):
+    return f / fps
+
 def get_fcurve_data(fcurve):
     """Converts an FCurve into a dictionary representation.
 
     :param bpy.types.FCurve fcurve: the Blender FCurve
     :return dict: dictionary representing the FCurve
     """
+    fps = bpy.context.scene.render.fps
     keyframe_points = [
         {
             "amplitude": key.amplitude,
@@ -50,7 +54,7 @@ def get_fcurve_data(fcurve):
             "handle_right": list(key.handle_right),
             "handle_right_type": key.handle_right_type,
             "interpolation": key.interpolation,
-            "co": list(key.co),
+            "co": [frames_to_sec(key.co[0], fps), key.co[1]],
             "period": key.period
         }
         for key in fcurve.keyframe_points
@@ -62,7 +66,7 @@ def get_fcurve_data(fcurve):
         "data_path": fcurve.data_path,
         "extrapolation": fcurve.extrapolation,
         "keyframe_points": keyframe_points,
-        "range": list(fcurve.range()),
+        "range": [frames_to_sec(fcurve.range()[0], fps), frames_to_sec(fcurve.range()[1], fps)]
     }
 
 def get_all_objects_in_collection(collection, objects=None):

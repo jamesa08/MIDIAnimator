@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::blender::scene_data::write_scene_data;
 use crate::midi::MIDINote;
-use crate::utils::animation::{AnimationGenerator, ObjectMap, BlendKeyframe, parse_animation_property, add_keyframes, co_from_json};
+use crate::utils::animation::{self, add_keyframes, co_from_json, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
 
 /// Node: keyframes_from_object
 /// 
@@ -90,9 +90,9 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
 /// 
 /// inputs: 
 /// "name": `String`,
-/// "note_on_keyframes": `Array<Keyframe>`,
+/// "note_on_keyframes": `FCurveData`,
 /// "note_on_anchor_point": `f64`,
-/// "note_off_keyframes": `Array<Keyframe>`,
+/// "note_off_keyframes": `FCurveData`,
 /// "note_off_anchor_point": `f64`,
 /// "time_mapper": `String`,
 /// "amplitude_mapper": `String`,
@@ -112,11 +112,12 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
     //     return outputs;
     // }
 
-    let empty_vec: Vec<serde_json::Value> = Vec::new();
+    let empty_map = serde_json::Map::new();
+    
     let name = inputs.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-    let note_on_keyframes = inputs.get("note_on_keyframes").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
+    let note_on_keyframes = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("keyframe_points").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).clone();
     let note_on_anchor_point = inputs.get("note_on_anchor_point").and_then(|v| v.as_f64()).unwrap_or_default();
-    let note_off_keyframes = inputs.get("note_off_keyframes").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
+    let note_off_keyframes = inputs.get("note_off_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("keyframe_points").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).clone();
     let note_off_anchor_point = inputs.get("note_off_anchor_point").and_then(|v| v.as_f64()).unwrap_or_default();
     let time_mapper = inputs.get("time_mapper").and_then(|v| v.as_str()).unwrap_or_default();
     let amplitude_mapper = inputs.get("amplitude_mapper").and_then(|v| v.as_str()).unwrap_or_default();
@@ -135,7 +136,16 @@ pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMa
     generator.insert("velocity_intensity".to_string(), serde_json::to_value(velocity_intensity).unwrap());
     // generator.insert("animation_overlap".to_string(), serde_json::to_value(animation_overlap).unwrap());
     generator.insert("animation_overlap".to_string(), serde_json::to_value("add").unwrap());
-    generator.insert("animation_property".to_string(), serde_json::to_value(animation_property).unwrap());
+    let animation_property_value = serde_json::to_value(animation_property).unwrap();
+    if animation_property_value == serde_json::Value::String("".to_string()) {
+        // inherit from note_on_keyframes data_path and array_index if animation_property is not provided
+        let data_path = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("data_path").and_then(|v| v.as_str()).unwrap_or("");
+        let array_index = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("array_index").and_then(|v| v.as_u64()).unwrap_or(0);
+        let inherited_animation_property = format!("{}[{}]", data_path, array_index);
+        generator.insert("animation_property".to_string(), serde_json::to_value(inherited_animation_property).unwrap());
+    } else {
+        generator.insert("animation_property".to_string(), animation_property_value);
+    }
 
     outputs.insert("generator".to_string(), serde_json::to_value(generator).unwrap());
     return outputs;
@@ -482,20 +492,18 @@ pub fn evaluate_instrument(inputs: HashMap<String, serde_json::Value>) -> HashMa
         for (obj_name, gen) in targets {
             // Parse data_path and array_index from animation_property e.g. "location[0]"
             let (data_path, array_index) = parse_animation_property(&gen.animation_property);
-            
-            // let data_path = "location"; // FIXME overwrite for now
-            // let array_index = 2; // FIXME overwrite for now
-            
+                        
             let mut next_keys: Vec<BlendKeyframe> = gen
                 .note_on_keyframes
                 .iter()
                 .filter_map(|kf| {
-                    let (frame, mut value) = co_from_json(kf)?;
-                    let frame = frame + note.time_on + gen.note_on_anchor_point;
+                    let (time, mut value) = co_from_json(kf)?;
+                    // use seconds instead of frames, insert "time" key instead of "frame" in the BlendKeyframe struct, and convert to frames in Blender using the scene's frame rate. This allows for more intuitive timing based on the music rather than needing to calculate frame numbers.
+                    let time = time + note.time_on + gen.note_on_anchor_point;
                     if gen.velocity_intensity != 0.0 {
                         value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
                     }
-                    Some(BlendKeyframe::new(frame, value, &data_path, array_index))
+                    Some(BlendKeyframe::new(time, value, &data_path, array_index))
                 })
                 .collect();
 
@@ -503,17 +511,17 @@ pub fn evaluate_instrument(inputs: HashMap<String, serde_json::Value>) -> HashMa
                 .note_off_keyframes
                 .iter()
                 .filter_map(|kf| {
-                    let (frame, mut value) = co_from_json(kf)?;
-                    let frame = frame + note.time_off + gen.note_off_anchor_point;
+                    let (time, mut value) = co_from_json(kf)?;
+                    let time = time + note.time_off + gen.note_off_anchor_point;
                     if gen.velocity_intensity != 0.0 {
                         value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
                     }
-                    Some(BlendKeyframe::new(frame, value, &data_path, array_index))
+                    Some(BlendKeyframe::new(time, value, &data_path, array_index))
                 })
                 .collect();
 
             next_keys.append(&mut note_off_keys);
-            next_keys.sort_by(|a, b| a.frame.partial_cmp(&b.frame).unwrap());
+            next_keys.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
 
             if next_keys.is_empty() { continue; }
 
