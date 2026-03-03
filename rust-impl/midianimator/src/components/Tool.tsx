@@ -2,7 +2,7 @@ import React from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/tauri";
 
-function Tool({ type }: { type: string }) {
+function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     const { backEndState, setBackEndState } = useStateContext(); // Add this import at top
 
     var icon;
@@ -57,6 +57,8 @@ function Tool({ type }: { type: string }) {
                         }
                     }
                 }
+
+                onClick?.();
             }}
         >
             {icon}

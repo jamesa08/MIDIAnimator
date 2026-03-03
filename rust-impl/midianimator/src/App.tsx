@@ -43,6 +43,11 @@ function App() {
         };
     }, []);
 
+    useEffect(() => {
+        // FIXME temporary
+        console.log("Frontend state updated:", frontEndState);
+    }, [frontEndState]);
+
     return (
         <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div className="head flex-initial">

@@ -3,7 +3,7 @@ import { createContext, useContext, useState } from "react";
 export const StateContext = createContext<StateContext | null>(null);
 
 const defaultBackendState = { ready: false };
-const defaultFrontendState = { panelsShown: [1, 2] };
+const defaultFrontendState = { panelsShown: [0, 1] };
 
 type StateContextProviderProps = {
     children: React.ReactNode;

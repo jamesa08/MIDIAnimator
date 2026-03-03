@@ -4,6 +4,7 @@ import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
 import { WebviewWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { useStateContext } from "../contexts/StateContext";
 
 interface PanelProps {
     id: string;
@@ -12,6 +13,7 @@ interface PanelProps {
 
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const navigate = useNavigate();
+    const { frontEndState, setFrontEndState } = useStateContext();
 
     useEffect(() => {
         const handleClick = (event: any) => {
@@ -104,7 +106,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     };
 
     return (
-        <div className="panel w-60 select-none p-0">
+        <div className="panel w-60 select-none p-0" style={frontEndState.panelsShown.includes(Number(id)) ? {} : { display: "none" }}>
             <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm">
                 <span className="mr-auto">{name}</span>
                 <button className="float-right" onClick={createWindow}>
