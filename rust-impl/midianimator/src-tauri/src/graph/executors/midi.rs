@@ -5,7 +5,7 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     let track_count = midi_file.get_midi_tracks().len();
     let mut seconds: f64 = 0.0;  // in ms
     for track in midi_file.get_midi_tracks() {
-        let final_note = track.notes.get(track.notes.len() - 1);
+        let final_note = track.notes.last();
         if final_note.is_some() && final_note.unwrap().time_off > seconds {
             seconds = final_note.unwrap().time_off;
         }
