@@ -5,6 +5,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { WebviewWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useStateContext } from "../contexts/StateContext";
+import { safeWindowPosition } from "../utils/window";
 
 interface PanelProps {
     id: string;
@@ -14,6 +15,8 @@ interface PanelProps {
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const navigate = useNavigate();
     const { frontEndState, setFrontEndState } = useStateContext();
+    const ref = useRef<HTMLDivElement>(null);
+
 
     useEffect(() => {
         const handleClick = (event: any) => {
@@ -31,18 +34,34 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
             }
         };
 
+        if (ref.current) {
+            const rect = ref.current.getBoundingClientRect();
+            console.log("RECT", rect.width, rect.height, rect.top, rect.left);
+        }
+
         setupListener();
     }, []);
 
-    const createWindow = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const createWindow = async (event: React.MouseEvent<HTMLButtonElement>) => {
+        let w = 400;
+        let h = 300;
+
+        if (ref.current) {
+            const rect = ref.current.getBoundingClientRect();
+            w = rect.width
+            h = rect.height
+        }
+
+        const { x, y } = await safeWindowPosition(event.screenX, event.screenY, w, h);
+
         const webview = new WebviewWindow(id, {
             url: `/#/panel/${id}`,
             title: name,
-            width: 400,
-            height: 300,
+            width: w,
+            height: h,
             resizable: true,
-            x: event.screenX,
-            y: event.screenY,
+            x: x,
+            y: y,
         });
 
         webview.once("tauri://created", () => {
@@ -106,7 +125,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     };
 
     return (
-        <div className="panel w-60 select-none p-0" style={frontEndState.panelsShown.includes(Number(id)) ? {} : { display: "none" }}>
+        <div ref={ref} className="panel w-60 select-none p-0" style={frontEndState.panelsShown.includes(Number(id)) ? {} : { display: "none" }}>
             <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm">
                 <span className="mr-auto">{name}</span>
                 <button className="float-right" onClick={createWindow}>
