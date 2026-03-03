@@ -52,6 +52,10 @@ def shape_keys_from_object(obj):
     reference = obj.data.shape_keys.reference_key
     return list(obj.data.shape_keys.key_blocks)[1:], reference
 
+def frames_to_sec(frames, fps):
+    """Converts frames to seconds based on the given frames per second."""
+    return frames / fps
+
 def FCurvesFromObject(obj):
     """Gets FCurves from an object."""
     if obj.animation_data is None: return []
@@ -66,6 +70,7 @@ def FCurvesFromObject(obj):
 
 def get_fcurve_data(fcurve):
     """Converts an FCurve into a dictionary representation."""
+    fps = bpy.context.scene.render.fps
     keyframe_points = [
         {
             "amplitude": key.amplitude,
@@ -76,7 +81,7 @@ def get_fcurve_data(fcurve):
             "handle_right": list(key.handle_right),
             "handle_right_type": key.handle_right_type,
             "interpolation": key.interpolation,
-            "co": list(key.co),
+            "co": [frames_to_sec(key.co[0], fps), key.co[1]],
             "period": key.period
         }
         for key in fcurve.keyframe_points
@@ -88,7 +93,7 @@ def get_fcurve_data(fcurve):
         "data_path": fcurve.data_path,
         "extrapolation": fcurve.extrapolation,
         "keyframe_points": keyframe_points,
-        "range": list(fcurve.range()),
+        "range": [frames_to_sec(fcurve.range()[0], fps), frames_to_sec(fcurve.range()[1], fps)],
     }
 
 def get_all_objects_in_collection(collection, objects=None):
