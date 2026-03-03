@@ -18,11 +18,11 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     const executedInputs = state?.executed_inputs?.[id];
     const executedResults = state?.executed_results?.[id];
 
-    const objectGroupNames: string[] = executedInputs ? executedInputs["object_groups"].map((g: any) => g.name) : [];
+    const objectGroupNames: string[] = executedInputs?.["object_groups"]?.map((g: any) => g.name) ?? [];
 
     const selectedGroupName: string = data.inputs?.object_group_name || objectGroupNames[0] || "";
 
-    const objectNames: string[] = objectGroupNames.length > 0 ? executedInputs["object_groups"].find((g: any) => g.name === selectedGroupName)?.objects.map((o: any) => o.name) ?? [] : [];
+    const objectNames: string[] = executedInputs?.["object_groups"]?.find((g: any) => g.name === selectedGroupName)?.objects?.map((o: any) => o.name) ?? [];
 
     const selectedObjectName: string = data.inputs?.object_name || objectNames[0] || "";
 
