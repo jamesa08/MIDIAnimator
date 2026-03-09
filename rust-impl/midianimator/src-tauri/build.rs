@@ -8,7 +8,17 @@ fn main() {
     println!("cargo:warning=running build.rs");
     create_tauri_handlers();
     create_node_registry();
+    get_git_hash();
     tauri_build::build();
+}
+
+fn get_git_hash() {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .unwrap();
+    let hash = String::from_utf8(output.stdout).unwrap();
+    println!("cargo:rustc-env=GIT_HASH={}", hash.trim());
 }
 
 fn create_tauri_handlers() {

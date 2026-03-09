@@ -8,8 +8,8 @@
         "withGlobalTauri": true
     },
     "package": {
-        "productName": "MIDIAnimator",
-        "version": "0.1.0"
+        "productName": "MotionKeys",
+        "version": "0.5.0"
     },
     "tauri": {
         "allowlist": {
@@ -66,10 +66,24 @@
                 "fullscreen": false,
                 "height": 600,
                 "resizable": true,
-                "title": "MIDIAnimator",
+                "title": "MotionKeys",
                 "width": 1100,
                 "titleBarStyle": "Overlay",
-                "hiddenTitle": true
+                "hiddenTitle": true,
+                "visible": false
+            },
+            {
+                "fullscreen": false,
+                "width": 400,
+                "height": 300,
+                "decorations": false,
+                "resizable": false,
+                "center": true,
+                "hiddenTitle": true,
+                "title": "Splash Screen",
+                "label": "splash",
+                "url": "splash.html",
+                "visible": false
             }
         ]
     }

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html data-tauri-drag-region>
+
+<head>
+    <style>
+        html,
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: "Helvetica", sans-serif;
+            padding: 0px;
+            margin: 0px;
+            user-select: none;
+            cursor: default;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 0px;
+            text-align: center;
+            font-size: 0.9em;
+            margin-left: 10px;
+            margin-bottom: 10px;
+            text-transform: lowercase;
+        }
+
+        #version, #hash {
+            position: absolute;
+            bottom: 0px;
+            right: 0px;
+            font-size: 0.7em;
+            margin-right: 10px;
+            margin-bottom: 24px;
+        }
+
+        #hash {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <p id="status" data-tauri-drag-region>Starting...</p>
+    <p id="version" data-tauri-drag-region>version 0.5.0</p>
+    <p id="hash" data-tauri-drag-region>hash g3a4b5c6</p>
+    <script type="module" src="/src/windows/splash.tsx"></script>
+    <script>
+        document.addEventListener("contextmenu", (e) => e.preventDefault());
+    </script>
+</body>
+
+</html>

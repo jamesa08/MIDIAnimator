@@ -14,13 +14,16 @@ function App() {
     const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
 
     useEffect(() => {
+        
+        invoke("splash_progress", { message: "Initializing..." });
         // listner for window creation
         const windowEventListener = listen(`open-window`, (event: any) => {
             const window = new WebviewWindow(`${event.payload["title"]}`, event.payload);
 
             window.show();
         });
-
+        
+        invoke("splash_progress", { message: "Setting up state listeners..." });
         const stateListner = listen("update_state", (event: any) => {
             setBackEndState(event.payload);
         });
@@ -29,11 +32,14 @@ function App() {
             invoke(event.payload["function"], event.payload["args"]).then((res: any) => {});
         });
 
+        invoke("splash_progress", { message: "Launching..." });
         // tell the backend we're ready & get the initial state
         invoke("ready").then((res: any) => {
             if (res !== null) {
                 setBackEndState(res);
             }
+            // close the splash screen once the app is ready
+            invoke("close_splashscreen");
         });
 
         return () => {
