@@ -4,8 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use tauri::async_runtime::block_on;
-use tauri::Invoke;
 use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -17,7 +15,6 @@ use crate::blender::scene_data;
 use crate::command::javascript::evaluate_js_oneshot;
 use crate::scene_generics;
 use crate::state::{STATE, update_state};
-use crate::graph::execute::execute_graph;
 use crate::blender::scene_data::compare_scene_data;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
