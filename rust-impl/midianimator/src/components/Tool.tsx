@@ -25,9 +25,9 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
             </svg>
         );
     } else if (type == "collapse-left") {
-        icon = <img src="src/collapse-left.png" alt="collapse-left" className="size-6 h-5" />;
+        icon = <img src="collapse-left.png" alt="collapse-left" className="size-6 h-5" />;
     } else if (type == "collapse-right") {
-        icon = <img src="src/collapse-right.png" alt="collapse-right" className="size-6 h-5" />;
+        icon = <img src="collapse-right.png" alt="collapse-right" className="size-6 h-5" />;
     }
 
     return (
