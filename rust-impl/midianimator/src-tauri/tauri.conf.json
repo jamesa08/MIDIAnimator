@@ -38,7 +38,9 @@
     "mainBinaryName": "MotionKeys",
     "version": "0.5.0",
     "identifier": "com.jamesa08.midianimator",
-    "plugins": {},
+    "plugins": {
+        "macos-fps": {}
+    },
     "app": {
         "withGlobalTauri": true,
         "windows": [

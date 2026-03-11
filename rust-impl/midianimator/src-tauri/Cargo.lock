@@ -18,6 +18,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "tauri-plugin-macos-fps",
  "tokio",
  "uuid",
  "walkdir",
@@ -3546,6 +3547,18 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 0.9.12+spec-1.1.0",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-macos-fps"
+version = "0.1.0"
+source = "git+https://github.com/userFRM/tauri-plugin-macos-fps#04f5dd9e3cd949983ba95b001f57f18ca0af6133"
+dependencies = [
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "serde",
+ "tauri",
 ]
 
 [[package]]
