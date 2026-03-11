@@ -63,15 +63,25 @@ pub struct ObjectMap {
 pub fn get_value(k1: &BlendKeyframe, k2: &BlendKeyframe, time: f64) -> f64 {
     let (x1, y1) = (k1.time, k1.value);
     let (x2, y2) = (k2.time, k2.value);
-    let m = if (x2 - x1).abs() < f64::EPSILON { 0.0 } else { (y2 - y1) / (x2 - x1) };
+    let m = if (x2 - x1).abs() < f64::EPSILON {
+        0.0
+    } else {
+        (y2 - y1) / (x2 - x1)
+    };
     m * time + (y1 - m * x1)
 }
 
 pub fn interval<'a>(key_list: &'a [BlendKeyframe], time: f64) -> (Option<&'a BlendKeyframe>, Option<&'a BlendKeyframe>) {
-    if key_list.is_empty() { return (None, None); }
-    if key_list[0].time > time { return (Some(&key_list[0]), Some(&key_list[0])); }
+    if key_list.is_empty() {
+        return (None, None);
+    }
+    if key_list[0].time > time {
+        return (Some(&key_list[0]), Some(&key_list[0]));
+    }
     let last = &key_list[key_list.len() - 1];
-    if last.time < time { return (Some(last), Some(last)); }
+    if last.time < time {
+        return (Some(last), Some(last));
+    }
     for i in 0..key_list.len() - 1 {
         if key_list[i].time <= time && time <= key_list[i + 1].time {
             return (Some(&key_list[i]), Some(&key_list[i + 1]));
@@ -81,11 +91,10 @@ pub fn interval<'a>(key_list: &'a [BlendKeyframe], time: f64) -> (Option<&'a Ble
 }
 
 pub fn find_overlap(key_list1: &[BlendKeyframe], key_list2: &[BlendKeyframe]) -> Vec<BlendKeyframe> {
-    if key_list1.is_empty() || key_list2.is_empty() { return vec![]; }
-    assert!(
-        key_list1[0].time <= key_list2[0].time,
-        "key_list1 starts after key_list2 — notes went backwards in time"
-    );
+    if key_list1.is_empty() || key_list2.is_empty() {
+        return vec![];
+    }
+    assert!(key_list1[0].time <= key_list2[0].time, "key_list1 starts after key_list2 — notes went backwards in time");
     let first_next = key_list2[0].time;
     let mut result = vec![];
     let mut found = false;
@@ -94,7 +103,9 @@ pub fn find_overlap(key_list1: &[BlendKeyframe], key_list2: &[BlendKeyframe]) ->
             found = true;
             result.push(key.clone());
         } else {
-            if found { result.push(key.clone()); }
+            if found {
+                result.push(key.clone());
+            }
             break;
         }
     }

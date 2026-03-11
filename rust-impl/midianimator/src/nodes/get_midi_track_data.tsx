@@ -4,7 +4,7 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();

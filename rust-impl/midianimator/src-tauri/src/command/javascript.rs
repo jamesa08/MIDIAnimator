@@ -1,89 +1,58 @@
 use crate::state::WINDOW;
 use std::sync::{Arc, Mutex};
-use tauri::Manager;
+use tauri::Listener;
 
-/// this function is used to evaluate javascript code on the window
-/// 
-/// this is useful for executing javascript code from the backend & getting the result back, nice for dynamic code execution
-/// in order to use this function, you will need to pass in a string with a javascript function called `execute()` that returns some string'ed value.
-/// 
-/// The returned value will be in JSON string format, so you will need to parse it. The result of the function is in a key called `result`. 
-/// 
-/// WARNING: this may change at any time. Sorry not sorry
-/// 
-/// Example:
-/// ```rust
-/// let result = evaluate_js("function execute() { return 'hello world'; }".to_string()).await;
-/// println!("Result: {}", result);
-/// ```
 pub async fn evaluate_js(code: String) -> String {
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
-    // need to clone the listener id so we can remove it later
-    let listener_id: Arc<Mutex<Option<tauri::EventHandler>>> = Arc::new(Mutex::new(None));
+    let listener_id: Arc<Mutex<Option<tauri::EventId>>> = Arc::new(Mutex::new(None));
     let listener_id_clone = listener_id.clone();
 
     tokio::spawn(async move {
         let window = WINDOW.lock().unwrap();
         let random = uuid::Uuid::new_v4().to_string();
 
-        let wrapper_code = format!(r#"{0}
+        let wrapper_code = format!(
+            r#"{0}
         (function() {{
                 try {{
                     execute().then((result) => {{
-                        window.__TAURI__.window.appWindow.emit("__js_result_{1}", {{ result: result }})
+                        window.__TAURI__.event.emit("__js_result_{1}", {{ result: result }})
                     }});
                 }} catch (error) {{
                     console.log("JS ERROR:", error);
-                    window.__TAURI__.window.appWindow.emit("__js_result_{1}", {{ result: JSON.stringify({{ error: error.toString() }}) }})
+                    window.__TAURI__.event.emit("__js_result_{1}", {{ result: JSON.stringify({{ error: error.toString() }}) }})
                 }}
             }})();
             "#,
-            code,
-            random
+            code, random
         );
 
-        // eval javascript code blindly on the window. MUST be non-blocking for it to execute and for the event to get picked up (hence async)
-        let _ = window.as_ref().unwrap().eval(&wrapper_code);
+        let win_ref = window.as_ref().unwrap();
 
+        win_ref.eval(&wrapper_code).unwrap();
 
-        let listener_handle = window.as_ref().unwrap().once_global(format!("__js_result_{0}", random), move |event| {
-            if let Some(payload) = event.payload() {
-                let _ = tx.try_send(payload.to_string());
-            }
+        let listener_handle = win_ref.once(format!("__js_result_{0}", random), move |event| {
+            let payload = event.payload().to_string();
+            let _ = tx.try_send(payload);
         });
-        
-        // Set the listener id so we can remove it later
+
         *listener_id.lock().unwrap() = Some(listener_handle);
     });
-
 
     let result = rx.recv().await.unwrap();
 
     if !result.is_empty() {
         let window = WINDOW.lock().unwrap();
-        
-        // Remove the event listener
-        window.as_ref().unwrap().unlisten(*listener_id_clone.lock().unwrap().as_ref().unwrap());
+        let win_ref = window.as_ref().unwrap();
+        win_ref.unlisten(*listener_id_clone.lock().unwrap().as_ref().unwrap());
         drop(window);
-
-        return result;
+        result
     } else {
-        return "".to_string();
+        "".to_string()
     }
 }
 
-
-/// Execute JavaScript code in the window without waiting for or handling results
-/// 
-/// This function simply sends JS code to the window for execution and doesn't
-/// wait for completion or check for errors. Ideal for one-way operations
-/// where you don't need feedback.
-/// 
-/// Example:
-/// ```rust
-/// evaluate_js_oneshot("invoke('execute_graph', { realtime: true });");
-/// ```
 pub fn evaluate_js_oneshot(code: String) {
     if let Ok(window) = WINDOW.lock() {
         if let Some(window) = window.as_ref() {

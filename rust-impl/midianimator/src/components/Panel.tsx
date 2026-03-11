@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
-import { WebviewWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import { useStateContext } from "../contexts/StateContext";
 import { safeWindowPosition } from "../utils/window";

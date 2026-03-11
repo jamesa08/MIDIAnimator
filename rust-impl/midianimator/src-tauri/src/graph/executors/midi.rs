@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use crate::midi::MIDIFile;
+use std::collections::HashMap;
 
 pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     let track_count = midi_file.get_midi_tracks().len();
-    let mut seconds: f64 = 0.0;  // in ms
+    let mut seconds: f64 = 0.0; // in ms
     for track in midi_file.get_midi_tracks() {
         let final_note = track.notes.last();
         if final_note.is_some() && final_note.unwrap().time_off > seconds {
@@ -32,15 +32,14 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     }
 
     // get track count
-    return format!("{} tracks\n{}", track_count, hhmmss).to_string()
+    return format!("{} tracks\n{}", track_count, hhmmss).to_string();
 }
 
-
 /// Node: get_midi_file
-/// 
-/// inputs: 
+///
+/// inputs:
 /// "file_path": `String`
-/// 
+///
 /// outputs:
 /// "tracks": `Array<MIDITrack>`,
 /// "stats": `String`
@@ -52,7 +51,7 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
         outputs.insert("tracks".to_string(), serde_json::Value::Array(vec![]));
         outputs.insert("stats".to_string(), serde_json::Value::String("".to_string()));
         return outputs;
-    }   
+    }
 
     let midi_file = MIDIFile::new(inputs["file_path"].to_string().as_str()).unwrap();
     let midi_file_statistics = get_midi_file_statistics(&midi_file);
@@ -62,11 +61,11 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
 }
 
 /// Node: get_midi_track_data
-/// 
-/// inputs: 
+///
+/// inputs:
 /// "tracks": `Array<MIDITrack>`,
 /// "track_name": `String`
-/// 
+///
 /// outputs:
 /// "notes": `Array<MIDINote>`,
 /// "control_change": `HashMap<u8, Array<MIDIEvent>>`,
@@ -75,9 +74,8 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
 #[tauri::command]
 #[node_registry::node]
 pub fn get_midi_track_data(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
-    
+
     if !inputs.contains_key("tracks") || !inputs.contains_key("track_name") {
         // empty array, no data
         outputs.insert("track".to_string(), serde_json::Value::Object(serde_json::Map::new()));
@@ -96,6 +94,6 @@ pub fn get_midi_track_data(inputs: HashMap<String, serde_json::Value>) -> HashMa
             break;
         }
     }
-    
+
     return outputs;
 }

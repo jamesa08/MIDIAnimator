@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@tauri-apps/api": "^1.5.5",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.12.2",
     "@xyflow/react": "^12.0.1",
@@ -47,7 +49,7 @@
     ]
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.3",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",

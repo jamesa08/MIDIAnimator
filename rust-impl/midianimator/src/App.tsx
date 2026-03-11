@@ -4,8 +4,8 @@ import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/window";
-import { invoke } from "@tauri-apps/api/tauri";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 
 import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
@@ -14,7 +14,7 @@ function App() {
     const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
 
     useEffect(() => {
-        
+        invoke("log", { message: "App mounted, starting initialization..." });
         invoke("splash_progress", { message: "Initializing..." });
         // listner for window creation
         const windowEventListener = listen(`open-window`, (event: any) => {

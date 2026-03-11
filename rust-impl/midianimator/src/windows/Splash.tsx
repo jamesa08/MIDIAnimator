@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/tauri";
-import { appWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+const appWindow = getCurrentWebviewWindow()
 
 const img = new Image();
 img.src = "splash.png";

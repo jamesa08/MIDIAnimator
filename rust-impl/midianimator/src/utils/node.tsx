@@ -1,5 +1,5 @@
 import { resolveResource } from '@tauri-apps/api/path';
-import { BaseDirectory, readTextFile } from '@tauri-apps/api/fs';
+import { BaseDirectory, readTextFile } from '@tauri-apps/plugin-fs';
 
 
 

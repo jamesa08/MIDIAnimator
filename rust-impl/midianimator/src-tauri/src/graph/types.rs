@@ -5,24 +5,24 @@ use std::collections::HashMap;
 
 // MARK: - Primitives
 struct MKString {
-    value: String
+    value: String,
 }
 
 struct MKF64 {
-    value: f64
+    value: f64,
 }
 
 struct MKAny {
-    value: serde_json::Value
+    value: serde_json::Value,
 }
 
 // MARK: - Collections
 struct MKArray {
-    value: Vec<serde_json::Value>
+    value: Vec<serde_json::Value>,
 }
 
 struct MKHashMap {
-    value: HashMap<serde_json::Value, serde_json::Value>
+    value: HashMap<serde_json::Value, serde_json::Value>,
 }
 
 // MARK: - Custom types

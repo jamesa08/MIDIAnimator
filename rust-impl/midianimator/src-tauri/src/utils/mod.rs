@@ -1,7 +1,7 @@
 // utils/mod.rs
+pub mod animation;
 pub mod gm_instrument_map;
 pub mod ui;
-pub mod animation;
 
 use regex::Regex;
 use std::f64::consts::PI;
@@ -16,7 +16,7 @@ pub fn note_to_name(n_val: i32) -> String {
     assert!(n_val >= 0 && n_val <= 127, "MIDI note number out of range!");
 
     let names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    return format!("{}{}", names[n_val as usize % 12], n_val / 12 - 2)
+    return format!("{}{}", names[n_val as usize % 12], n_val / 12 - 2);
 }
 
 pub fn name_to_note(n_str: &str) -> i32 {
@@ -40,11 +40,7 @@ pub fn convert_note_numbers(input_str: &str) -> Result<Vec<i32>, String> {
     } else if re_note.is_match(input_str) {
         Ok(vec![name_to_note(input_str)])
     } else if input_str.contains(',') {
-        let nums: Vec<i32> = input_str
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|s| convert_note_numbers(s.trim()).unwrap()[0])
-            .collect();
+        let nums: Vec<i32> = input_str.split(',').filter(|s| !s.is_empty()).map(|s| convert_note_numbers(s.trim()).unwrap()[0]).collect();
         Ok(nums)
     } else {
         Err(String::from("'{input_str}' has an invalid note number or name."))
@@ -60,11 +56,7 @@ pub fn type_of_note_number(input_str: &str) -> Result<Vec<&str>, String> {
     } else if re_note.is_match(input_str) {
         Ok(vec!["name"])
     } else if input_str.contains(',') {
-        let types: Vec<&str> = input_str
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|s| type_of_note_number(s.trim()).unwrap()[0])
-            .collect();
+        let types: Vec<&str> = input_str.split(',').filter(|s| !s.is_empty()).map(|s| type_of_note_number(s.trim()).unwrap()[0]).collect();
         Ok(types)
     } else {
         Err(String::from("'{input_str}' has an invalid note number or name."))
@@ -73,7 +65,7 @@ pub fn type_of_note_number(input_str: &str) -> Result<Vec<&str>, String> {
 
 pub fn gm_program_to_name(pc_num: i32) -> String {
     assert!(pc_num >= 0 && pc_num <= 127, "Program change number out of range!");
-    return GM_INST.get(&(pc_num)).unwrap().to_string()
+    return GM_INST.get(&(pc_num)).unwrap().to_string();
 }
 
 pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f64) {
@@ -102,7 +94,7 @@ pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f
         }
     }
     // return last tempo tuple
-    return vals[vals.len() - 1]
+    return vals[vals.len() - 1];
 }
 
 pub fn remove_duplicates(vals: &[i32]) -> Vec<i32> {
@@ -151,12 +143,20 @@ pub fn map_range_arc_sin(value: f64, in_min: f64, in_max: f64, out_min: f64, out
 }
 
 pub fn map_range_exp(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
-    let s = if out_min <= out_max { 1.0 } else { -1.0 };
+    let s = if out_min <= out_max {
+        1.0
+    } else {
+        -1.0
+    };
     -s * (out_min - out_max - s).abs().powf((value - in_max) / (in_min - in_max)) + out_max + s
 }
 
 pub fn map_range_log(value: f64, in_min: f64, in_max: f64, out_min: f64, out_max: f64) -> f64 {
-    let p = if in_min <= in_max { 1.0 } else { -1.0 };
+    let p = if in_min <= in_max {
+        1.0
+    } else {
+        -1.0
+    };
     ((out_max - out_min) * (value - in_min + p).abs().ln()) / (in_max - in_min + p).abs().ln() + out_min
 }
 

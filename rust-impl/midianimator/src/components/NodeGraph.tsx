@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, getNodesBounds, useStoreApi } from "@xyflow/react";

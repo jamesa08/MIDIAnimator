@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStateContext } from "../contexts/StateContext";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 import SceneDiffModal from "./SceneDiffModal";
 
 declare global {

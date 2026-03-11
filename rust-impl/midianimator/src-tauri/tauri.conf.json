@@ -1,66 +1,46 @@
 {
-    "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+    "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
     "build": {
         "beforeBuildCommand": "npm run build",
         "beforeDevCommand": "npm run dev",
-        "devPath": "http://localhost:3000",
-        "distDir": "../build",
-        "withGlobalTauri": true
+        "frontendDist": "../build",
+        "devUrl": "http://localhost:3000"
     },
-    "package": {
-        "productName": "MotionKeys",
-        "version": "0.5.0"
-    },
-    "tauri": {
-        "allowlist": {
-            "fs": {
-                "readFile": true,
-                "scope": ["**", "**/*", "/**/*"]
-            },
-            "window": {
-                "all": true
-            },
-            "path": {
-                "all": true
-            },
-            "dialog": {
-                "message": true,
-                "open": true
-            }
+    "bundle": {
+        "active": true,
+        "category": "DeveloperTool",
+        "copyright": "",
+        "targets": "all",
+        "externalBin": [],
+        "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+        "windows": {
+            "certificateThumbprint": null,
+            "digestAlgorithm": "sha256",
+            "timestampUrl": ""
         },
-        "bundle": {
-            "active": true,
-            "category": "DeveloperTool",
-            "copyright": "",
+        "longDescription": "",
+        "macOS": {
+            "entitlements": null,
+            "exceptionDomain": "",
+            "frameworks": [],
+            "providerShortName": null,
+            "signingIdentity": null
+        },
+        "resources": ["src/configs/default_nodes.json"],
+        "shortDescription": "",
+        "linux": {
             "deb": {
                 "depends": []
-            },
-            "externalBin": [],
-            "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
-            "identifier": "com.jamesa08.midianimator",
-            "longDescription": "",
-            "macOS": {
-                "entitlements": null,
-                "exceptionDomain": "",
-                "frameworks": [],
-                "providerShortName": null,
-                "signingIdentity": null
-            },
-            "resources": ["src/configs/default_nodes.json"],
-            "shortDescription": "",
-            "targets": "all",
-            "windows": {
-                "certificateThumbprint": null,
-                "digestAlgorithm": "sha256",
-                "timestampUrl": ""
             }
-        },
-        "security": {
-            "csp": null
-        },
-        "updater": {
-            "active": false
-        },
+        }
+    },
+    "productName": "MotionKeys",
+    "mainBinaryName": "MotionKeys",
+    "version": "0.5.0",
+    "identifier": "com.jamesa08.midianimator",
+    "plugins": {},
+    "app": {
+        "withGlobalTauri": true,
         "windows": [
             {
                 "fullscreen": false,
@@ -72,7 +52,10 @@
                 "title": "MotionKeys",
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true,
-                "visible": false
+                "visible": false,
+                "useHttpsScheme": true,
+                "label": "main",
+                "backgroundThrottling": "disabled"
             },
             {
                 "fullscreen": false,
@@ -85,8 +68,13 @@
                 "title": "Splash Screen",
                 "label": "splash",
                 "url": "splash.html",
-                "visible": false
+                "visible": false,
+                "useHttpsScheme": true,
+                "backgroundThrottling": "disabled"
             }
-        ]
+        ],
+        "security": {
+            "csp": null
+        }
     }
 }

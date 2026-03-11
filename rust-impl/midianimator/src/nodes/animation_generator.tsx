@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { message, open } from "@tauri-apps/api/dialog";
+import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
