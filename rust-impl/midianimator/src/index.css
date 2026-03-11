@@ -2,9 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* FIXME little hacky right now, will fix this later */
 .mac-traffic-lights-container {
-    padding-left: 10px;
-    padding-right: 10px;
+    padding-top: 1px;
+    padding-left: 8px;
+    padding-right: 12px;
     align-items: center;
     display: flex;
     flex-direction: row;
@@ -21,7 +23,7 @@
 
 /* FIXME eventually remove mac traffic lights */
 .mac-traffic-lights-container div {
-    background: transparent !important;
+    background-color: lightgray;
 }
 
 .red {

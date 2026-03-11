@@ -70,7 +70,7 @@ function App() {
                 </div>
             </div>
             <div className="foot flex-initial">
-                <StatusBar event="some info here" />
+                <StatusBar event="Ready." />
             </div>
         </div>
     );

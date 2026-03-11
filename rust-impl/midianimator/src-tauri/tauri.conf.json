@@ -64,10 +64,12 @@
         "windows": [
             {
                 "fullscreen": false,
+                "width": 1100,
                 "height": 600,
+                "minWidth": 900,
+                "minHeight": 500,
                 "resizable": true,
                 "title": "MotionKeys",
-                "width": 1100,
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true,
                 "visible": false
