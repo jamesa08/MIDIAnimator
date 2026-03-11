@@ -1,4 +1,4 @@
-import MenuBar from "./components/MenuBar";
+import TabBar from "./components/TabBar";
 import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
@@ -57,7 +57,7 @@ function App() {
     return (
         <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div className="head flex-initial">
-                <MenuBar />
+                <TabBar />
                 <ToolBar />
             </div>
             <div className="content flex flex-auto ">
