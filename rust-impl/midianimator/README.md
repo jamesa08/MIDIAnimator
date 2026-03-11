@@ -43,4 +43,5 @@ Note: for macs, install lld for faster build times
 - React.js
     - react-router
     - React Flow
+    - framer-motion (tabs and animation)
 - TailwindCSS
