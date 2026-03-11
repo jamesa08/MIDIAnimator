@@ -12,6 +12,8 @@ interface Tab {
 let nextId = 1;
 const makeTab = (name = "untitled"): Tab => ({ id: `tab-${nextId++}`, name });
 
+const SPRING = { type: "spring", stiffness: 280, damping: 32, mass: 0.8 };
+
 function TabBar() {
     const [tabs, setTabs] = useState<Tab[]>([makeTab()]);
     const [activeId, setActiveId] = useState<string>(tabs[0].id);
@@ -32,7 +34,10 @@ function TabBar() {
             }
             if (id === activeId) {
                 const idx = prev.findIndex((t) => t.id === id);
-                setActiveId(next[Math.min(idx, next.length - 1)].id);
+                if (idx !== -1) {
+                    const nextIdx = Math.min(idx, next.length - 1);
+                    setActiveId(next[nextIdx].id);
+                }
             }
             return next;
         });
@@ -42,13 +47,29 @@ function TabBar() {
         <div data-tauri-drag-region className="tab-bar border-b border-b-black flex h-7">
             {navigator.userAgent.includes("Mac OS") && <MacTrafficLights />}
 
-            <div data-tauri-drag-region className="flex min-w-0 w-full overflow-hidden">
-                <Reorder.Group axis="x" values={tabs} onReorder={setTabs} className="flex min-w-0" layoutScroll style={{ overflowX: "hidden" }}>
-                    <AnimatePresence initial={false}>
+            <div className="flex min-w-0 w-full overflow-hidden pr-[32px]">
+                <Reorder.Group data-tauri-drag-region as="div" axis="x" values={tabs} onReorder={setTabs} className="flex w-full" layoutScroll>
+                    <AnimatePresence mode="popLayout" initial={false}>
                         {tabs.map((tab, i) => {
+                            const isLast = i === tabs.length - 1;
                             return (
-                                <Reorder.Item key={tab.id} value={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.08, ease: "easeOut" }} layoutTransition={{ type: "spring", stiffness: 500, damping: 35 }} className="shrink-0 max-w-[160px] min-w-[80px] h-full" onClick={() => setActiveId(tab.id)}>
-                                    <div style={i !== 0 ? { marginLeft: "-1px" } : undefined} className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none border-r border-l border-black ${tab.id === activeId ? "bg-white" : "bg-zinc-100 hover:bg-zinc-100"} `}>
+                                <Reorder.Item
+                                    as="div"
+                                    key={tab.id}
+                                    value={tab}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    layout
+                                    transition={{
+                                        opacity: { duration: 0.15, ease: "easeOut" },
+                                        layout: SPRING,
+                                    }}
+                                    className={`flex items-center h-full ${isLast ? "w-[160px] min-w-[80px]" : "w-[160px] min-w-[80px]"}`}
+                                    style={{ overflow: "visible", position: "relative", marginLeft: "-1px" }}
+                                    onClick={() => setActiveId(tab.id)}
+                                >
+                                    <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none border-r border-black first:border-l w-full ${tab.id === activeId ? "bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
                                         <span className="truncate flex-1">{tab.name}</span>
                                         <motion.button
                                             onClick={(e) => {
@@ -62,13 +83,23 @@ function TabBar() {
                                             ×
                                         </motion.button>
                                     </div>
+                                    {isLast && (
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                addTab();
+                                            }}
+                                            className="shrink-0"
+                                            style={{ position: "absolute", left: "100%", top: 0, height: "100%" }}
+                                        >
+                                            <AddTabButton onClick={() => {}} />
+                                        </div>
+                                    )}
                                 </Reorder.Item>
                             );
-                        })}{" "}
+                        })}
                     </AnimatePresence>
                 </Reorder.Group>
-
-                <AddTabButton onClick={addTab} />
             </div>
 
             <IPCLink />
