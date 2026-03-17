@@ -36,6 +36,16 @@ async fn main() {
 
             // update the global state with the window
             let window = app.get_webview_window("main").unwrap();
+
+            // fix macOS contrast resizing issue
+            #[cfg(target_os = "macos")]
+            window.with_webview(|webview| {
+                use objc2_app_kit::NSWindow;
+                unsafe {
+                    let ns_window: &NSWindow = &*webview.ns_window().cast::<NSWindow>();
+                    ns_window.setPreservesContentDuringLiveResize(false);
+                }
+            })?;
             *WINDOW.lock().unwrap() = Some(window);
 
             // load default nodes
