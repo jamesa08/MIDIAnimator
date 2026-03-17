@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Reorder, AnimatePresence, motion } from "framer-motion";
+import { useState, useEffect } from "react";
+import { Reorder, AnimatePresence, useTransform, useMotionValue, motion } from "framer-motion";
 import MacTrafficLights from "./MacTrafficLights";
 import IPCLink from "./IPCLink";
 import AddTabButton from "./AddTabButton";
@@ -10,21 +10,24 @@ interface Tab {
 }
 
 let nextId = 1;
-const makeTab = (name = "untitled"): Tab => ({ id: `tab-${nextId++}`, name });
 
 const SPRING = { type: "spring", stiffness: 280, damping: 32, mass: 0.8 };
 
 function TabBar() {
+    const makeTab = (name = "untitled"): Tab => ({ id: `tab-${nextId++}`, name });
+
     const [tabs, setTabs] = useState<Tab[]>([makeTab()]);
     const [activeId, setActiveId] = useState<string>(tabs[0].id);
 
     const addTab = () => {
         const tab = makeTab();
+        console.log("Adding tab", tab);
         setTabs((prev) => [...prev, tab]);
         setActiveId(tab.id);
     };
 
     const closeTab = (id: string) => {
+        console.log("Closing tab", id);
         setTabs((prev) => {
             const next = prev.filter((t) => t.id !== id);
             if (next.length === 0) {
@@ -32,22 +35,38 @@ function TabBar() {
                 setActiveId(fresh.id);
                 return [fresh];
             }
-            if (id === activeId) {
-                const idx = prev.findIndex((t) => t.id === id);
-                if (idx !== -1) {
-                    const nextIdx = Math.min(idx, next.length - 1);
-                    setActiveId(next[nextIdx].id);
-                }
-            }
+            setActiveId((currentActive) => {
+                if (currentActive !== id) return currentActive;
+                return next[next.length - 1].id;
+            });
             return next;
         });
     };
+
+    useEffect(() => {
+        console.log("Tabs changed", tabs);
+        const handler = (e: KeyboardEvent) => {
+            if (!(e.metaKey || e.ctrlKey)) return;
+            if (e.key === "t") {
+                e.preventDefault();
+                addTab();
+            } else if (e.key === "w") {
+                e.preventDefault();
+                setActiveId((currentId) => {
+                    closeTab(currentId);
+                    return currentId;
+                });
+            }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+    }, []);
 
     return (
         <div data-tauri-drag-region className="tab-bar border-b border-b-black flex h-7">
             {navigator.userAgent.includes("Mac OS") && <MacTrafficLights />}
 
-            <div className="flex min-w-0 w-full overflow-hidden pr-[32px]">
+            <div className="flex min-w-0 w-full overflow-hidden pr-[32px] border-l border-black ml-[-1px]">
                 <Reorder.Group data-tauri-drag-region as="div" axis="x" values={tabs} onReorder={setTabs} className="flex w-full" layoutScroll>
                     <AnimatePresence mode="popLayout" initial={false}>
                         {tabs.map((tab, i) => {
@@ -63,8 +82,8 @@ function TabBar() {
                                     layout
                                     transition={{
                                         opacity: { duration: 0.15, ease: "easeOut" },
-                                        layout: SPRING,
                                     }}
+                                    transformTemplate={(transformProps, generated) => generated.replace(/translateX\(([^)]+)\)/, (_, v) => `translateX(${Math.round(parseFloat(v))}px)`)}
                                     className={`flex items-center h-full ${isLast ? "w-[160px] min-w-[80px]" : "w-[160px] min-w-[80px]"}`}
                                     style={{ overflow: "visible", position: "relative", marginLeft: "-1px" }}
                                     onClick={() => setActiveId(tab.id)}
