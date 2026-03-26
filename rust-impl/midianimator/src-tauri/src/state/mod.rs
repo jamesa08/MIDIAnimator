@@ -25,16 +25,56 @@ lazy_static! {
 pub struct AppState {
     pub ready: bool,
     pub connected: bool,
+    pub default_nodes: HashMap<String, serde_json::Value>,
+
+    // FIXME: legacy fields, will be removed in the future in favor of instances
+    pub scene_data: HashMap<String, Scene>,
+    pub rf_instance: HashMap<String, serde_json::Value>,
+    pub executed_results: HashMap<String, serde_json::Value>,
+    pub executed_inputs: HashMap<String, serde_json::Value>,
+    pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
     pub connected_application: String,
     pub connected_version: String,
     pub connected_file_name: String,
+
+    // new tab instance structure
+    pub instances: HashMap<String, InstanceState>,
+    pub active_instance_id: String,
+    pub connected_instance_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct InstanceState {
+    pub label: String,
     pub scene_data: HashMap<String, Scene>,
-    pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub rf_instance: HashMap<String, serde_json::Value>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
-    pub default_nodes: HashMap<String, serde_json::Value>,
+    pub pending_scene_data: Option<HashMap<String, Scene>>,
+    pub is_connected: bool,
+    pub execution_paused: bool,
+    pub connected_application: String,
+    pub connected_version: String,
+    pub connected_file_name: String,
+}
+
+impl Default for InstanceState {
+    fn default() -> Self {
+        Self {
+            label: "".to_string(),
+            scene_data: HashMap::new(),
+            rf_instance: HashMap::new(),
+            executed_results: HashMap::new(),
+            executed_inputs: HashMap::new(),
+            pending_scene_data: None,
+            is_connected: false,
+            execution_paused: false,
+            connected_application: "".to_string(),
+            connected_version: "".to_string(),
+            connected_file_name: "".to_string(),
+        }
+    }
 }
 
 impl Default for AppState {
@@ -52,7 +92,16 @@ impl Default for AppState {
             executed_results: HashMap::new(),
             executed_inputs: HashMap::new(),
             default_nodes: HashMap::new(),
+            instances: HashMap::new(),
+            active_instance_id: "".to_string(),
+            connected_instance_id: None,
         }
+    }
+}
+
+impl AppState {
+    pub fn get_active_instance(&self) -> Option<&InstanceState> {
+        self.instances.get(&self.active_instance_id)
     }
 }
 
@@ -122,7 +171,8 @@ pub async fn save_project() -> Result<String, String> {
     let saved_data = {
         let state = STATE.lock().unwrap();
         SavedProject {
-            scene_data: state.scene_data.clone(),
+            scene_data: state.get_active_instance().map(|instance| instance.scene_data.clone()).unwrap_or_default(),
+            // scene_data: state.scene_data.clone(),
             rf_instance: state.rf_instance.clone(),
         }
     };
@@ -178,4 +228,50 @@ pub async fn load_project() -> Result<AppState, String> {
     update_state();
 
     Ok(new_state)
+}
+
+/// inserts a new instance into the state and makes it the active instance, returns the new active instance id
+#[tauri::command]
+pub fn create_instance() -> String {
+    let mut state = STATE.lock().unwrap();
+    let new_instance_id = format!("instance_{}", state.instances.len() + 1);
+    state.instances.insert(new_instance_id.clone(), InstanceState::default());
+    state.active_instance_id = new_instance_id;
+    return state.active_instance_id.clone();
+}
+
+/// removes an instance from the map, if it was connected, it will be disconnected
+#[tauri::command]
+pub fn close_instance(id: String) {
+    let mut state = STATE.lock().unwrap();
+    state.instances.remove(&id);
+    if state.active_instance_id == id {
+        state.active_instance_id = state.instances.keys().next().cloned().unwrap_or_default();
+        state.connected_instance_id = None;
+    }
+}
+
+/// updates the active instance id to the given id, if the id exists in the map, otherwise does nothing
+#[tauri::command]
+pub fn switch_active_instance(id: String) {
+    let mut state = STATE.lock().unwrap();
+    if state.instances.contains_key(&id) {
+        state.active_instance_id = id;
+    }
+}
+
+/// renames an instance with the given label, if the id exists in the map, otherwise does nothing
+#[tauri::command]
+pub fn rename_instance(id: String, label: String) {
+    let mut state = STATE.lock().unwrap();
+    if let Some(instance) = state.instances.get_mut(&id) {
+        instance.label = label;
+    }
+}
+
+/// gets an instance with the given id, if the id exists in the map, otherwise returns None
+#[tauri::command]
+pub fn get_instance(id: String) -> Option<InstanceState> {
+    let state = STATE.lock().unwrap();
+    return state.instances.get(&id).cloned();
 }
