@@ -1,6 +1,7 @@
 # VSCode
 .vscode
 .DS_Store
+.claude
 
 # PyCharm
 .idea
