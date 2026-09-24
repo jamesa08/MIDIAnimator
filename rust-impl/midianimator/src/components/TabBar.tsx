@@ -25,6 +25,7 @@ function TabBar() {
         setTabs((prev) => [...prev, tab]);
         setActiveId(tab.id);
     };
+    
 
     const closeTab = (id: string) => {
         console.log("Closing tab", id);
@@ -36,7 +37,9 @@ function TabBar() {
                 return [fresh];
             }
             setActiveId((currentActive) => {
-                if (currentActive !== id) return currentActive;
+                console.log("currentActive", currentActive);
+                console.log("next", next[next.length - 1].id);
+                // if (currentActive !== id) return currentActive;
                 return next[next.length - 1].id;
             });
             return next;

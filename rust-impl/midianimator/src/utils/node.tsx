@@ -4,7 +4,7 @@ import { BaseDirectory, readTextFile } from '@tauri-apps/plugin-fs';
 
 
 export async function getNodeData(nodeId: string) {
-    let data: any = await readTextFile("src/configs/default_nodes.json", { dir: BaseDirectory.Resource });
+    let data: any = await readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource });
     if (data == null) {
         console.log("error finding data for node ", nodeId);
         return {"id": "", "name": "error", handles: {}};

@@ -275,3 +275,33 @@ pub fn get_instance(id: String) -> Option<InstanceState> {
     let state = STATE.lock().unwrap();
     return state.instances.get(&id).cloned();
 }
+
+/*  - `go_live(id)` command:
+1. Check if another instance holds the connection; if so, set its `is_connected` to false
+2. Transfer `connected_instance_id` to the new instance
+3. Fetch current scene data from Blender
+4. Diff against instance's saved `scene_data` (see Stage 4)
+5. Re-execute only changed nodes
+6. Push updated state to frontend
+- On `close_instance`: if closed instance was connected, drop the connection cleanly
+
+*/
+
+#[tauri::command]
+pub fn go_live(id: String) {
+    let mut state = STATE.lock().unwrap();
+
+    // disconnect current instance if exists
+    let current_id = state.connected_instance_id.clone();
+    if let Some(id) = current_id {
+        if let Some(instance) = state.instances.get_mut(&id) {
+            instance.is_connected = false;
+        }
+    }
+
+    // connect new instance
+    if let Some(new_instance) = state.instances.get_mut(&id) {
+        new_instance.is_connected = true;
+        state.connected_instance_id = Some(id.clone());
+    }
+}
