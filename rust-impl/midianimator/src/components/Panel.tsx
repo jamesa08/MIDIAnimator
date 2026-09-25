@@ -1,121 +1,61 @@
-import React, { useEffect, useRef, useState } from "react";
-import nodeTypes from "../nodes/NodeTypes";
-import { ReactFlowProvider } from "@xyflow/react";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen } from "@tauri-apps/api/event";
+import React, { useEffect, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
-import { safeWindowPosition } from "../utils/window";
 import { NODE_DROP_EVENT } from "../utils/node";
+import { PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
+import PanelBody, { PanelNodeDrop } from "./PanelBody";
 
 interface PanelProps {
     id: string;
     name: string;
 }
 
+// docked panel in the main window, pops out into its own window from the button or by dragging the header out
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const { frontEndState, setFrontEndState } = useStateContext();
     const ref = useRef<HTMLDivElement>(null);
+    const panelId = Number(id);
+    const poppedOut = frontEndState.panelsPoppedOut.includes(panelId);
 
-
+    // warm up the floating window at the docked size so popping out is instant
     useEffect(() => {
-        const handleClick = (event: any) => {
-            console.log(`Got ${JSON.stringify(event)} on window listener`);
-        };
+        const rect = ref.current?.getBoundingClientRect();
+        ensurePanelWindow(panelId, rect?.width || 240, rect?.height || 400);
+    }, [panelId]);
 
-        const setupListener = async () => {
-            try {
-                const unlisten = await listen("clicked", handleClick);
-                return () => {
-                    unlisten();
-                };
-            } catch (error) {
-                console.error("Failed to setup event listener:", error);
-            }
-        };
-
-        if (ref.current) {
-            const rect = ref.current.getBoundingClientRect();
-            console.log("RECT", rect.width, rect.height, rect.top, rect.left);
-        }
-
-        setupListener();
-    }, []);
-
-    const createWindow = async (event: React.MouseEvent<HTMLButtonElement>) => {
-        let w = 400;
-        let h = 300;
-
-        if (ref.current) {
-            const rect = ref.current.getBoundingClientRect();
-            w = rect.width
-            h = rect.height
-        }
-
-        const { x, y } = await safeWindowPosition(event.screenX, event.screenY, w, h);
-
-        // focus the popout if it's already open, creating it again would fail on the duplicate label
-        const label = `panel-${id}`;
-        const existing = await WebviewWindow.getByLabel(label);
-        if (existing) {
-            await existing.setFocus();
-            return;
-        }
-
-        const webview = new WebviewWindow(label, {
-            url: `/#/panel/${id}`,
-            title: name,
-            width: w,
-            height: h,
-            resizable: true,
-            x: x,
-            y: y,
-            useHttpsScheme: true,
-        });
-
-        webview.once("tauri://created", () => {
-            console.log("Created new window");
-        });
-
-        webview.once("tauri://error", (e: any) => {
-            console.error(`Error creating new window ${e.payload}`);
-        });
+    const popOut = (x: number, y: number, width: number, height: number) => {
+        setFrontEndState((prev: any) => withPoppedOut(prev, panelId, true));
+        return showPanelWindow(panelId, x, y, width, height);
     };
 
-    // drag a preview node out of the panel, the node graph adds it where it's released.
-    // pointer events instead of html5 drag and drop, tauri's native drop handling swallows html5 drops
-    const startNodeDrag = (event: React.PointerEvent<HTMLDivElement>, nodeType: string) => {
-        if (event.button !== 0) return;
-        const preview = event.currentTarget.querySelector(".node.preview") as HTMLElement | null;
-        if (!preview) return;
+    // pops out in place, nudged so it reads as floating
+    const popOutButton = async () => {
+        if (!ref.current) return;
+        const rect = ref.current.getBoundingClientRect();
+        const { x, y } = await clientToScreen(rect.left, rect.top);
+        popOut(x + 24, y + 24, rect.width, rect.height);
+    };
 
-        // previews are drawn at half scale, grab offset is kept in real node pixels
-        const rect = preview.getBoundingClientRect();
-        const scale = rect.width / preview.offsetWidth || 0.5;
+    // tear the panel off by dragging its header out of the dock slot
+    const startTearOff = (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.button !== 0 || !ref.current) return;
+        if ((event.target as HTMLElement).closest("button")) return;
+
+        const rect = ref.current.getBoundingClientRect();
         const grabX = event.clientX - rect.left;
         const grabY = event.clientY - rect.top;
-        const startX = event.clientX;
-        const startY = event.clientY;
-        let ghost: HTMLElement | null = null;
-
-        const moveGhost = (x: number, y: number) => {
-            if (ghost) ghost.style.transform = `translate(${x - grabX}px, ${y - grabY}px) scale(${scale})`;
-        };
+        let move: ((x: number, y: number) => void) | null = null;
 
         const handleMove = (e: PointerEvent) => {
-            // small dead zone so a plain click doesn't start a drag
-            if (!ghost && Math.hypot(e.clientX - startX, e.clientY - startY) < 4) return;
-            if (!ghost) {
-                // clone of the preview that follows the cursor
-                ghost = preview.cloneNode(true) as HTMLElement;
-                Object.assign(ghost.style, { position: "fixed", left: "0", top: "0", width: `${preview.offsetWidth}px`, margin: "0", opacity: "0.75", pointerEvents: "none", zIndex: "2000", transformOrigin: "top left", cursor: "grabbing" });
-                document.body.appendChild(ghost);
-                document.body.style.cursor = "grabbing";
+            // stays docked until the cursor leaves the dock slot
+            if (!move) {
+                if (inDockZone(panelId, e.clientX, e.clientY)) return;
+                move = windowMover(popOut(e.screenX - grabX, e.screenY - grabY, rect.width, rect.height));
             }
-            moveGhost(e.clientX, e.clientY);
+            move(e.screenX - grabX, e.screenY - grabY);
+            sendToMain(PANEL_DRAG_EVENT, { id: panelId, screenX: e.screenX, screenY: e.screenY });
         };
 
         const cleanup = () => {
-            ghost?.remove();
             document.body.style.cursor = "";
             window.removeEventListener("pointermove", handleMove);
             window.removeEventListener("pointerup", handleUp);
@@ -123,83 +63,40 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         };
 
         const handleUp = (e: PointerEvent) => {
-            const dragged = ghost != null;
             cleanup();
-            if (!dragged) return;
-            window.dispatchEvent(new CustomEvent(NODE_DROP_EVENT, { detail: { nodeType, clientX: e.clientX, clientY: e.clientY, offsetX: grabX / scale, offsetY: grabY / scale } }));
+            if (move) sendToMain(PANEL_DROP_EVENT, { id: panelId, screenX: e.screenX, screenY: e.screenY });
         };
 
-        // escape cancels the drag
+        // escape puts a torn off panel back
         const handleKey = (e: KeyboardEvent) => {
             if (e.key !== "Escape") return;
             e.stopPropagation();
             cleanup();
+            if (move) sendToMain(PANEL_DOCK_EVENT, { id: panelId });
         };
 
         event.preventDefault();
+        document.body.style.cursor = "grabbing";
         window.addEventListener("pointermove", handleMove);
         window.addEventListener("pointerup", handleUp);
         window.addEventListener("keydown", handleKey, true);
     };
 
-    const ScaledNodeWrapper: React.FC<{ Node: any; nodeType: string }> = ({ Node, nodeType }) => {
-        const nodeRef = useRef<HTMLDivElement>(null);
-        const [isMeasured, setIsMeasured] = useState(false);
-
-        useEffect(() => {
-            if (!nodeRef.current || isMeasured) return;
-
-            const node = nodeRef.current.querySelector(".node.preview") as HTMLElement;
-            if (!node) return;
-
-            const observer = new MutationObserver(() => {
-                const height = node.scrollHeight;
-
-                if (height > 50) {
-                    node.style.marginBottom = `-${height * 0.5}px`;
-                    setIsMeasured(true);
-                    observer.disconnect();
-                }
-            });
-
-            observer.observe(node, {
-                childList: true,
-                subtree: true,
-            });
-
-            return () => observer.disconnect();
-        }, [isMeasured]);
-
-        return (
-            <div ref={nodeRef} className="node-container" onPointerDown={(e) => startNodeDrag(e, nodeType)}>
-                <Node data="preview" />
-            </div>
-        );
+    const handleNodeDrop = (drop: PanelNodeDrop) => {
+        window.dispatchEvent(new CustomEvent(NODE_DROP_EVENT, { detail: drop }));
     };
 
-    const renderNodesPanel = () => {
-        if (name !== "Nodes") return null;
-
-        return (
-            <ReactFlowProvider>
-                <div className="nodes-grid p-2">
-                    {Object.entries(nodeTypes).map(([key, value]) => (
-                        <ScaledNodeWrapper key={key} Node={value} nodeType={key} />
-                    ))}
-                </div>
-            </ReactFlowProvider>
-        );
-    };
+    const shown = frontEndState.panelsShown.includes(panelId) && !poppedOut;
 
     return (
-        <div ref={ref} className="panel w-60 select-none p-0" style={frontEndState.panelsShown.includes(Number(id)) ? {} : { display: "none" }}>
-            <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm">
+        <div ref={ref} className="panel w-60 select-none p-0" style={shown ? {} : { display: "none" }}>
+            <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startTearOff}>
                 <span className="mr-auto">{name}</span>
-                <button className="float-right" onClick={createWindow}>
+                <button className="float-right" onClick={popOutButton}>
                     Popout
                 </button>
             </div>
-            {renderNodesPanel()}
+            <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
         </div>
     );
 };

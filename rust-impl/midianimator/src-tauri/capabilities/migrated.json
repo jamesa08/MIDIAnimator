@@ -6,7 +6,8 @@
     "main",
     "splash",
     "Settings",
-    "panel-*"
+    "panel-*",
+    "drag-ghost"
   ],
   "permissions": [
     "core:default",

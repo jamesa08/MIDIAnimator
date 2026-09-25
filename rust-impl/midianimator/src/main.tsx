@@ -6,6 +6,7 @@ import reportWebVitals from "./reportWebVitals";
 import "./index.css";
 import PanelContent from "./components/PanelContent";
 import Settings from "./windows/Settings";
+import DragGhost from "./windows/DragGhost";
 import StateContextProvider from "./contexts/StateContext";
 
 const rootElement = document.getElementById("root");
@@ -20,6 +21,7 @@ if (rootElement) {
                         <Route path="/" element={<App />} />
                         <Route path="/panel/:id" element={<PanelContent />} />
                         <Route path="/settings" element={<Settings />} />
+                        <Route path="/drag-ghost" element={<DragGhost />} />
                     </Routes>
                 </Router>
             </StateContextProvider>

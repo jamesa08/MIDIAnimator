@@ -25,6 +25,12 @@ async fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_macos_fps::init())
         .invoke_handler(MIDIAnimator::auto_commands::get_cmds())
+        // floating panel windows never close, quit when the main window does
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .setup(|app| {
             // build and set menu
             let menu = menu::build_menu(app.handle())?;
