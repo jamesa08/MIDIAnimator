@@ -1,4 +1,3 @@
-use core::panic;
 use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -100,6 +99,8 @@ pub struct MIDITrack {
     pub control_change: HashMap<u8, Vec<MIDIEvent>>,
     pub pitchwheel: Vec<MIDIEvent>,
     pub aftertouch: Vec<MIDIEvent>,
+    // only used while parsing, and tuple keys can't be JSON
+    #[serde(skip)]
     #[schemars(skip)]
     note_table: HashMap<(u8, u8), Vec<MIDINote>>,
 }
@@ -131,6 +132,7 @@ impl MIDITrack {
         let key = (channel, note_number);
         if let Some(table) = self.note_table.get_mut(&key) {
             // assume the first note on message for this note is the one that matches with this note off
+            // a note off without a note on (e.g. a doubled note off) is ignored
             if let Some(note_from_tb) = table.first_mut() {
                 note_from_tb.time_off = time_off;
 
@@ -139,8 +141,6 @@ impl MIDITrack {
 
                 // after note is deleted from the table, add it to the actual notes list
                 self.notes.push(note);
-            } else {
-                panic!("NoteOff message has no NoteOn message! Your MIDI File may be corrupt. Please open an issue on GitHub.");
             }
         }
     }
@@ -235,7 +235,7 @@ impl MIDIFile {
         };
 
         if midi_type == midly::Format::Sequential {
-            panic!("Type 2 / Sequential format are not supported!");
+            return Err("type 2 (sequential) MIDI files are not supported".into());
         }
         let mut new_tracks;
         if midi_type == midly::Format::SingleTrack {
