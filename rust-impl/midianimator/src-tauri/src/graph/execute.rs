@@ -1,8 +1,10 @@
 use serde_json::{json, Map};
 use std::collections::{HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::PoisonError;
 
 use crate::graph::executors::io::{node_error, NodeFunction, ERROR_KEY};
+use crate::graph::model::Graph;
 use crate::node_registry::get_node_registry;
 use crate::state::{update_state, STATE};
 
@@ -10,20 +12,22 @@ use crate::state::{update_state, STATE};
 pub async fn execute_graph(realtime: bool) {
     let now = std::time::Instant::now();
 
-    let state = tokio::task::spawn_blocking(move || {
-        let state = STATE.lock().unwrap();
-        return state.clone();
-    })
-    .await
-    .map_err(|e| e.to_string())
-    .unwrap();
+    // copy the state, a poisoned lock (a panic somewhere else) still has a usable graph
+    let state = STATE.lock().unwrap_or_else(PoisonError::into_inner).clone();
 
     if state.connected {
         println!("CONNECTED TO 3D SOFTWARE {}", state.connected_application);
     }
 
-    // get current nodes & edges
-    let rf_instance: HashMap<String, serde_json::Value> = state.rf_instance.clone();
+    // get current nodes & edges, a graph that can't be read doesn't run at all
+    // note: an empty rf_instance (nothing pushed from the frontend yet) parses as an empty graph
+    let graph = match Graph::from_rf(&state.rf_instance) {
+        Ok(graph) => graph,
+        Err(e) => {
+            eprintln!("ERROR: not executing, {}", e);
+            return;
+        }
+    };
 
     // get default nodes from state:
     let default_nodes = state.default_nodes.clone();
@@ -31,7 +35,7 @@ pub async fn execute_graph(realtime: bool) {
     let node_registry = get_node_registry();
 
     #[async_recursion::async_recursion]
-    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool, node_registry: &HashMap<String, NodeFunction>) {
+    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, graph: &Graph, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool, node_registry: &HashMap<String, NodeFunction>) {
         // println!("EXECUTING NODE {:?}", node_id);
 
         if visited.contains(&node_id) {
@@ -40,7 +44,7 @@ pub async fn execute_graph(realtime: bool) {
         }
 
         // find the node, an edge to a node that doesn't exist is skipped
-        let Some(node) = rf_instance["nodes"].as_array().and_then(|nodes| nodes.iter().find(|node| node["id"] == node_id)) else {
+        let Some(node) = graph.node(&node_id) else {
             eprintln!("ERROR: could not find node '{}', skipping it", node_id);
             return;
         };
@@ -48,30 +52,23 @@ pub async fn execute_graph(realtime: bool) {
         let node_no_uuid = node_id.split("-").collect::<Vec<&str>>()[0];
 
         // an unknown node type can't run, show it on the node
-        let Some(default_node) = default_nodes["nodes"].as_array().and_then(|nodes| nodes.iter().find(|node| node["id"] == node_no_uuid)) else {
+        let Some(default_node) = default_nodes.get("nodes").and_then(|nodes| nodes.as_array()).and_then(|nodes| nodes.iter().find(|node| node["id"] == node_no_uuid)) else {
             visited.insert(node_id.clone());
             results.insert(node_id.clone(), json!({ ERROR_KEY: format!("unknown node type '{}'", node_no_uuid) }));
             return;
         };
 
-        let node_data = node["data"].as_object().unwrap().clone();
-
-        let incoming_edges = rf_instance["edges"].as_array().unwrap().iter().filter(|edge| edge["source"] == node_id);
+        // edges coming into this node, in data flow terms: from_node › from_output -> this node › to_input
+        let incoming_edges = graph.edges.iter().filter(|edge| edge.to_node() == node_id);
 
         // println!("INCOMING EDGES: {:#?} FOR {:?}", incoming_edges, node_id);
 
         // add the node id to inputs
         inputs.insert(node_id.clone(), serde_json::Value::Object(Map::new()));
 
-        // source and target are backwards in my brain for some reason
-        // TARGET: left side of the node
-        // SOURCE: right side of the node
-
+        // note: the stored edge fields are reversed (source is the consuming node), the accessors hide that
         for edge in incoming_edges {
-            if results.contains_key(edge["target"].as_str().unwrap()) {
-                // get node_results via looking up the source node
-                let node_results = results[edge["target"].as_str().unwrap()].clone();
-
+            if let Some(node_results) = results.get(edge.from_node()).cloned() {
                 // an upstream node failed, don't run this one. only the failed node gets the error
                 if node_error(&node_results).is_some() {
                     visited.insert(node_id.clone());
@@ -79,26 +76,26 @@ pub async fn execute_graph(realtime: bool) {
                 }
 
                 // add computed results to inputs
-                // target handle: the "input" for the node
-                // the value: the stored result
-                // result["inputs"][edge["sourceHandle"].as_str().unwrap()] = node_results[edge["targetHandle"].as_str().unwrap()].clone();
+                // to_input: the "input" for the node
+                // the value: the stored result of the upstream output
                 inputs.get_mut(&node_id).and_then(|input_map| {
-                    input_map.as_object_mut().unwrap().insert(edge["sourceHandle"].as_str().unwrap().to_string(), node_results[edge["targetHandle"].as_str().unwrap()].clone());
+                    input_map.as_object_mut().unwrap().insert(edge.to_input().to_string(), node_results[edge.from_output()].clone());
                     Some(())
                 });
             } else {
-                // println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge["target"], node_id);
+                // println!("NOT EXECUTED YET, executing on {:?} while on {:?}", edge.from_node(), node_id);
 
                 // return early  as we don't want to continue execution
-                execute_dfs(edge["target"].as_str().unwrap().to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
+                execute_dfs(edge.from_node().to_string(), visited, results, inputs, graph, default_nodes, realtime, node_registry).await;
                 return;
             }
         }
 
         // this comes from the front end (user input)
-        if node_data.contains_key("inputs") {
+        // note: inputs that aren't an object (a broken save file) are ignored
+        if let Some(node_inputs) = node.data.get("inputs").and_then(|v| v.as_object()) {
             // println!("FOUND COMPUTED INPUT DATA {:?}", node_id);
-            for (handle_name, handle_value) in node_data["inputs"].as_object().unwrap() {
+            for (handle_name, handle_value) in node_inputs {
                 // we don't want to insert if a handle is connected to a socket, whether its computed or not (the handle should be hidden if you want to use computed data)
                 if !inputs[&node_id].as_object().unwrap().contains_key(handle_name) {
                     inputs.get_mut(&node_id).and_then(|input_map| {
@@ -149,9 +146,9 @@ pub async fn execute_graph(realtime: bool) {
         // after successful execution, add to results
         results.insert(node_id.clone(), serde_json::Value::Object(exec_result.clone()));
 
-        for edge in rf_instance["edges"].as_array().unwrap() {
-            if edge["target"] == node_id {
-                execute_dfs(edge["source"].as_str().unwrap().to_string(), visited, results, inputs, rf_instance, default_nodes, realtime, node_registry).await;
+        for edge in &graph.edges {
+            if edge.from_node() == node_id {
+                execute_dfs(edge.to_node().to_string(), visited, results, inputs, graph, default_nodes, realtime, node_registry).await;
             }
         }
     }
@@ -162,13 +159,13 @@ pub async fn execute_graph(realtime: bool) {
     let mut inputs: HashMap<String, serde_json::Value> = HashMap::new();
 
     // find the root nodes
-    let nodes: HashSet<String> = rf_instance["nodes"].as_array().unwrap().iter().map(|node| node["id"].as_str().unwrap().to_string()).collect();
+    let nodes: HashSet<String> = graph.nodes.iter().map(|node| node.id.clone()).collect();
 
     let mut target_nodes: HashSet<String> = HashSet::new();
 
     // find nodes with incoming edges
-    for edge in rf_instance["edges"].as_array().unwrap() {
-        target_nodes.insert(edge["source"].as_str().unwrap().to_string());
+    for edge in &graph.edges {
+        target_nodes.insert(edge.to_node().to_string());
     }
 
     let root_nodes = nodes.difference(&target_nodes).map(|node| node.clone()).collect::<Vec<String>>();
@@ -176,7 +173,7 @@ pub async fn execute_graph(realtime: bool) {
     // println!("ROOT NODES: {:#?}", root_nodes);
 
     for node_id in root_nodes {
-        execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &rf_instance, &default_nodes, &realtime, &node_registry).await;
+        execute_dfs(node_id, &mut visited, &mut results, &mut inputs, &graph, &default_nodes, &realtime, &node_registry).await;
     }
 
     // println!("FINAL RESULTS: {:#?}", results);
@@ -184,7 +181,7 @@ pub async fn execute_graph(realtime: bool) {
     let elapsed = now.elapsed();
     println!("took {} ms to execute", elapsed.as_nanos() as f32 / 1_000_000.0);
 
-    let mut state = STATE.lock().unwrap();
+    let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     state.executed_results = results.clone();
     state.executed_inputs = inputs.clone();
     drop(state);
