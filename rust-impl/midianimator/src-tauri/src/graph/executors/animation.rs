@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::blender::scene_data::write_scene_data;
 use crate::midi::MIDINote;
-use crate::utils::animation::{self, add_keyframes, co_from_json, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
+use crate::utils::animation::{add_keyframes, co_from_json, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
 
 /// Node: keyframes_from_object
 ///
