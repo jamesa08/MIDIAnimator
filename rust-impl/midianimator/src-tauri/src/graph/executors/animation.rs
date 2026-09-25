@@ -1,7 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use super::io::{Inputs, NodeResult, Outputs};
-use crate::blender::scene_data::write_scene_data;
 use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, KeyframePoint, ObjectGroup};
 use crate::utils::animation::{add_keyframes, co_of, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap, ObjectMapEntry};
@@ -378,7 +377,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
 /// "midi_notes": `Array<MIDINote>`,`
 ///
 /// outputs:
-/// None for now, this node will directly apply the animations to the objects in Blender, but in the future we may want to have it output some data that can be used by other nodes
+/// "BlendKeyframes": `HashMap<String, Array<BlendKeyframe>>`, keyframes per object, written to Blender by scene_writer
 #[node_registry::node]
 pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
     let object_map: ObjectMap = inputs.get("object_map")?;
@@ -395,7 +394,8 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
         }
     }
 
-    let mut obj_blend_keyframes: HashMap<String, Vec<BlendKeyframe>> = object_map.objects.keys().map(|name| (name.clone(), vec![])).collect();
+    // keyframes per object, then per curve. overlap only combines keys on the same curve
+    let mut obj_curves: HashMap<String, BTreeMap<(String, u32), Vec<BlendKeyframe>>> = object_map.objects.keys().map(|name| (name.clone(), BTreeMap::new())).collect();
 
     for note in &midi_notes {
         let Some(targets) = note_to_objects.get(&note.note_number) else {
@@ -417,8 +417,8 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
                 continue;
             }
 
-            // combine with the keyframes already on the object
-            let inserted = obj_blend_keyframes.entry(obj_name.clone()).or_default();
+            // combine with the keyframes already on this curve
+            let inserted = obj_curves.entry(obj_name.clone()).or_default().entry((data_path, array_index)).or_default();
             match gen.animation_overlap.as_str() {
                 "add" | "" => add_keyframes(inserted, &mut next_keys),
                 other => return Err(format!("animation overlap '{}' is not supported yet", other)),
@@ -426,20 +426,11 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
         }
     }
 
-    // send the keyframes to Blender in the background
-    // TODO: failed writes only get logged, report them on the node once the scene writer node is split out
-    println!("writing BlendKeyframes to Blender...");
-    let val = serde_json::to_value(&obj_blend_keyframes).map_err(|e| format!("could not serialize keyframes: {}", e))?;
-    let val_for_blender = val.clone();
-    tauri::async_runtime::spawn(async move {
-        match write_scene_data(val_for_blender).await {
-            Ok(_) => println!("done writing BlendKeyframes to Blender"),
-            Err(e) => eprintln!("failed to write BlendKeyframes to Blender: {}", e),
-        }
-    });
+    // flatten back to one list per object, objects with no keys stay so the writer still clears them
+    let obj_blend_keyframes: HashMap<String, Vec<BlendKeyframe>> = obj_curves.into_iter().map(|(name, curves)| (name, curves.into_values().flatten().collect())).collect();
 
     let mut outputs = Outputs::new();
-    outputs.set("BlendKeyframes", &val)?;
+    outputs.set("BlendKeyframes", &obj_blend_keyframes)?;
     Ok(outputs)
 }
 

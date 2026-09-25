@@ -98,3 +98,45 @@ fn pad_nums_stays_in_midi_range() {
     // more objects than notes in the MIDI range stops at 128
     assert_eq!(pad_nums(vec![60], 200).len(), 128);
 }
+
+// a linear keyframe point at (time, value)
+fn key(time: f64, value: f64) -> serde_json::Value {
+    json!({
+        "amplitude": 0.0, "back": 0.0, "easing": "AUTO", "interpolation": "LINEAR", "period": 0.0,
+        "handle_left": [time, value], "handle_left_type": "AUTO_CLAMPED",
+        "handle_right": [time, value], "handle_right_type": "AUTO_CLAMPED",
+        "co": [time, value]
+    })
+}
+
+fn generator(property: &str, peak: f64) -> serde_json::Value {
+    json!({
+        "name": property, "note_on_keyframes": [key(0.0, 0.0), key(1.0, peak)], "note_on_anchor_point": 0.0,
+        "note_off_keyframes": [], "note_off_anchor_point": 0.0, "time_mapper": "", "amplitude_mapper": "",
+        "velocity_intensity": 0.0, "animation_overlap": "add", "animation_property": property
+    })
+}
+
+// keyframes for "Cube" with the given generators, two overlapping notes
+fn cube_keys(properties: &[(&str, f64)]) -> Vec<serde_json::Value> {
+    let animations: serde_json::Map<_, _> = properties.iter().map(|(p, peak)| (p.to_string(), generator(p, *peak))).collect();
+    let names: Vec<&str> = properties.iter().map(|(p, _)| *p).collect();
+    let object_map = json!({ "animations": animations, "objects": { "Cube": { "note_number": [60], "animations": names } } });
+    let notes = json!([
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 },
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.5, "time_off": 0.6 }
+    ]);
+    let outputs = evaluate_instrument(Inputs::from([("object_map", object_map), ("midi_notes", notes)])).unwrap();
+    outputs["BlendKeyframes"]["Cube"].as_array().unwrap().clone()
+}
+
+#[test]
+fn evaluate_instrument_combines_overlap_per_curve() {
+    // two curves on one object with keys at the same times, each should match evaluating it alone
+    let both = cube_keys(&[("location[2]", 1.0), ("rotation_euler[0]", 5.0)]);
+    for (property, peak, data_path, index) in [("location[2]", 1.0, "location", 2), ("rotation_euler[0]", 5.0, "rotation_euler", 0)] {
+        let on_curve: Vec<_> = both.iter().filter(|k| k["data_path"] == data_path && k["array_index"] == index).cloned().collect();
+        assert_eq!(on_curve, cube_keys(&[(property, peak)]), "{}", property);
+    }
+    assert_eq!(both.len(), 8);
+}

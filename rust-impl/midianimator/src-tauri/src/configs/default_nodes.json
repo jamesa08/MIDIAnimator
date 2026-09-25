@@ -299,7 +299,7 @@
             "name": "Evaluate Instrument",
             "description": "evaluate instrument",
             "executor": "rust",
-            "realtime": false,
+            "realtime": true,
             "handles": {
                 "inputs": [
                     {
@@ -320,9 +320,28 @@
                         "id": "BlendKeyframes",
                         "name": "BlendKeyframes",
                         "data_type": "HashMap<String, Array<BlendKeyframe>>",
-                        "description": "Keyframes per object; written to Blender when executed."
+                        "description": "Keyframes per object. Connect to Scene Writer to write them to Blender."
                     }
                 ]
+            }
+        },
+
+        {
+            "id": "scene_writer",
+            "name": "Scene Writer",
+            "description": "Write keyframes to the Blender scene",
+            "executor": "rust",
+            "realtime": false,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "HashMap<String, Array<BlendKeyframe>>",
+                        "description": "Keyframes per object from Evaluate Instrument. Each object's existing animation is cleared before writing."
+                    }
+                ],
+                "outputs": []
             }
         }
     ]

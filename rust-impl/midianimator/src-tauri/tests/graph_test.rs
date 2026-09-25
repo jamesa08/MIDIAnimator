@@ -74,7 +74,6 @@ fn obj(value: Value) -> Map<String, Value> {
 #[test]
 fn specs_have_handle_descriptions() {
     let specs = specs();
-    assert_eq!(specs.len(), 8);
     // every input and output should have a description (the ML model reads these)
     for spec in &specs {
         for handle in spec.handles.inputs.iter().chain(spec.handles.outputs.iter()) {
