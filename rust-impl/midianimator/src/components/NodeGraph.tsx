@@ -20,6 +20,22 @@ const initialEdges: any = [
     /*{ id: "e1-2", source: "1", target: "2" } */
 ];
 
+// short node ids: `{type}-{N}` where N is one more than the highest N already used for that type.
+// older projects use `{type}-{uuid}` ids, those are ignored here and keep working.
+// keep in sync with Graph::next_node_id in src-tauri/src/graph/model.rs
+function nextNodeId(nodes: { id: string }[], nodeType: string): string {
+    // find the highest N already used for this type
+    const prefix = `${nodeType}-`;
+    let max = 0;
+    for (const node of nodes) {
+        if (!node.id.startsWith(prefix)) continue;
+        // only count ids where the rest is a plain number (skips uuid ids)
+        const rest = node.id.slice(prefix.length);
+        if (/^\d+$/.test(rest)) max = Math.max(max, parseInt(rest, 10));
+    }
+    return `${prefix}${max + 1}`;
+}
+
 // ADD NODE MENU COMPONENT
 function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean; onClose: () => void; onSelect: (nodeType: string) => void; position: { x: number; y: number } }) {
     const [search, setSearch] = useState("");
@@ -179,7 +195,8 @@ function NodeGraphNoProvider() {
     // Add node creation function
     const addNode = useCallback(
         (nodeType: string) => {
-            const newNodeId = `${nodeType}-${crypto.randomUUID()}`;
+            // get the next short id for this node type
+            const newNodeId = nextNodeId(getNodes(), nodeType);
             const flowPosition = screenToFlowPosition(mousePositionRef.current, { snapToGrid: false });
 
             const newNode = {
@@ -200,7 +217,7 @@ function NodeGraphNoProvider() {
             setNewNodeToDrag(newNodeId);
             setMenuOpen(false);
         },
-        [setNodes, screenToFlowPosition, startDragging]
+        [setNodes, getNodes, screenToFlowPosition, startDragging]
     );
     // Track mouse position
     useEffect(() => {
@@ -347,9 +364,12 @@ function NodeGraphNoProvider() {
 
                 // Create a map of old node IDs to new node IDs
                 const oldToNewIdMap = new Map<string, string>();
+                // ids already in use, pasted nodes get added as we go so they don't reuse the same id
+                const takenIds: { id: string }[] = [...nodes];
 
                 const newNodes = selectedNodes.map((node) => {
-                    const newNodeId = `${node.type}-${crypto.randomUUID()}`;
+                    const newNodeId = nextNodeId(takenIds, node.type!);
+                    takenIds.push({ id: newNodeId });
                     oldToNewIdMap.set(node.id, newNodeId);
 
                     return {
@@ -433,7 +453,8 @@ function NodeGraphNoProvider() {
         if (updateTrigger && rfInstance) {
             let newState = { ...state, rf_instance: rfInstance?.toObject() };
             setState(newState);
-            invoke("js_update_state", { state: JSON.stringify(newState) });
+            // only send the graph, the rest of our copy of the state may be stale
+            invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance) });
             setUpdateTrigger(false);
 
             // Block execution if paused
@@ -599,7 +620,8 @@ function NodeGraphNoProvider() {
 
             let newState = { ...state, rf_instance: rfInstance?.toObject() };
             setState(newState);
-            invoke("js_update_state", { state: JSON.stringify(newState) });
+            // only send the graph, the rest of our copy of the state may be stale
+            invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance) });
             initDone.current = true; // only run once
         }
     }, [state, rfInstance]);
