@@ -121,18 +121,29 @@ pub fn drag_ghost_init(window: tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-// shows or hides a panel or the drag ghost, the ghost never takes mouse events
+// shows or hides a panel or the drag ghost, the ghost never takes mouse events.
+// position (top left) and size are logical screen pixels, placed in the same main thread pass as the show.
+// tao's setPosition/setSize are queued for later, so showing after them still draws a frame at the old spot
 #[tauri::command]
-pub fn floating_window_set_shown(app: tauri::AppHandle, label: String, shown: bool) -> Result<(), String> {
+pub fn floating_window_set_shown(app: tauri::AppHandle, label: String, shown: bool, position: Option<(f64, f64)>, size: Option<(f64, f64)>) -> Result<(), String> {
     let window = app.get_webview_window(&label).ok_or(format!("no floating window {}", label))?;
     let clickable = shown && label != "drag-ghost";
 
     #[cfg(target_os = "macos")]
     window
         .with_webview(move |webview| {
-            use objc2_app_kit::NSWindow;
+            use objc2_app_kit::{NSScreen, NSWindow};
+            use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize};
             unsafe {
                 let ns_window: &NSWindow = &*webview.ns_window().cast::<NSWindow>();
+                // cocoa's origin is the bottom left of the primary screen
+                if let (Some(mtm), Some((x, y))) = (MainThreadMarker::new(), position) {
+                    if let Some(primary) = NSScreen::screens(mtm).firstObject() {
+                        let size = size.map(|(width, height)| NSSize::new(width, height)).unwrap_or(ns_window.frame().size);
+                        let bottom = primary.frame().size.height - y - size.height;
+                        ns_window.setFrame_display(NSRect::new(NSPoint::new(x, bottom), size), false);
+                    }
+                }
                 ns_window.setAlphaValue(if shown {
                     1.0
                 } else {
@@ -148,6 +159,15 @@ pub fn floating_window_set_shown(app: tauri::AppHandle, label: String, shown: bo
         .map_err(|e| e.to_string())?;
 
     // other platforms just show and hide
+    #[cfg(not(target_os = "macos"))]
+    {
+        if let Some((x, y)) = position {
+            window.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+        }
+        if let Some((width, height)) = size {
+            window.set_size(tauri::LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+        }
+    }
     #[cfg(not(target_os = "macos"))]
     if shown {
         window.show().map_err(|e| e.to_string())?;

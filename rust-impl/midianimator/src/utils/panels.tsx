@@ -1,7 +1,7 @@
 import { emitTo } from "@tauri-apps/api/event";
 import { type BackgroundThrottlingPolicy, Window, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 
 // every dockable panel and the side of the main window it docks to
@@ -141,10 +141,7 @@ export function ensurePanelWindow(id: number, width: number, height: number) {
 // pops the panel's window out at a spot, resolves once it's showing
 export async function showPanelWindow(id: number, x: number, y: number, width: number, height: number) {
     const win = await ensurePanelWindow(id, width, height);
-    // size and place it while it's still invisible
-    await win.setSize(new LogicalSize(width, height));
-    await win.setPosition(new LogicalPosition(x, y));
-    await invoke("floating_window_set_shown", { label: panelLabel(id), shown: true });
+    await invoke("floating_window_set_shown", { label: panelLabel(id), shown: true, position: [x, y], size: [width, height] });
     return win;
 }
 
@@ -182,10 +179,7 @@ export function startDragGhost(nodeType: string, width: number) {
         move: (x: number, y: number) => {
             move(x - DRAG_GHOST_PAD, y - DRAG_GHOST_PAD);
             // place it before the first show so it doesn't appear where the last drag ended
-            shown ??= ready.then(async (win) => {
-                await win.setPosition(new LogicalPosition(x - DRAG_GHOST_PAD, y - DRAG_GHOST_PAD));
-                await invoke("floating_window_set_shown", { label: DRAG_GHOST_LABEL, shown: true });
-            });
+            shown ??= ready.then(() => invoke("floating_window_set_shown", { label: DRAG_GHOST_LABEL, shown: true, position: [x - DRAG_GHOST_PAD, y - DRAG_GHOST_PAD] }));
         },
         end: () => {
             (shown ?? Promise.resolve())
