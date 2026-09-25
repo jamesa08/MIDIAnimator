@@ -55,7 +55,8 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
                             <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
-                            {preview ? <></> : <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></Handle>}
+                            {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
+                            {preview ? <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></div> : <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></Handle>}
                         </div>
                         {uiInject}
                     </>

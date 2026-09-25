@@ -98,6 +98,12 @@ img {
     display: block;
 }
 
+/* handle colors are vars scoped to .react-flow, previews have no flow around them */
+.node.preview {
+    --xy-handle-background-color-default: #1a192b;
+    --xy-handle-border-color-default: #fff;
+}
+
 .node-wrapper {
     display: contents;
 }
