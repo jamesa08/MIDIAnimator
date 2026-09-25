@@ -69,6 +69,8 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title
     PENDING_REVEAL.lock().unwrap().push(label.to_string());
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(width, height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255)).build()?;
     prepare_hidden(&window);
+    #[cfg(target_os = "macos")]
+    smooth_zoom(&window);
     Ok(())
 }
 
@@ -83,3 +85,81 @@ pub fn window_ready(window: WebviewWindow) {
     }
 }
 
+// smooth titlebar double-click zoom. appkit's zoom animates the window without resizing the webview until it ends,
+// animating setFrame through the window's animator resizes it every step like dragging to the top edge does.
+// tao's window delegate doesn't implement windowShouldZoom:toFrame:, so it's added to its class.
+// ported from https://github.com/tauri-apps/tao/pull/1207, thanks @Tunglies. remove once tauri ships it
+// bug: https://github.com/tauri-apps/tauri/issues/13898, thanks @LintyDev for reporting and @michakfromparis for the root cause:
+// https://github.com/tauri-apps/tauri/issues/13898#issuecomment-5552958772
+#[cfg(target_os = "macos")]
+pub fn smooth_zoom<R: Runtime>(window: &WebviewWindow<R>) {
+    window
+        .with_webview(|webview| unsafe {
+            use objc2::runtime::{AnyObject, Bool, Sel};
+            use objc2::{msg_send, Encode};
+            use objc2_foundation::NSRect;
+
+            let ns_window = webview.ns_window() as *mut AnyObject;
+            let delegate: *mut AnyObject = msg_send![ns_window, delegate];
+            if delegate.is_null() {
+                return;
+            }
+
+            let class = (*delegate).class() as *const _ as *mut objc2::ffi::objc_class;
+            let sel = objc2::ffi::sel_registerName(c"windowShouldZoom:toFrame:".as_ptr());
+            let types = std::ffi::CString::new(format!("{}{}{}{}{}", Bool::ENCODING, <*mut AnyObject>::ENCODING, Sel::ENCODING, <*mut AnyObject>::ENCODING, NSRect::ENCODING)).unwrap();
+            let imp: extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, NSRect) -> Bool = window_should_zoom;
+            // does nothing if it's already been added
+            objc2::ffi::class_addMethod(class, sel, Some(std::mem::transmute(imp)), types.as_ptr());
+        })
+        .ok();
+}
+
+// frames to go back to when a window is unzoomed, keyed by window pointer
+#[cfg(target_os = "macos")]
+static ZOOM_RESTORE_FRAMES: Mutex<Vec<(usize, objc2_foundation::NSRect)>> = Mutex::new(Vec::new());
+
+#[cfg(target_os = "macos")]
+extern "C" fn window_should_zoom(_this: *mut objc2::runtime::AnyObject, _sel: objc2::runtime::Sel, window: *mut objc2::runtime::AnyObject, _frame: objc2_foundation::NSRect) -> objc2::runtime::Bool {
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSRect;
+
+    unsafe {
+        let screen: *mut AnyObject = msg_send![window, screen];
+        if screen.is_null() {
+            return Bool::YES;
+        }
+        let visible: NSRect = msg_send![screen, visibleFrame];
+        let frame: NSRect = msg_send![window, frame];
+        let zoomed = (frame.origin.x - visible.origin.x).abs() < 1.0 && (frame.origin.y - visible.origin.y).abs() < 1.0 && (frame.size.width - visible.size.width).abs() < 1.0 && (frame.size.height - visible.size.height).abs() < 1.0;
+
+        let target = {
+            let mut frames = ZOOM_RESTORE_FRAMES.lock().unwrap();
+            let saved = frames.iter().position(|(key, _)| *key == window as usize).map(|index| frames.remove(index).1);
+            if zoomed {
+                // nothing to go back to (e.g. opened zoomed), let appkit handle it
+                match saved {
+                    Some(saved) => saved,
+                    None => return Bool::YES,
+                }
+            } else {
+                frames.push((window as usize, frame));
+                visible
+            }
+        };
+
+        // animate the frame so the webview resizes on every step
+        let context_class = class!(NSAnimationContext);
+        let _: () = msg_send![context_class, beginGrouping];
+        let context: *mut AnyObject = msg_send![context_class, currentContext];
+        let duration: f64 = msg_send![window, animationResizeTime: target];
+        let _: () = msg_send![context, setDuration: duration];
+        let _: () = msg_send![context, setAllowsImplicitAnimation: Bool::YES];
+        let animator: *mut AnyObject = msg_send![window, animator];
+        let _: () = msg_send![animator, setFrame: target, display: Bool::YES];
+        let _: () = msg_send![context_class, endGrouping];
+    }
+
+    Bool::NO
+}

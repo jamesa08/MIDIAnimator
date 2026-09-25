@@ -55,6 +55,8 @@ async fn main() {
             })?;
             // drawn invisibly behind the splash, revealed when the splash closes
             MIDIAnimator::ui::windows::prepare_hidden(&window);
+            #[cfg(target_os = "macos")]
+            MIDIAnimator::ui::windows::smooth_zoom(&window);
             *WINDOW.lock().unwrap() = Some(window);
 
             MIDIAnimator::settings::load_settings(app.handle());
