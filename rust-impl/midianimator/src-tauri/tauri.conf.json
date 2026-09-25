@@ -43,6 +43,7 @@
     },
     "app": {
         "withGlobalTauri": true,
+        "macOSPrivateApi": true,
         "windows": [
             {
                 "fullscreen": false,
