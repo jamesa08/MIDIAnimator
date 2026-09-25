@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use MIDIAnimator::ipc::start_server;
+use MIDIAnimator::mcp::start_mcp_server;
 use MIDIAnimator::state::{update_state, STATE, WINDOW};
 use MIDIAnimator::ui::menu;
 
@@ -58,6 +59,9 @@ async fn main() {
                 update_state();
                 start_server();
             });
+
+            // mcp server for ML control
+            tauri::async_runtime::spawn(start_mcp_server());
 
             Ok(())
         })

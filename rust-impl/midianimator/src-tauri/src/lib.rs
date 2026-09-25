@@ -9,6 +9,8 @@ pub mod graph;
 
 pub mod ipc;
 
+pub mod mcp;
+
 pub mod midi;
 
 pub mod scene_generics;
