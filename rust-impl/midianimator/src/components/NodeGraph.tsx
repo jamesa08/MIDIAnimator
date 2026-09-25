@@ -492,7 +492,15 @@ function NodeGraphNoProvider() {
 
             if (isDifferent && storedGraph.nodes && storedGraph.edges) {
                 // Reconstruct from loaded state
-                setNodes(storedGraph.nodes || []);
+                // keep the UI only fields (measured size, selection) the backend doesn't track,
+                // otherwise React Flow treats every node as unmeasured and hides it
+                const currentNodes = new Map(currentGraph.nodes.map((node: any) => [node.id, node]));
+                setNodes(
+                    storedGraph.nodes.map((node: any) => {
+                        const prev: any = currentNodes.get(node.id);
+                        return prev ? { ...node, measured: node.measured ?? prev.measured, selected: prev.selected } : node;
+                    })
+                );
                 setEdges(storedGraph.edges || []);
             }
         }

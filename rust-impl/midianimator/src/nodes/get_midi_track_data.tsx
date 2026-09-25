@@ -4,62 +4,42 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
-import { invoke } from "@tauri-apps/api/core";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const [nodeData, setNodeData] = useState<any | null>(null);
-    const { backEndState: state, setBackEndState: setState } = useStateContext();
+    const { backEndState: state } = useStateContext();
 
-    const [trackNamesState, setTrackNamesState] = useState<any>([""]);
-
+    // load the node's spec (name, handles) once
     useEffect(() => {
         getNodeData("get_midi_track_data").then(setNodeData);
-        updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: "" } });
     }, []);
 
-    function arraysEqual(arr1: any[], arr2: string | any[]) {
-        if (arr1.length !== arr2.length) return false;
+    // get everything from the state and node data directly, so values set by the backend (e.g. over MCP) are kept
+    const trackNames: string[] = state?.executed_inputs?.[id]?.["tracks"]?.map((track: any) => track.name) ?? [];
+    // the track name that is currently set on the node
+    const selectedTrackName: string = data.inputs?.track_name ?? "";
 
-        return arr1.every((item, index) => {
-            return item === arr2[index];
-        });
-    }
-
+    // only pick a track automatically when none is set or the set one doesn't exist in the tracks
+    // the names are joined in the deps so this only re-runs when the track list actually changes
     useEffect(() => {
-        var trackNames = [];
-        if (state != undefined && state.executed_inputs != undefined && id != undefined && id in state.executed_inputs) {
-            for (let key in state.executed_inputs[id]["tracks"]) {
-                let trackName = state.executed_inputs[id]["tracks"][key]["name"];
-                trackNames.push(trackName);
-            }
-
-            if (trackNames.length == 0) {
-                trackNames = ["No track names found"];
-            }
-            if (!arraysEqual(trackNames, trackNamesState)) {
-                setTrackNamesState(trackNames);
-                updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: trackNames[0] } });
-            }
-        } else {
-            setTrackNamesState(["No track names found"]);
+        if (trackNames.length > 0 && !trackNames.includes(selectedTrackName)) {
+            updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: trackNames[0] } });
         }
-    }, [state.executed_inputs]);
+    }, [trackNames.join("\n"), selectedTrackName]);
 
-    // this will need updated to reflect the the real data,
-    // and how do we handle evaluating the data on change?
-    // how do we handle sending the data to the backend?
     const trackNameComponent = (
         <>
-            <select
-                className="node-field nodrag nopan"
-                onChange={(event) => {
-                    updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: event.target.value } });
-                }}
-            >
-                {trackNamesState.map((track: any, index: any) => {
-                    return <option key={index} value={track}>{track}</option>;
-                })}
+            <select className="node-field nodrag nopan" value={selectedTrackName} onChange={(event) => updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: event.target.value } })}>
+                {trackNames.length > 0 ? (
+                    trackNames.map((track, index) => (
+                        <option key={index} value={track}>
+                            {track}
+                        </option>
+                    ))
+                ) : (
+                    <option value={selectedTrackName}>No track names found</option>
+                )}
             </select>
         </>
     );
