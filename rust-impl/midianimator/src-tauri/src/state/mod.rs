@@ -321,6 +321,11 @@ pub fn get_instance(id: String) -> Option<InstanceState> {
 pub fn go_live(id: String) {
     let mut state = STATE.lock().unwrap();
 
+    // unknown id, keep the current connection
+    if !state.instances.contains_key(&id) {
+        return;
+    }
+
     // disconnect current instance if exists
     let current_id = state.connected_instance_id.clone();
     if let Some(id) = current_id {
@@ -332,6 +337,6 @@ pub fn go_live(id: String) {
     // connect new instance
     if let Some(new_instance) = state.instances.get_mut(&id) {
         new_instance.is_connected = true;
-        state.connected_instance_id = Some(id.clone());
     }
+    state.connected_instance_id = Some(id);
 }
