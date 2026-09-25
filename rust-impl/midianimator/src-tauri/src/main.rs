@@ -57,6 +57,10 @@ async fn main() {
 
             MIDIAnimator::settings::load_settings(app.handle());
 
+            // floating panels drop behind other apps while this one is inactive
+            #[cfg(target_os = "macos")]
+            MIDIAnimator::ui::panels::watch_app_active(app.handle().clone());
+
             // load default nodes
             let resource_path = app.path().resolve("src/configs/default_nodes.json", tauri::path::BaseDirectory::Resource).unwrap();
             let data = std::fs::read_to_string(resource_path).unwrap();

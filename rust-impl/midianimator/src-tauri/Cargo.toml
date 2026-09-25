@@ -38,7 +38,9 @@ axum = "0.8"
 schemars = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder"] }
+objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication"] }
+objc2-foundation = { version = "0.2", features = ["NSNotification", "NSString", "NSOperation", "block2"] }
+block2 = "0.5"
 
 [features]
 # this feature is used for production builds or when `devPath` points to the filesystem and the built-in dev server is disabled.

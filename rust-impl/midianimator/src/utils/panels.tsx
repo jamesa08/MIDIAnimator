@@ -106,6 +106,8 @@ function ensureFloatingWindow(label: string, options: ConstructorParameters<type
             focus: false,
             backgroundThrottling: "disabled" as BackgroundThrottlingPolicy,
             useHttpsScheme: true,
+            // clicks work without clicking the window first to focus it
+            acceptFirstMouse: true,
             ...options,
         });
         await new Promise((resolve, reject) => {

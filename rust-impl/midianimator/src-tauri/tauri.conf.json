@@ -58,7 +58,8 @@
                 "visible": false,
                 "useHttpsScheme": true,
                 "label": "main",
-                "backgroundThrottling": "disabled"
+                "backgroundThrottling": "disabled",
+                "acceptFirstMouse": true
             },
             {
                 "fullscreen": false,
