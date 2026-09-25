@@ -12,7 +12,7 @@ A node can declare a `Dyn` output in `default_nodes.json`:
 {
     "id": "dyn_output",
     "name": "Dynamic Output",
-    "type": "Dyn<Array<Keyframe>>"
+    "data_type": "Dyn<Array<Keyframe>>"
 }
 ```
 

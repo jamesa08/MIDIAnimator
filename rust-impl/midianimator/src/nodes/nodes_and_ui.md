@@ -20,7 +20,7 @@ JSON file defines basic node structure. This is shared between Rust and Typescri
                     {
                         "id": "example_input",
                         "name": "Example input handle",
-                        "type": "i32",  // still defining what this does
+                        "data_type": "i32",  // still defining what this does
                         "hidden": false // show the handle in the UI? (useful for having hidden data props) aside: should this be STRICTLY in the UI file, and not in the JSON config?
                     }
                 ],

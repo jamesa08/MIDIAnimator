@@ -30,7 +30,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         ? Object.keys(executedResults.dyn_output).map((curveName) => ({
               id: curveName,
               name: curveName.split("_").join(" ").toProperCase(),
-              type: "Array<Keyframe>",
+              data_type: "Array<Keyframe>",
           }))
         : [];
 

@@ -11,19 +11,24 @@
                     {
                         "id": "file_path",
                         "name": "File Path",
-                        "type": "String"
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Absolute path to a .mid file on disk."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "tracks",
                         "name": "Tracks",
-                        "type": "Array<MIDITrack>"
+                        "data_type": "Array<MIDITrack>",
+                        "description": "All tracks in the MIDI file with their notes and controller events."
                     },
                     {
                         "id": "stats",
                         "name": "MIDI Stats",
-                        "type": "String"
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Human-readable track count and duration."
                     }
                 ]
             }
@@ -40,34 +45,41 @@
                     {
                         "id": "tracks",
                         "name": "Tracks",
-                        "type": "Array<MIDITrack>"
+                        "data_type": "Array<MIDITrack>",
+                        "description": "Tracks to pick from, usually from Get MIDI File."
                     },
                     {
                         "id": "track_name",
                         "name": "Track Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Name of the track to extract; must exactly match a track name."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "notes",
                         "name": "Notes",
-                        "type": "Array<MIDINote>"
+                        "data_type": "Array<MIDINote>",
+                        "description": "Notes of the selected track, times in seconds."
                     },
                     {
                         "id": "control_change",
                         "name": "Control Change",
-                        "type": "HashMap<u8, Array<MIDIEvent>>"
+                        "data_type": "HashMap<u8, Array<MIDIEvent>>",
+                        "description": "Control change events of the selected track, keyed by CC number."
                     },
                     {
                         "id": "pitchwheel",
                         "name": "Pitchwheel",
-                        "type": "Array<MIDIEvent>"
+                        "data_type": "Array<MIDIEvent>",
+                        "description": "Pitch wheel events of the selected track."
                     },
                     {
                         "id": "aftertouch",
                         "name": "Aftertouch",
-                        "type": "Array<MIDIEvent>"
+                        "data_type": "Array<MIDIEvent>",
+                        "description": "Aftertouch events of the selected track."
                     }
                 ]
             }
@@ -84,24 +96,31 @@
                     {
                         "id": "object_groups",
                         "name": "ObjectGroups",
-                        "type": "Array<ObjectGroup>"
+                        "data_type": "Array<ObjectGroup>",
+                        "description": "Object groups from the scene, usually from Scene Link."
                     },
                     {
                         "id": "object_group_name",
                         "name": "Object Group Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Name of the object group that contains the source object."
                     },
                     {
                         "id": "object_name",
                         "name": "Object Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Name of the object whose animation curves are read."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "dyn_output",
                         "name": "Dynamic Output",
-                        "type": "Dyn<Array<Keyframe>>"
+                        "data_type": "Dyn<Array<Keyframe>>",
+                        "hidden": true,
+                        "description": "One output per animation curve on the object, e.g. location_z."
                     }
                 ]
             }
@@ -118,59 +137,70 @@
                     {
                         "id": "name",
                         "name": "Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Name of the generator; objects reference their animation by this name."
                     },
                     {
                         "id": "note_on_keyframes",
                         "name": "Note On Keyframes",
-                        "type": "Array<Keyframe>"
+                        "data_type": "Array<Keyframe>",
+                        "description": "Animation curve played at each note-on, timed relative to the note start."
                     },
                     {
                         "id": "note_on_anchor_point",
                         "name": "Note On Anchor Point",
-                        "type": "f64"
+                        "data_type": "f64",
+                        "description": "Time offset added to every note-on keyframe."
                     },
                     {
                         "id": "note_off_keyframes",
                         "name": "Note Off Keyframes",
-                        "type": "Array<Keyframe>"
+                        "data_type": "Array<Keyframe>",
+                        "description": "Animation curve played at each note-off, timed relative to the note end."
                     },
                     {
                         "id": "note_off_anchor_point",
                         "name": "Note Off Anchor Point",
-                        "type": "f64"
+                        "data_type": "f64",
+                        "description": "Time offset added to every note-off keyframe."
                     },
                     {
                         "id": "time_mapper",
                         "name": "Time Mapper",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Reserved; not used by the executor yet."
                     },
                     {
                         "id": "amplitude_mapper",
                         "name": "Amplitude Mapper",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Reserved; not used by the executor yet."
                     },
                     {
                         "id": "velocity_intensity",
                         "name": "Velocity Intensity",
-                        "type": "f64"
+                        "data_type": "f64",
+                        "description": "Scales keyframe values by note velocity; 0 ignores velocity."
                     },
                     {
                         "id": "animation_overlap",
                         "name": "Animation Overlap",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "How overlapping animations combine; currently always add."
                     },
                     {
                         "id": "animation_property",
                         "name": "Animation Property",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Blender data path like location[2]. Empty = inherit from note-on keyframes."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "generator",
                         "name": "Animation Generator",
-                        "type": "AnimationGenerator"
+                        "data_type": "AnimationGenerator",
+                        "description": "The generator settings, consumed by Assign Notes to Objects."
                     }
                 ]
             }
@@ -187,29 +217,34 @@
                     {
                         "id": "object_groups",
                         "name": "ObjectGroups",
-                        "type": "ObjectGroups"
+                        "data_type": "Array<ObjectGroup>",
+                        "description": "Object groups from the scene, usually from Scene Link."
                     },
                     {
                         "id": "object_group_name",
                         "name": "Object Group Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Name of the object group whose objects receive notes."
                     },
                     {
                         "id": "midi_notes",
                         "name": "Notes",
-                        "type": "Array<MIDINote>"
+                        "data_type": "Array<MIDINote>",
+                        "description": "Notes to distribute; each unique pitch is assigned to one object in order."
                     },
                     {
                         "id": "generator",
                         "name": "Animation Generator",
-                        "type": "AnimationGenerator"
+                        "data_type": "AnimationGenerator",
+                        "description": "Animation generator applied to every object in the group."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "object_map",
                         "name": "Object Map",
-                        "type": "ObjectMap"
+                        "data_type": "ObjectMap",
+                        "description": "Mapping of object names to note numbers and animation generators."
                     }
                 ]
             }
@@ -226,7 +261,8 @@
                     {
                         "id": "data",
                         "name": "Input",
-                        "type": "Any"
+                        "data_type": "Any",
+                        "description": "Any value to display in the node."
                     }
                 ],
                 "outputs": []
@@ -245,12 +281,14 @@
                     {
                         "id": "name",
                         "name": "Name",
-                        "type": "String"
+                        "data_type": "String",
+                        "description": "Name of the linked Blender scene."
                     },
                     {
                         "id": "object_groups",
                         "name": "Object Groups",
-                        "type": "Array<ObjectGroup>"
+                        "data_type": "Array<ObjectGroup>",
+                        "description": "Object groups (collections) in the linked scene with their objects."
                     }
                 ]
             }
@@ -267,19 +305,22 @@
                     {
                         "id": "object_map",
                         "name": "Object Map",
-                        "type": "ObjectMap"
+                        "data_type": "ObjectMap",
+                        "description": "Object-to-note mapping from Assign Notes to Objects."
                     },
                     {
                         "id": "midi_notes",
                         "name": "MIDI Notes",
-                        "type": "Array<MIDINote>"
+                        "data_type": "Array<MIDINote>",
+                        "description": "Notes to animate, usually the same notes given to Assign Notes to Objects."
                     }
                 ],
                 "outputs": [
                     {
                         "id": "BlendKeyframes",
                         "name": "BlendKeyframes",
-                        "type": "HashMap<String, Array<BlendKeyframe>>"
+                        "data_type": "HashMap<String, Array<BlendKeyframe>>",
+                        "description": "Keyframes per object; written to Blender when executed."
                     }
                 ]
             }
