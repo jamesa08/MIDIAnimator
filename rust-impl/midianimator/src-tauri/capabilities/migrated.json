@@ -4,7 +4,9 @@
   "local": true,
   "windows": [
     "main",
-    "splash"
+    "splash",
+    "Settings",
+    "panel-*"
   ],
   "permissions": [
     "core:default",
@@ -50,6 +52,7 @@
     "core:window:allow-set-ignore-cursor-events",
     "core:window:allow-start-dragging",
     "core:webview:allow-print",
+    "core:webview:allow-create-webview-window",
     "dialog:allow-open",
     "dialog:allow-message",
     "dialog:default",

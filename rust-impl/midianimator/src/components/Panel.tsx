@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -14,7 +13,6 @@ interface PanelProps {
 }
 
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
-    const navigate = useNavigate();
     const { frontEndState, setFrontEndState } = useStateContext();
     const ref = useRef<HTMLDivElement>(null);
 
@@ -55,7 +53,15 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
 
         const { x, y } = await safeWindowPosition(event.screenX, event.screenY, w, h);
 
-        const webview = new WebviewWindow(id, {
+        // focus the popout if it's already open, creating it again would fail on the duplicate label
+        const label = `panel-${id}`;
+        const existing = await WebviewWindow.getByLabel(label);
+        if (existing) {
+            await existing.setFocus();
+            return;
+        }
+
+        const webview = new WebviewWindow(label, {
             url: `/#/panel/${id}`,
             title: name,
             width: w,
@@ -63,6 +69,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
             resizable: true,
             x: x,
             y: y,
+            useHttpsScheme: true,
         });
 
         webview.once("tauri://created", () => {
@@ -72,8 +79,6 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         webview.once("tauri://error", (e: any) => {
             console.error(`Error creating new window ${e.payload}`);
         });
-
-        navigate(`/#/panel/${id}`);
     };
 
     // drag a preview node out of the panel, the node graph adds it where it's released.

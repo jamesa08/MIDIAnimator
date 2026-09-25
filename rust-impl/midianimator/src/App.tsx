@@ -17,10 +17,17 @@ function App() {
         invoke("log", { message: "App mounted, starting initialization..." });
         invoke("splash_progress", { message: "Initializing..." });
         // listner for window creation
-        const windowEventListener = listen(`open-window`, (event: any) => {
-            const window = new WebviewWindow(`${event.payload["title"]}`, event.payload);
+        const windowEventListener = listen(`open-window`, async (event: any) => {
+            // focus the window if it's already open instead of recreating it
+            const label = `${event.payload["title"]}`;
+            const existing = await WebviewWindow.getByLabel(label);
+            if (existing) {
+                await existing.setFocus();
+                return;
+            }
 
-            window.show();
+            const window = new WebviewWindow(label, { useHttpsScheme: true, ...event.payload });
+            window.once("tauri://error", (e: any) => console.error(`Error creating window ${label}: ${JSON.stringify(e.payload)}`));
         });
         
         invoke("splash_progress", { message: "Setting up state listeners..." });
