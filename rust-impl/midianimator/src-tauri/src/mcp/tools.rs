@@ -12,9 +12,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::graph::edit::{self, EditResult};
-use crate::graph::execute::execute_graph;
+use crate::graph::execute::{execute_graph, panic_message};
 use crate::graph::model::{describe_type, is_param, node_specs, Graph, NodeSpec, Position};
-use crate::graph::outline::{self, input_options, node_block, Detail, OutlineCtx};
+use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
 
 // instructions sent to the MCP client when it connects
@@ -170,11 +170,9 @@ fn tool_error(text: impl Into<String>) -> Result<CallToolResult, McpError> {
 /// runs `execute_graph` in its own task so a panicking executor turns into an error message instead
 async fn run_execution(realtime: bool) -> Result<(), String> {
     tokio::spawn(execute_graph(realtime)).await.map_err(|e| {
-        // pull the panic message out, it can be a &str or a String
+        // pull the panic message out
         if e.is_panic() {
-            let panic = e.into_panic();
-            let message = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_else(|| "unknown panic".to_string());
-            format!("execution failed: {}", message)
+            format!("execution failed: {}", panic_message(&e.into_panic()))
         } else {
             format!("execution failed: {}", e)
         }
@@ -196,21 +194,15 @@ async fn run_realtime_if_allowed() -> String {
         return "nothing to execute".to_string();
     }
     // run it, if it fails the last results are still in the state
-    match run_execution(true).await {
-        Ok(()) => "realtime execution ok".to_string(),
-        Err(e) => format!("{}; values below are from the last successful run", e),
+    if let Err(e) = run_execution(true).await {
+        return format!("{}; values below are from the last successful run", e);
     }
-}
-
-/// a `get_midi_file` path that doesn't exist panics the executor, so reject it up front
-fn check_file_path(node_type: &str, inputs: &Map<String, Value>) -> Result<(), String> {
-    if node_type != "get_midi_file" {
-        return Ok(());
-    }
-    // only complain if a path was given and it isn't a file
-    match inputs.get("file_path") {
-        Some(Value::String(path)) if !std::path::Path::new(path).is_file() => Err(format!("file_path '{}' is not a file; use an absolute path to a .mid file", path)),
-        _ => Ok(()),
+    // the edit worked either way, but say which nodes failed
+    let errors = node_errors(&lock_state().executed_results);
+    if errors.is_empty() {
+        "realtime execution ok".to_string()
+    } else {
+        format!("realtime execution: {} node(s) failed, the nodes after them didn't run\n{}", errors.len(), errors.join("\n"))
     }
 }
 
@@ -402,12 +394,6 @@ impl MotionKeysMcp {
     // graph_add_node
     #[tool(description = "Add a node. Returns its new id (e.g. get_midi_file-2). Without position it is placed right of 'after', or right of the right-most node.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_add_node(&self, Parameters(params): Parameters<AddNodeParams>) -> Result<CallToolResult, McpError> {
-        // check the midi file path up front, a bad one panics the executor
-        if let Some(inputs) = &params.inputs {
-            if let Err(e) = check_file_path(&params.node_type, inputs) {
-                return tool_error(e);
-            }
-        }
         // add the node through apply_edit so the UI and realtime results get updated
         self.apply_edit(|graph, specs, _| edit::add_node(graph, specs, &params.node_type, params.inputs.as_ref(), params.position, params.after.as_deref())).await
     }
@@ -431,10 +417,6 @@ impl MotionKeysMcp {
         let mut warnings: Vec<String> = Vec::new();
         if let Ok(snapshot) = Snapshot::take() {
             if let Some(node) = snapshot.graph.resolve(&params.node).ok().and_then(|id| snapshot.graph.node(&id)) {
-                // check the midi file path up front, a bad one panics the executor
-                if let Err(e) = check_file_path(node.resolved_node_type(), &params.inputs) {
-                    return tool_error(e);
-                }
                 // compare each string value against the options for that input (if we know them)
                 for (key, value) in &params.inputs {
                     let (Some(value), Some(options)) = (value.as_str(), input_options(&snapshot.ctx(), node, key)) else {
@@ -491,17 +473,23 @@ impl MotionKeysMcp {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
-        // count how many nodes produced results and say what kind of run it was
-        let executed = snapshot.state.executed_results.len();
+        // count how many nodes ran without an error and say what kind of run it was
+        let errors = node_errors(&snapshot.state.executed_results);
+        let executed = snapshot.state.executed_results.len() - errors.len();
         let mode = if params.write_to_blender {
             "full run, keyframes sent to Blender"
         } else {
             "realtime run"
         };
-        // return the outline with the new value summaries
-        match outline::outline(&snapshot.ctx(), None, Detail::Concise) {
-            Ok(text) => ok_text(format!("executed {} of {} nodes ({})\n\n{}", executed, snapshot.graph.nodes.len(), mode, text)),
-            Err(e) => tool_error(e),
+        let text = match outline::outline(&snapshot.ctx(), None, Detail::Concise) {
+            Ok(text) => text,
+            Err(e) => return tool_error(e),
+        };
+        // any failed node makes the whole call an error, with the outline still attached
+        if errors.is_empty() {
+            ok_text(format!("executed {} of {} nodes ({})\n\n{}", executed, snapshot.graph.nodes.len(), mode, text))
+        } else {
+            tool_error(format!("{} node(s) failed, the nodes after them didn't run ({})\n{}\n\n{}", errors.len(), mode, errors.join("\n"), text))
         }
     }
 

@@ -4,6 +4,7 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::executors::io::node_error;
 use super::model::{find_spec, is_param, node_outputs, Graph, HandleSpec, NodeSpec, RfNode};
 use crate::midi::MIDINote;
 use crate::scene_generics::Scene;
@@ -52,6 +53,13 @@ pub fn outline(ctx: &OutlineCtx, scope: Option<&str>, detail: Detail) -> Result<
     Ok(blocks.join("\n\n"))
 }
 
+/// one `node_id: message` line per failed node, sorted by id
+pub fn node_errors(results: &HashMap<String, Value>) -> Vec<String> {
+    let mut errors: Vec<String> = results.iter().filter_map(|(id, r)| node_error(r).map(|e| format!("{}: {}", id, e))).collect();
+    errors.sort();
+    errors
+}
+
 /// outline block for one node
 pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     // bail out early if the node is gone or its type is unknown
@@ -61,12 +69,15 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     let Some(spec) = find_spec(ctx.specs, node.resolved_node_type()) else {
         return format!("{}  (unknown node type '{}')", id, node.resolved_node_type());
     };
-    // results are only there if the node has executed
-    let node_results = ctx.results.get(id);
+    // results are only there if the node has executed, a failed node has an error instead
+    let error = ctx.results.get(id).and_then(node_error);
+    let node_results = ctx.results.get(id).filter(|_| error.is_none());
 
-    // header line: id, name and whether it has executed yet
+    // header line: id, name and whether it has executed yet (or failed)
     let mut header = format!("{}  \"{}\"", id, spec.name);
-    if node_results.is_none() {
+    if let Some(error) = error {
+        header.push_str(&format!("  FAILED: {}", error));
+    } else if node_results.is_none() {
         header.push_str(if spec.realtime {
             "  (not executed)"
         } else {
