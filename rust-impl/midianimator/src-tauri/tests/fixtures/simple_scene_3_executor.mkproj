@@ -249,7 +249,7 @@
   "rf_instance": {
     "nodes": [
       {
-        "id": "viewer-14bc399f-f4e2-48ec-9103-7bae2a0ca62f",
+        "id": "viewer-1",
         "position": {
           "x": 1260.065279381486,
           "y": 159.6851713259509
@@ -264,7 +264,7 @@
         "dragging": false
       },
       {
-        "id": "get_midi_file-e0290887-fee9-4332-a95e-16cdfe0b175a",
+        "id": "get_midi_file-1",
         "position": {
           "x": 162.32976633790292,
           "y": 181.9011045310711
@@ -283,7 +283,7 @@
         "dragging": false
       },
       {
-        "id": "scene_link-27126e1e-3687-4599-8da8-f8ef59d92001",
+        "id": "scene_link-1",
         "position": {
           "x": -168.30288759305597,
           "y": 436.0855681158192
@@ -298,7 +298,7 @@
         "dragging": false
       },
       {
-        "id": "assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42",
+        "id": "assign_notes_to_objects-1",
         "position": {
           "x": 741.5256924616973,
           "y": 135.17426828758138
@@ -317,7 +317,7 @@
         "dragging": false
       },
       {
-        "id": "get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366",
+        "id": "get_midi_track_data-1",
         "position": {
           "x": 433.0348568772408,
           "y": 96.90431063688196
@@ -336,7 +336,7 @@
         "dragging": false
       },
       {
-        "id": "animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0eb",
+        "id": "animation_generator-1",
         "position": {
           "x": 437.5554033362751,
           "y": 335.38854459011145
@@ -354,7 +354,7 @@
         "selected": false
       },
       {
-        "id": "keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9",
+        "id": "keyframes_from_object-1",
         "position": {
           "x": 146.9682203866086,
           "y": 503.0753412736839
@@ -374,7 +374,7 @@
         "dragging": false
       },
       {
-        "id": "evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6f",
+        "id": "evaluate_instrument-1",
         "position": {
           "x": 1027.902599814239,
           "y": 109.29921090332353
@@ -390,68 +390,68 @@
     ],
     "edges": [
       {
-        "source": "get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366",
+        "source": "get_midi_track_data-1",
         "sourceHandle": "tracks",
-        "target": "get_midi_file-e0290887-fee9-4332-a95e-16cdfe0b175a",
+        "target": "get_midi_file-1",
         "targetHandle": "tracks",
-        "id": "xy-edge__get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366tracks-get_midi_file-e0290887-fee9-4332-a95e-16cdfe0b175atracks"
+        "id": "xy-edge__get_midi_track_data-1tracks-get_midi_file-1tracks"
       },
       {
-        "source": "viewer-14bc399f-f4e2-48ec-9103-7bae2a0ca62f",
+        "source": "viewer-1",
         "sourceHandle": "data",
-        "target": "evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6f",
+        "target": "evaluate_instrument-1",
         "targetHandle": "BlendKeyframes",
-        "id": "xy-edge__viewer-14bc399f-f4e2-48ec-9103-7bae2a0ca62fdata-get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366notes"
+        "id": "xy-edge__viewer-1data-evaluate_instrument-1BlendKeyframes"
       },
       {
-        "source": "assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42",
+        "source": "assign_notes_to_objects-1",
         "sourceHandle": "midi_notes",
-        "target": "get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366",
+        "target": "get_midi_track_data-1",
         "targetHandle": "notes",
-        "id": "xy-edge__assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42midi_notes-get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366notes"
+        "id": "xy-edge__assign_notes_to_objects-1midi_notes-get_midi_track_data-1notes"
       },
       {
-        "source": "assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42",
+        "source": "assign_notes_to_objects-1",
         "sourceHandle": "object_groups",
-        "target": "scene_link-27126e1e-3687-4599-8da8-f8ef59d92001",
+        "target": "scene_link-1",
         "targetHandle": "object_groups",
-        "id": "xy-edge__assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42object_groups-scene_link-27126e1e-3687-4599-8da8-f8ef59d92001object_groups",
+        "id": "xy-edge__assign_notes_to_objects-1object_groups-scene_link-1object_groups",
         "selected": false
       },
       {
-        "source": "assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42",
+        "source": "assign_notes_to_objects-1",
         "sourceHandle": "generator",
-        "target": "animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0eb",
+        "target": "animation_generator-1",
         "targetHandle": "generator",
-        "id": "xy-edge__assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42generator-animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0ebgenerator"
+        "id": "xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator"
       },
       {
-        "source": "keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9",
+        "source": "keyframes_from_object-1",
         "sourceHandle": "object_groups",
-        "target": "scene_link-27126e1e-3687-4599-8da8-f8ef59d92001",
+        "target": "scene_link-1",
         "targetHandle": "object_groups",
-        "id": "xy-edge__keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9object_groups-scene_link-27126e1e-3687-4599-8da8-f8ef59d92001object_groups"
+        "id": "xy-edge__keyframes_from_object-1object_groups-scene_link-1object_groups"
       },
       {
-        "source": "animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0eb",
+        "source": "animation_generator-1",
         "sourceHandle": "note_on_keyframes",
-        "target": "keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9",
+        "target": "keyframes_from_object-1",
         "targetHandle": "location_z",
-        "id": "xy-edge__animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0ebnote_on_keyframes-keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9location_z"
+        "id": "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location_z"
       },
       {
-        "source": "evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6f",
+        "source": "evaluate_instrument-1",
         "sourceHandle": "object_map",
-        "target": "assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42",
+        "target": "assign_notes_to_objects-1",
         "targetHandle": "object_map",
-        "id": "xy-edge__evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6fobject_map-assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42object_map"
+        "id": "xy-edge__evaluate_instrument-1object_map-assign_notes_to_objects-1object_map"
       },
       {
-        "source": "evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6f",
+        "source": "evaluate_instrument-1",
         "sourceHandle": "midi_notes",
-        "target": "get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366",
+        "target": "get_midi_track_data-1",
         "targetHandle": "notes",
-        "id": "xy-edge__evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6fmidi_notes-get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366notes"
+        "id": "xy-edge__evaluate_instrument-1midi_notes-get_midi_track_data-1notes"
       }
     ],
     "viewport": {

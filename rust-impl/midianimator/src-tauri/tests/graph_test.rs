@@ -1,9 +1,7 @@
 // run from /src-tauri
 // cargo test --test graph_test
 //
-// fixture: tests/fixtures/simple_scene_3_executor.mkproj, saved from the app. it uses UUID node ids
-// and one stale edge id (the viewer edge's id names get_midi_track_data › notes, but it really
-// connects evaluate_instrument › BlendKeyframes -> viewer › data)
+// fixture: tests/fixtures/simple_scene_3_executor.mkproj, saved from the app, with short node ids
 
 use std::collections::HashMap;
 
@@ -15,11 +13,11 @@ use MIDIAnimator::midi::MIDIFile;
 use MIDIAnimator::scene_generics::Scene;
 use MIDIAnimator::state::SavedProject;
 
-// full node ids from the fixture, used where a test needs the exact id
-const TRACK_DATA: &str = "get_midi_track_data-c790fd73-fd62-494b-9cae-876dd8ebb366";
-const MIDI_FILE: &str = "get_midi_file-e0290887-fee9-4332-a95e-16cdfe0b175a";
-const VIEWER: &str = "viewer-14bc399f-f4e2-48ec-9103-7bae2a0ca62f";
-const EVALUATE: &str = "evaluate_instrument-ec4b2c8c-c2c0-4dcd-9571-dacb05a7ef6f";
+// node ids from the fixture, used where a test needs the exact id
+const TRACK_DATA: &str = "get_midi_track_data-1";
+const MIDI_FILE: &str = "get_midi_file-1";
+const VIEWER: &str = "viewer-1";
+const EVALUATE: &str = "evaluate_instrument-1";
 
 /// loads the node specs from default_nodes.json
 fn specs() -> Vec<NodeSpec> {
@@ -114,12 +112,14 @@ fn resolves_prefixes() {
 // checks that edge accessors follow the endpoints, not the (stale) edge id
 #[test]
 fn edges_use_data_flow_direction_despite_stale_id() {
-    let f = Fixture::new();
+    let mut f = Fixture::new();
+    // give the viewer edge a stale id that names a different connection, like react flow can leave behind
+    let index = f.graph.edges.iter().position(|e| e.source == VIEWER).unwrap();
+    f.graph.edges[index].id = "xy-edge__viewer-1data-get_midi_track_data-1notes".to_string();
+    // the endpoints are what count, not the id
     let edge = f.graph.edge_into(VIEWER, "data").unwrap();
     assert_eq!(edge.from_node(), EVALUATE);
     assert_eq!(edge.from_output(), "BlendKeyframes");
-    // the stale id names a different connection; endpoints are what count
-    assert!(edge.id.contains("notes"));
 }
 
 // checks that producers come before the nodes they feed
@@ -143,17 +143,17 @@ fn add_node_gets_short_id_and_placement() {
     let mut f = Fixture::new();
     // add one with an input set, then a second one placed after the first
     let result = edit::add_node(&mut f.graph, &f.specs, "get_midi_file", Some(&obj(json!({"file_path": "/tmp/a.mid"}))), None, None).unwrap();
-    assert_eq!(result.touched, vec!["get_midi_file-1"]);
-    let second = edit::add_node(&mut f.graph, &f.specs, "get_midi_file", None, None, Some("get_midi_file-1")).unwrap();
-    assert_eq!(second.touched, vec!["get_midi_file-2"]);
+    assert_eq!(result.touched, vec!["get_midi_file-2"]);
+    let second = edit::add_node(&mut f.graph, &f.specs, "get_midi_file", None, None, Some("get_midi_file-2")).unwrap();
+    assert_eq!(second.touched, vec!["get_midi_file-3"]);
 
     // the first node goes to the right of the rightmost existing node
-    let first = f.graph.node("get_midi_file-1").unwrap();
-    let rightmost = f.graph.nodes.iter().filter(|n| n.id != "get_midi_file-1").map(|n| n.position.x).fold(f64::MIN, f64::max);
+    let first = f.graph.node("get_midi_file-2").unwrap();
+    let rightmost = f.graph.nodes.iter().filter(|n| n.id != "get_midi_file-2").map(|n| n.position.x).fold(f64::MIN, f64::max);
     assert!(first.position.x > rightmost - 350.0 - 1.0);
     assert_eq!(first.input_value("file_path"), Some(&json!("/tmp/a.mid")));
     // the second node goes right next to the first
-    let second = f.graph.node("get_midi_file-2").unwrap();
+    let second = f.graph.node("get_midi_file-3").unwrap();
     assert_eq!(
         second.position,
         Position {
@@ -176,16 +176,16 @@ fn connect_validates_and_replaces() {
     let results = HashMap::new();
 
     // wrong types
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-1", "tracks", "assign", "midi_notes").unwrap_err();
+    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", "assign", "midi_notes").unwrap_err();
     assert!(err.contains("type mismatch"), "{}", err);
     // unknown handles
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-1", "notes", TRACK_DATA, "tracks").unwrap_err().contains("outputs are"));
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-1", "tracks", TRACK_DATA, "trax").unwrap_err().contains("inputs are"));
+    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "notes", TRACK_DATA, "tracks").unwrap_err().contains("outputs are"));
+    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", TRACK_DATA, "trax").unwrap_err().contains("inputs are"));
     // hidden inputs (parameters) are not connectable
     let err = edit::connect(&mut f.graph, &f.specs, &results, "scene_link", "name", "get_midi_track", "track_name").unwrap_err();
     assert!(err.contains("must not be connected") && err.contains("graph_set_inputs"), "{}", err);
     // hidden outputs are display-only and not connectable either
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-1", "stats", "viewer", "data").unwrap_err();
+    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "stats", "viewer", "data").unwrap_err();
     assert!(err.contains("must not be connected"), "{}", err);
     // connecting a node to itself, or creating a cycle
     assert!(edit::connect(&mut f.graph, &f.specs, &results, "evaluate", "BlendKeyframes", "evaluate", "object_map").unwrap_err().contains("itself"));
@@ -194,15 +194,15 @@ fn connect_validates_and_replaces() {
 
     // replace the existing tracks connection, the edge count shouldn't change
     let edges_before = f.graph.edges.len();
-    let result = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-1", "tracks", "get_midi_track", "tracks").unwrap();
+    let result = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", "get_midi_track", "tracks").unwrap();
     assert!(result.message.contains("replaced"), "{}", result.message);
     assert_eq!(f.graph.edges.len(), edges_before);
     // the new edge is stored in the reversed source/target direction
     let edge = f.graph.edge_into(TRACK_DATA, "tracks").unwrap();
-    assert_eq!(edge.from_node(), "get_midi_file-1");
+    assert_eq!(edge.from_node(), "get_midi_file-2");
     assert_eq!(edge.source, TRACK_DATA);
     assert_eq!(edge.target_handle.as_deref(), Some("tracks"));
-    assert_eq!(edge.id, format!("xy-edge__{}tracks-get_midi_file-1tracks", TRACK_DATA));
+    assert_eq!(edge.id, format!("xy-edge__{}tracks-get_midi_file-2tracks", TRACK_DATA));
 }
 
 // checks connecting to a `Dyn<T>` output only works once the node has results
@@ -210,8 +210,8 @@ fn connect_validates_and_replaces() {
 fn connect_to_dynamic_output() {
     let mut f = Fixture::new();
     // keyframes_from_object and animation_generator from the fixture
-    let kfo = "keyframes_from_object-98e3fba6-4b97-43d0-ac7b-69b9490b38e9";
-    let gen = "animation_generator-569aa1ca-5b1a-44f5-ada2-991fd410a0eb";
+    let kfo = "keyframes_from_object-1";
+    let gen = "animation_generator-1";
     // free up the input first
     edit::disconnect(&mut f.graph, gen, "note_on_keyframes").unwrap();
 
@@ -279,7 +279,7 @@ fn outline_shows_labels_values_connections_and_options() {
     assert!(block.contains(&format!("in   Tracks  (tracks: Array<MIDITrack>)  <- {} › Tracks", MIDI_FILE)));
     assert!(block.contains("par  Track Name  (track_name: String) = \"Studio Grand\""));
     assert!(block.contains(&format!("options: {}", track_name)));
-    assert!(block.contains("-> assign_notes_to_objects-25dc1490-7ffa-488f-ab85-4fd7a0d65f42 › Notes"));
+    assert!(block.contains("-> assign_notes_to_objects-1 › Notes"));
     assert!(block.contains(" notes · "), "{}", block);
 
     // full outline has descriptions and options from the scene data
