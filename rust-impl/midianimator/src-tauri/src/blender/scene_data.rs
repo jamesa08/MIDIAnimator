@@ -150,7 +150,7 @@ pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> 
     println!("{:?}", result);
 
     if result != "OK" {
-        panic!("Error from Python file: {:?}", result);
+        return Err(std::io::Error::other(format!("Blender couldn't write the keyframes: {}", result)));
     }
     Ok(())
 }
@@ -163,14 +163,14 @@ pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<()> {
     let result = match ipc::send_message(injected_script.to_string()).await {
         Some(data) => data,
         None => {
-            panic!("Error writing scene data");
+            return Err(std::io::Error::other("Blender didn't respond to the scene write"));
         }
     };
 
     println!("{:?}", result);
 
     if result != "OK" {
-        panic!("Error from Python file: {:?}", result);
+        return Err(std::io::Error::other(format!("Blender couldn't write the keyframes: {}", result)));
     }
     Ok(())
 }
