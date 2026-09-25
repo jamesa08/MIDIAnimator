@@ -16,7 +16,9 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
     }, []);
 
     // get everything from the state and node data directly, so values set by the backend (e.g. over MCP) are kept
-    const trackNames: string[] = state?.executed_inputs?.[id]?.["tracks"]?.map((track: any) => track.name) ?? [];
+    // a mistyped connection can hand us a non-array, so don't trust the shape
+    const tracks = state?.executed_inputs?.[id]?.["tracks"];
+    const trackNames: string[] = Array.isArray(tracks) ? tracks.map((track: any) => track?.name) : [];
     // the track name that is currently set on the node
     const selectedTrackName: string = data.inputs?.track_name ?? "";
 
