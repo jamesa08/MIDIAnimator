@@ -47,13 +47,17 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
 #[node_registry::node]
 pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
-    if !inputs.contains_key("file_path") {
-        outputs.insert("tracks".to_string(), serde_json::Value::Array(vec![]));
-        outputs.insert("stats".to_string(), serde_json::Value::String("".to_string()));
-        return outputs;
-    }
+    // as_str, not to_string, so the path doesn't keep its JSON quotes
+    let file_path = match inputs.get("file_path").and_then(|v| v.as_str()) {
+        Some(path) if !path.is_empty() => path,
+        _ => {
+            outputs.insert("tracks".to_string(), serde_json::Value::Array(vec![]));
+            outputs.insert("stats".to_string(), serde_json::Value::String("".to_string()));
+            return outputs;
+        }
+    };
 
-    let midi_file = MIDIFile::new(inputs["file_path"].to_string().as_str()).unwrap();
+    let midi_file = MIDIFile::new(file_path).unwrap();
     let midi_file_statistics = get_midi_file_statistics(&midi_file);
     outputs.insert("tracks".to_string(), serde_json::to_value(midi_file.get_midi_tracks()).unwrap());
     outputs.insert("stats".to_string(), serde_json::to_value(midi_file_statistics).unwrap());

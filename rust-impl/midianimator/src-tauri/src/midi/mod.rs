@@ -216,7 +216,7 @@ impl MIDIFile {
         // instance variables
         let mut tracks: Vec<MIDITrack> = Vec::new();
 
-        let bytes = std::fs::read(midi_file.trim_matches('\"'))?;
+        let bytes = std::fs::read(midi_file)?;
         let smf = Smf::parse(&bytes)?;
 
         let midi_type = smf.header.format;
