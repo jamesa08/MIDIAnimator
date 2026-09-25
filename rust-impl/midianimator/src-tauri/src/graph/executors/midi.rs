@@ -78,11 +78,14 @@ pub fn get_midi_file(inputs: HashMap<String, serde_json::Value>) -> HashMap<Stri
 #[tauri::command]
 #[node_registry::node]
 pub fn get_midi_track_data(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
+    // empty outputs until a track matches
     let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+    outputs.insert("notes".to_string(), serde_json::Value::Array(vec![]));
+    outputs.insert("control_change".to_string(), serde_json::Value::Object(serde_json::Map::new()));
+    outputs.insert("pitchwheel".to_string(), serde_json::Value::Array(vec![]));
+    outputs.insert("aftertouch".to_string(), serde_json::Value::Array(vec![]));
 
     if !inputs.contains_key("tracks") || !inputs.contains_key("track_name") {
-        // empty array, no data
-        outputs.insert("track".to_string(), serde_json::Value::Object(serde_json::Map::new()));
         return outputs;
     }
 
