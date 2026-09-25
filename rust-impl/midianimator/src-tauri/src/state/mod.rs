@@ -165,34 +165,52 @@ pub struct SavedProject {
     pub rf_instance: HashMap<String, serde_json::Value>,
 }
 
+/// this command only replaces the node graph (`rf_instance`) in the backend state
+/// the front end uses this instead of `js_update_state` so its (possibly stale) copy of the
+/// rest of the state, like `executed_results`, doesn't overwrite the backend's
+#[tauri::command]
+pub fn js_update_graph(rf_instance: String) {
+    println!("FRONTEND GRAPH UPDATE");
+    // parse the graph and swap it in, a bad graph is just logged and ignored
+    match serde_json::from_str::<HashMap<String, serde_json::Value>>(&rf_instance) {
+        Ok(rf_instance) => STATE.lock().unwrap().rf_instance = rf_instance,
+        Err(e) => eprintln!("js_update_graph: could not parse rf_instance: {}", e),
+    }
+}
+
 // save project command
 #[tauri::command]
 pub async fn save_project() -> Result<String, String> {
-    let saved_data = {
-        let state = STATE.lock().unwrap();
-        SavedProject {
-            scene_data: state.get_active_instance().map(|instance| instance.scene_data.clone()).unwrap_or_default(),
-            // scene_data: state.scene_data.clone(),
-            rf_instance: state.rf_instance.clone(),
-        }
-    };
-
     let window = WINDOW.lock().unwrap();
     let win_ref = window.as_ref().unwrap();
 
     let file_path = win_ref.dialog().file().set_title("Save Project").add_filter("MIDIAnimator Project", &["mkproj"]).blocking_save_file();
+    // drop the window lock before saving
+    drop(window);
 
     match file_path {
-        Some(path) => {
-            let json = serde_json::to_string_pretty(&saved_data).map_err(|e| format!("Serialization error: {}", e))?;
-
-            let path_str = path.to_string();
-            fs::write(&path_str, json).map_err(|e| format!("File write error: {}", e))?;
-
-            Ok(path_str)
-        }
+        // write the project to the picked path
+        Some(path) => save_project_to(&path.to_string()),
         None => Err("Save cancelled".to_string()),
     }
+}
+
+/// writes the current scene data and node graph to `path`, returns the path
+pub fn save_project_to(path: &str) -> Result<String, String> {
+    // copy what we need out of the state so we don't hold the lock while writing
+    let saved_data = {
+        let state = STATE.lock().unwrap();
+        SavedProject {
+            scene_data: state.scene_data.clone(),
+            rf_instance: state.rf_instance.clone(),
+        }
+    };
+
+    // serialize and write the file
+    let json = serde_json::to_string_pretty(&saved_data).map_err(|e| format!("Serialization error: {}", e))?;
+    fs::write(path, json).map_err(|e| format!("File write error: {}", e))?;
+
+    Ok(path.to_string())
 }
 
 // load project command
@@ -204,27 +222,39 @@ pub async fn load_project() -> Result<AppState, String> {
     let file_path = win_ref.dialog().file().set_title("Load Project").add_filter("MIDIAnimator Project", &["mkproj"]).blocking_pick_file();
 
     let path = file_path.ok_or("Load cancelled")?;
-    let path_str = path.to_string();
+    // drop the window lock before loading
     drop(window);
 
-    let json = fs::read_to_string(&path_str).map_err(|e| format!("File read error: {}", e))?;
+    // load the project from the picked path
+    load_project_from(&path.to_string())
+}
+
+/// replaces the scene data and node graph with the project at `path` and clears executed results.
+/// if a 3D application is connected, execution is paused so scene changes can be reviewed first
+pub fn load_project_from(path: &str) -> Result<AppState, String> {
+    // read and parse the project file
+    let json = fs::read_to_string(path).map_err(|e| format!("File read error: {}", e))?;
 
     let saved_data: SavedProject = serde_json::from_str(&json).map_err(|e| format!("Deserialization error: {}", e))?;
 
+    // replace the scene data and graph in the state
     let new_state = {
         let mut state = STATE.lock().unwrap();
         state.scene_data = saved_data.scene_data;
         state.rf_instance = saved_data.rf_instance;
 
+        // pause execution if connected so the scene changes can be reviewed first
         if state.connected {
             state.execution_paused = true;
         }
 
+        // the old results don't belong to this project anymore
         state.executed_results.clear();
         state.executed_inputs.clear();
         state.clone()
     };
 
+    // tell the front end about the new state
     update_state();
 
     Ok(new_state)
