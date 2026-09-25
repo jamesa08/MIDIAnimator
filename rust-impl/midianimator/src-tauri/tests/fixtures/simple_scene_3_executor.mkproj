@@ -400,8 +400,8 @@
         "source": "viewer-1",
         "sourceHandle": "data",
         "target": "evaluate_instrument-1",
-        "targetHandle": "BlendKeyframes",
-        "id": "xy-edge__viewer-1data-evaluate_instrument-1BlendKeyframes"
+        "targetHandle": "keyframes",
+        "id": "xy-edge__viewer-1data-evaluate_instrument-1keyframes"
       },
       {
         "source": "assign_notes_to_objects-1",

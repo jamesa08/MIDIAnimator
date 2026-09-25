@@ -118,7 +118,7 @@ fn edges_use_data_flow_direction_despite_stale_id() {
     // the endpoints are what count, not the id
     let edge = f.graph.edge_into(VIEWER, "data").unwrap();
     assert_eq!(edge.from_node(), EVALUATE);
-    assert_eq!(edge.from_output(), "BlendKeyframes");
+    assert_eq!(edge.from_output(), "keyframes");
 }
 
 // checks that producers come before the nodes they feed
@@ -187,7 +187,7 @@ fn connect_validates_and_replaces() {
     let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "stats", "viewer", "data").unwrap_err();
     assert!(err.contains("must not be connected"), "{}", err);
     // connecting a node to itself, or creating a cycle
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "evaluate", "BlendKeyframes", "evaluate", "object_map").unwrap_err().contains("itself"));
+    assert!(edit::connect(&mut f.graph, &f.specs, &results, "evaluate", "keyframes", "evaluate", "object_map").unwrap_err().contains("itself"));
     let err = edit::connect(&mut f.graph, &f.specs, &results, "viewer", "data", "evaluate", "midi_notes");
     assert!(err.is_err());
 

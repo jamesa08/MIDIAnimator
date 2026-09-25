@@ -377,7 +377,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
 /// "midi_notes": `Array<MIDINote>`,`
 ///
 /// outputs:
-/// "BlendKeyframes": `HashMap<String, Array<BlendKeyframe>>`, keyframes per object, written to Blender by scene_writer
+/// "keyframes": `HashMap<String, Array<BlendKeyframe>>`, keyframes per object, written to Blender by scene_writer
 #[node_registry::node]
 pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
     let object_map: ObjectMap = inputs.get("object_map")?;
@@ -430,7 +430,7 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
     let obj_blend_keyframes: HashMap<String, Vec<BlendKeyframe>> = obj_curves.into_iter().map(|(name, curves)| (name, curves.into_values().flatten().collect())).collect();
 
     let mut outputs = Outputs::new();
-    outputs.set("BlendKeyframes", &obj_blend_keyframes)?;
+    outputs.set("keyframes", &obj_blend_keyframes)?;
     Ok(outputs)
 }
 

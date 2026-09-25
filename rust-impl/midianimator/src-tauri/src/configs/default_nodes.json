@@ -317,8 +317,8 @@
                 ],
                 "outputs": [
                     {
-                        "id": "BlendKeyframes",
-                        "name": "BlendKeyframes",
+                        "id": "keyframes",
+                        "name": "Keyframes",
                         "data_type": "HashMap<String, Array<BlendKeyframe>>",
                         "description": "Keyframes per object. Connect to Scene Writer to write them to Blender."
                     }

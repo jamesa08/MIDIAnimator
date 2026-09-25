@@ -127,7 +127,7 @@ fn cube_keys(properties: &[(&str, f64)]) -> Vec<serde_json::Value> {
         { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.5, "time_off": 0.6 }
     ]);
     let outputs = evaluate_instrument(Inputs::from([("object_map", object_map), ("midi_notes", notes)])).unwrap();
-    outputs["BlendKeyframes"]["Cube"].as_array().unwrap().clone()
+    outputs["keyframes"]["Cube"].as_array().unwrap().clone()
 }
 
 #[test]
