@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi, useNodesInitialized } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
@@ -725,6 +725,21 @@ function NodeGraphNoProvider() {
         [setEdges]
     );
 
+    // link dragged off a handle and dropped on nothing (the + sign), open the add menu where it was released
+    const onConnectEnd = useCallback(
+        (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+            if (connectionState.isValid || connectionState.toHandle) return;
+
+            const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
+            // the new node gets placed from this position, same as shift+a
+            mousePositionRef.current = { x: clientX, y: clientY };
+            savePreOperationState();
+            setMenuPosition({ x: clientX, y: clientY });
+            setMenuOpen(true);
+        },
+        [savePreOperationState]
+    );
+
     const onNodesChange = useCallback(
         (changes: any) => {
             setNodes((nds) => applyNodeChanges(changes, nds));
@@ -816,6 +831,7 @@ function NodeGraphNoProvider() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectEnd={onConnectEnd}
                 onPaneClick={handlePaneClick}
                 onNodeClick={handleNodeClickStop}
                 onNodeDrag={handleNodeDrag}
