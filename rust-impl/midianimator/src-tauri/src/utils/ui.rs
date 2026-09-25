@@ -33,6 +33,6 @@ pub async fn close_splashscreen(app: tauri::AppHandle) {
     }
     // Show main window
     if let Some(main) = app.get_webview_window("main") {
-        main.show().unwrap();
+        crate::ui::windows::reveal(&main);
     }
 }

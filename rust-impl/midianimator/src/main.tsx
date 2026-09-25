@@ -8,6 +8,15 @@ import PanelContent from "./components/PanelContent";
 import Settings from "./windows/Settings";
 import DragGhost from "./windows/DragGhost";
 import StateContextProvider from "./contexts/StateContext";
+import { invoke } from "@tauri-apps/api/core";
+
+// tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
+function WindowReady() {
+    React.useEffect(() => {
+        requestAnimationFrame(() => requestAnimationFrame(() => invoke("window_ready")));
+    }, []);
+    return null;
+}
 
 const rootElement = document.getElementById("root");
 
@@ -16,6 +25,7 @@ if (rootElement) {
     root.render(
         <React.StrictMode>
             <StateContextProvider>
+                <WindowReady />
                 <Router>
                     <Routes>
                         <Route path="/" element={<App />} />

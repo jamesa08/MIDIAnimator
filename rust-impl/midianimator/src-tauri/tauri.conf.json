@@ -59,7 +59,8 @@
                 "useHttpsScheme": true,
                 "label": "main",
                 "backgroundThrottling": "disabled",
-                "acceptFirstMouse": true
+                "acceptFirstMouse": true,
+                "backgroundColor": "#ffffff"
             },
             {
                 "fullscreen": false,

@@ -4,7 +4,6 @@ import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 
 import { useStateContext } from "./contexts/StateContext";
@@ -18,20 +17,6 @@ function App() {
     useEffect(() => {
         invoke("log", { message: "App mounted, starting initialization..." });
         invoke("splash_progress", { message: "Initializing..." });
-        // listner for window creation
-        const windowEventListener = listen(`open-window`, async (event: any) => {
-            // focus the window if it's already open instead of recreating it
-            const label = `${event.payload["title"]}`;
-            const existing = await WebviewWindow.getByLabel(label);
-            if (existing) {
-                await existing.setFocus();
-                return;
-            }
-
-            const window = new WebviewWindow(label, { useHttpsScheme: true, ...event.payload });
-            window.once("tauri://error", (e: any) => console.error(`Error creating window ${label}: ${JSON.stringify(e.payload)}`));
-        });
-        
         invoke("splash_progress", { message: "Setting up state listeners..." });
         const stateListner = listen("update_state", (event: any) => {
             setBackEndState(event.payload);
@@ -52,7 +37,6 @@ function App() {
         });
 
         return () => {
-            windowEventListener.then((f) => f());
             stateListner.then((f) => f());
             executionRunner.then((f) => f());
         };

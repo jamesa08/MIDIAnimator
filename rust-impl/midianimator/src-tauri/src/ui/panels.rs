@@ -29,6 +29,8 @@ fn make_floating(window: &tauri::WebviewWindow, ghost: bool) -> Result<(), Strin
                 });
                 if ghost {
                     ns_window.setHasShadow(false);
+                } else {
+                    crate::ui::windows::match_ui_background(ns_window);
                 }
                 // out of mission control and the cmd+` cycle, stays with the app in fullscreen
                 ns_window.setCollectionBehavior(NSWindowCollectionBehavior::Transient | NSWindowCollectionBehavior::IgnoresCycle | NSWindowCollectionBehavior::FullScreenAuxiliary);
