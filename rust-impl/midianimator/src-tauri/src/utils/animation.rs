@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::scene_generics::KeyframePoint;
+
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
 }
@@ -34,27 +36,29 @@ impl BlendKeyframe {
     }
 }
 
-// TODO eventually, we will include a file for all node types with structs
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+/// the output of the animation_generator node
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnimationGenerator {
     pub name: String,
-    pub note_on_keyframes: Vec<serde_json::Value>,
+    pub note_on_keyframes: Vec<KeyframePoint>,
     pub note_on_anchor_point: f64,
-    pub note_off_keyframes: Vec<serde_json::Value>,
+    pub note_off_keyframes: Vec<KeyframePoint>,
     pub note_off_anchor_point: f64,
+    // mappers are passed through but not used yet
+    pub time_mapper: String,
+    pub amplitude_mapper: String,
     pub velocity_intensity: f64,
     pub animation_overlap: String,
     pub animation_property: String,
-    // mappers intentionally ignored for now
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ObjectMapEntry {
     pub note_number: Vec<u8>,
     pub animations: Vec<String>, // name keys into object_map.animations
 }
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ObjectMap {
     pub animations: HashMap<String, AnimationGenerator>,
     pub objects: HashMap<String, ObjectMapEntry>,
@@ -157,9 +161,10 @@ pub fn parse_animation_property(prop: &str) -> (String, u32) {
     }
 }
 
-pub fn co_from_json(kf: &serde_json::Value) -> Option<(f64, f64)> {
-    let co = kf.get("co")?.as_array()?;
-    let frame = co.get(0)?.as_f64()?;
-    let value = co.get(1)?.as_f64()?;
-    Some((frame, value))
+/// the (time, value) of a keyframe point, `None` if `co` doesn't have both
+pub fn co_of(kf: &KeyframePoint) -> Option<(f64, f64)> {
+    match kf.co.as_slice() {
+        [time, value, ..] => Some((*time as f64, *value as f64)),
+        _ => None,
+    }
 }

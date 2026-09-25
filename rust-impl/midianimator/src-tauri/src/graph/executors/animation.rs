@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use super::io::{Inputs, NodeResult, Outputs};
 use crate::blender::scene_data::write_scene_data;
 use crate::midi::MIDINote;
-use crate::utils::animation::{add_keyframes, co_from_json, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
+use crate::scene_generics::{AnimCurve, KeyframePoint, ObjectGroup};
+use crate::utils::animation::{add_keyframes, co_of, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap, ObjectMapEntry};
 
 /// Node: keyframes_from_object
 ///
@@ -13,74 +15,57 @@ use crate::utils::animation::{add_keyframes, co_from_json, parse_animation_prope
 ///
 /// outputs:
 /// "dyn_output": `Dyn<Array<Keyframe>>`
-#[tauri::command]
 #[node_registry::node]
-pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+pub fn keyframes_from_object(inputs: Inputs) -> NodeResult {
+    let mut outputs = Outputs::new();
+    let object_groups: Vec<ObjectGroup> = inputs.or_default("object_groups")?;
+    let object_group_name: String = inputs.or_default("object_group_name")?;
+    let object_name: String = inputs.or_default("object_name")?;
 
-    if !inputs.contains_key("object_groups") || !inputs.contains_key("object_group_name") || !inputs.contains_key("object_name") {
-        outputs.insert("dyn_output".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-        return outputs;
+    // nothing picked yet, no dynamic outputs
+    let mut dyn_output = serde_json::Map::new();
+    if object_groups.is_empty() || object_group_name.is_empty() || object_name.is_empty() {
+        outputs.set("dyn_output", &dyn_output)?;
+        return Ok(outputs);
     }
 
-    let object_groups_unwrapped = inputs["object_groups"].as_array().expect("in keyframes_from_object, object_groups is not an array").clone();
-    let object_group_name = inputs["object_group_name"].as_str().unwrap();
-    let object_name = inputs["object_name"].as_str().unwrap();
-    let xyz = ["x", "y", "z"];
+    // find the object, a name that isn't in the scene is an error
+    let object_group = object_groups.iter().find(|g| g.name == object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
+    let object = object_group.objects.iter().find(|o| o.name == object_name).ok_or_else(|| format!("object '{}' does not exist in '{}'", object_name, object_group_name))?;
 
-    for object_group in object_groups_unwrapped {
-        let object_group_unwrapped = object_group.as_object().unwrap();
-        if object_group_unwrapped.get_key_value("name").unwrap().1.as_str().unwrap() == object_group_name {
-            let objects = object_group_unwrapped.get("objects").unwrap().as_array().unwrap();
-            for object in objects {
-                let object_unwrapped = object.as_object().unwrap();
-                if object_unwrapped.get_key_value("name").unwrap().1.as_str().unwrap() == object_name {
-                    let anim_curves_unwrapped = object_unwrapped.get("anim_curves").unwrap().as_array().unwrap();
-
-                    // Build the dyn_output map
-                    let mut dyn_output_map = serde_json::Map::new();
-
-                    /*
-                    example:
-                        {
-                            "dyn_output": {
-                                "location_x": FCurveData,
-                                "location_y": FCurveData,
-                                "location_z": FCurveData
-                            }
-                            "location_x": FCurveData
-                            "location_y": FCurveData,
-                            "location_z": FCurveData
-
-                        }
-                    */
-
-                    for anim_curve in anim_curves_unwrapped {
-                        let anim_curve_unwrapped = anim_curve.as_object().unwrap();
-                        let data_path = anim_curve_unwrapped.get("data_path").unwrap().as_str().unwrap();
-                        let array_index = anim_curve_unwrapped.get("array_index").unwrap().as_u64().unwrap();
-                        // let keyframe_points = anim_curve_unwrapped.get("keyframe_points").unwrap().as_array().unwrap();
-
-                        let anim_curve_name = if vec!["location", "rotation", "scale"].contains(&data_path) {
-                            format!("{}_{}", data_path, xyz[array_index as usize])
-                        } else {
-                            format!("{}_{}", data_path, array_index)
-                        };
-
-                        outputs.insert(anim_curve_name.clone(), serde_json::to_value(anim_curve_unwrapped).unwrap());
-
-                        dyn_output_map.insert(anim_curve_name, anim_curve.clone());
-                    }
-
-                    outputs.insert("dyn_output".to_string(), serde_json::Value::Object(dyn_output_map));
-                    break;
-                }
+    /*
+    example:
+        {
+            "dyn_output": {
+                "location_x": FCurveData,
+                "location_y": FCurveData,
+                "location_z": FCurveData
             }
-            break;
+            "location_x": FCurveData
+            "location_y": FCurveData,
+            "location_z": FCurveData
+
         }
+    */
+
+    // one output per anim curve, flat and inside dyn_output (see nodes_and_backend.md)
+    for anim_curve in &object.anim_curves {
+        let name = anim_curve_name(anim_curve);
+        outputs.set(&name, anim_curve)?;
+        dyn_output.insert(name.clone(), outputs[&name].clone());
     }
 
-    return outputs;
+    outputs.set("dyn_output", &dyn_output)?;
+    Ok(outputs)
+}
+
+/// the output id for an anim curve, `location_x` for vectors, `data_path_0` for anything else
+fn anim_curve_name(anim_curve: &AnimCurve) -> String {
+    let xyz = ["x", "y", "z"];
+    match xyz.get(anim_curve.array_index as usize) {
+        Some(axis) if ["location", "rotation", "scale"].contains(&anim_curve.data_path.as_str()) => format!("{}_{}", anim_curve.data_path, axis),
+        _ => format!("{}_{}", anim_curve.data_path, anim_curve.array_index),
+    }
 }
 
 /// Node: animation_generator
@@ -100,53 +85,36 @@ pub fn keyframes_from_object(inputs: HashMap<String, serde_json::Value>) -> Hash
 ///
 /// outputs:
 /// "generator": `AnimationGenerator`
-#[tauri::command]
 #[node_registry::node]
-pub fn animation_generator(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+pub fn animation_generator(inputs: Inputs) -> NodeResult {
+    // the keyframe curves are optional, an unconnected one is just no keyframes
+    let note_on_curve: Option<AnimCurve> = inputs.opt("note_on_keyframes")?;
+    let note_off_curve: Option<AnimCurve> = inputs.opt("note_off_keyframes")?;
 
-    // if !inputs.contains_key("note_on_keyframes") || !inputs.contains_key("note_on_anchor_point") || !inputs.contains_key("note_off_keyframes") || !inputs.contains_key("note_off_anchor_point") || !inputs.contains_key("time_mapper") || !inputs.contains_key("amplitude_mapper") || !inputs.contains_key("velocity_intensity") || !inputs.contains_key("animation_overlap") || !inputs.contains_key("animation_property") {
-    //     outputs.insert("generator".to_string(), serde_json::Value::Object(serde_json::Map::new()));
-    //     return outputs;
-    // }
-
-    let empty_map = serde_json::Map::new();
-
-    let name = inputs.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-    let note_on_keyframes = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("keyframe_points").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).clone();
-    let note_on_anchor_point = inputs.get("note_on_anchor_point").and_then(|v| v.as_f64()).unwrap_or_default();
-    let note_off_keyframes = inputs.get("note_off_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("keyframe_points").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).clone();
-    let note_off_anchor_point = inputs.get("note_off_anchor_point").and_then(|v| v.as_f64()).unwrap_or_default();
-    let time_mapper = inputs.get("time_mapper").and_then(|v| v.as_str()).unwrap_or_default();
-    let amplitude_mapper = inputs.get("amplitude_mapper").and_then(|v| v.as_str()).unwrap_or_default();
-    let velocity_intensity = inputs.get("velocity_intensity").and_then(|v| v.as_f64()).unwrap_or_default();
-    let animation_overlap = inputs.get("animation_overlap").and_then(|v| v.as_str()).unwrap_or_default();
-    let animation_property = inputs.get("animation_property").and_then(|v| v.as_str()).unwrap_or_default();
-
-    let mut generator = HashMap::new();
-    generator.insert("name".to_string(), serde_json::to_value(name).unwrap());
-    generator.insert("note_on_keyframes".to_string(), serde_json::to_value(note_on_keyframes).unwrap());
-    generator.insert("note_on_anchor_point".to_string(), serde_json::to_value(note_on_anchor_point).unwrap());
-    generator.insert("note_off_keyframes".to_string(), serde_json::to_value(note_off_keyframes).unwrap());
-    generator.insert("note_off_anchor_point".to_string(), serde_json::to_value(note_off_anchor_point).unwrap());
-    generator.insert("time_mapper".to_string(), serde_json::to_value(time_mapper).unwrap());
-    generator.insert("amplitude_mapper".to_string(), serde_json::to_value(amplitude_mapper).unwrap());
-    generator.insert("velocity_intensity".to_string(), serde_json::to_value(velocity_intensity).unwrap());
-    // generator.insert("animation_overlap".to_string(), serde_json::to_value(animation_overlap).unwrap());
-    generator.insert("animation_overlap".to_string(), serde_json::to_value("add").unwrap());
-    let animation_property_value = serde_json::to_value(animation_property).unwrap();
-    if animation_property_value == serde_json::Value::String("".to_string()) {
-        // inherit from note_on_keyframes data_path and array_index if animation_property is not provided
-        let data_path = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("data_path").and_then(|v| v.as_str()).unwrap_or("");
-        let array_index = inputs.get("note_on_keyframes").and_then(|h| h.as_object()).unwrap_or(&empty_map).get("array_index").and_then(|v| v.as_u64()).unwrap_or(0);
-        let inherited_animation_property = format!("{}[{}]", data_path, array_index);
-        generator.insert("animation_property".to_string(), serde_json::to_value(inherited_animation_property).unwrap());
-    } else {
-        generator.insert("animation_property".to_string(), animation_property_value);
+    // inherit the property from the note on curve if none is given, e.g. "location[0]"
+    let mut animation_property: String = inputs.or_default("animation_property")?;
+    if animation_property.is_empty() {
+        let (data_path, array_index) = note_on_curve.as_ref().map_or(("", 0), |c| (c.data_path.as_str(), c.array_index));
+        animation_property = format!("{}[{}]", data_path, array_index);
     }
 
-    outputs.insert("generator".to_string(), serde_json::to_value(generator).unwrap());
-    return outputs;
+    let generator = AnimationGenerator {
+        name: inputs.or_default("name")?,
+        note_on_keyframes: note_on_curve.map(|c| c.keyframe_points).unwrap_or_default(),
+        note_on_anchor_point: inputs.or_default("note_on_anchor_point")?,
+        note_off_keyframes: note_off_curve.map(|c| c.keyframe_points).unwrap_or_default(),
+        note_off_anchor_point: inputs.or_default("note_off_anchor_point")?,
+        time_mapper: inputs.or_default("time_mapper")?,
+        amplitude_mapper: inputs.or_default("amplitude_mapper")?,
+        velocity_intensity: inputs.or_default("velocity_intensity")?,
+        // FIXME: only "add" is supported until the overlap modes are ported
+        animation_overlap: "add".to_string(),
+        animation_property,
+    };
+
+    let mut outputs = Outputs::new();
+    outputs.set("generator", &generator)?;
+    Ok(outputs)
 }
 
 pub fn pad_nums(mut nums: Vec<u8>, pad_amount: usize) -> Vec<u8> {
@@ -185,21 +153,22 @@ pub fn pad_nums(mut nums: Vec<u8>, pad_amount: usize) -> Vec<u8> {
 
     // if we still need more numbers, add them below and above alternately
     while result.len() < pad_amount {
-        if result.len() % 2 == 0 {
-            // add below
-            let mut new_num = *result.iter().min().unwrap() - 1;
-            while result.contains(&new_num) {
-                new_num -= 1;
-            }
-            result.push(new_num);
+        // the next free note below and above, staying inside the MIDI range 0-127
+        let min = *result.iter().min().unwrap_or(&0);
+        let max = *result.iter().max().unwrap_or(&127);
+        let below = min.checked_sub(1);
+        let above = max.checked_add(1).filter(|n| *n <= 127);
+
+        // alternate below and above, use the other side when one runs out, stop when both do
+        let next = if result.len() % 2 == 0 {
+            below.or(above)
         } else {
-            // add above
-            let mut new_num = *result.iter().max().unwrap() + 1;
-            while result.contains(&new_num) {
-                new_num += 1;
-            }
-            result.push(new_num);
-        }
+            above.or(below)
+        };
+        let Some(next) = next else {
+            break;
+        };
+        result.push(next);
     }
 
     result.sort();
@@ -337,40 +306,12 @@ While this method requires more initial setup, it provides the greatest degree o
 
 
 */
-#[tauri::command]
 #[node_registry::node]
-pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
-
-    let mut object_map: HashMap<String, serde_json::Value> = HashMap::new();
-    object_map.insert("animations".to_string(), serde_json::json!({}));
-    object_map.insert("objects".to_string(), serde_json::json!({}));
-
-    // get all used notes from midi notes
-    let midi_notes: Vec<MIDINote> = match inputs.get("midi_notes") {
-        Some(value) => serde_json::from_value(value.clone()).unwrap_or_else(|err| {
-            eprintln!("Failed to deserialize midi_notes: {}", err);
-            Vec::new()
-        }),
-        None => Vec::new(),
-    };
-    let used_notes = all_used_notes_from_array(&midi_notes);
-
-    // get the object groups
-    let empty_vec = Vec::new();
-    let object_groups_unwrapped = inputs.get("object_groups").and_then(|v| v.as_array()).unwrap_or(&empty_vec);
-    let object_group_name = inputs.get("object_group_name").and_then(|v| v.as_str()).unwrap_or_default();
-    let object_group = object_groups_unwrapped.iter().find(|object_group| object_group.get("name").and_then(|v| v.as_str()).unwrap_or_default() == object_group_name).unwrap_or(&serde_json::Value::Null);
-
-    println!("object group name: {}", object_group_name);
-
-    // get the generator
-    let empty_map = serde_json::Map::new();
-    let generator = inputs.get("generator").and_then(|v| v.as_object()).unwrap_or(&empty_map);
-
-    // check for case 2 if the object count is the same as the note count
-    let object_count = object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).len();
-    let note_count = used_notes.len();
+pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
+    let midi_notes: Vec<MIDINote> = inputs.or_default("midi_notes")?;
+    let object_groups: Vec<ObjectGroup> = inputs.or_default("object_groups")?;
+    let object_group_name: String = inputs.or_default("object_group_name")?;
+    let generator: Option<AnimationGenerator> = inputs.opt("generator")?;
 
     /*  ObjectMap example:
        {
@@ -386,59 +327,48 @@ pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> Ha
            }
        }
     */
-    let animation_generator_name = generator.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+    let mut object_map = ObjectMap::default();
+    let mut outputs = Outputs::new();
 
-    if object_count == note_count {
-        // case 2: direct assignment from MIDI track
-        println!("case 2: direct assignment from MIDI track");
-        for (i, obj) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().enumerate() {
-            let object_name = obj.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-            let note_number = used_notes[i];
-            let object_map_lookup = object_map.get_mut("objects").unwrap();
-            let object_map_obj = object_map_lookup.as_object_mut().unwrap();
-
-            if let Some(existing_entry) = object_map_obj.get_mut(object_name) {
-                if let Some(note_array) = existing_entry.get_mut("note_number").and_then(|v| v.as_array_mut()) {
-                    note_array.push(serde_json::json!(note_number));
-                }
-            } else {
-                object_map_obj.insert(
-                    object_name.to_string(),
-                    serde_json::json!({
-                        "note_number": [note_number],
-                        "animations": [animation_generator_name]
-                    }),
-                );
-            }
-        }
-    } else {
-        // case 3: flexible assignment with padding
-        println!("case 3: flexible assignment with padding");
-        let padded_notes = pad_nums(used_notes, object_count);
-        for (obj, note_number) in object_group.get("objects").and_then(|v| v.as_array()).unwrap_or(&Vec::new()).iter().zip(padded_notes.iter()) {
-            let object_name = obj.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-            let object_map_lookup = object_map.get_mut("objects").unwrap();
-            let object_map_obj = object_map_lookup.as_object_mut().unwrap();
-
-            if let Some(existing_entry) = object_map_obj.get_mut(object_name) {
-                if let Some(note_array) = existing_entry.get_mut("note_number").and_then(|v| v.as_array_mut()) {
-                    note_array.push(serde_json::json!(note_number));
-                }
-            } else {
-                object_map_obj.insert(
-                    object_name.to_string(),
-                    serde_json::json!({
-                        "note_number": [note_number],
-                        "animations": [animation_generator_name]
-                    }),
-                );
-            }
-        }
+    // nothing picked yet, empty object map
+    if object_groups.is_empty() || object_group_name.is_empty() {
+        outputs.set("object_map", &object_map)?;
+        return Ok(outputs);
     }
-    object_map.get_mut("animations").unwrap().as_object_mut().unwrap().insert(animation_generator_name.to_string(), serde_json::json!(generator.clone()));
-    outputs.insert("object_map".to_string(), serde_json::to_value(object_map).unwrap());
-    // println!("object map: {:?}", serde_json::to_string_pretty(&outputs).unwrap());
-    return outputs;
+
+    // find the object group, a name that isn't in the scene is an error
+    let object_group = object_groups.iter().find(|g| g.name == object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
+    println!("object group name: {}", object_group_name);
+
+    // every object gets the generator's animation, if one is connected
+    let animations: Vec<String> = generator.iter().map(|g| g.name.clone()).collect();
+    if let Some(generator) = generator {
+        object_map.animations.insert(generator.name.clone(), generator);
+    }
+
+    // get all used notes from midi notes
+    let used_notes = all_used_notes_from_array(&midi_notes);
+
+    // case 2 when the object count is the same as the note count, otherwise case 3
+    let notes = if object_group.objects.len() == used_notes.len() {
+        println!("case 2: direct assignment from MIDI track");
+        used_notes
+    } else {
+        println!("case 3: flexible assignment with padding");
+        pad_nums(used_notes, object_group.objects.len())
+    };
+
+    // pair objects with notes in order, extra objects (not enough notes) are left out
+    for (object, note_number) in object_group.objects.iter().zip(notes) {
+        let entry = object_map.objects.entry(object.name.clone()).or_insert_with(|| ObjectMapEntry {
+            note_number: vec![],
+            animations: animations.clone(),
+        });
+        entry.note_number.push(note_number);
+    }
+
+    outputs.set("object_map", &object_map)?;
+    Ok(outputs)
 }
 
 /// Node: evaluate_instrument
@@ -449,30 +379,23 @@ pub fn assign_notes_to_objects(inputs: HashMap<String, serde_json::Value>) -> Ha
 ///
 /// outputs:
 /// None for now, this node will directly apply the animations to the objects in Blender, but in the future we may want to have it output some data that can be used by other nodes
-#[tauri::command]
 #[node_registry::node]
-pub fn evaluate_instrument(inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
+    let object_map: ObjectMap = inputs.get("object_map")?;
+    let midi_notes: Vec<MIDINote> = inputs.get("midi_notes")?;
 
-    let object_map: ObjectMap = serde_json::from_value(inputs["object_map"].clone()).expect("failed to parse object_map");
-
-    let midi_notes: Vec<MIDINote> = serde_json::from_value(inputs["midi_notes"].clone()).expect("failed to parse midi_notes");
-
+    // look up which objects (and with which animation) each note triggers
     let mut note_to_objects: HashMap<u8, Vec<(String, &AnimationGenerator)>> = HashMap::new();
-
     for (obj_name, entry) in &object_map.objects {
         for anim_name in &entry.animations {
-            let Some(gen) = object_map.animations.get(anim_name) else {
-                eprintln!("object '{}' references unknown animation '{}'", obj_name, anim_name);
-                continue;
-            };
+            let gen = object_map.animations.get(anim_name).ok_or_else(|| format!("object '{}' uses animation '{}', which isn't in the object map", obj_name, anim_name))?;
             for &note_num in &entry.note_number {
                 note_to_objects.entry(note_num).or_default().push((obj_name.clone(), gen));
             }
         }
     }
 
-    let mut obj_BlendKeyframes: HashMap<String, Vec<BlendKeyframe>> = object_map.objects.keys().map(|name| (name.clone(), vec![])).collect();
+    let mut obj_blend_keyframes: HashMap<String, Vec<BlendKeyframe>> = object_map.objects.keys().map(|name| (name.clone(), vec![])).collect();
 
     for note in &midi_notes {
         let Some(targets) = note_to_objects.get(&note.note_number) else {
@@ -483,63 +406,53 @@ pub fn evaluate_instrument(inputs: HashMap<String, serde_json::Value>) -> HashMa
             // Parse data_path and array_index from animation_property e.g. "location[0]"
             let (data_path, array_index) = parse_animation_property(&gen.animation_property);
 
-            let mut next_keys: Vec<BlendKeyframe> = gen
-                .note_on_keyframes
-                .iter()
-                .filter_map(|kf| {
-                    let (time, mut value) = co_from_json(kf)?;
-                    // use seconds instead of frames, insert "time" key instead of "frame" in the BlendKeyframe struct, and convert to frames in Blender using the scene's frame rate. This allows for more intuitive timing based on the music rather than needing to calculate frame numbers.
-                    let time = time + note.time_on + gen.note_on_anchor_point;
-                    if gen.velocity_intensity != 0.0 {
-                        value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
-                    }
-                    Some(BlendKeyframe::new(time, value, &data_path, array_index))
-                })
-                .collect();
-
-            let mut note_off_keys: Vec<BlendKeyframe> = gen
-                .note_off_keyframes
-                .iter()
-                .filter_map(|kf| {
-                    let (time, mut value) = co_from_json(kf)?;
-                    let time = time + note.time_off + gen.note_off_anchor_point;
-                    if gen.velocity_intensity != 0.0 {
-                        value *= note.velocity as f64 / 127.0 * gen.velocity_intensity;
-                    }
-                    Some(BlendKeyframe::new(time, value, &data_path, array_index))
-                })
-                .collect();
+            // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
+            let mut next_keys: Vec<BlendKeyframe> = note_keyframes(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
+            let mut note_off_keys: Vec<BlendKeyframe> = note_keyframes(&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
 
             next_keys.append(&mut note_off_keys);
-            next_keys.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+            next_keys.sort_by(|a, b| a.time.total_cmp(&b.time));
 
             if next_keys.is_empty() {
                 continue;
             }
 
-            let inserted = obj_BlendKeyframes.get_mut(obj_name).unwrap();
+            // combine with the keyframes already on the object
+            let inserted = obj_blend_keyframes.entry(obj_name.clone()).or_default();
             match gen.animation_overlap.as_str() {
                 "add" | "" => add_keyframes(inserted, &mut next_keys),
-                other => eprintln!("unsupported animation_overlap '{}', skipping", other),
+                other => return Err(format!("animation overlap '{}' is not supported yet", other)),
             }
         }
     }
 
+    // send the keyframes to Blender in the background
+    // TODO: failed writes only get logged, report them on the node once the scene writer node is split out
     println!("writing BlendKeyframes to Blender...");
-    let val = serde_json::to_value(obj_BlendKeyframes).expect("failed to serialize BlendKeyframes for writing to Blender");
-
+    let val = serde_json::to_value(&obj_blend_keyframes).map_err(|e| format!("could not serialize keyframes: {}", e))?;
     let val_for_blender = val.clone();
     tauri::async_runtime::spawn(async move {
-        let res = write_scene_data(val_for_blender).await;
-
-        if res.is_err() {
-            eprintln!("failed to write BlendKeyframes to Blender: {}", res.err().unwrap());
-        } else {
-            println!("done writing BlendKeyframes to Blender");
+        match write_scene_data(val_for_blender).await {
+            Ok(_) => println!("done writing BlendKeyframes to Blender"),
+            Err(e) => eprintln!("failed to write BlendKeyframes to Blender: {}", e),
         }
     });
 
-    outputs.insert("BlendKeyframes".to_string(), serde_json::to_value(val).expect("failed to serialize BlendKeyframes"));
+    let mut outputs = Outputs::new();
+    outputs.set("BlendKeyframes", &val)?;
+    Ok(outputs)
+}
 
-    outputs
+/// offsets a generator's keyframes to a note's time and scales them by its velocity
+fn note_keyframes(keyframes: &[KeyframePoint], offset: f64, velocity: u8, velocity_intensity: f64, data_path: &str, array_index: u32) -> Vec<BlendKeyframe> {
+    keyframes
+        .iter()
+        .filter_map(|kf| {
+            let (time, mut value) = co_of(kf)?;
+            if velocity_intensity != 0.0 {
+                value *= velocity as f64 / 127.0 * velocity_intensity;
+            }
+            Some(BlendKeyframe::new(time + offset, value, data_path, array_index))
+        })
+        .collect()
 }

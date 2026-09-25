@@ -1,6 +1,8 @@
 use serde_json::{json, Map};
 use std::collections::{HashMap, HashSet};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use crate::graph::executors::io::{node_error, NodeFunction, ERROR_KEY};
 use crate::node_registry::get_node_registry;
 use crate::state::{update_state, STATE};
 
@@ -29,7 +31,7 @@ pub async fn execute_graph(realtime: bool) {
     let node_registry = get_node_registry();
 
     #[async_recursion::async_recursion]
-    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool, node_registry: &HashMap<String, fn(HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value>>) {
+    async fn execute_dfs(node_id: String, visited: &mut HashSet<String>, results: &mut HashMap<String, serde_json::Value>, inputs: &mut HashMap<String, serde_json::Value>, rf_instance: &HashMap<String, serde_json::Value>, default_nodes: &HashMap<String, serde_json::Value>, realtime: &bool, node_registry: &HashMap<String, NodeFunction>) {
         // println!("EXECUTING NODE {:?}", node_id);
 
         if visited.contains(&node_id) {
@@ -37,24 +39,20 @@ pub async fn execute_graph(realtime: bool) {
             return;
         }
 
-        // temporary debugging prints
-        let node = rf_instance["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|node| {
-                let id = node["id"].as_str().unwrap_or("");
-                node["id"] == node_id
-            })
-            .unwrap_or_else(|| {
-                eprintln!("PANIC: Could not find node '{}'", node_id);
-                eprintln!("Available nodes: {:?}", rf_instance["nodes"].as_array().unwrap().iter().map(|n| n["id"].as_str().unwrap_or("?")).collect::<Vec<_>>());
-                panic!("Node not found");
-            });
+        // find the node, an edge to a node that doesn't exist is skipped
+        let Some(node) = rf_instance["nodes"].as_array().and_then(|nodes| nodes.iter().find(|node| node["id"] == node_id)) else {
+            eprintln!("ERROR: could not find node '{}', skipping it", node_id);
+            return;
+        };
 
         let node_no_uuid = node_id.split("-").collect::<Vec<&str>>()[0];
 
-        let default_node = default_nodes["nodes"].as_array().unwrap().iter().find(|node| node["id"] == node_no_uuid).unwrap();
+        // an unknown node type can't run, show it on the node
+        let Some(default_node) = default_nodes["nodes"].as_array().and_then(|nodes| nodes.iter().find(|node| node["id"] == node_no_uuid)) else {
+            visited.insert(node_id.clone());
+            results.insert(node_id.clone(), json!({ ERROR_KEY: format!("unknown node type '{}'", node_no_uuid) }));
+            return;
+        };
 
         let node_data = node["data"].as_object().unwrap().clone();
 
@@ -73,6 +71,12 @@ pub async fn execute_graph(realtime: bool) {
             if results.contains_key(edge["target"].as_str().unwrap()) {
                 // get node_results via looking up the source node
                 let node_results = results[edge["target"].as_str().unwrap()].clone();
+
+                // an upstream node failed, don't run this one. only the failed node gets the error
+                if node_error(&node_results).is_some() {
+                    visited.insert(node_id.clone());
+                    return;
+                }
 
                 // add computed results to inputs
                 // target handle: the "input" for the node
@@ -122,9 +126,19 @@ pub async fn execute_graph(realtime: bool) {
 
             if let Some(node_func) = node_registry.get(node_no_uuid) {
                 let input_hashmap: HashMap<String, serde_json::Value> = input_value.into_iter().collect();
-                let output_hashmap = node_func(input_hashmap);
-                let output_value = json!(output_hashmap);
-                exec_result.extend(output_value.as_object().unwrap().clone());
+
+                // run it, a panic that slipped through is turned into an error too so it can't take the app down
+                let outcome = catch_unwind(AssertUnwindSafe(|| node_func(input_hashmap.into()))).unwrap_or_else(|panic| Err(format!("crashed: {}", panic_message(&panic))));
+
+                match outcome {
+                    Ok(outputs) => exec_result.extend(outputs.into_map()),
+                    Err(message) => {
+                        // store the error on the node and stop here, the nodes after it don't run
+                        eprintln!("ERROR: node '{}' failed: {}", node_id, message);
+                        results.insert(node_id.clone(), json!({ ERROR_KEY: message }));
+                        return;
+                    }
+                }
             } else {
                 println!("ERROR: Node '{}' not found in registry", node_id);
             }
@@ -179,4 +193,9 @@ pub async fn execute_graph(realtime: bool) {
     // now we do something useful with the results
 
     // ....
+}
+
+/// the message of a caught panic, it can be a &str or a String
+pub fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {
+    panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_else(|| "unknown panic".to_string())
 }

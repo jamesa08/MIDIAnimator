@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+use std::sync::PoisonError;
 
+use super::io::{Inputs, NodeResult, Outputs};
+use crate::scene_generics::ObjectGroup;
 use crate::state::STATE;
 
 // Node: scene_link
@@ -10,24 +12,22 @@ use crate::state::STATE;
 /// outputs:
 /// "name": `String`
 /// "object_groups": `Array<ObjectGroup>`
-#[tauri::command]
 #[node_registry::node]
-pub fn scene_link(_inputs: HashMap<String, serde_json::Value>) -> HashMap<String, serde_json::Value> {
-    let mut outputs: HashMap<String, serde_json::Value> = HashMap::new();
+pub fn scene_link(_inputs: Inputs) -> NodeResult {
+    let mut outputs = Outputs::new();
 
-    let state = STATE.lock().unwrap();
+    // copy the scene out, a poisoned lock (a panic somewhere else) still has usable scene data
+    let scene = STATE.lock().unwrap_or_else(PoisonError::into_inner).scene_data.get("Scene").cloned();
 
-    if !state.scene_data.contains_key("Scene") {
+    // no scene yet (Blender hasn't sent one), empty outputs
+    let Some(scene) = scene else {
         println!("NO SCENE DATA");
-        outputs.insert("name".to_string(), serde_json::Value::String("".to_string()));
-        outputs.insert("object_groups".to_string(), serde_json::Value::Array(vec![]));
-        return outputs;
-    }
+        outputs.set("name", "")?;
+        outputs.set("object_groups", &Vec::<ObjectGroup>::new())?;
+        return Ok(outputs);
+    };
 
-    let scene = state.scene_data["Scene"].clone();
-    drop(state);
-
-    outputs.insert("name".to_string(), serde_json::to_value(scene.name).unwrap());
-    outputs.insert("object_groups".to_string(), serde_json::to_value(scene.object_groups).unwrap());
-    return outputs;
+    outputs.set("name", &scene.name)?;
+    outputs.set("object_groups", &scene.object_groups)?;
+    Ok(outputs)
 }

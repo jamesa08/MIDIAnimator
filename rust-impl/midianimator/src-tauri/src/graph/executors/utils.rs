@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use super::io::{Inputs, NodeResult, Outputs};
+
 /// Node: viewer
 ///
 /// inputs:
@@ -6,9 +7,8 @@ use std::collections::HashMap;
 ///
 /// outputs:
 /// None
-#[tauri::command]
 #[node_registry::node]
-pub fn viewer(_inputs: HashMap<String, serde_json::Value>) {
+pub fn viewer(_inputs: Inputs) -> NodeResult {
     // :)
-    return HashMap::new();
+    Ok(Outputs::new())
 }
