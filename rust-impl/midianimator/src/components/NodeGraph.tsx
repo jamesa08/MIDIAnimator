@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, getNodesBounds, useStoreApi } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
@@ -144,6 +144,9 @@ function NodeGraphNoProvider() {
     const { backEndState: state, setBackEndState: setState } = useStateContext();
     const initDone = useRef(false);
 
+    // set by the click that places nodes, the rest of that click gets swallowed
+    const swallowClickRef = useRef(false);
+
     const dragStartRef = useRef<{ cursorX: number; cursorY: number; nodes: Array<{ id: string; x: number; y: number }> }>({
         cursorX: 0,
         cursorY: 0,
@@ -162,8 +165,8 @@ function NodeGraphNoProvider() {
     );
 
     const stopDragging = useCallback(() => {
-        // Make sure to keep nodes re-selected after drag
-        if (newNodeToDrag && dragStartRef.current.nodes.length > 0) {
+        // keep the placed nodes selected after the drag
+        if (dragStartRef.current.nodes.length > 0) {
             const draggedNodeIds = new Set(dragStartRef.current.nodes.map((n) => n.id));
 
             setNodes((nds) =>
@@ -175,11 +178,12 @@ function NodeGraphNoProvider() {
         }
 
         // the operation is confirmed, nothing to cancel back to anymore
+        dragStartRef.current = { cursorX: 0, cursorY: 0, nodes: [] };
         preOperationStateRef.current = null;
         setNewNodeToDrag(null);
         // tell the backend where the nodes ended up
         setSyncTrigger(true);
-    }, []);
+    }, [setNodes]);
 
     // cancel handlers
 
@@ -226,8 +230,11 @@ function NodeGraphNoProvider() {
                 position: { x: flowPosition.x + 10, y: flowPosition.y + 10 },
                 data: {},
                 type: nodeType,
+                selected: true,
             };
-            setNodes((nds) => [...nds, newNode]);
+            // the new node becomes the only selection, like blender
+            setNodes((nds) => [...nds.map((n) => (n.selected ? { ...n, selected: false } : n)), newNode]);
+            setEdges((eds) => (eds ?? []).map((e) => (e.selected ? { ...e, selected: false } : e)));
 
             // Store drag start for the new node
             dragStartRef.current = {
@@ -239,7 +246,7 @@ function NodeGraphNoProvider() {
             setNewNodeToDrag(newNodeId);
             setMenuOpen(false);
         },
-        [setNodes, getNodes, screenToFlowPosition, startDragging]
+        [setNodes, setEdges, getNodes, screenToFlowPosition]
     );
     // Track mouse position
     useEffect(() => {
@@ -283,45 +290,51 @@ function NodeGraphNoProvider() {
             });
         };
 
-        const handleMouseDown = (event: MouseEvent) => {
+        // left click places the nodes, like blender the click only confirms.
+        // capture phase on pointerdown (fires before mousedown) and swallowed so react flow doesn't also
+        // treat it as a click: no deselect on the pane, no selecting/dragging a node under the cursor.
+        // right click is left alone so the context menu can cancel
+        const handlePointerDown = (event: PointerEvent) => {
+            if (event.button !== 0) return;
+            event.stopPropagation();
+            swallowClickRef.current = true;
             stopDragging();
         };
 
         window.addEventListener("mousemove", handleMouseMove);
-        window.addEventListener("mousedown", handleMouseDown);
+        window.addEventListener("pointerdown", handlePointerDown, true);
 
         return () => {
             window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mousedown", handleMouseDown);
+            window.removeEventListener("pointerdown", handlePointerDown, true);
         };
-    }, [newNodeToDrag, screenToFlowPosition, setNodes]);
+    }, [newNodeToDrag, screenToFlowPosition, setNodes, stopDragging]);
 
-    // Stop dragging when clicking inside selected nodes. Need a better way to do this in the future.
+    // swallow the rest of the placing click (mousedown/mouseup/click) so react flow never sees it.
+    // lives outside the drag effect, which is torn down before the click event arrives
     useEffect(() => {
-        const handleMouseDown = (event: MouseEvent) => {
-            if (!newNodeToDrag) return;
-
-            // Get all selected nodes
-            const selectedNodes = nodes.filter((node) => node.selected);
-            if (selectedNodes.length === 0) return;
-
-            // Convert mouse position to flow coordinates
-            const flowPosition = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            const { nodeLookup } = store.getState();
-
-            const bounds = getNodesBounds(selectedNodes, { nodeLookup });
-
-            // Check if click is inside the selection bounds
-            const clickedInsideSelection = flowPosition.x >= bounds.x && flowPosition.x <= bounds.x + bounds.width && flowPosition.y >= bounds.y && flowPosition.y <= bounds.y + bounds.height;
-
-            if (clickedInsideSelection) {
-                stopDragging();
-            }
+        const handleSwallow = (event: MouseEvent) => {
+            if (!swallowClickRef.current) return;
+            event.stopPropagation();
+            if (event.type === "click") swallowClickRef.current = false;
+        };
+        // if the click never arrived (released outside the window), don't eat the next one
+        const handlePointerDown = () => {
+            swallowClickRef.current = false;
         };
 
-        window.addEventListener("mousedown", handleMouseDown, true);
-        return () => window.removeEventListener("mousedown", handleMouseDown, true);
-    }, [newNodeToDrag, nodes, screenToFlowPosition, stopDragging]);
+        // registered before the drag effect's pointerdown, so a placing pointerdown sets the flag after this clears it
+        window.addEventListener("pointerdown", handlePointerDown, true);
+        window.addEventListener("mousedown", handleSwallow, true);
+        window.addEventListener("mouseup", handleSwallow, true);
+        window.addEventListener("click", handleSwallow, true);
+        return () => {
+            window.removeEventListener("pointerdown", handlePointerDown, true);
+            window.removeEventListener("mousedown", handleSwallow, true);
+            window.removeEventListener("mouseup", handleSwallow, true);
+            window.removeEventListener("click", handleSwallow, true);
+        };
+    }, []);
 
     // Keyboard listener
     useEffect(() => {
