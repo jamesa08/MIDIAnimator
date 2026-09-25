@@ -101,7 +101,7 @@ function IPCLink() {
     const status = getStatus();
 
     const floatingPanel = (
-        <div className={`flex items-center flex-col ipc-content fixed top-[27px] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
+        <div className={`flex items-center flex-col ipc-content fixed top-[27px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
             <p>{state.connected ? "" : "Disconnected. Please connect on the 3D application to start."}</p>
             {showWhenConnected()}
         </div>
