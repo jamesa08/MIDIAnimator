@@ -20,7 +20,8 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
     useEffect(() => {
         var fileStats: any = {};
         if (state != undefined && state.executed_results != undefined && id != undefined && id in state.executed_results) {
-            for (let line of state.executed_results[id]["stats"].split("\n")) {
+            // a failed node has no stats, only a motionkeys_error
+            for (let line of (state.executed_results[id]["stats"] ?? "").split("\n")) {
                 let res = line.split(" ");
                 if (res[1] == "tracks") {
                     fileStats["tracks"] = res[0];
