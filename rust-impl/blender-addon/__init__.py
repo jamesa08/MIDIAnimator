@@ -45,12 +45,15 @@ else:
 def register():
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
+
+    bpy.types.Scene.midianimator_port = bpy.props.IntProperty(name="Port", description="Port of the MIDIAnimator server, must match the port in MIDIAnimator's settings", default=6577, min=1024, max=65535)
         
 
 def unregister():
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
 
+    del bpy.types.Scene.midianimator_port
     
     # close the client connection when the addon is unregistered
     client = Server()

@@ -14,6 +14,7 @@ use crate::blender::scene_data;
 use crate::blender::scene_data::compare_scene_data;
 use crate::command::javascript::evaluate_js_oneshot;
 use crate::scene_generics;
+use crate::settings::get_setting;
 use crate::state::{update_state, STATE};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -28,16 +29,22 @@ struct Server {
     message_map: Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>,
 }
 
-static PORT: &str = "6577";
+static DEFAULT_PORT: u16 = 6577;
+
+// port from the ipc.port setting, falls back to the default when missing or invalid
+fn port() -> u16 {
+    get_setting("ipc.port").as_u64().and_then(|port| u16::try_from(port).ok()).filter(|port| *port >= 1024).unwrap_or(DEFAULT_PORT)
+}
 
 // create a server instance
 // this is a lazy static variable, so it will only be created once
 // and will be shared across all threads
 // this is necessary because the server needs to be accessed across threads, and in other functions
 static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
-    // create a TCP listener on the specified port
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}", port = PORT)).unwrap();
-    println!("MIDIAnimator IPC server started. Listening on port {:?}", PORT);
+    // create a TCP listener on the configured port
+    let port = port();
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    println!("MIDIAnimator IPC server started. Listening on port {:?}", port);
 
     // create a server instance
     let server = Server {

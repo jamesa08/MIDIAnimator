@@ -15,6 +15,8 @@ pub mod midi;
 
 pub mod scene_generics;
 
+pub mod settings;
+
 pub mod state;
 
 pub mod ui;

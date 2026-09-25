@@ -1,5 +1,8 @@
 {
     "ipc": {
-        "port": "6537"
+        "port": 6577
+    },
+    "panels": {
+        "hide_when_inactive": false
     }
 }

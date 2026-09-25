@@ -4,13 +4,14 @@ from .. src.core import Server
 class SCENE_OT_connect_to_server(bpy.types.Operator):
     bl_idname = "scene.connect_to_server"
     bl_label = "Connect to Server"
-    bl_description = "Connect to the server at port 6577"
+    bl_description = "Connect to the MIDIAnimator server at the set port"
 
     def ping(self):
         pass
 
     def execute(self, context):
         client = Server()
+        client.port = context.scene.midianimator_port
         res = client.open()
         if not res:
             self.report({"ERROR"}, "Could not connect to server. Make sure MIDIAnimator is running.")
@@ -19,7 +20,7 @@ class SCENE_OT_connect_to_server(bpy.types.Operator):
 class SCENE_OT_disconnect_from_server(bpy.types.Operator):
     bl_idname = "scene.disconnect_from_server"
     bl_label = "Disconnect from Server"
-    bl_description = "Disconnect from the server at port 6577"
+    bl_description = "Disconnect from the MIDIAnimator server"
 
     def execute(self, context):
         client = Server()
@@ -46,7 +47,10 @@ class VIEW3D_PT_server_link(MIDIAniamtorPanel, bpy.types.Panel):
         layout.use_property_split = True
         
         col = layout.column()
-        col.label(text="Client at port 6577")
+        # port must match the one set in MIDIAnimator's settings
+        row = col.row()
+        row.enabled = not client.connected
+        row.prop(context.scene, "midianimator_port", text="Port")
 
         if client.connected:
             col.label(text="Connected to Server")

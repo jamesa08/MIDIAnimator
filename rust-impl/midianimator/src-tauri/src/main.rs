@@ -55,6 +55,8 @@ async fn main() {
             })?;
             *WINDOW.lock().unwrap() = Some(window);
 
+            MIDIAnimator::settings::load_settings(app.handle());
+
             // load default nodes
             let resource_path = app.path().resolve("src/configs/default_nodes.json", tauri::path::BaseDirectory::Resource).unwrap();
             let data = std::fs::read_to_string(resource_path).unwrap();
