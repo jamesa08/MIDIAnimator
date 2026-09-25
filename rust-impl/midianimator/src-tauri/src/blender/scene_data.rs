@@ -5,6 +5,7 @@ use crate::{graph::execute::execute_graph, scene_generics};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::collections::HashMap;
+use std::time::Duration;
 
 static SCENE_BUILDER_PY: &str = include_str!("../blender/python/blender_scene_builder.py");
 static SCENE_SENDER_PY: &str = include_str!("../blender/python/blender_scene_sender.py");
@@ -155,24 +156,29 @@ pub async fn send_scene_data(scenes: HashMap<String, scene_generics::Scene>) -> 
     Ok(())
 }
 
-pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<()> {
-    let json_string = serde_json::to_string(&data).unwrap();
+/// what Blender reported after writing keyframes
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SceneWriteReport {
+    #[serde(default)]
+    pub missing_objects: Vec<String>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
+// how long Blender gets to write, the Python side gives up a few seconds before this
+const SCENE_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
+
+pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<SceneWriteReport> {
+    let json_string = serde_json::to_string(&data).map_err(std::io::Error::other)?;
 
     let injected_script = SCENE_WRITER_PY.replace("JSON_DATA = r\"\"\"\"\"\"", &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string));
 
-    let result = match ipc::send_message(injected_script.to_string()).await {
-        Some(data) => data,
-        None => {
-            return Err(std::io::Error::other("Blender didn't respond to the scene write"));
-        }
+    let Some(result) = ipc::send_message_with_timeout(injected_script, SCENE_WRITE_TIMEOUT).await else {
+        return Err(std::io::Error::other("Blender didn't respond to the scene write"));
     };
 
-    println!("{:?}", result);
-
-    if result != "OK" {
-        return Err(std::io::Error::other(format!("Blender couldn't write the keyframes: {}", result)));
-    }
-    Ok(())
+    // anything that isn't a report is an error message from the add-on
+    serde_json::from_str::<SceneWriteReport>(&result).map_err(|_| std::io::Error::other(format!("Blender couldn't write the keyframes: {}", result)))
 }
 
 pub fn process_scene_update(json_data: &str) {

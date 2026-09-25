@@ -261,6 +261,11 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
 }
 
 pub async fn send_message(message: String) -> Option<String> {
+    send_message_with_timeout(message, Duration::from_secs(5)).await
+}
+
+/// like `send_message`, but waits up to `timeout` for Blender to respond
+pub async fn send_message_with_timeout(message: String, timeout: Duration) -> Option<String> {
     // create a message struct
     let msg_struct = Message {
         sender: "server".to_string(),
@@ -284,18 +289,18 @@ pub async fn send_message(message: String) -> Option<String> {
     drop(server);
 
     // loop until a response is received or the timeout is reached
-    let mut durations: i8 = 0;
+    let mut waited = Duration::ZERO;
     loop {
         match rx.try_recv() {
             Ok(recv_msg) => return Some(recv_msg),
             Err(_) => {
-                if durations >= 50 {
+                if waited >= timeout {
                     // no response found
                     return None;
                 }
                 // wait for a response
                 thread::sleep(Duration::from_millis(100));
-                durations += 1;
+                waited += Duration::from_millis(100);
             }
         }
     }

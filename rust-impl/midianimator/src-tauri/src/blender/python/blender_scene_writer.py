@@ -1,6 +1,7 @@
 from typing import Set, List
 import bpy
 import json
+import threading
 from bpy_extras import anim_utils
 from contextlib import suppress
 
@@ -64,7 +65,7 @@ def cleanKeyframes(obj: bpy.types.Object, channels: Set = {"all_channels"}):
                         sk_channelbag.fcurves.remove(fCurve)
 
 
-def clean_all_keyframes(data: dict):
+def clean_all_keyframes(data: dict, report: dict):
     """Removes animation data entirely from each object to avoid stale pointer
     crashes on repeated runs. Does not touch frame_current."""
     for object_name in data.keys():
@@ -73,7 +74,7 @@ def clean_all_keyframes(data: dict):
 
         obj = bpy.data.objects.get(object_name)
         if obj is None:
-            print(f"Warning: object '{object_name}' not found in scene, skipping clean.")
+            report["missing_objects"].append(object_name)
             continue
 
         if obj.animation_data:
@@ -120,7 +121,7 @@ def seconds_to_frame(seconds: float) -> float:
     return seconds * (scene.render.fps / scene.render.fps_base)
 
 
-def write_keyframes(data: dict):
+def write_keyframes(data: dict, report: dict):
     """Writes keyframes directly to FCurves using FAST insertion to avoid
     depsgraph callbacks on every point. fc.update() is called once per curve."""
     for object_name, keyframe_data in data.items():
@@ -129,7 +130,7 @@ def write_keyframes(data: dict):
 
         obj = bpy.data.objects.get(object_name)
         if obj is None:
-            print(f"Warning: object '{object_name}' not found in scene, skipping.")
+            # already reported by clean_all_keyframes
             continue
 
         fcurve_map: dict[tuple, list] = {}
@@ -151,21 +152,34 @@ def write_keyframes(data: dict):
                 fc.keyframe_points.foreach_set("co", [x for co in zip(frames, values) for x in co])
                 fc.update()
             except Exception as e:
-                print(f"Error writing FCurve '{data_path}[{array_index}]' on '{object_name}': {e}")
+                report["errors"].append(f"couldn't write '{data_path}[{array_index}]' on '{object_name}': {e}")
+
+
+# filled in on the main thread, read back by execute()
+_report = {"missing_objects": [], "errors": []}
+_done = threading.Event()
+
+# must be under the Rust side's SCENE_WRITE_TIMEOUT so the report gets back in time
+WRITE_TIMEOUT_SECONDS = 55
 
 
 def _execute_on_main_thread():
     """Runs on Blender's main thread via app.timers. Must return None to unregister."""
     try:
         data = json.loads(JSON_DATA)
-        clean_all_keyframes(data)
-        write_keyframes(data)
+        clean_all_keyframes(data, _report)
+        write_keyframes(data, _report)
     except Exception as e:
-        print(f"Error in execute: {e}")
-    return None 
+        _report["errors"].append(f"write failed: {e}")
+    finally:
+        _done.set()
+    return None
 
 
 def execute():
-    """Called from the addon thread. Defers all bpy work to the main thread."""
+    """Called from the addon thread. Defers all bpy work to the main thread and
+    waits for it, then returns the report as JSON."""
     bpy.app.timers.register(_execute_on_main_thread, first_interval=0.0)
-    return "OK"
+    if not _done.wait(WRITE_TIMEOUT_SECONDS):
+        return json.dumps({"missing_objects": [], "errors": [f"Blender didn't finish writing within {WRITE_TIMEOUT_SECONDS}s"]})
+    return json.dumps(_report)
