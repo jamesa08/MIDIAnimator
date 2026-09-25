@@ -107,13 +107,8 @@ def get_or_create_fcurve(obj: bpy.types.Object, data_path: str, array_index: int
         if anim_data.action is None:
             action = bpy.data.actions.new(name=f"{obj.name}Action")
             anim_data.action = action
-        action = anim_data.action
-        channelbag = anim_utils.action_get_channelbag_for_slot(action, anim_data.action_slot)
-        if channelbag is None:
-            channelbag = action.channelbags.new(anim_data.action_slot)
-        fc = channelbag.fcurves.find(data_path, index=array_index)
-        if fc is None:
-            fc = channelbag.fcurves.new(data_path, index=array_index)
+        # creates the slot, layer, strip and channelbag if missing
+        fc = anim_data.action.fcurve_ensure_for_datablock(obj, data_path, index=array_index)
 
     return fc
 
