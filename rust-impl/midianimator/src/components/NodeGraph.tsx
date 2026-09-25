@@ -174,7 +174,8 @@ function NodeGraphNoProvider() {
             );
         }
 
-        // preOperationStateRef.current = null;
+        // the operation is confirmed, nothing to cancel back to anymore
+        preOperationStateRef.current = null;
         setNewNodeToDrag(null);
         // tell the backend where the nodes ended up
         setSyncTrigger(true);
@@ -184,11 +185,12 @@ function NodeGraphNoProvider() {
 
     // Function to save current state before an operation
     const savePreOperationState = useCallback(() => {
+        // read from the store so the snapshot is never stale
         preOperationStateRef.current = {
-            nodes: JSON.parse(JSON.stringify(nodes)),
-            edges: JSON.parse(JSON.stringify(edges)),
+            nodes: JSON.parse(JSON.stringify(getNodes())),
+            edges: JSON.parse(JSON.stringify(getEdges())),
         };
-    }, [nodes, edges]);
+    }, [getNodes, getEdges]);
 
     // Function to cancel and restore
     const cancelOperation = useCallback(() => {
@@ -196,11 +198,20 @@ function NodeGraphNoProvider() {
             setNodes(preOperationStateRef.current.nodes);
             setEdges(preOperationStateRef.current.edges);
             preOperationStateRef.current = null;
+            // the operation may already have been sent to the backend (shift+d)
+            setUpdateTrigger(true);
         }
 
+        dragStartRef.current = { cursorX: 0, cursorY: 0, nodes: [] };
         setNewNodeToDrag(null);
         setMenuOpen(false);
     }, [setNodes, setEdges]);
+
+    // close the add menu without adding anything
+    const closeMenu = useCallback(() => {
+        preOperationStateRef.current = null;
+        setMenuOpen(false);
+    }, []);
 
     // ADD NODE MENU HANDLERS
     // Add node creation function
@@ -328,23 +339,38 @@ function NodeGraphNoProvider() {
                 setMenuPosition({ x, y });
                 setMenuOpen(true);
             } else if (event.key === "Escape") {
-                setMenuOpen(false);
-            } else if (event.key === "x") {
+                // cancel a grab/duplicate/add in progress, otherwise just close the menu
+                if (preOperationStateRef.current) {
+                    cancelOperation();
+                } else {
+                    closeMenu();
+                }
+            } else if (event.key.toLowerCase() === "x" && !event.metaKey && !event.ctrlKey) {
                 event.preventDefault();
                 // Delete selected nodes and edges
-                // Get IDs of selected nodes before deleting
-                const selectedNodeIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+                // read from the store, the closure's nodes can be a render behind
+                const selectedNodeIds = new Set(
+                    getNodes()
+                        .filter((n) => n.selected)
+                        .map((n) => n.id)
+                );
+                const selectedEdgeIds = new Set(
+                    getEdges()
+                        .filter((e) => e.selected)
+                        .map((e) => e.id)
+                );
+                if (selectedNodeIds.size === 0 && selectedEdgeIds.size === 0) return;
 
                 // Delete selected nodes
-                setNodes((nds) => nds.filter((node) => !node.selected));
+                setNodes((nds) => nds.filter((node) => !selectedNodeIds.has(node.id)));
 
-                // Delete edges connected to deleted nodes
-                setEdges((eds) => eds.filter((edge) => !edge.selected && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target)));
+                // Delete selected edges and edges connected to deleted nodes
+                setEdges((eds) => eds.filter((edge) => !selectedEdgeIds.has(edge.id) && !selectedNodeIds.has(edge.source) && !selectedNodeIds.has(edge.target)));
 
                 setUpdateTrigger(true);
             } else if (event.key === "g") {
                 event.preventDefault();
-                const selectedNodes = nodes.filter((node) => node.selected);
+                const selectedNodes = getNodes().filter((node) => node.selected);
                 if (selectedNodes.length > 0) {
                     savePreOperationState();
                     const { x, y } = mousePositionRef.current;
@@ -365,6 +391,9 @@ function NodeGraphNoProvider() {
                 }
             } else if (event.shiftKey && event.key === "D") {
                 event.preventDefault();
+                // read from the store, the closure's nodes/edges can be a render behind
+                const nodes = getNodes();
+                const edges = getEdges();
                 const selectedNodes = nodes.filter((node) => node.selected);
                 if (selectedNodes.length === 0) return;
 
@@ -409,8 +438,8 @@ function NodeGraphNoProvider() {
                 // Deselect originals, add duplicates
                 setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
 
-                // Add duplicated edges
-                setEdges((eds) => [...eds, ...newEdges]);
+                // Add duplicated edges, only the duplicates stay selected
+                setEdges((eds) => [...(eds ?? []).map((e) => (e.selected ? { ...e, selected: false } : e)), ...newEdges.map((e) => ({ ...e, selected: false }))]);
 
                 // Store drag start positions for all duplicated nodes
                 dragStartRef.current = {
@@ -429,36 +458,33 @@ function NodeGraphNoProvider() {
                 event.preventDefault();
 
                 // Check if any nodes are currently selected
-                const hasSelection = nodes.some((node) => node.selected);
+                const hasSelection = getNodes().some((node) => node.selected) || getEdges().some((edge) => edge.selected);
 
                 if (hasSelection) {
                     // If any are selected, deselect all
                     setNodes((nds) => nds.map((node) => ({ ...node, selected: false })));
+                    setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
                 } else {
                     // If none are selected, select all
                     setNodes((nds) => nds.map((node) => ({ ...node, selected: true })));
-                }
-            } else if (event.key === "Escape") {
-                if (newNodeToDrag || menuOpen) {
-                    cancelOperation();
                 }
             }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [screenToFlowPosition, setNodes, setEdges, nodes]);
+    }, [screenToFlowPosition, setNodes, setEdges, getNodes, getEdges, savePreOperationState, cancelOperation, closeMenu]);
 
     // Close menu on click outside
     useEffect(() => {
         const handleClick = () => {
             if (menuOpen) {
-                setMenuOpen(false);
+                closeMenu();
             }
         };
         window.addEventListener("mousedown", handleClick);
 
         return () => window.removeEventListener("mousedown", handleClick);
-    }, [menuOpen]);
+    }, [menuOpen, closeMenu]);
 
     useEffect(() => {
         if ((updateTrigger || syncTrigger) && rfInstance) {
@@ -575,7 +601,7 @@ function NodeGraphNoProvider() {
             event.preventDefault();
             cancelOperation();
         },
-        [newNodeToDrag, setNodes]
+        [cancelOperation]
     );
 
     useOnViewportChange({
@@ -725,7 +751,7 @@ function NodeGraphNoProvider() {
                 <Controls />
                 <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
             </ReactFlow>
-            <NodeAddMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} onSelect={addNode} position={menuPosition} />
+            <NodeAddMenu isOpen={menuOpen} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
         </>
     );
 }
