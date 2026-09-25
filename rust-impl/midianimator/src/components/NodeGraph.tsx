@@ -518,6 +518,34 @@ function NodeGraphNoProvider() {
         };
     }, []);
 
+    // shift multi select, tracked here instead of multiSelectionKeyCode.
+    // react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
+    // add menu search left multi select stuck on (clicking another node added to the selection).
+    // reading shiftKey off every key/mouse event means it can't get stuck
+    useEffect(() => {
+        const setMultiSelection = (active: boolean) => {
+            if (store.getState().multiSelectionActive !== active) {
+                store.setState({ multiSelectionActive: active });
+            }
+        };
+        const handleEvent = (event: KeyboardEvent | MouseEvent) => setMultiSelection(event.shiftKey);
+        const handleBlur = () => setMultiSelection(false);
+
+        // capture phase so it's set before react flow handles the click
+        window.addEventListener("keydown", handleEvent, true);
+        window.addEventListener("keyup", handleEvent, true);
+        window.addEventListener("pointerdown", handleEvent, true);
+        window.addEventListener("mousedown", handleEvent, true);
+        window.addEventListener("blur", handleBlur);
+        return () => {
+            window.removeEventListener("keydown", handleEvent, true);
+            window.removeEventListener("keyup", handleEvent, true);
+            window.removeEventListener("pointerdown", handleEvent, true);
+            window.removeEventListener("mousedown", handleEvent, true);
+            window.removeEventListener("blur", handleBlur);
+        };
+    }, [store]);
+
     // Save & Load
     useEffect(() => {
         if (state.ready && state.rf_instance && rfInstance) {
@@ -741,7 +769,7 @@ function NodeGraphNoProvider() {
                 isValidConnection={isValidConnection}
                 panOnDrag={isPanningWithAlt ? true : [1]}
                 selectionOnDrag={true}
-                multiSelectionKeyCode={"Shift"}
+                multiSelectionKeyCode={null}
                 selectionKeyCode={"b"}
                 selectionMode={SelectionMode.Partial}
                 minZoom={0.05}
