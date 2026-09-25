@@ -66,7 +66,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
     }
 
     return (
-        <div className={`node${preview ? " preview" : ""}`} draggable={preview}>
+        <div className={`node${preview ? " preview" : ""}`}>
             <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={"TRANSFORM"} />
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
             <div className="node-inner flex flex-col">

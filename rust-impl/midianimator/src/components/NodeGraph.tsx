@@ -6,6 +6,7 @@ import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
 import ConnectionLine from "./ConnectionLine";
+import { NODE_DROP_EVENT } from "../utils/node";
 
 const initialNodes = [
     { id: "get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
@@ -248,6 +249,35 @@ function NodeGraphNoProvider() {
         },
         [setNodes, setEdges, getNodes, screenToFlowPosition]
     );
+    // node dragged in from the nodes panel, added where it was released
+    useEffect(() => {
+        const handleDrop = (event: Event) => {
+            const { nodeType, clientX, clientY, offsetX, offsetY } = (event as CustomEvent).detail;
+
+            // only when released over the graph
+            const rect = store.getState().domNode?.getBoundingClientRect();
+            if (!rect || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+
+            // keep the node under the cursor where it was grabbed
+            const flowPosition = screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false });
+            const newNode = {
+                id: nextNodeId(getNodes(), nodeType),
+                position: { x: flowPosition.x - offsetX, y: flowPosition.y - offsetY },
+                data: {},
+                type: nodeType,
+                selected: true,
+            };
+
+            // the new node becomes the only selection, like adding from the menu
+            setNodes((nds) => [...(nds ?? []).map((n) => (n.selected ? { ...n, selected: false } : n)), newNode]);
+            setEdges((eds) => (eds ?? []).map((e) => (e.selected ? { ...e, selected: false } : e)));
+            setSyncTrigger(true);
+        };
+
+        window.addEventListener(NODE_DROP_EVENT, handleDrop);
+        return () => window.removeEventListener(NODE_DROP_EVENT, handleDrop);
+    }, [store, screenToFlowPosition, getNodes, setNodes, setEdges]);
+
     // Track mouse position
     useEffect(() => {
         const handleMouseMove = (event: MouseEvent) => {
