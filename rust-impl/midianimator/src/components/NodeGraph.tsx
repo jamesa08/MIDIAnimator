@@ -36,6 +36,13 @@ function nextNodeId(nodes: { id: string }[], nodeType: string): string {
     return `${prefix}${max + 1}`;
 }
 
+// the parts of a graph the backend actually owns, used to tell if a backend push changed anything
+function graphKey(graph: any): string {
+    const nodes = (graph.nodes ?? []).map(({ selected, dragging, measured, ...node }: any) => node);
+    const edges = (graph.edges ?? []).map(({ selected, ...edge }: any) => edge);
+    return JSON.stringify({ nodes, edges });
+}
+
 // ADD NODE MENU COMPONENT
 function NodeAddMenu({ isOpen, onClose, onSelect, position }: { isOpen: boolean; onClose: () => void; onSelect: (nodeType: string) => void; position: { x: number; y: number } }) {
     const [search, setSearch] = useState("");
@@ -116,6 +123,8 @@ function NodeGraphNoProvider() {
 
     const [rfInstance, setRfInstance] = useState(null as ReactFlowInstance | null);
     const [updateTrigger, setUpdateTrigger] = useState(false);
+    // like updateTrigger but only sends the graph, doesn't re-execute (moves)
+    const [syncTrigger, setSyncTrigger] = useState(false);
 
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
@@ -167,6 +176,8 @@ function NodeGraphNoProvider() {
 
         // preOperationStateRef.current = null;
         setNewNodeToDrag(null);
+        // tell the backend where the nodes ended up
+        setSyncTrigger(true);
     }, []);
 
     // cancel handlers
@@ -450,20 +461,20 @@ function NodeGraphNoProvider() {
     }, [menuOpen]);
 
     useEffect(() => {
-        if (updateTrigger && rfInstance) {
+        if ((updateTrigger || syncTrigger) && rfInstance) {
             let newState = { ...state, rf_instance: rfInstance?.toObject() };
             setState(newState);
             // only send the graph, the rest of our copy of the state may be stale
             invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance) });
-            setUpdateTrigger(false);
 
-            // Block execution if paused
-            if (!state.execution_paused) {
+            // Block execution if paused, a plain sync (moving nodes) doesn't need a re-run
+            if (updateTrigger && !state.execution_paused) {
                 invoke("execute_graph", { realtime: true });
             }
+            setUpdateTrigger(false);
+            setSyncTrigger(false);
         }
-    }, [rfInstance, updateTrigger, state.execution_paused]);
-
+    }, [rfInstance, updateTrigger, syncTrigger, state.execution_paused]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -487,21 +498,34 @@ function NodeGraphNoProvider() {
             const storedGraph = state.rf_instance;
 
             // Check if the stored graph is different from current
+            // selection and the viewport are UI only, the backend's copy of them is always stale
             const currentGraph = rfInstance.toObject();
-            const isDifferent = JSON.stringify(storedGraph) !== JSON.stringify(currentGraph);
+            const isDifferent = graphKey(storedGraph) !== graphKey(currentGraph);
 
             if (isDifferent && storedGraph.nodes && storedGraph.edges) {
                 // Reconstruct from loaded state
                 // keep the UI only fields (measured size, selection) the backend doesn't track,
-                // otherwise React Flow treats every node as unmeasured and hides it
-                const currentNodes = new Map(currentGraph.nodes.map((node: any) => [node.id, node]));
-                setNodes(
-                    storedGraph.nodes.map((node: any) => {
+                // otherwise React Flow treats every node as unmeasured and hides it.
+                // functional updates so we merge onto the latest nodes, not a snapshot from before
+                // a click/drag that hasn't rendered yet (that's what left nodes stuck selected)
+                setNodes((nds) => {
+                    // nodes start out undefined before the first load
+                    const currentNodes = new Map((nds ?? []).map((node: any) => [node.id, node]));
+                    return storedGraph.nodes.map((node: any) => {
                         const prev: any = currentNodes.get(node.id);
-                        return prev ? { ...node, measured: node.measured ?? prev.measured, selected: prev.selected } : node;
-                    })
-                );
-                setEdges(storedGraph.edges || []);
+                        if (!prev) return node;
+                        // a node mid drag keeps its live position
+                        const position = prev.dragging ? prev.position : node.position;
+                        return { ...node, position, measured: node.measured ?? prev.measured, selected: prev.selected, dragging: prev.dragging };
+                    });
+                });
+                setEdges((eds) => {
+                    const currentEdges = new Map((eds ?? []).map((edge: any) => [edge.id, edge]));
+                    return storedGraph.edges.map((edge: any) => {
+                        const prev: any = currentEdges.get(edge.id);
+                        return prev ? { ...edge, selected: prev.selected } : edge;
+                    });
+                });
             }
         }
     }, [state.rf_instance, state.ready, rfInstance]);
@@ -566,24 +590,24 @@ function NodeGraphNoProvider() {
         (params: Edge | Connection) => {
             console.log("onConnect", params);
 
-            // check if the connection is already present (target has an incoming edge)
-            const existingEdgeIndex = edges.findIndex((edge) => edge.source == params.source && edge.sourceHandle == params.sourceHandle);
+            setEdges((eds) => {
+                // check if the connection is already present (target has an incoming edge)
+                // looked up on the latest edges, not the ones from the last render
+                const existingEdgeIndex = eds.findIndex((edge) => edge.source == params.source && edge.sourceHandle == params.sourceHandle);
 
-            if (existingEdgeIndex !== -1) {
-                // if an edge exists to the target handle, replace it with the new connection
-                setEdges((eds) => {
+                if (existingEdgeIndex !== -1) {
+                    // if an edge exists to the target handle, replace it with the new connection
                     const updatedEdges = [...eds];
                     updatedEdges[existingEdgeIndex] = { ...params, id: updatedEdges[existingEdgeIndex].id };
                     return updatedEdges;
-                });
-            } else {
+                }
                 // if no existing edge, simply add the new connection
-                setEdges((eds) => addEdge(params, eds));
-            }
+                return addEdge(params, eds);
+            });
 
             setUpdateTrigger(true);
         },
-        [edges, setEdges, state, setUpdateTrigger]
+        [setEdges]
     );
 
     const onNodesChange = useCallback(
@@ -593,9 +617,12 @@ function NodeGraphNoProvider() {
                 return;
             }
             for (let change of changes) {
-                if (change["type"] == "replace") {
-                    // update backend, node got replaced
+                if (change["type"] == "replace" || change["type"] == "remove") {
+                    // update backend, node got replaced or deleted
                     setUpdateTrigger(true);
+                } else if (change["type"] == "position" && change["dragging"] === false) {
+                    // drag finished, keep the backend's positions current so a later push doesn't snap nodes back
+                    setSyncTrigger(true);
                 }
             }
         },
