@@ -1,6 +1,7 @@
 import React from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
+import { PROJECT_LOADED_EVENT } from "../utils/node";
 
 function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     const { backEndState, setBackEndState } = useStateContext(); // Add this import at top
@@ -51,6 +52,8 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
                     try {
                         const newState = await invoke("load_project");
                         setBackEndState(newState);
+                        // frame the loaded graph once its nodes are measured
+                        window.dispatchEvent(new Event(PROJECT_LOADED_EVENT));
                     } catch (error) {
                         if (error !== "Load cancelled") {
                             console.error("Load failed:", error);

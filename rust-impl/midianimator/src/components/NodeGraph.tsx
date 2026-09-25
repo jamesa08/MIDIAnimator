@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi, useNodesInitialized } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../nodes/NodeTypes";
 import { useStateContext } from "../contexts/StateContext";
 import ConnectionLine from "./ConnectionLine";
-import { NODE_DROP_EVENT } from "../utils/node";
+import { NODE_DROP_EVENT, PROJECT_LOADED_EVENT } from "../utils/node";
 
 const initialNodes = [
     { id: "get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
@@ -589,6 +589,24 @@ function NodeGraphNoProvider() {
         };
     }, [store]);
 
+    // fit the view after a project load. not the fitView prop, that one stays armed on an empty graph and zooms onto the first node added
+    const nodesInitialized = useNodesInitialized();
+    const fitPendingRef = useRef(false);
+
+    // a load asks for a fit, which waits until the new nodes have sizes
+    useEffect(() => {
+        const onLoaded = () => (fitPendingRef.current = true);
+        window.addEventListener(PROJECT_LOADED_EVENT, onLoaded);
+        return () => window.removeEventListener(PROJECT_LOADED_EVENT, onLoaded);
+    }, []);
+
+    useEffect(() => {
+        if (fitPendingRef.current && nodesInitialized && rfInstance) {
+            fitPendingRef.current = false;
+            rfInstance.fitView({ maxZoom: 1 });
+        }
+    }, [nodesInitialized, rfInstance]);
+
     // Save & Load
     useEffect(() => {
         if (state.ready && state.rf_instance && rfInstance) {
@@ -816,7 +834,6 @@ function NodeGraphNoProvider() {
                 selectionKeyCode={"b"}
                 selectionMode={SelectionMode.Partial}
                 minZoom={0.05}
-                fitView
             >
                 <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
                 <Controls />
