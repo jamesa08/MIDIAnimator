@@ -1,7 +1,7 @@
 // use nalgebra::Vector3;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct Vector3 {
     pub x: f32,
     pub y: f32,
@@ -9,21 +9,21 @@ pub struct Vector3 {
 }
 
 // MARK: - Scene
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct Scene {
     pub name: String,
     pub object_groups: Vec<ObjectGroup>,
 }
 
 // MARK: - ObjectGroup
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct ObjectGroup {
     pub name: String,
     pub objects: Vec<Object>,
 }
 
 // MARK: - Object
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct Object {
     pub name: String,
     pub position: Vector3,
@@ -35,7 +35,7 @@ pub struct Object {
 }
 
 // MARK: - AnimCurve
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct AnimCurve {
     pub array_index: u32,
     pub auto_smoothing: String,
@@ -46,21 +46,21 @@ pub struct AnimCurve {
 }
 
 // MARK: - BlendShape
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct BlendShapes {
     pub keys: Vec<String>,
     pub reference: Option<String>,
 }
 
 // MARK: - Keyframe
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct Keyframe {
     pub time: f32,
     pub value: f32,
 }
 
 // MARK: - KeyframePoint
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
 pub struct KeyframePoint {
     pub amplitude: f32,
     pub back: f32,

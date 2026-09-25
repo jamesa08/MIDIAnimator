@@ -6,7 +6,7 @@ pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BlendKeyframe {
     pub time: f64,
     pub value: f64,
@@ -35,7 +35,7 @@ impl BlendKeyframe {
 }
 
 // TODO eventually, we will include a file for all node types with structs
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AnimationGenerator {
     pub name: String,
     pub note_on_keyframes: Vec<serde_json::Value>,
@@ -48,13 +48,13 @@ pub struct AnimationGenerator {
     // mappers intentionally ignored for now
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ObjectMapEntry {
     pub note_number: Vec<u8>,
     pub animations: Vec<String>, // name keys into object_map.animations
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ObjectMap {
     pub animations: HashMap<String, AnimationGenerator>,
     pub objects: HashMap<String, ObjectMapEntry>,

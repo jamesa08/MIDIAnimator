@@ -9,7 +9,7 @@ use crate::utils::{closest_tempo, gm_program_to_name};
 // TODO eventually refactor into more of The Rust Way
 // MARK: - MIDINote
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MIDINote {
     pub channel: u8,
     pub note_number: u8,
@@ -52,7 +52,7 @@ impl PartialOrd for MIDINote {
 
 // MARK: - MIDIEvent
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MIDIEvent {
     pub channel: u8,
     pub value: f64,
@@ -93,13 +93,14 @@ fn tick2second(tick: u32, ticks_per_beat: f64, tempo: f64) -> f64 {
 }
 // MARK: - MIDITrack
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MIDITrack {
     pub name: String,
     pub notes: Vec<MIDINote>,
     pub control_change: HashMap<u8, Vec<MIDIEvent>>,
     pub pitchwheel: Vec<MIDIEvent>,
     pub aftertouch: Vec<MIDIEvent>,
+    #[schemars(skip)]
     note_table: HashMap<(u8, u8), Vec<MIDINote>>,
 }
 
