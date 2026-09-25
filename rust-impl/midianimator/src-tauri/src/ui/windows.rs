@@ -20,6 +20,44 @@ pub unsafe fn match_ui_background(ns_window: &objc2_app_kit::NSWindow) {
     ns_window.setBackgroundColor(Some(&objc2_app_kit::NSColor::whiteColor()));
 }
 
+// centers a window on the screen the mouse is on. tao centers new windows on NSScreen.mainScreen,
+// which at launch (nothing focused yet) isn't necessarily the screen being worked on
+pub fn center_on_mouse_screen<R: Runtime>(window: &WebviewWindow<R>) {
+    #[cfg(target_os = "macos")]
+    window
+        .with_webview(|webview| {
+            use objc2_app_kit::{NSEvent, NSScreen, NSWindow};
+            use objc2_foundation::{MainThreadMarker, NSPoint, NSRect};
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            unsafe {
+                let ns_window: &NSWindow = &*webview.ns_window().cast::<NSWindow>();
+                let mouse = NSEvent::mouseLocation();
+                let screens = NSScreen::screens(mtm);
+                let Some(screen) = screens.iter().find(|screen| {
+                    let frame = screen.frame();
+                    mouse.x >= frame.origin.x && mouse.x < frame.origin.x + frame.size.width && mouse.y >= frame.origin.y && mouse.y < frame.origin.y + frame.size.height
+                }) else {
+                    return;
+                };
+
+                // centered in the area outside the menu bar and dock, kept on screen if it's bigger
+                let visible = screen.visibleFrame();
+                let size = ns_window.frame().size;
+                let x = visible.origin.x + ((visible.size.width - size.width) / 2.0).max(0.0);
+                let y = visible.origin.y + ((visible.size.height - size.height) / 2.0).max(0.0);
+                ns_window.setFrame_display(NSRect::new(NSPoint::new(x.round(), y.round()), size), false);
+            }
+        })
+        .ok();
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.center().ok();
+    }
+}
+
 // puts a window on screen invisible and click through so its page can draw
 pub fn prepare_hidden<R: Runtime>(window: &WebviewWindow<R>) {
     #[cfg(target_os = "macos")]

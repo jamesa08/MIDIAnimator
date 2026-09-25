@@ -53,6 +53,11 @@ async fn main() {
                     ns_window.setPreservesContentDuringLiveResize(false);
                 }
             })?;
+            // splash and main window open on the screen the mouse is on
+            if let Some(splash) = app.get_webview_window("splash") {
+                MIDIAnimator::ui::windows::center_on_mouse_screen(&splash);
+            }
+            MIDIAnimator::ui::windows::center_on_mouse_screen(&window);
             // drawn invisibly behind the splash, revealed when the splash closes
             MIDIAnimator::ui::windows::prepare_hidden(&window);
             #[cfg(target_os = "macos")]

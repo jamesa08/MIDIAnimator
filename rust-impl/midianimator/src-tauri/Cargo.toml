@@ -38,8 +38,8 @@ axum = "0.8"
 schemars = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSColor"] }
-objc2-foundation = { version = "0.2", features = ["NSNotification", "NSString", "NSOperation", "NSGeometry", "block2"] }
+objc2-app-kit = { version = "0.2", features = ["NSWindow", "NSResponder", "NSApplication", "NSColor", "NSScreen", "NSEvent"] }
+objc2-foundation = { version = "0.2", features = ["NSNotification", "NSString", "NSOperation", "NSGeometry", "NSArray", "NSEnumerator", "NSThread", "block2"] }
 objc2 = "0.5"
 block2 = "0.5"
 

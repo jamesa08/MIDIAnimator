@@ -68,7 +68,6 @@
                 "height": 300,
                 "decorations": false,
                 "resizable": false,
-                "center": true,
                 "hiddenTitle": true,
                 "title": "Splash Screen",
                 "label": "splash",
