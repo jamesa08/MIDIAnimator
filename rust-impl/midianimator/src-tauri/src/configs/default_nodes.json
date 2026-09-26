@@ -295,6 +295,33 @@
         },
 
         {
+            "id": "merge_object_maps",
+            "name": "Merge Object Maps",
+            "description": "Merge object maps so objects can have several animations",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_maps",
+                        "name": "Object Map",
+                        "data_type": "Dyn<ObjectMap>",
+                        "description": "Object maps to merge, a new input appears for each one connected. Objects in several maps get the animations of all of them, each keeping its own notes; two different generators with the same name are an error.",
+                        "hidden": true
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "data_type": "ObjectMap",
+                        "description": "The merged object map, connect to Evaluate Instrument."
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "evaluate_instrument",
             "name": "Evaluate Instrument",
             "description": "evaluate instrument",
@@ -306,7 +333,7 @@
                         "id": "object_map",
                         "name": "Object Map",
                         "data_type": "ObjectMap",
-                        "description": "Object-to-note mapping from Assign Notes to Objects."
+                        "description": "Object-to-note mapping from Assign Notes to Objects, or several merged with Merge Object Maps."
                     },
                     {
                         "id": "midi_notes",

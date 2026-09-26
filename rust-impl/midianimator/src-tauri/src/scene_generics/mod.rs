@@ -60,7 +60,7 @@ pub struct Keyframe {
 }
 
 // MARK: - KeyframePoint
-#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 pub struct KeyframePoint {
     pub amplitude: f32,
     pub back: f32,

@@ -37,7 +37,7 @@ impl BlendKeyframe {
 }
 
 /// the output of the animation_generator node
-#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnimationGenerator {
     pub name: String,
     pub note_on_keyframes: Vec<KeyframePoint>,
@@ -60,6 +60,35 @@ pub type ObjectMapEntry = HashMap<String, Vec<u8>>;
 pub struct ObjectMap {
     pub animations: HashMap<String, AnimationGenerator>,
     pub objects: HashMap<String, ObjectMapEntry>,
+}
+
+impl ObjectMap {
+    /// merges another map into this one, objects in both get the animations of both, each keeping its own notes
+    pub fn merge(&mut self, other: ObjectMap) -> Result<(), String> {
+        // generators are keyed by name, the same generator twice is fine but two different ones can't share a name
+        for (name, generator) in other.animations {
+            match self.animations.get(&name) {
+                Some(existing) if *existing != generator => return Err(format!("two different animation generators are named '{}', rename one of them", name)),
+                Some(_) => {}
+                None => {
+                    self.animations.insert(name, generator);
+                }
+            }
+        }
+
+        for (obj_name, entry) in other.objects {
+            let merged = self.objects.entry(obj_name).or_default();
+            for (anim_name, notes) in entry {
+                let merged_notes = merged.entry(anim_name).or_default();
+                for note in notes {
+                    if !merged_notes.contains(&note) {
+                        merged_notes.push(note);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn get_value(k1: &BlendKeyframe, k2: &BlendKeyframe, time: f64) -> f64 {

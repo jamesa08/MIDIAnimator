@@ -228,6 +228,36 @@ fn connect_to_dynamic_output() {
     edit::connect(&mut f.graph, &f.specs, &results, kfo, "location_z", gen, "note_on_keyframes").unwrap();
 }
 
+// checks a `Dyn<T>` input grows one numbered input per connection plus a free one
+#[test]
+fn connect_to_dynamic_inputs() {
+    let mut f = Fixture::new();
+    let results = HashMap::new();
+    edit::add_node(&mut f.graph, &f.specs, "merge_object_maps", None, None, None).unwrap();
+    edit::add_node(&mut f.graph, &f.specs, "assign_notes_to_objects", None, None, None).unwrap();
+    let (merge, assign_1, assign_2) = ("merge_object_maps-1", "assign_notes_to_objects-1", "assign_notes_to_objects-2");
+
+    // the hidden container input is refused and points at the free input
+    let err = edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps").unwrap_err();
+    assert!(err.contains("object_maps_0"), "{}", err);
+    // only the free input can be connected, not one further along
+    let err = edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps_1").unwrap_err();
+    assert!(err.contains("no input 'object_maps_1'") && err.contains("object_maps_0"), "{}", err);
+
+    // each connection adds the next free input
+    edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps_0").unwrap();
+    edit::connect(&mut f.graph, &f.specs, &results, assign_2, "object_map", merge, "object_maps_1").unwrap();
+    let block = node_block(&f.ctx(), merge, Detail::Concise);
+    assert!(block.contains("(object_maps_0: ObjectMap)  <- assign_notes_to_objects-1"), "{}", block);
+    assert!(block.contains("(object_maps_1: ObjectMap)  <- assign_notes_to_objects-2"), "{}", block);
+    assert!(block.contains("unset: object_maps_2"), "{}", block);
+    assert!(!block.contains("Dyn<"), "{}", block);
+
+    // disconnecting leaves a gap, the free input stays after the last connected one
+    edit::disconnect(&mut f.graph, merge, "object_maps_0").unwrap();
+    assert_eq!(unset_inputs(&f.ctx(), merge), vec!["object_maps_2"]);
+}
+
 // checks disconnect, set_inputs (including unsetting with null) and remove_node
 #[test]
 fn disconnect_set_inputs_and_remove() {

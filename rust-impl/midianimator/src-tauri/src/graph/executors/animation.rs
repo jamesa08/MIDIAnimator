@@ -368,6 +368,26 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
     Ok(outputs)
 }
 
+/// Node: merge_object_maps
+///
+/// inputs:
+/// "object_maps": `Dyn<ObjectMap>`, one input per map, `object_maps_0`, `object_maps_1`, ...
+///
+/// outputs:
+/// "object_map": `ObjectMap`
+#[node_registry::node]
+pub fn merge_object_maps(inputs: Inputs) -> NodeResult {
+    // merge the maps in input order
+    let mut object_map = ObjectMap::default();
+    for other in inputs.dynamic::<ObjectMap>("object_maps")? {
+        object_map.merge(other)?;
+    }
+
+    let mut outputs = Outputs::new();
+    outputs.set("object_map", &object_map)?;
+    Ok(outputs)
+}
+
 /// Node: evaluate_instrument
 ///
 /// inputs:
