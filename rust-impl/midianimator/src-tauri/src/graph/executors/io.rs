@@ -48,6 +48,20 @@ impl Inputs {
     pub fn or_default<T: DeserializeOwned + Default>(&self, key: &str) -> Result<T, String> {
         Ok(self.opt(key)?.unwrap_or_default())
     }
+
+    /// the numbered inputs of a `Dyn<T>` input in order, e.g. `object_maps_0`, `object_maps_1`, ... for `object_maps`
+    /// null ones are skipped
+    pub fn dynamic<T: DeserializeOwned>(&self, base: &str) -> Result<Vec<T>, String> {
+        let mut keys: Vec<(usize, &String)> = self.0.keys().filter_map(|k| crate::graph::model::dyn_index(base, k).map(|i| (i, k))).collect();
+        keys.sort_unstable();
+        let mut values = Vec::new();
+        for (_, key) in keys {
+            if let Some(value) = self.opt(key)? {
+                values.push(value);
+            }
+        }
+        Ok(values)
+    }
 }
 
 impl From<HashMap<String, Value>> for Inputs {

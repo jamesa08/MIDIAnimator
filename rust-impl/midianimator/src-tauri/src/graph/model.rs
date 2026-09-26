@@ -111,6 +111,44 @@ pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<Handle
     outputs
 }
 
+/// all inputs of a node: the declared ones plus dynamic ones for its `Dyn<T>` inputs
+///
+/// a declared `Dyn<T>` input (merge_object_maps' `object_maps`) is hidden and grows one input of type `T`
+/// per connection, `object_maps_0`, `object_maps_1`, ... plus one free input to connect the next one to.
+pub fn node_inputs(spec: &NodeSpec, graph: &Graph, node_id: &str) -> Vec<HandleSpec> {
+    let mut inputs = spec.handles.inputs.clone();
+    for handle in &spec.handles.inputs {
+        let Some(inner) = dyn_inner(handle) else {
+            continue;
+        };
+        // the connected ones in order, then the next free one
+        let mut indices: Vec<usize> = graph.edges.iter().filter(|e| e.to_node() == node_id).filter_map(|e| dyn_index(&handle.id, e.to_input())).collect();
+        indices.sort_unstable();
+        indices.dedup();
+        indices.push(indices.last().map_or(0, |i| i + 1));
+        for index in indices {
+            inputs.push(HandleSpec {
+                id: format!("{}_{}", handle.id, index),
+                name: handle.name.clone(),
+                data_type: inner.to_string(),
+                description: format!("Dynamic input of {}.", handle.id),
+                hidden: false,
+            });
+        }
+    }
+    inputs
+}
+
+/// `T` for a `Dyn<T>` handle
+pub fn dyn_inner(handle: &HandleSpec) -> Option<&str> {
+    handle.data_type.strip_prefix("Dyn<").and_then(|t| t.strip_suffix('>'))
+}
+
+/// the index of a dynamic input id, `object_maps_2` -> 2 for base `object_maps`
+pub fn dyn_index(base: &str, input_id: &str) -> Option<usize> {
+    input_id.strip_prefix(base)?.strip_prefix('_')?.parse().ok()
+}
+
 /// uppercases the first letter of a word
 fn capitalize(word: &str) -> String {
     let mut chars = word.chars();

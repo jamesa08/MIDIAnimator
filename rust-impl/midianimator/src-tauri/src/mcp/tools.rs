@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 use crate::graph::edit::{self, EditResult};
 use crate::graph::execute::{execute_graph, panic_message};
-use crate::graph::model::{describe_type, is_param, node_specs, Graph, NodeSpec, Position};
+use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, NodeSpec, Position};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
 
@@ -324,6 +324,11 @@ impl MotionKeysMcp {
                 )];
                 // one line per input, parameters (hidden inputs) are marked `par`
                 for input in &spec.handles.inputs {
+                    // a `Dyn<T>` input grows numbered inputs as they get connected
+                    if let Some(inner) = dyn_inner(input) {
+                        lines.push(format!("  in   {0}_0, {0}_1, ... \"{1}\": {2} — {3} Dynamic: connect to {0}_0, each connection adds the next free input.", input.id, input.name, inner, input.description));
+                        continue;
+                    }
                     let kind = if is_param(spec, &input.id) {
                         "par"
                     } else {

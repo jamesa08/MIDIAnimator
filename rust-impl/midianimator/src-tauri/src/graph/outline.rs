@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::executors::io::node_error;
-use super::model::{find_spec, is_param, node_outputs, Graph, HandleSpec, NodeSpec, RfNode};
+use super::model::{dyn_inner, find_spec, is_param, node_inputs, node_outputs, Graph, HandleSpec, NodeSpec, RfNode};
 use crate::midi::MIDINote;
 use crate::scene_generics::Scene;
 
@@ -91,8 +91,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     }
 
     // one line per input, in concise mode unset inputs get grouped into one line at the end
-    let mut unset: Vec<&str> = Vec::new();
-    for input in &spec.handles.inputs {
+    let mut unset: Vec<String> = Vec::new();
+    // dynamic inputs are listed as their numbered inputs, not the hidden `Dyn<T>` one
+    for input in node_inputs(spec, ctx.graph, id).iter().filter(|h| dyn_inner(h).is_none()) {
         // parameters (hidden inputs) are marked `par`, regular inputs `in`
         let param = is_param(spec, &input.id);
         let kind = if param {
@@ -118,7 +119,7 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
             line.push_str(&format!(" = {}", truncate(&value.to_string(), 200)));
         } else if detail == Detail::Concise && !param {
             // unset, collect it for the `unset:` line instead
-            unset.push(&input.id);
+            unset.push(input.id.clone());
             continue;
         } else {
             // unset parameters (or anything unset in full detail) get their own line
@@ -203,7 +204,7 @@ fn output_name(ctx: &OutlineCtx, node_id: &str, output_id: &str) -> String {
 
 /// display name of an input, falls back to the id if the node or input can't be found
 fn input_name(ctx: &OutlineCtx, node_id: &str, input_id: &str) -> String {
-    ctx.graph.node(node_id).and_then(|n| find_spec(ctx.specs, n.resolved_node_type())).and_then(|spec| spec.input(input_id)).map(|h| h.name.clone()).unwrap_or_else(|| input_id.to_string())
+    ctx.graph.node(node_id).and_then(|n| find_spec(ctx.specs, n.resolved_node_type())).and_then(|spec| node_inputs(spec, ctx.graph, node_id).into_iter().find(|h| h.id == input_id)).map(|h| h.name).unwrap_or_else(|| input_id.to_string())
 }
 
 /// inputs that are neither connected nor set on the node
@@ -216,7 +217,7 @@ pub fn unset_inputs(ctx: &OutlineCtx, id: &str) -> Vec<String> {
         return vec![];
     };
     // keep inputs with no edge and no value
-    spec.handles.inputs.iter().filter(|h| ctx.graph.edge_into(id, &h.id).is_none() && node.input_value(&h.id).is_none()).map(|h| h.id.clone()).collect()
+    node_inputs(spec, ctx.graph, id).into_iter().filter(|h| dyn_inner(h).is_none() && ctx.graph.edge_into(id, &h.id).is_none() && node.input_value(&h.id).is_none()).map(|h| h.id).collect()
 }
 
 // MARK: - Options

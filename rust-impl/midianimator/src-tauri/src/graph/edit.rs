@@ -4,7 +4,7 @@
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-use super::model::{compatible, find_spec, is_param, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode};
+use super::model::{compatible, dyn_inner, find_spec, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode};
 
 /// horizontal gap used when placing new nodes automatically
 const AUTO_PLACE_DX: f64 = 350.0;
@@ -176,10 +176,17 @@ pub fn connect(graph: &mut Graph, specs: &[NodeSpec], results: &HashMap<String, 
         }
         return Err(msg);
     }
-    // make sure the input exists and isn't a parameter (hidden input)
-    let Some(input) = to_spec.input(to_input) else {
-        return Err(format!("'{}' has no input '{}'; inputs are: {}", to_id, to_input, input_ids(to_spec)));
+    // make sure the input exists and isn't a parameter (hidden input), this includes dynamic inputs
+    let inputs = node_inputs(to_spec, graph, &to_id);
+    let Some(input) = inputs.iter().find(|h| h.id == to_input) else {
+        let available = inputs.iter().filter(|h| dyn_inner(h).is_none()).map(|h| format!("{} ({})", h.id, h.data_type)).collect::<Vec<_>>().join(", ");
+        return Err(format!("'{}' has no input '{}'; inputs are: {}", to_id, to_input, available));
     };
+    // a `Dyn<T>` input grows numbered inputs, point to the free one
+    if dyn_inner(input).is_some() {
+        let free = inputs.iter().rev().find(|h| h.description == format!("Dynamic input of {}.", input.id)).map_or(String::new(), |h| h.id.clone());
+        return Err(format!("'{}' on '{}' is dynamic and can't be connected itself; connect to its next free input '{}' instead", to_input, to_id, free));
+    }
     if is_param(to_spec, to_input) {
         return Err(format!("'{}' on '{}' is hidden in the UI and must not be connected; it is a parameter, set it with graph_set_inputs", to_input, to_id));
     }
