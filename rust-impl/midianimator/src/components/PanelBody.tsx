@@ -21,6 +21,43 @@ interface PanelBodyProps {
     ghostWindow?: boolean;
 }
 
+// preview of one node, scaled down to half size.
+// kept outside PanelBody, a component declared inside another is a new type every render and remounts
+const ScaledNodeWrapper: React.FC<{ Node: any; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }> = ({ Node, onPointerDown }) => {
+    const nodeRef = useRef<HTMLDivElement>(null);
+    const [isMeasured, setIsMeasured] = useState(false);
+
+    useEffect(() => {
+        if (!nodeRef.current || isMeasured) return;
+
+        const node = nodeRef.current.querySelector(".node.preview") as HTMLElement;
+        if (!node) return;
+
+        const observer = new MutationObserver(() => {
+            const height = node.scrollHeight;
+
+            if (height > 50) {
+                node.style.marginBottom = `-${height * 0.5}px`;
+                setIsMeasured(true);
+                observer.disconnect();
+            }
+        });
+
+        observer.observe(node, {
+            childList: true,
+            subtree: true,
+        });
+
+        return () => observer.disconnect();
+    }, [isMeasured]);
+
+    return (
+        <div ref={nodeRef} className="node-container" onPointerDown={onPointerDown}>
+            <Node data="preview" />
+        </div>
+    );
+};
+
 // panel contents, shared by the docked panel and its popped out window
 const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = false }) => {
     // drag a preview node out of the panel, the node graph adds it where it's released.
@@ -87,48 +124,13 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
         window.addEventListener("keydown", handleKey, true);
     };
 
-    const ScaledNodeWrapper: React.FC<{ Node: any; nodeType: string }> = ({ Node, nodeType }) => {
-        const nodeRef = useRef<HTMLDivElement>(null);
-        const [isMeasured, setIsMeasured] = useState(false);
-
-        useEffect(() => {
-            if (!nodeRef.current || isMeasured) return;
-
-            const node = nodeRef.current.querySelector(".node.preview") as HTMLElement;
-            if (!node) return;
-
-            const observer = new MutationObserver(() => {
-                const height = node.scrollHeight;
-
-                if (height > 50) {
-                    node.style.marginBottom = `-${height * 0.5}px`;
-                    setIsMeasured(true);
-                    observer.disconnect();
-                }
-            });
-
-            observer.observe(node, {
-                childList: true,
-                subtree: true,
-            });
-
-            return () => observer.disconnect();
-        }, [isMeasured]);
-
-        return (
-            <div ref={nodeRef} className="node-container" onPointerDown={(e) => startNodeDrag(e, nodeType)}>
-                <Node data="preview" />
-            </div>
-        );
-    };
-
     if (PANELS[id]?.name !== "Nodes") return null;
 
     return (
         <ReactFlowProvider>
             <div className="nodes-grid p-2">
                 {Object.entries(nodeTypes).map(([key, value]) => (
-                    <ScaledNodeWrapper key={key} Node={value} nodeType={key} />
+                    <ScaledNodeWrapper key={key} Node={value} onPointerDown={(e) => startNodeDrag(e, key)} />
                 ))}
             </div>
         </ReactFlowProvider>

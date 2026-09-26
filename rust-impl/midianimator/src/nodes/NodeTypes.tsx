@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { memo } from "react";
+
 type NodeComponentModule = {
     default: React.ComponentType<any>;
 };
@@ -20,7 +22,8 @@ for (const [filePath, componentModule] of Object.entries(nodeComponents)) {
     if (key[0] == "_") {
         continue;
     } // skip files that are not nodes
-    nodeTypes[key] = componentModule.default; // get default export from module
+    // memo so a node only redraws when its own props change, not on every graph update
+    nodeTypes[key] = memo(componentModule.default);
 }
 
 export default nodeTypes;
