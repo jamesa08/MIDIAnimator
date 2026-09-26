@@ -13,6 +13,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
 
     const [nodeData, setNodeData] = useState<any | null>(null);
     const [name, setName] = useState(data.inputs?.name || ""); 
+    const [property, setProperty] = useState(data.inputs?.animation_property || "");
 
     useEffect(() => {
         getNodeData("animation_generator").then(setNodeData);
@@ -21,6 +22,10 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     useEffect(() => {
         setName(data.inputs?.name || "");
     }, [data.inputs?.name]);
+
+    useEffect(() => {
+        setProperty(data.inputs?.animation_property || "");
+    }, [data.inputs?.animation_property]);
 
     const handleUpdate = useCallback(() => {
         updateNodeData(id, { 
@@ -32,6 +37,11 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         });
     }, [id, data, name, updateNodeData]);
 
+    // empty inherits the property from the note on keyframes
+    const handlePropertyUpdate = useCallback(() => {
+        updateNodeData(id, { ...data, inputs: { ...(data.inputs || {}), animation_property: property } });
+    }, [id, data, property, updateNodeData]);
+
     const nameComponent = (
         <>
             <div>
@@ -40,9 +50,15 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         </>
     );
 
+    const propertyComponent = (
+        <div>
+            <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" placeholder="Inherit (e.g. location[2])" value={property} onChange={(e) => setProperty(e.target.value)} onBlur={handlePropertyUpdate} />
+        </div>
+    );
 
     const uiInject = {
         name: nameComponent,
+        animation_property: propertyComponent,
     };
 
     const hiddenHandles = {
