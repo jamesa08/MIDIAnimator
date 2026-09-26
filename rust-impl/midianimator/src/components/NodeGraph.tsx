@@ -783,10 +783,12 @@ function NodeGraphNoProvider() {
             setNodes(initialNodes);
             setEdges(initialEdges);
 
-            let newState = { ...state, rf_instance: rfInstance?.toObject() };
+            // the instance won't have the new nodes until the next render, so send the graph we just set.
+            // the starting graph has nothing to save, it's marked clean
+            let newState = { ...state, rf_instance: { ...rfInstance?.toObject(), nodes: initialNodes, edges: initialEdges } };
             setState(newState);
             // only send the graph, the rest of our copy of the state may be stale
-            invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance) });
+            invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance), clean: true });
             initDone.current = true; // only run once
         }
     }, [state, rfInstance]);

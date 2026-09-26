@@ -2,9 +2,11 @@ import TabBar from "./components/TabBar";
 import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
+import UnsavedChangesModal from "./components/UnsavedChangesModal";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
@@ -41,6 +43,31 @@ function App() {
             executionRunner.then((f) => f());
         };
     }, []);
+
+    // closing the main window asks to save unsaved changes first, the app quits once it's gone
+    const [confirmClose, setConfirmClose] = useState(false);
+
+    useEffect(() => {
+        const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
+            event.preventDefault();
+            if (await invoke<boolean>("has_unsaved_changes")) setConfirmClose(true);
+            else getCurrentWindow().destroy();
+        });
+        return () => {
+            unlisten.then((f) => f());
+        };
+    }, []);
+
+    // a cancelled save dialog keeps the window open
+    const saveAndClose = async () => {
+        setConfirmClose(false);
+        try {
+            await invoke("save_project");
+            getCurrentWindow().destroy();
+        } catch (error) {
+            if (error !== "Save cancelled") console.error("Save failed:", error);
+        }
+    };
 
     // floating panel being dragged over its dock slot
     const [dockHover, setDockHover] = useState<number | null>(null);
@@ -114,6 +141,7 @@ function App() {
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />
             </div>
+            {confirmClose && <UnsavedChangesModal onSave={saveAndClose} onDiscard={() => getCurrentWindow().destroy()} onCancel={() => setConfirmClose(false)} />}
         </div>
     );
 }

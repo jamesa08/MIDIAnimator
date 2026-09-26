@@ -1,4 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Reorder, AnimatePresence, useTransform, useMotionValue, motion } from "framer-motion";
 import MacTrafficLights from "./MacTrafficLights";
 import IPCLink from "./IPCLink";
@@ -18,6 +21,18 @@ function TabBar() {
 
     const [tabs, setTabs] = useState<Tab[]>([makeTab()]);
     const [activeId, setActiveId] = useState<string>(tabs[0].id);
+    const tabCount = useRef(tabs.length);
+    tabCount.current = tabs.length;
+
+    // the project's name, starred with unsaved changes, shown on the active tab
+    const [project, setProject] = useState<{ name: string; unsaved: boolean } | null>(null);
+    useEffect(() => {
+        invoke<{ name: string; unsaved: boolean }>("get_project_status").then(setProject);
+        const unlisten = listen<{ name: string; unsaved: boolean }>("project_status", (event) => setProject(event.payload));
+        return () => {
+            unlisten.then((f) => f());
+        };
+    }, []);
 
     const addTab = () => {
         const tab = makeTab();
@@ -53,16 +68,26 @@ function TabBar() {
             if (e.key === "t") {
                 e.preventDefault();
                 addTab();
-            } else if (e.key === "w") {
-                e.preventDefault();
-                setActiveId((currentId) => {
-                    closeTab(currentId);
-                    return currentId;
-                });
             }
         };
         window.addEventListener("keydown", handler);
-        return () => window.removeEventListener("keydown", handler);
+
+        // cmd/ctrl+w (Close Window in the menu) closes the active tab, or the window on the last one
+        const closeListener = listen("close-tab", () => {
+            if (tabCount.current <= 1) {
+                getCurrentWindow().close();
+                return;
+            }
+            setActiveId((currentId) => {
+                closeTab(currentId);
+                return currentId;
+            });
+        });
+
+        return () => {
+            window.removeEventListener("keydown", handler);
+            closeListener.then((f) => f());
+        };
     }, []);
 
     return (
@@ -92,7 +117,7 @@ function TabBar() {
                                     onClick={() => setActiveId(tab.id)}
                                 >
                                     <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none border-r border-black first:border-l w-full ${tab.id === activeId ? "bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
-                                        <span className="truncate flex-1">{tab.name}</span>
+                                        <span className="truncate flex-1">{tab.id === activeId && project ? `${project.name}${project.unsaved ? "*" : ""}` : tab.name}</span>
                                         <motion.button
                                             onClick={(e) => {
                                                 e.stopPropagation();

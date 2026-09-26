@@ -11,6 +11,12 @@ use crate::scene_generics::Scene;
 lazy_static! {
     pub static ref STATE: Mutex<AppState> = Mutex::new(AppState::default());
     pub static ref WINDOW: Arc<Mutex<Option<tauri::WebviewWindow>>> = Arc::new(Mutex::new(None));
+    // the graph as of the last save or load (or the starting graph), compared to find unsaved changes
+    static ref SAVED_GRAPH: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+    // the file the project was last saved to or loaded from
+    static ref PROJECT_PATH: Mutex<Option<String>> = Mutex::new(None);
+    // last status sent to the front end, only changes are sent
+    static ref LAST_STATUS: Mutex<Option<ProjectStatus>> = Mutex::new(None);
 }
 
 /// state struct for the application
@@ -157,6 +163,7 @@ pub fn update_state() {
     window.as_ref().unwrap().emit("update_state", state.clone()).unwrap();
     drop(window);
     drop(state);
+    notify_project_status();
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -167,14 +174,85 @@ pub struct SavedProject {
 
 /// this command only replaces the node graph (`rf_instance`) in the backend state
 /// the front end uses this instead of `js_update_state` so its (possibly stale) copy of the
-/// rest of the state, like `executed_results`, doesn't overwrite the backend's
+/// rest of the state, like `executed_results`, doesn't overwrite the backend's.
+/// `clean` marks the graph as saved, sent once with the starting graph
 #[tauri::command]
-pub fn js_update_graph(rf_instance: String) {
+pub fn js_update_graph(rf_instance: String, clean: Option<bool>) {
     println!("FRONTEND GRAPH UPDATE");
     // parse the graph and swap it in, a bad graph is just logged and ignored
     match serde_json::from_str::<HashMap<String, serde_json::Value>>(&rf_instance) {
         Ok(rf_instance) => STATE.lock().unwrap().rf_instance = rf_instance,
         Err(e) => eprintln!("js_update_graph: could not parse rf_instance: {}", e),
+    }
+    if clean == Some(true) {
+        mark_saved();
+    }
+    notify_project_status();
+}
+
+/// the parts of a graph that get saved, selection, drag state, measured sizes and the viewport are UI only
+fn graph_key(rf_instance: &HashMap<String, serde_json::Value>) -> serde_json::Value {
+    let strip = |items: Option<&serde_json::Value>, keys: &[&str]| -> Vec<serde_json::Value> {
+        let items = items.and_then(|items| items.as_array()).cloned().unwrap_or_default();
+        items
+            .into_iter()
+            .map(|mut item| {
+                if let Some(item) = item.as_object_mut() {
+                    for key in keys {
+                        item.remove(*key);
+                    }
+                }
+                item
+            })
+            .collect()
+    };
+    serde_json::json!({
+        "nodes": strip(rf_instance.get("nodes"), &["selected", "dragging", "measured", "resizing"]),
+        "edges": strip(rf_instance.get("edges"), &["selected"]),
+    })
+}
+
+// marks the current graph as saved
+fn mark_saved() {
+    let key = graph_key(&STATE.lock().unwrap().rf_instance);
+    *SAVED_GRAPH.lock().unwrap() = Some(key);
+}
+
+/// true if the graph changed since it was last saved or loaded
+#[tauri::command]
+pub fn has_unsaved_changes() -> bool {
+    let key = graph_key(&STATE.lock().unwrap().rf_instance);
+    SAVED_GRAPH.lock().unwrap().as_ref().is_some_and(|saved| *saved != key)
+}
+
+/// project name (file name without .mkproj, "untitled" if never saved) and whether it has unsaved changes
+#[derive(Serialize, Clone, PartialEq, Debug)]
+pub struct ProjectStatus {
+    pub name: String,
+    pub unsaved: bool,
+}
+
+#[tauri::command]
+pub fn get_project_status() -> ProjectStatus {
+    let path = PROJECT_PATH.lock().unwrap().clone();
+    let name = path.as_deref().and_then(|path| std::path::Path::new(path).file_stem()).map(|stem| stem.to_string_lossy().to_string()).unwrap_or("untitled".to_string());
+    ProjectStatus { name, unsaved: has_unsaved_changes() }
+}
+
+/// sends the project status to the front end ("project_status") and puts it in the window title, only when it changed.
+/// call without holding the state or window locks
+pub fn notify_project_status() {
+    let status = get_project_status();
+    let mut last = LAST_STATUS.lock().unwrap();
+    if last.as_ref() == Some(&status) {
+        return;
+    }
+    *last = Some(status.clone());
+    drop(last);
+
+    if let Some(window) = WINDOW.lock().unwrap().as_ref() {
+        window.set_title(&format!("{}{} - MotionKeys", status.name, if status.unsaved { "*" } else { "" })).ok();
+        window.emit("project_status", status).ok();
     }
 }
 
@@ -209,6 +287,9 @@ pub fn save_project_to(path: &str) -> Result<String, String> {
     // serialize and write the file
     let json = serde_json::to_string_pretty(&saved_data).map_err(|e| format!("Serialization error: {}", e))?;
     fs::write(path, json).map_err(|e| format!("File write error: {}", e))?;
+    *PROJECT_PATH.lock().unwrap() = Some(path.to_string());
+    mark_saved();
+    notify_project_status();
 
     Ok(path.to_string())
 }
@@ -253,6 +334,8 @@ pub fn load_project_from(path: &str) -> Result<AppState, String> {
         state.executed_inputs.clear();
         state.clone()
     };
+    *PROJECT_PATH.lock().unwrap() = Some(path.to_string());
+    mark_saved();
 
     // tell the front end about the new state
     update_state();

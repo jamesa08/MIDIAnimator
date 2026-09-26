@@ -11,7 +11,7 @@
     },
     "close": {
         "name": "Close",
-        "description": "Close the current file",
+        "description": "Close the current tab or window",
         "key": "CmdOrCtrl+W"
     },
     "save": {
