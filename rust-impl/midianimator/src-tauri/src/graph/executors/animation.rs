@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use super::io::{Inputs, NodeResult, Outputs};
 use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, KeyframePoint, ObjectGroup};
-use crate::utils::animation::{add_keyframes, co_of, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap, ObjectMapEntry};
+use crate::utils::animation::{add_keyframes, co_of, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
 
 /// Node: keyframes_from_object
 ///
@@ -319,8 +319,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
        },
        "objects": {
            "object1": {
-               note_number: 45, 46,
-               animations: "ANIM_test"
+               "ANIM_test": [45, 46]
            },
            ...
            }
@@ -340,7 +339,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
     println!("object group name: {}", object_group_name);
 
     // every object gets the generator's animation, if one is connected
-    let animations: Vec<String> = generator.iter().map(|g| g.name.clone()).collect();
+    let anim_name = generator.as_ref().map(|g| g.name.clone());
     if let Some(generator) = generator {
         object_map.animations.insert(generator.name.clone(), generator);
     }
@@ -359,11 +358,10 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
 
     // pair objects with notes in order, extra objects (not enough notes) are left out
     for (object, note_number) in object_group.objects.iter().zip(notes) {
-        let entry = object_map.objects.entry(object.name.clone()).or_insert_with(|| ObjectMapEntry {
-            note_number: vec![],
-            animations: animations.clone(),
-        });
-        entry.note_number.push(note_number);
+        let entry = object_map.objects.entry(object.name.clone()).or_default();
+        if let Some(anim_name) = &anim_name {
+            entry.entry(anim_name.clone()).or_default().push(note_number);
+        }
     }
 
     outputs.set("object_map", &object_map)?;
@@ -386,9 +384,9 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
     // look up which objects (and with which animation) each note triggers
     let mut note_to_objects: HashMap<u8, Vec<(String, &AnimationGenerator)>> = HashMap::new();
     for (obj_name, entry) in &object_map.objects {
-        for anim_name in &entry.animations {
+        for (anim_name, notes) in entry {
             let gen = object_map.animations.get(anim_name).ok_or_else(|| format!("object '{}' uses animation '{}', which isn't in the object map", obj_name, anim_name))?;
-            for &note_num in &entry.note_number {
+            for &note_num in notes {
                 note_to_objects.entry(note_num).or_default().push((obj_name.clone(), gen));
             }
         }

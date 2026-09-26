@@ -120,8 +120,8 @@ fn generator(property: &str, peak: f64) -> serde_json::Value {
 // keyframes for "Cube" with the given generators, two overlapping notes
 fn cube_keys(properties: &[(&str, f64)]) -> Vec<serde_json::Value> {
     let animations: serde_json::Map<_, _> = properties.iter().map(|(p, peak)| (p.to_string(), generator(p, *peak))).collect();
-    let names: Vec<&str> = properties.iter().map(|(p, _)| *p).collect();
-    let object_map = json!({ "animations": animations, "objects": { "Cube": { "note_number": [60], "animations": names } } });
+    let cube: serde_json::Map<_, _> = properties.iter().map(|(p, _)| (p.to_string(), json!([60]))).collect();
+    let object_map = json!({ "animations": animations, "objects": { "Cube": cube } });
     let notes = json!([
         { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 },
         { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.5, "time_off": 0.6 }

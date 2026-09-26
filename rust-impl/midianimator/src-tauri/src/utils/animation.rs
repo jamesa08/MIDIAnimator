@@ -52,11 +52,9 @@ pub struct AnimationGenerator {
     pub animation_property: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ObjectMapEntry {
-    pub note_number: Vec<u8>,
-    pub animations: Vec<String>, // name keys into object_map.animations
-}
+/// one object's animations, each with the notes that trigger it, e.g. {"crash": [49], "ride": [51]}
+/// the names key into object_map.animations
+pub type ObjectMapEntry = HashMap<String, Vec<u8>>;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ObjectMap {
