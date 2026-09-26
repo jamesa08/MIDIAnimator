@@ -8,19 +8,6 @@ import { useStateContext } from "../contexts/StateContext";
 import ConnectionLine from "./ConnectionLine";
 import { NODE_DROP_EVENT, PROJECT_LOADED_EVENT } from "../utils/node";
 
-const initialNodes = [
-    { id: "get_midi_file-8fb82482-a4bc-4b02-b238-64462daa3b56", position: { x: 0, y: 0 }, data: {}, type: "get_midi_file" },
-    { id: "get_midi_track_data-5747a465-beac-45ab-b7ec-72d9e9d35947", position: { x: 300, y: 0 }, data: {}, type: "get_midi_track_data" },
-    { id: "viewer-65630ce3-b9d1-4491-9936-d4e4c1d501d3", position: { x: 600, y: 0 }, data: {}, type: "viewer" },
-    { id: "scene_link-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 0, y: 300 }, data: {}, type: "scene_link" },
-    { id: "keyframes_from_object-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 300, y: 300 }, data: {}, type: "keyframes_from_object" },
-    { id: "animation_generator-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 600, y: 300 }, data: {}, type: "animation_generator" },
-    { id: "assign_notes_to_objects-0bfb3c01-6672-4665-a47e-6a6138b3c9ea", position: { x: 900, y: 300 }, data: {}, type: "assign_notes_to_objects" },
-];
-const initialEdges: any = [
-    /*{ id: "e1-2", source: "1", target: "2" } */
-];
-
 // short node ids: `{type}-{N}` where N is one more than the highest N already used for that type.
 // older projects use `{type}-{uuid}` ids, those are ignored here and keep working.
 // keep in sync with Graph::next_node_id in src-tauri/src/graph/model.rs
@@ -778,14 +765,13 @@ function NodeGraphNoProvider() {
     // on initalization & with the state readied, set the nodes and edges & update state to backend
     useEffect(() => {
         if (!initDone.current && state.ready && state.rf_instance != undefined && rfInstance != undefined) {
-            // set the nodes and edges
-            // FIXME this will go away
-            setNodes(initialNodes);
-            setEdges(initialEdges);
+            // a new project starts with an empty graph
+            setNodes([]);
+            setEdges([]);
 
-            // the instance won't have the new nodes until the next render, so send the graph we just set.
+            // the instance won't have the new graph until the next render, so send the graph we just set.
             // the starting graph has nothing to save, it's marked clean
-            let newState = { ...state, rf_instance: { ...rfInstance?.toObject(), nodes: initialNodes, edges: initialEdges } };
+            let newState = { ...state, rf_instance: { ...rfInstance?.toObject(), nodes: [], edges: [] } };
             setState(newState);
             // only send the graph, the rest of our copy of the state may be stale
             invoke("js_update_graph", { rfInstance: JSON.stringify(newState.rf_instance), clean: true });
