@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::sync::{MutexGuard, PoisonError};
 
+use base64::Engine;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
@@ -16,6 +17,7 @@ use crate::graph::execute::{execute_graph, panic_message};
 use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, NodeSpec, Position};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
+use crate::ui::screenshot;
 
 // instructions sent to the MCP client when it connects
 const INSTRUCTIONS: &str = "MotionKeys: node graphs that turn MIDI into Blender keyframes. \
@@ -23,7 +25,8 @@ Call graph_outline first to see the current graph, and node_types_list for the n
 Data flows from outputs to inputs; edit with graph_add_node, graph_connect, graph_set_inputs, graph_disconnect and graph_remove_node. \
 Never connect hidden handles: 'par' inputs are set with graph_set_inputs, and outputs marked hidden are display-only. \
 Edits show up live in the app and re-run the realtime graph, which never writes to Blender; \
-graph_execute with write_to_blender=true writes keyframes to Blender. Node ids accept any unique prefix.";
+graph_execute with write_to_blender=true writes keyframes to Blender. Node ids accept any unique prefix. \
+app_screenshot shows what the UI currently looks like.";
 
 // returned by every tool when the frontend hasn't called `ready` yet
 const NOT_READY: &str = "app not ready: the MotionKeys window has not finished loading; try again in a moment";
@@ -52,6 +55,13 @@ pub struct NodeParams {
 pub struct TypeParams {
     /// Handle type name as shown in node_types_list, e.g. "Array<MIDINote>"
     pub data_type: String,
+}
+
+// app_screenshot
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScreenshotParams {
+    /// Window label, e.g. "main", "settings" or a floating panel like "panel-0"; omit for the focused window (main when the app is in the background)
+    pub window: Option<String>,
 }
 
 // graph_add_node
@@ -392,6 +402,29 @@ impl MotionKeysMcp {
             Ok(text) => ok_text(text),
             Err(e) => tool_error(e),
         }
+    }
+
+    // app_screenshot: PNG of a window's contents
+    #[tool(description = "Screenshot of a MotionKeys window as a PNG, for checking what the UI shows. Captures the window as drawn on screen, including the title bar, and works while it is covered or the app is in the background. Also lists the window labels that can be captured.", annotations(read_only_hint = true))]
+    async fn app_screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> Result<CallToolResult, McpError> {
+        // list the windows so the next call can pick a specific one
+        let windows: Vec<String> = screenshot::window_labels()
+            .into_iter()
+            .map(|(label, focused)| {
+                if focused {
+                    format!("{} (focused)", label)
+                } else {
+                    label
+                }
+            })
+            .collect();
+        let shot = match screenshot::capture_window(params.window.as_deref()).await {
+            Ok(shot) => shot,
+            Err(e) => return tool_error(format!("{}\nwindows: {}", e, windows.join(", "))),
+        };
+        // image first, then which window it is
+        let data = base64::engine::general_purpose::STANDARD.encode(&shot.png);
+        Ok(CallToolResult::success(vec![ContentBlock::image(data, "image/png"), ContentBlock::text(format!("window '{}', {}x{} px\nwindows: {}", shot.label, shot.width, shot.height, windows.join(", ")))]))
     }
 
     // MARK: - Write Tools
