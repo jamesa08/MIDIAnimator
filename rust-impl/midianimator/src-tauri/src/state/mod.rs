@@ -297,17 +297,22 @@ pub fn save_project_to(path: &str) -> Result<String, String> {
 // load project command
 #[tauri::command]
 pub async fn load_project() -> Result<AppState, String> {
-    let window = WINDOW.lock().unwrap();
-    let win_ref = window.as_ref().unwrap();
-
-    let file_path = win_ref.dialog().file().set_title("Load Project").add_filter("MIDIAnimator Project", &["mkproj"]).blocking_pick_file();
-
+    // the window lock is scoped so it's released before loading
+    let file_path = {
+        let window = WINDOW.lock().unwrap();
+        window.as_ref().unwrap().dialog().file().set_title("Load Project").add_filter("MIDIAnimator Project", &["mkproj"]).blocking_pick_file()
+    };
     let path = file_path.ok_or("Load cancelled")?;
-    // drop the window lock before loading
-    drop(window);
 
     // load the project from the picked path
-    load_project_from(&path.to_string())
+    let loaded = load_project_from(&path.to_string())?;
+
+    // run the realtime graph so nodes show the saved scene data, unless scene changes are waiting for review
+    if loaded.execution_paused {
+        return Ok(loaded);
+    }
+    crate::graph::execute::execute_graph(true).await;
+    Ok(STATE.lock().unwrap().clone())
 }
 
 /// replaces the scene data and node graph with the project at `path` and clears executed results.
