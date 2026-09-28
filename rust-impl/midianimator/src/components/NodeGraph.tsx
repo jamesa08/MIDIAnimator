@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState, useCallback, useRef } from "react";
 
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge, Connection, Edge, BackgroundVariant, Position, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, ReactFlowProvider, useOnViewportChange, SelectionMode, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
@@ -580,12 +581,33 @@ function NodeGraphNoProvider() {
     const nodesInitialized = useNodesInitialized();
     const fitPendingRef = useRef(false);
 
-    // a load asks for a fit, which waits until the new nodes have sizes
+    // a loaded project starts the graph over, nothing from the old graph carries over.
+    // short ids repeat between projects, so merging would keep the old selection, drags and operations on the new nodes
     useEffect(() => {
-        const onLoaded = () => (fitPendingRef.current = true);
-        window.addEventListener(PROJECT_LOADED_EVENT, onLoaded);
-        return () => window.removeEventListener(PROJECT_LOADED_EVENT, onLoaded);
-    }, []);
+        const unlisten = listen(PROJECT_LOADED_EVENT, (event: any) => {
+            const graph = event.payload ?? {};
+
+            // drop any operation in progress (grab, add menu, placing a node)
+            dragStartRef.current = { cursorX: 0, cursorY: 0, nodes: [] };
+            preOperationStateRef.current = null;
+            swallowClickRef.current = false;
+            setNewNodeToDrag(null);
+            setMenuOpen(false);
+            setUpdateTrigger(false);
+            setSyncTrigger(false);
+
+            // replace the graph without the ui only fields, measured is left out so the nodes get sized fresh
+            setNodes((graph.nodes ?? []).map(({ selected, dragging, measured, resizing, ...node }: any) => node));
+            setEdges((graph.edges ?? []).map(({ selected, ...edge }: any) => edge));
+            store.setState({ nodesSelectionActive: false });
+
+            // fit once the new nodes have sizes
+            fitPendingRef.current = true;
+        });
+        return () => {
+            unlisten.then((f) => f());
+        };
+    }, [setNodes, setEdges, store]);
 
     useEffect(() => {
         if (fitPendingRef.current && nodesInitialized && rfInstance) {

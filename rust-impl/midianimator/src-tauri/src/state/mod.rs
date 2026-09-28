@@ -342,8 +342,11 @@ pub fn load_project_from(path: &str) -> Result<AppState, String> {
     *PROJECT_PATH.lock().unwrap() = Some(path.to_string());
     mark_saved();
 
-    // tell the front end about the new state
+    // tell the front end about the new state, then to start the graph over from it (no selection, drags or operations carried over)
     update_state();
+    if let Some(window) = WINDOW.lock().unwrap().as_ref() {
+        window.emit("project_loaded", new_state.rf_instance.clone()).ok();
+    }
 
     Ok(new_state)
 }
