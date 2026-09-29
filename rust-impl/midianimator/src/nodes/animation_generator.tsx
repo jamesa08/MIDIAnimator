@@ -7,6 +7,18 @@ import { getNodeData } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
 import { invoke } from "@tauri-apps/api/core";
 
+// the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
+const overlapModes = [
+    { id: "add", name: "Add" },
+    { id: "min", name: "Min" },
+    { id: "max", name: "Max" },
+    { id: "prev", name: "Previous" },
+    { id: "next", name: "Next" },
+    { id: "rvc", name: "Rest Value Crossing" },
+    { id: "prune", name: "Keyframe Pruning" },
+    { id: "crossfade", name: "Crossfade" },
+];
+
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
@@ -14,6 +26,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     const [nodeData, setNodeData] = useState<any | null>(null);
     const [name, setName] = useState(data.inputs?.name || ""); 
     const [property, setProperty] = useState(data.inputs?.animation_property || "");
+    const [blend, setBlend] = useState(data.inputs?.overlap_blend ?? "");
 
     useEffect(() => {
         getNodeData("animation_generator").then(setNodeData);
@@ -26,6 +39,10 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     useEffect(() => {
         setProperty(data.inputs?.animation_property || "");
     }, [data.inputs?.animation_property]);
+
+    useEffect(() => {
+        setBlend(data.inputs?.overlap_blend ?? "");
+    }, [data.inputs?.overlap_blend]);
 
     const handleUpdate = useCallback(() => {
         updateNodeData(id, { 
@@ -42,6 +59,20 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         updateNodeData(id, { ...data, inputs: { ...(data.inputs || {}), animation_property: property } });
     }, [id, data, property, updateNodeData]);
 
+    // empty unsets it so the backend default is used, anything that isn't a number is ignored
+    const handleBlendUpdate = useCallback(() => {
+        const inputs = { ...(data.inputs || {}) };
+        if (blend === "") {
+            delete inputs.overlap_blend;
+        } else if (!isNaN(Number(blend))) {
+            inputs.overlap_blend = Number(blend);
+        } else {
+            setBlend(data.inputs?.overlap_blend ?? "");
+            return;
+        }
+        updateNodeData(id, { ...data, inputs });
+    }, [id, data, blend, updateNodeData]);
+
     const nameComponent = (
         <>
             <div>
@@ -56,12 +87,45 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         </div>
     );
 
+    // unset is the default, add
+    const overlapComponent = (
+        <>
+            <div className="node-field field-inputs">
+                <span>Animation Overlap</span>
+            </div>
+            <select className="node-field nodrag nopan" value={data.inputs?.animation_overlap || "add"} onChange={(e) => updateNodeData(id, { ...data, inputs: { ...(data.inputs || {}), animation_overlap: e.target.value } })}>
+                {overlapModes.map((mode) => (
+                    <option key={mode.id} value={mode.id}>
+                        {mode.name}
+                    </option>
+                ))}
+            </select>
+        </>
+    );
+
+    // only crossfade uses the blend time
+    const blendComponent =
+        data.inputs?.animation_overlap === "crossfade" ? (
+            <>
+                <div className="node-field field-inputs">
+                    <span>Blend (s)</span>
+                </div>
+                <input type="number" min="0" step="0.05" className="node-field nodrag border border-gray-400 rounded px-2 py-1" placeholder="0.1" value={blend} onChange={(e) => setBlend(e.target.value)} onBlur={handleBlendUpdate} />
+            </>
+        ) : (
+            <></>
+        );
+
     const uiInject = {
         name: nameComponent,
+        animation_overlap: overlapComponent,
+        overlap_blend: blendComponent,
         animation_property: propertyComponent,
     };
 
     const hiddenHandles = {
+        animation_overlap: true,
+        overlap_blend: true,
     };
 
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
