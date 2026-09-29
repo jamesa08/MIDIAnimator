@@ -178,6 +178,8 @@ img {
 
 .graph-layer.parent-layer {
     filter: blur(1.5px);
+    will-change: transform;
+    transform: translateZ(0);
 }
 
 .parent-dim {
