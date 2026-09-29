@@ -37,6 +37,9 @@ export const HEADER_COLORS = {
 // header color for a node with no category
 export const DEFAULT_HEADER_COLOR = "#7A7A7A";
 
+// order categories are listed in (add menu, nodes panel)
+export const CATEGORY_ORDER = ["midi", "scene", "animation", "viewer", "zone", "group"];
+
 export const SOCKET_SHAPES = {
     CIRCLE: {},
     DIAMOND: {

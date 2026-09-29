@@ -19,3 +19,10 @@ export async function getNodeData(nodeId: string) {
     data = JSON.parse(data);
     return data["nodes"].find((node: any) => node["id"] === nodeId);
 }
+
+// every node spec in default_nodes.json, read once
+let nodeSpecs: Promise<any[]> | null = null;
+export function loadNodeSpecs(): Promise<any[]> {
+    nodeSpecs ??= readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource }).then((data) => JSON.parse(data)["nodes"]);
+    return nodeSpecs;
+}

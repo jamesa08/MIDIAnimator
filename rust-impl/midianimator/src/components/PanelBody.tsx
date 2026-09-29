@@ -5,7 +5,7 @@ import { PANELS, startDragGhost } from "../utils/panels";
 import { StateContext } from "../contexts/StateContext";
 import { GroupContext } from "../contexts/GroupContext";
 import { GroupDef, allGroups, loadBuiltinGroups } from "../utils/groups";
-import { nodeEntries, previewData } from "../utils/nodeEntries";
+import { nodeEntries, previewData, useNodeSpecs } from "../utils/nodeEntries";
 
 // where a node from the nodes panel was released, offset is where it was grabbed in node (unscaled) pixels
 export interface PanelNodeDrop {
@@ -139,7 +139,8 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
     };
 
     const groups = usePanelGroups();
-    const entries = useMemo(() => nodeEntries(groups), [groups]);
+    const specs = useNodeSpecs();
+    const entries = useMemo(() => nodeEntries(groups, specs), [groups, specs]);
     const groupContext = useMemo(() => ({ groups, scope: null, scopeId: null, editable: false, openGroup: () => {} }), [groups]);
 
     if (PANELS[id]?.name !== "Nodes") return null;

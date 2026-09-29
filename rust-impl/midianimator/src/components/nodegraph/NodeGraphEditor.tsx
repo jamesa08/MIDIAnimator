@@ -5,7 +5,7 @@ import { useNodesState, useEdgesState, addEdge, Connection, Edge, ReactFlowInsta
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT, PROJECT_LOADED_EVENT } from "../../utils/node";
 import { FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, Graph, GroupDef, Level, NEW_SOCKET, Project, idPrefix, inputHandle, makeGroup, nextNodeId, outputHandle, socketId, specLookup, ungroup, withGraph, withGroup } from "../../utils/groups";
-import { nodeEntries } from "../../utils/nodeEntries";
+import { nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
@@ -99,7 +99,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, specs, op
 
     // the nodes that can be added here, groups on the way down to this graph are left out so none contains itself
     const groups = project.groups();
-    const entries = useMemo(() => nodeEntries(groups, !isRoot, new Set(pathGroups)), [groups, isRoot, pathGroups]);
+    const nodeSpecs = useNodeSpecs();
+    const entries = useMemo(() => nodeEntries(groups, nodeSpecs, !isRoot, new Set(pathGroups)), [groups, nodeSpecs, isRoot, pathGroups]);
 
     // looks up a node's sockets (for types and names of new group sockets)
     const lookup = useMemo(() => specLookup(specs, groups), [specs, groups]);
