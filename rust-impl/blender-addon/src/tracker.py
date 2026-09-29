@@ -9,39 +9,50 @@ import time
 import uuid
 from . core import Server
 
-# Track object names and states to detect specific changes
-_tracked_objects = {}
-_tracked_collections = set()
+# the scene as last sent, compared on every depsgraph update
+_last_structure = None
+_last_values = None
 
 # Debounce variables
-_last_transform_time = 0
-_pending_transform_changes = {}
-_debounce_interval = 0.5  # seconds to wait after last transform before sending update
+_last_value_change_time = 0
+_values_pending = False
+_debounce_interval = 0.5  # seconds to wait after the last transform or keyframe change before sending update
 _timer_registered = False  # Track if our timer is registered
 
 def generate_uuid():
     """Generate a unique UUID for each message."""
     return str(uuid.uuid4())
 
-def get_object_signature(obj):
-    """Create a lightweight signature of an object's critical properties."""
-    return {
-        "name": obj.name,
-        "location": list(obj.location),
-        "rotation": list(obj.rotation_euler),
-        "scale": list(obj.scale),
-        "visible": obj.visible_get(),
-        "parent": obj.parent.name if obj.parent else None,
-        "animation": bool(obj.animation_data and obj.animation_data.action)
-    }
+def get_structure_signature():
+    """The scene layout: every collection's children and objects in order, and each object's name, parent, visibility and action.
+    Any change here is sent right away."""
+    collections = []
 
-def get_collection_signature(collection):
-    """Create a signature for a collection."""
-    return {
-        "name": collection.name,
-        "objects": set(obj.name for obj in collection.objects),
-        "visible": not collection.hide_viewport
-    }
+    def walk(key, collection):
+        collections.append((key, tuple(child.name for child in collection.children), tuple(obj.name for obj in collection.objects)))
+        for child in collection.children:
+            walk(child.name, child)
+
+    for scene in bpy.data.scenes:
+        walk(scene.name, scene.collection)
+
+    objects = tuple(
+        (obj.name, obj.parent.name if obj.parent else None, obj.visible_get(), obj.animation_data.action.name if obj.animation_data and obj.animation_data.action else None)
+        for obj in bpy.data.objects
+    )
+    return (tuple(collections), objects)
+
+def get_values_signature():
+    """Values that change continuously while dragging: transforms, and the keyframes of ANIM objects.
+    Changes are sent once they settle."""
+    values = []
+    for obj in bpy.data.objects:
+        values.append((obj.name, tuple(obj.location), tuple(obj.rotation_euler), tuple(obj.scale)))
+        if obj.name.startswith("ANIM"):
+            for fcurve in FCurvesFromObject(obj):
+                keys = tuple((tuple(key.co), tuple(key.handle_left), tuple(key.handle_right), key.interpolation) for key in fcurve.keyframe_points)
+                values.append((obj.name, fcurve.data_path, fcurve.array_index, keys))
+    return tuple(values)
 
 def shape_keys_from_object(obj):
     """gets shape keys from object"""
@@ -104,7 +115,7 @@ def get_all_objects_in_collection(collection, objects=None):
         keys, ref = shape_keys_from_object(obj)
         obj_data = {
             "name": obj.name,
-            "location": list(obj.location),
+            "position": list(obj.location),
             "rotation": list(obj.rotation_euler),
             "scale": list(obj.scale),
             "blend_shapes": {
@@ -186,154 +197,39 @@ def send_scene_update(scene_data, change_type=None, changed_data=None):
             print(f"Failed to send scene update: {e}")
 
 def check_pending_transforms():
-    """Check if there are pending transform changes that should be sent."""
-    global _last_transform_time, _pending_transform_changes
-    
-    current_time = time.time()
-    if _pending_transform_changes and (current_time - _last_transform_time) > _debounce_interval:
+    """Send the scene once transforms and keyframes stopped changing for the debounce interval."""
+    global _values_pending
+
+    if _values_pending and (time.time() - _last_value_change_time) > _debounce_interval:
+        _values_pending = False
         print("Sending pending transform changes")
-        send_scene_update(execute(), "transform_change", {"objects": list(_pending_transform_changes.keys())})
-        _pending_transform_changes.clear()
+        send_scene_update(execute(), "transform_change")
         return True
     return False
 
 @persistent
 def detect_important_changes(scene, depsgraph):
-    """Focus on detecting important changes only."""
-    global _last_transform_time, _pending_transform_changes
-    
+    """Send the scene when anything in it changed: layout changes right away, transforms and keyframes once they settle."""
+    global _last_structure, _last_values, _last_value_change_time, _values_pending
+
     if not depsgraph:
         return
-    
-    # First check if we should send any pending transform changes
-    if check_pending_transforms():
-        return
-    
-    important_change = False
-    change_type = None
-    changed_data = {}
-    is_transform_change = False
-    
-    # Check for specific updates in the depsgraph
-    for update in depsgraph.updates:
-        # New or updated objects
-        if update.id and isinstance(update.id, bpy.types.Object):
-            obj = update.id
-            
-            # New object - always send immediately
-            if obj.name not in _tracked_objects:
-                important_change = True
-                change_type = "new_object"
-                changed_data = {"object": obj.name}
-                _tracked_objects[obj.name] = get_object_signature(obj)
-                break
-                
-            # Check for important property changes
-            old_sig = _tracked_objects[obj.name]
-            new_sig = get_object_signature(obj)
-            
-            if old_sig["name"] != new_sig["name"]:
-                # Name changes are sent immediately
-                important_change = True
-                change_type = "rename_object"
-                changed_data = {"old_name": old_sig["name"], "new_name": new_sig["name"]}
-                
-            elif old_sig["visible"] != new_sig["visible"]:
-                # Visibility changes are sent immediately
-                important_change = True
-                change_type = "visibility_change"
-                changed_data = {"object": obj.name, "visible": new_sig["visible"]}
-                
-            elif old_sig["parent"] != new_sig["parent"]:
-                # Parent changes are sent immediately
-                important_change = True
-                change_type = "parent_change"
-                changed_data = {"object": obj.name, "parent": new_sig["parent"]}
-                
-            elif old_sig["animation"] != new_sig["animation"]:
-                # Animation changes are sent immediately
-                important_change = True
-                change_type = "animation_change"
-                changed_data = {"object": obj.name}
-                
-            # Check for transform changes - these are debounced
-            elif (
-                old_sig["location"] != new_sig["location"] or
-                old_sig["rotation"] != new_sig["rotation"] or
-                old_sig["scale"] != new_sig["scale"]
-            ):
-                # For transform changes, we just record the time and object
-                _last_transform_time = time.time()
-                _pending_transform_changes[obj.name] = True
-                is_transform_change = True
-            
-            # Update the tracked signature
-            _tracked_objects[obj.name] = new_sig
-        
-        # Collection changes - always send immediately
-        elif update.id and isinstance(update.id, bpy.types.Collection):
-            collection = update.id
-            
-            # New collection
-            if collection.name not in _tracked_collections:
-                important_change = True
-                change_type = "new_collection"
-                changed_data = {"collection": collection.name}
-                _tracked_collections.add(collection.name)
-                break
-            
-            # Get current objects in collection
-            current_objects = set(obj.name for obj in collection.objects)
-            old_objects = set()
-            
-            # Check for added or removed objects in collection
-            if collection.name in _tracked_collections:
-                # Create a temporary signature just for comparison
-                old_sig = get_collection_signature(collection)
-                old_objects = old_sig["objects"]
-                
-                added_objects = current_objects - old_objects
-                removed_objects = old_objects - current_objects
-                
-                if added_objects or removed_objects:
-                    important_change = True
-                    change_type = "collection_membership"
-                    changed_data = {
-                        "collection": collection.name,
-                        "added": list(added_objects),
-                        "removed": list(removed_objects)
-                    }
-    
-    # Check for deleted objects - always send immediately
-    current_objects = {obj.name for obj in bpy.data.objects}
-    deleted_objects = set(_tracked_objects.keys()) - current_objects
-    if deleted_objects:
-        important_change = True
-        change_type = "deleted_objects"
-        changed_data = {"objects": list(deleted_objects)}
-        for obj_name in deleted_objects:
-            if obj_name in _tracked_objects:
-                del _tracked_objects[obj_name]
-    
-    # Check for deleted collections - always send immediately
-    current_collections = {col.name for col in bpy.data.collections}
-    deleted_collections = set()
-    for col_name in _tracked_collections:
-        if col_name not in current_collections:
-            deleted_collections.add(col_name)
-    
-    if deleted_collections:
-        important_change = True
-        change_type = "deleted_collections"
-        changed_data = {"collections": list(deleted_collections)}
-        for col_name in deleted_collections:
-            _tracked_collections.remove(col_name)
-    
-    # If important non-transform change detected, send the full scene data immediately
-    if important_change and not is_transform_change:
-        print(f"Important change detected: {change_type}")
-        print(f"Changed data: {changed_data}")
-        send_scene_update(execute(), change_type, changed_data)
+
+    structure = get_structure_signature()
+    values = get_values_signature()
+
+    if structure != _last_structure:
+        _last_structure = structure
+        _last_values = values
+        # the full scene goes out now, it includes any pending transforms
+        _values_pending = False
+        print("Important change detected: scene_change")
+        send_scene_update(execute(), "scene_change")
+    elif values != _last_values:
+        # debounced, the timer sends it
+        _last_values = values
+        _last_value_change_time = time.time()
+        _values_pending = True
 
 # Add a timer function to check for pending transforms
 def check_transforms_timer():
@@ -341,19 +237,13 @@ def check_transforms_timer():
     return 0.1  # Check every 0.1 seconds
 
 def initialize_trackers():
-    """Initialize trackers for all existing objects and collections."""
-    _tracked_objects.clear()
-    _tracked_collections.clear()
-    _pending_transform_changes.clear()
-    
-    # Track all existing objects
-    for obj in bpy.data.objects:
-        _tracked_objects[obj.name] = get_object_signature(obj)
-    
-    # Track all existing collections
-    for collection in bpy.data.collections:
-        _tracked_collections.add(collection.name)
-        
+    """Record the current scene and send it."""
+    global _last_structure, _last_values, _values_pending
+
+    _last_structure = get_structure_signature()
+    _last_values = get_values_signature()
+    _values_pending = False
+
     # Send initial state
     send_scene_update(execute(), "initial_state", None)
 
