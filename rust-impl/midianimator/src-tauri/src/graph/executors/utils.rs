@@ -1,4 +1,4 @@
-use super::io::{Inputs, NodeResult, Outputs};
+use super::io::{NodeResult, Outputs};
 
 /// Node: viewer
 ///
@@ -8,7 +8,7 @@ use super::io::{Inputs, NodeResult, Outputs};
 /// outputs:
 /// None
 #[node_registry::node]
-pub fn viewer(_inputs: Inputs) -> NodeResult {
+pub fn viewer() -> NodeResult {
     // :)
     Ok(Outputs::new())
 }

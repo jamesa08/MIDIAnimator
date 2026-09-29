@@ -1,4 +1,4 @@
-use super::io::{Inputs, NodeResult, Outputs};
+use super::io::{NodeResult, Outputs};
 use crate::midi::{MIDIFile, MIDITrack};
 
 pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
@@ -44,22 +44,22 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
 /// "tracks": `Array<MIDITrack>`,
 /// "stats": `String`
 #[node_registry::node]
-pub fn get_midi_file(inputs: Inputs) -> NodeResult {
+pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
     let mut outputs = Outputs::new();
 
     // no path yet, empty outputs until one is picked
-    let file_path: String = inputs.or_default("file_path")?;
+    let file_path = file_path.map(String::as_str).unwrap_or("");
     if file_path.is_empty() {
-        outputs.set("tracks", &Vec::<MIDITrack>::new())?;
-        outputs.set("stats", "")?;
+        outputs.set("tracks", Vec::<MIDITrack>::new());
+        outputs.set("stats", String::new());
         return Ok(outputs);
     }
 
     // read the file, a missing or broken file is an error on the node
-    let midi_file = MIDIFile::new(&file_path).map_err(|e| format!("could not read MIDI file '{}': {}", file_path, e))?;
+    let midi_file = MIDIFile::new(file_path).map_err(|e| format!("could not read MIDI file '{}': {}", file_path, e))?;
     let midi_file_statistics = get_midi_file_statistics(&midi_file);
-    outputs.set("tracks", midi_file.get_midi_tracks())?;
-    outputs.set("stats", &midi_file_statistics)?;
+    outputs.set("tracks", midi_file.get_midi_tracks().clone());
+    outputs.set("stats", midi_file_statistics);
     Ok(outputs)
 }
 
@@ -75,9 +75,9 @@ pub fn get_midi_file(inputs: Inputs) -> NodeResult {
 /// "pitchwheel": `Array<MIDIEvent>`,
 /// "aftertouch": `Array<MIDIEvent>`
 #[node_registry::node]
-pub fn get_midi_track_data(inputs: Inputs) -> NodeResult {
-    let tracks: Vec<MIDITrack> = inputs.or_default("tracks")?;
-    let track_name: String = inputs.or_default("track_name")?;
+pub fn get_midi_track_data(tracks: Option<&Vec<MIDITrack>>, track_name: Option<&String>) -> NodeResult {
+    let tracks: &[MIDITrack] = tracks.map(Vec::as_slice).unwrap_or(&[]);
+    let track_name = track_name.map(String::as_str).unwrap_or("");
 
     // empty outputs until there are tracks and one is picked
     let mut track = MIDITrack::new("");
@@ -90,9 +90,9 @@ pub fn get_midi_track_data(inputs: Inputs) -> NodeResult {
     }
 
     let mut outputs = Outputs::new();
-    outputs.set("notes", &track.notes)?;
-    outputs.set("control_change", &track.control_change)?;
-    outputs.set("pitchwheel", &track.pitchwheel)?;
-    outputs.set("aftertouch", &track.aftertouch)?;
+    outputs.set("notes", track.notes);
+    outputs.set("control_change", track.control_change);
+    outputs.set("pitchwheel", track.pitchwheel);
+    outputs.set("aftertouch", track.aftertouch);
     Ok(outputs)
 }

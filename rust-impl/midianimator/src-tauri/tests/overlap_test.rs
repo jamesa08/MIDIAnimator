@@ -138,22 +138,22 @@ fn unknown_overlap_is_an_error() {
     let error = combine_keyframes("sideways", &OverlapSettings::default(), &mut keys(&[(0.0, 0.0)]), &mut keys(&[(1.0, 0.0)])).unwrap_err();
     assert!(error.contains("unknown animation overlap 'sideways'"), "{}", error);
 
-    let error = animation_generator(Inputs::from([("animation_overlap", json!("sideways"))])).unwrap_err();
+    let error = animation_generator(&Inputs::from([("animation_overlap", json!("sideways"))])).unwrap_err();
     assert!(error.contains("unknown animation overlap 'sideways'"), "{}", error);
 
-    let outputs = animation_generator(Inputs::from([("animation_overlap", json!("max"))])).unwrap();
+    let outputs = animation_generator(&Inputs::from([("animation_overlap", json!("max"))])).unwrap().to_json();
     assert_eq!(outputs["generator"]["animation_overlap"], json!("max"));
 }
 
 #[test]
 fn generator_passes_overlap_blend_through() {
     // unset is the default
-    let outputs = animation_generator(Inputs::default()).unwrap();
+    let outputs = animation_generator(&Inputs::default()).unwrap().to_json();
     assert_eq!(outputs["generator"]["overlap_blend"], json!(0.1));
 
-    let outputs = animation_generator(Inputs::from([("animation_overlap", json!("crossfade")), ("overlap_blend", json!(0.25))])).unwrap();
+    let outputs = animation_generator(&Inputs::from([("animation_overlap", json!("crossfade")), ("overlap_blend", json!(0.25))])).unwrap().to_json();
     assert_eq!(outputs["generator"]["overlap_blend"], json!(0.25));
 
-    let error = animation_generator(Inputs::from([("overlap_blend", json!(-1.0))])).unwrap_err();
+    let error = animation_generator(&Inputs::from([("overlap_blend", json!(-1.0))])).unwrap_err();
     assert!(error.contains("overlap blend can't be negative"), "{}", error);
 }

@@ -1,9 +1,12 @@
 use std::sync::PoisonError;
 
-use super::io::{Inputs, NodeResult, Outputs};
+use std::collections::HashMap;
+
+use super::io::{NodeResult, Outputs};
 use crate::blender::scene_data::write_scene_data;
 use crate::scene_generics::ObjectGroup;
 use crate::state::STATE;
+use crate::utils::animation::BlendKeyframe;
 
 // Node: scene_link
 ///
@@ -14,7 +17,7 @@ use crate::state::STATE;
 /// "name": `String`
 /// "object_groups": `Array<ObjectGroup>`
 #[node_registry::node]
-pub fn scene_link(_inputs: Inputs) -> NodeResult {
+pub fn scene_link() -> NodeResult {
     let mut outputs = Outputs::new();
 
     // copy the scene out, a poisoned lock (a panic somewhere else) still has usable scene data
@@ -23,13 +26,13 @@ pub fn scene_link(_inputs: Inputs) -> NodeResult {
     // no scene yet (Blender hasn't sent one), empty outputs
     let Some(scene) = scene else {
         println!("NO SCENE DATA");
-        outputs.set("name", "")?;
-        outputs.set("object_groups", &Vec::<ObjectGroup>::new())?;
+        outputs.set("name", String::new());
+        outputs.set("object_groups", Vec::<ObjectGroup>::new());
         return Ok(outputs);
     };
 
-    outputs.set("name", &scene.name)?;
-    outputs.set("object_groups", &scene.object_groups)?;
+    outputs.set("name", scene.name);
+    outputs.set("object_groups", scene.object_groups);
     Ok(outputs)
 }
 
@@ -41,8 +44,9 @@ pub fn scene_link(_inputs: Inputs) -> NodeResult {
 /// outputs:
 /// None, the result of the write is logged to the console
 #[node_registry::node]
-pub fn scene_writer(inputs: Inputs) -> NodeResult {
-    let keyframes: serde_json::Value = inputs.get("keyframes")?;
+pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
+    // the Blender side reads JSON
+    let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
 
     // node functions are sync, so the write runs in the background
     println!("writing keyframes to Blender...");
