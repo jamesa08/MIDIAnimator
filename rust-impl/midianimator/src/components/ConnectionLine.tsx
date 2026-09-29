@@ -19,7 +19,7 @@ export default ({ fromX, fromY, toX, toY }: { fromX: number; fromY: number; toX:
 
     return (
         <g>
-            <path fill="none" stroke={"black"} strokeWidth={1.5} className="node-edge" d={d} />
+            <path fill="none" stroke={"black"} strokeWidth={2} className="node-edge" d={d} />
             <circle cx={toX} cy={toY} fill="#fff" r={3} stroke={"black"} strokeWidth={1.5} />
             {!isHovering && <path className="edge-plus-sign" stroke={"black"} d={"M0,-5 V5 M-5,0 H5"} style={{ transform: `translate(${toX + 15}px, ${toY - 15}px)` }} />}
         </g>
