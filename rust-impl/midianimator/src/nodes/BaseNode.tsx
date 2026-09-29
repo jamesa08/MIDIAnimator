@@ -3,11 +3,12 @@ import React, { ReactNode, useCallback, useState, useEffect } from "react";
 import { Handle, NodeResizeControl, Position } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
+import { socketStyle } from "../utils/sockets";
 import { memo } from "react";
 
 const handleStyle = {
-    width: "16px",
-    height: "16px",
+    width: "14px",
+    height: "14px",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
@@ -58,9 +59,9 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
                             <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
                             {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
                             {preview ? (
-                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></div>
+                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></div>
                             ) : (
-                                <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></Handle>
+                                <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></Handle>
                             )}
                         </div>
                         {uiInject}

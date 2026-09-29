@@ -13,12 +13,17 @@ export const COLORS = {
     lightPurple: "#3c3c88",
 };
 
+// socket color per value category (see utils/sockets.ts), in the same families as the header colors
 export const SOCKET_COLORS = {
-    VALUE: "#a1a1a1",
-    GEOMETRY: "#00daa0",
-    VECTOR: "#6363ce",
-    INT: "#488d57",
-    BOOLEAN: "#d3a4d9",
+    midi: "#D4AE3A",
+    scene: "#4DB887",
+    generator: "#D96A78",
+    object_map: "#A8434F",
+    target: "#E89AA5",
+    keyframes: "#C2577F",
+    number: "#000000",
+    string: "#000000",
+    any: "#A1A1A1",
 };
 
 // header color per node category (the spec's `category`), soft mid tones under white text.

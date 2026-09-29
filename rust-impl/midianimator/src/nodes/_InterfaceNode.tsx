@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Handle, NodeResizeControl, Position, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
+import { socketStyle } from "../utils/sockets";
 import { useGroupContext } from "../contexts/GroupContext";
 import { NEW_SOCKET } from "../utils/groups";
 
@@ -10,8 +11,8 @@ import { NEW_SOCKET } from "../utils/groups";
 export const SOCKET_EDIT_EVENT = "motionkeys:socket-edit";
 
 const handleStyle = {
-    width: "16px",
-    height: "16px",
+    width: "14px",
+    height: "14px",
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
@@ -78,9 +79,9 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
                             </>
                         )}
                         {preview ? (
-                            <div className={`react-flow__handle react-flow__handle-${isOutput ? "right" : "left"}`} style={isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }}></div>
+                            <div className={`react-flow__handle react-flow__handle-${isOutput ? "right" : "left"}`} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }}></div>
                         ) : (
-                            <Handle id={socket.id} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }} />
+                            <Handle id={socket.id} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }} />
                         )}
                     </div>
                 ))}
