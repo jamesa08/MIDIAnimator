@@ -186,7 +186,15 @@
                         "id": "animation_overlap",
                         "name": "Animation Overlap",
                         "data_type": "String",
-                        "description": "How overlapping animations combine; currently always add."
+                        "hidden": true,
+                        "description": "How a note combines with an animation still playing on the same curve: add, min, max, prev (previous), next, rvc (rest value crossing), prune (keyframe pruning) or crossfade. Empty = add."
+                    },
+                    {
+                        "id": "overlap_blend",
+                        "name": "Overlap Blend",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Crossfade only: seconds to ease from the animation still playing into the note. Unset = 0.1."
                     },
                     {
                         "id": "animation_property",

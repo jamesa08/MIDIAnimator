@@ -113,7 +113,7 @@ fn generator(property: &str, peak: f64) -> serde_json::Value {
     json!({
         "name": property, "note_on_keyframes": [key(0.0, 0.0), key(1.0, peak)], "note_on_anchor_point": 0.0,
         "note_off_keyframes": [], "note_off_anchor_point": 0.0, "time_mapper": "", "amplitude_mapper": "",
-        "velocity_intensity": 0.0, "animation_overlap": "add", "animation_property": property
+        "velocity_intensity": 0.0, "animation_overlap": "add", "overlap_blend": 0.1, "animation_property": property
     })
 }
 

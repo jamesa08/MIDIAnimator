@@ -49,7 +49,14 @@ pub struct AnimationGenerator {
     pub amplitude_mapper: String,
     pub velocity_intensity: f64,
     pub animation_overlap: String,
+    /// crossfade only: seconds to ease from the old animation into the note
+    #[serde(default = "default_overlap_blend")]
+    pub overlap_blend: f64,
     pub animation_property: String,
+}
+
+fn default_overlap_blend() -> f64 {
+    DEFAULT_OVERLAP_BLEND
 }
 
 /// one object's animations, each with the notes that trigger it, e.g. {"crash": [49], "ride": [51]}
@@ -121,11 +128,12 @@ pub fn interval<'a>(key_list: &'a [BlendKeyframe], time: f64) -> (Option<&'a Ble
     (None, None)
 }
 
+/// the keys at the end of `key_list1` that come after `key_list2` starts, plus the last one before it
 pub fn find_overlap(key_list1: &[BlendKeyframe], key_list2: &[BlendKeyframe]) -> Vec<BlendKeyframe> {
     if key_list1.is_empty() || key_list2.is_empty() {
         return vec![];
     }
-    assert!(key_list1[0].time <= key_list2[0].time, "key_list1 starts after key_list2 — notes went backwards in time");
+    // key_list1 can start after key_list2 when two generators with different timing share a curve, then all of it overlaps
     let first_next = key_list2[0].time;
     let mut result = vec![];
     let mut found = false;
@@ -152,6 +160,9 @@ pub fn add_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec
         return;
     }
 
+    // the inserted keys get the note's values from before they're changed below
+    let original_next_keys = next_keys.clone();
+
     // Add interpolated overlap values into next_keys
     for key in next_keys.iter_mut() {
         let (i1, i2) = interval(&overlapping, key.time);
@@ -164,7 +175,7 @@ pub fn add_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec
     let overlapping_times: Vec<f64> = overlapping.iter().map(|k| k.time).collect();
     for key in inserted_keys.iter_mut() {
         if overlapping_times.contains(&key.time) {
-            let (i1, i2) = interval(next_keys, key.time);
+            let (i1, i2) = interval(&original_next_keys, key.time);
             if let (Some(i1), Some(i2)) = (i1, i2) {
                 key.value += get_value(i1, i2, key.time);
             }
@@ -174,6 +185,307 @@ pub fn add_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec
     inserted_keys.append(next_keys);
     inserted_keys.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
     inserted_keys.dedup_by(|a, b| (a.time - b.time).abs() < f64::EPSILON);
+}
+
+/// the ways a note's keyframes can combine with the keyframes already on its curve, the first is the default
+pub const ANIMATION_OVERLAPS: [&str; 8] = ["add", "min", "max", "prev", "next", "rvc", "prune", "crossfade"];
+
+/// seconds a crossfade eases over when the generator doesn't set one
+pub const DEFAULT_OVERLAP_BLEND: f64 = 0.1;
+
+/// settings some overlap modes use, each mode ignores the ones that aren't its own
+#[derive(Debug, Clone, PartialEq)]
+pub struct OverlapSettings {
+    /// crossfade: seconds to ease from the old animation into the note
+    pub blend: f64,
+}
+
+impl Default for OverlapSettings {
+    fn default() -> Self {
+        Self {
+            blend: DEFAULT_OVERLAP_BLEND,
+        }
+    }
+}
+
+// values this close to 0 count as the rest value
+const REST_EPSILON: f64 = 1e-9;
+
+// keys this close in time count as the same time, notes on a grid often land right on an old key
+const TIME_EPSILON: f64 = 1e-6;
+
+// how many keys a crossfade's ease is sampled into
+const CROSSFADE_STEPS: usize = 8;
+
+/// combines a note's keyframes into the keyframes already on the curve with the given overlap mode
+/// both lists must be sorted by time, `next_keys` is used up
+pub fn combine_keyframes(mode: &str, settings: &OverlapSettings, inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>) -> Result<(), String> {
+    match mode {
+        "add" | "" => add_keyframes(inserted_keys, next_keys),
+        "min" => extreme_keyframes(inserted_keys, next_keys, f64::min),
+        "max" => extreme_keyframes(inserted_keys, next_keys, f64::max),
+        "prev" => prev_keyframes(inserted_keys, next_keys),
+        "next" => next_keyframes(inserted_keys, next_keys),
+        "rvc" => rest_value_crossing_keyframes(inserted_keys, next_keys),
+        "prune" => prune_keyframes(inserted_keys, next_keys),
+        "crossfade" => crossfade_keyframes(inserted_keys, next_keys, settings.blend),
+        other => return Err(format!("unknown animation overlap '{}', expected one of: {}", other, ANIMATION_OVERLAPS.join(", "))),
+    }
+    Ok(())
+}
+
+fn is_rest(value: f64) -> bool {
+    value.abs() < REST_EPSILON
+}
+
+/// the value of a curve at `time`, linear between keys and held past either end
+pub fn value_at(keys: &[BlendKeyframe], time: f64) -> f64 {
+    match interval(keys, time) {
+        (Some(k1), Some(k2)) => get_value(k1, k2, time),
+        _ => 0.0,
+    }
+}
+
+// whether the segment just before (or just after) `time` moves, a segment moves unless both its keys are at rest
+fn moving_near(keys: &[BlendKeyframe], time: f64, before: bool) -> bool {
+    keys.windows(2).any(|w| {
+        let inside = if before {
+            w[0].time < time && time <= w[1].time
+        } else {
+            w[0].time <= time && time < w[1].time
+        };
+        inside && !(is_rest(w[0].value) && is_rest(w[1].value))
+    })
+}
+
+/// whether a curve is in motion at `time`
+/// false where it sits at rest, and on the key where it leaves or comes back to rest
+/// a key at rest in the middle of a motion (a zero crossing) is still in motion
+fn in_motion(keys: &[BlendKeyframe], time: f64) -> bool {
+    !is_rest(value_at(keys, time)) || (moving_near(keys, time, true) && moving_near(keys, time, false))
+}
+
+// index of the first key at or after `start`, keys before it are never touched by a note starting at `start`
+fn split_at(keys: &[BlendKeyframe], start: f64) -> usize {
+    keys.partition_point(|k| k.time < start)
+}
+
+/// min and max: where both curves are in motion keep the smaller (or bigger) one, elsewhere whichever one is moving
+/// a curve at rest doesn't count, so a note can't be flattened by the rest value of the one before it
+fn extreme_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>, pick: fn(f64, f64) -> f64) {
+    let Some(first) = next_keys.first().cloned() else {
+        return;
+    };
+    let start = first.time;
+    let split = split_at(inserted_keys, start);
+    // the old curve from its last key before the note, that's all that can overlap
+    let old: Vec<BlendKeyframe> = inserted_keys[split.saturating_sub(1)..].to_vec();
+
+    // evaluate both curves at every key time from the start of the note
+    let mut times: Vec<f64> = old.iter().map(|k| k.time).filter(|&t| t >= start).chain(next_keys.iter().map(|k| k.time)).collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
+
+    // where both are moving and cross between two times the result switches curves, so the crossing gets a key too
+    let mut crossings = vec![];
+    for w in times.windows(2) {
+        let mid = (w[0] + w[1]) / 2.0;
+        if !(in_motion(&old, mid) && in_motion(next_keys, mid)) {
+            continue;
+        }
+        let d0 = value_at(&old, w[0]) - value_at(next_keys, w[0]);
+        let d1 = value_at(&old, w[1]) - value_at(next_keys, w[1]);
+        if d0 * d1 < 0.0 {
+            crossings.push(w[0] + (w[1] - w[0]) * d0 / (d0 - d1));
+        }
+    }
+    times.extend(crossings);
+    times.sort_by(f64::total_cmp);
+    times.dedup_by(|a, b| (*a - *b).abs() < f64::EPSILON);
+
+    let combined: Vec<BlendKeyframe> = times
+        .iter()
+        .map(|&time| {
+            let (old_value, next_value) = (value_at(&old, time), value_at(next_keys, time));
+            let value = match (in_motion(&old, time), in_motion(next_keys, time)) {
+                (true, true) => pick(old_value, next_value),
+                (true, false) => old_value,
+                (false, true) => next_value,
+                (false, false) => 0.0,
+            };
+            BlendKeyframe {
+                time,
+                value,
+                ..first.clone()
+            }
+        })
+        .collect();
+
+    inserted_keys.truncate(split);
+    inserted_keys.extend(combined);
+    next_keys.clear();
+}
+
+/// previous: the animation already playing wins, a note that starts while it's still moving is dropped
+fn prev_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>) {
+    let Some(start) = next_keys.first().map(|k| k.time) else {
+        return;
+    };
+    let old = &inserted_keys[split_at(inserted_keys, start).saturating_sub(1)..];
+    let still_playing = in_motion(old, start) || old.iter().any(|k| k.time > start && !is_rest(k.value));
+    if still_playing {
+        next_keys.clear();
+        return;
+    }
+    // nothing is playing, the rest keys left after the start would only zigzag with the note
+    next_keyframes(inserted_keys, next_keys);
+}
+
+// index to cut the old keys at for a note starting at `start`
+// an old key right on the start stays when the old curve is still moving there, like a peak landing on the next hit
+fn cut_index(keys: &[BlendKeyframe], start: f64) -> usize {
+    let split = split_at(keys, start - TIME_EPSILON);
+    let on_start = keys.get(split).is_some_and(|k| k.time <= start + TIME_EPSILON);
+    if on_start && in_motion(&keys[split.saturating_sub(1)..], start) {
+        split + 1
+    } else {
+        split
+    }
+}
+
+/// next: the new note wins, the old animation is cut off where the note starts
+fn next_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>) {
+    let Some(start) = next_keys.first().map(|k| k.time) else {
+        return;
+    };
+    let cut = cut_index(inserted_keys, start);
+    inserted_keys.truncate(cut);
+    // the note's keys up to an old key that stayed would only duplicate it
+    if let Some(last) = inserted_keys.last().map(|k| k.time) {
+        next_keys.retain(|k| k.time > last + TIME_EPSILON);
+    }
+    inserted_keys.append(next_keys);
+}
+
+/// crossfade: the note takes over right away, but starts from where the old animation was and eases into its own curve over `blend` seconds
+/// only the gap between the two fades out, so the note keeps its own shape and timing and the value never jumps
+fn crossfade_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>, blend: f64) {
+    let Some(first) = next_keys.first().cloned() else {
+        return;
+    };
+    let start = first.time;
+    let split = split_at(inserted_keys, start);
+    let old = &inserted_keys[split.saturating_sub(1)..];
+    if blend <= 0.0 || !in_motion(old, start) {
+        return next_keyframes(inserted_keys, next_keys);
+    }
+    let gap = value_at(old, start) - first.value;
+    let end = start + blend;
+
+    // sample the ease evenly, plus the note's own keys inside it so its shape isn't cut short
+    let mut times: Vec<f64> = (0..=CROSSFADE_STEPS).map(|i| start + blend * i as f64 / CROSSFADE_STEPS as f64).chain(next_keys.iter().map(|k| k.time).filter(|&t| t > start && t < end)).collect();
+    times.sort_by(f64::total_cmp);
+    times.dedup_by(|a, b| (*a - *b).abs() < TIME_EPSILON);
+
+    let faded: Vec<BlendKeyframe> = times
+        .iter()
+        .map(|&time| {
+            // smoothstep from the full gap down to nothing
+            let u = (time - start) / blend;
+            let fade = 2.0 * u.powi(3) - 3.0 * u.powi(2) + 1.0;
+            BlendKeyframe {
+                time,
+                value: value_at(next_keys, time) + gap * fade,
+                ..first.clone()
+            }
+        })
+        .collect();
+
+    inserted_keys.truncate(split);
+    inserted_keys.extend(faded);
+    inserted_keys.extend(next_keys.drain(..).filter(|k| k.time > end + TIME_EPSILON));
+}
+
+/// rest value crossing: the old animation keeps playing until it crosses its rest value, then the note plays from there
+/// switching at rest means the value never jumps and the note keeps its whole shape, but it starts late while the old animation finishes
+fn rest_value_crossing_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>) {
+    let Some(first) = next_keys.first().cloned() else {
+        return;
+    };
+    let start = first.time;
+    let split = split_at(inserted_keys, start);
+    let old = &inserted_keys[split.saturating_sub(1)..];
+    if !in_motion(old, start) {
+        return next_keyframes(inserted_keys, next_keys);
+    }
+
+    // walk the old curve from the note's start to where it next reaches or crosses rest
+    let (mut prev_time, mut prev_value) = (start, value_at(old, start));
+    let mut switch = None;
+    if is_rest(prev_value) {
+        // already crossing rest right at the start
+        switch = Some(start);
+    }
+    for key in old.iter().filter(|k| k.time > start) {
+        if switch.is_some() {
+            break;
+        }
+        if is_rest(key.value) {
+            switch = Some(key.time);
+        } else if prev_value * key.value < 0.0 {
+            switch = Some(prev_time + (key.time - prev_time) * prev_value / (prev_value - key.value));
+        }
+        (prev_time, prev_value) = (key.time, key.value);
+    }
+    // an old curve that never gets back to rest (it holds a value) has nothing to wait for, the note cuts in like next
+    let Some(switch_time) = switch else {
+        return next_keyframes(inserted_keys, next_keys);
+    };
+
+    // the note waits for the switch and plays whole from there
+    let delay = switch_time - start;
+    inserted_keys.retain(|k| k.time < switch_time - TIME_EPSILON);
+    inserted_keys.extend(next_keys.drain(..).map(|k| BlendKeyframe {
+        time: k.time + delay,
+        ..k
+    }));
+}
+
+/// keyframe pruning: the old animation is cut off where the note starts, and the note's keys leading up to its first peak are dropped
+/// when they'd make the curve change direction on the way there. what's left flows straight from the old animation into the note's
+/// first peak, so with Blender's smooth handles the curve's slope doesn't jump
+fn prune_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<BlendKeyframe>) {
+    let Some(start) = next_keys.first().map(|k| k.time) else {
+        return;
+    };
+    let split = split_at(inserted_keys, start);
+    let old = &inserted_keys[split.saturating_sub(1)..];
+    // nothing to smooth when the old curve is resting, or the note starts before it
+    if !in_motion(old, start) || split == 0 {
+        return next_keyframes(inserted_keys, next_keys);
+    }
+    // an old key right on the note's start (like a peak landing on the next hit) is kept as where the old curve left off
+    let split = inserted_keys.partition_point(|k| k.time <= start + TIME_EPSILON);
+    let from = inserted_keys[split - 1].value;
+    let from_time = inserted_keys[split - 1].time;
+    next_keys.retain(|k| k.time > from_time);
+
+    // the note's first peak: the first key away from rest where the curve heads back towards rest (or its last key)
+    let peak = (0..next_keys.len()).find(|&i| !is_rest(next_keys[i].value) && next_keys.get(i + 1).map_or(true, |after| (after.value - next_keys[i].value) * next_keys[i].value < 0.0));
+    if let Some(peak) = peak {
+        let to = next_keys[peak].value;
+        let (low, high) = (from.min(to), from.max(to));
+        // keep a key before the peak only if it lies strictly between where the old curve left off and the peak
+        let mut index = 0;
+        next_keys.retain(|k| {
+            let keep = index >= peak || (low < k.value && k.value < high);
+            index += 1;
+            keep
+        });
+    }
+    // cut where the note starts, not at its first key left after pruning
+    inserted_keys.truncate(split);
+    inserted_keys.append(next_keys);
 }
 
 // helper to parse properties like "rotation[0]" into ("rotation", 0)

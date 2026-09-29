@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use super::io::{Inputs, NodeResult, Outputs};
 use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, KeyframePoint, ObjectGroup};
-use crate::utils::animation::{add_keyframes, co_of, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap};
+use crate::utils::animation::{co_of, combine_keyframes, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap, OverlapSettings, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 
 /// Node: keyframes_from_object
 ///
@@ -80,6 +80,7 @@ fn anim_curve_name(anim_curve: &AnimCurve) -> String {
 /// "amplitude_mapper": `String`,
 /// "velocity_intensity": `f64`,
 /// "animation_overlap": `String`,
+/// "overlap_blend": `f64`,
 /// "animation_property": `String`
 ///
 /// outputs:
@@ -97,6 +98,21 @@ pub fn animation_generator(inputs: Inputs) -> NodeResult {
         animation_property = format!("{}[{}]", data_path, array_index);
     }
 
+    // unset is the default, "add"
+    let mut animation_overlap: String = inputs.or_default("animation_overlap")?;
+    if animation_overlap.is_empty() {
+        animation_overlap = ANIMATION_OVERLAPS[0].to_string();
+    }
+    if !ANIMATION_OVERLAPS.contains(&animation_overlap.as_str()) {
+        return Err(format!("unknown animation overlap '{}', expected one of: {}", animation_overlap, ANIMATION_OVERLAPS.join(", ")));
+    }
+
+    // unset uses the default, a crossfade can't go backwards in time
+    let overlap_blend: f64 = inputs.opt("overlap_blend")?.unwrap_or(DEFAULT_OVERLAP_BLEND);
+    if overlap_blend < 0.0 {
+        return Err(format!("overlap blend can't be negative, got {}", overlap_blend));
+    }
+
     let generator = AnimationGenerator {
         name: inputs.or_default("name")?,
         note_on_keyframes: note_on_curve.map(|c| c.keyframe_points).unwrap_or_default(),
@@ -106,8 +122,8 @@ pub fn animation_generator(inputs: Inputs) -> NodeResult {
         time_mapper: inputs.or_default("time_mapper")?,
         amplitude_mapper: inputs.or_default("amplitude_mapper")?,
         velocity_intensity: inputs.or_default("velocity_intensity")?,
-        // FIXME: only "add" is supported until the overlap modes are ported
-        animation_overlap: "add".to_string(),
+        animation_overlap,
+        overlap_blend,
         animation_property,
     };
 
@@ -437,10 +453,10 @@ pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
 
             // combine with the keyframes already on this curve
             let inserted = obj_curves.entry(obj_name.clone()).or_default().entry((data_path, array_index)).or_default();
-            match gen.animation_overlap.as_str() {
-                "add" | "" => add_keyframes(inserted, &mut next_keys),
-                other => return Err(format!("animation overlap '{}' is not supported yet", other)),
-            }
+            let settings = OverlapSettings {
+                blend: gen.overlap_blend,
+            };
+            combine_keyframes(&gen.animation_overlap, &settings, inserted, &mut next_keys)?;
         }
     }
 
