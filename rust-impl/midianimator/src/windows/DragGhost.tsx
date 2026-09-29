@@ -1,9 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import nodeTypes from "../nodes/NodeTypes";
 import { DRAG_GHOST_PAD, DRAG_GHOST_SET_EVENT } from "../utils/panels";
+import { GroupContext } from "../contexts/GroupContext";
+import { usePanelGroups } from "../components/PanelBody";
+import { nodeEntries, previewData } from "../utils/nodeEntries";
 
 // transparent click through window that shows the node being dragged out of a floating panel.
 // every node is rendered up front, their data loads async and would pop in if rendered on demand
@@ -22,15 +25,24 @@ const DragGhost: React.FC = () => {
         };
     }, []);
 
+    const groups = usePanelGroups();
+    const entries = useMemo(() => nodeEntries(groups), [groups]);
+    const groupContext = useMemo(() => ({ groups, scope: null, scopeId: null, editable: false, openGroup: () => {} }), [groups]);
+
     return (
         <ReactFlowProvider>
-            <div style={{ padding: DRAG_GHOST_PAD, opacity: 0.75 }}>
-                {Object.entries(nodeTypes).map(([key, Node]: [string, any]) => (
-                    <div key={key} style={{ width: ghost.width, display: key === ghost.nodeType ? "block" : "none" }}>
-                        <Node data="preview" />
-                    </div>
-                ))}
-            </div>
+            <GroupContext.Provider value={groupContext}>
+                <div style={{ padding: DRAG_GHOST_PAD, opacity: 0.75 }}>
+                    {entries.map((entry) => {
+                        const Node = (nodeTypes as any)[entry.nodeType];
+                        return (
+                            <div key={entry.key} style={{ width: ghost.width, display: entry.key === ghost.nodeType ? "block" : "none" }}>
+                                <Node data={previewData(entry)} />
+                            </div>
+                        );
+                    })}
+                </div>
+            </GroupContext.Provider>
         </ReactFlowProvider>
     );
 };

@@ -1,7 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
 import { PANELS, startDragGhost } from "../utils/panels";
+import { StateContext } from "../contexts/StateContext";
+import { GroupContext } from "../contexts/GroupContext";
+import { GroupDef, allGroups, loadBuiltinGroups } from "../utils/groups";
+import { nodeEntries, previewData } from "../utils/nodeEntries";
 
 // where a node from the nodes panel was released, offset is where it was grabbed in node (unscaled) pixels
 export interface PanelNodeDrop {
@@ -23,7 +27,7 @@ interface PanelBodyProps {
 
 // preview of one node, scaled down to half size.
 // kept outside PanelBody, a component declared inside another is a new type every render and remounts
-const ScaledNodeWrapper: React.FC<{ Node: any; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }> = ({ Node, onPointerDown }) => {
+const ScaledNodeWrapper: React.FC<{ Node: any; data: any; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }> = ({ Node, data, onPointerDown }) => {
     const nodeRef = useRef<HTMLDivElement>(null);
     const [isMeasured, setIsMeasured] = useState(false);
 
@@ -53,10 +57,20 @@ const ScaledNodeWrapper: React.FC<{ Node: any; onPointerDown: (event: React.Poin
 
     return (
         <div ref={nodeRef} className="node-container" onPointerDown={onPointerDown}>
-            <Node data="preview" />
+            <Node data={data} />
         </div>
     );
 };
+
+// the built-in groups plus the project's own (when this window has the project state), for group node previews
+export function usePanelGroups(): Record<string, GroupDef> {
+    const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
+    useEffect(() => {
+        loadBuiltinGroups().then(setBuiltin);
+    }, []);
+    const project = useContext(StateContext)?.backEndState?.rf_instance;
+    return useMemo(() => allGroups(project, builtin), [project, builtin]);
+}
 
 // panel contents, shared by the docked panel and its popped out window
 const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = false }) => {
@@ -124,15 +138,21 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
         window.addEventListener("keydown", handleKey, true);
     };
 
+    const groups = usePanelGroups();
+    const entries = useMemo(() => nodeEntries(groups), [groups]);
+    const groupContext = useMemo(() => ({ groups, scope: null, scopeId: null, editable: false, openGroup: () => {} }), [groups]);
+
     if (PANELS[id]?.name !== "Nodes") return null;
 
     return (
         <ReactFlowProvider>
-            <div className="nodes-grid p-2">
-                {Object.entries(nodeTypes).map(([key, value]) => (
-                    <ScaledNodeWrapper key={key} Node={value} onPointerDown={(e) => startNodeDrag(e, key)} />
-                ))}
-            </div>
+            <GroupContext.Provider value={groupContext}>
+                <div className="nodes-grid p-2">
+                    {entries.map((entry) => (
+                        <ScaledNodeWrapper key={entry.key} Node={(nodeTypes as any)[entry.nodeType]} data={previewData(entry)} onPointerDown={(e) => startNodeDrag(e, entry.key)} />
+                    ))}
+                </div>
+            </GroupContext.Provider>
         </ReactFlowProvider>
     );
 };
