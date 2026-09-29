@@ -1,0 +1,91 @@
+name: Build MotionKeys
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            name: macos-arm64
+            args: --target aarch64-apple-darwin
+            bundle: target/aarch64-apple-darwin/release/bundle
+          - platform: macos-latest
+            name: macos-x64
+            args: --target x86_64-apple-darwin
+            bundle: target/x86_64-apple-darwin/release/bundle
+          - platform: windows-latest
+            name: windows-x64
+            args: ""
+            bundle: target/release/bundle
+          - platform: ubuntu-22.04
+            name: linux-x64
+            args: ""
+            bundle: target/release/bundle
+
+    runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: rust-impl/midianimator
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      # short commit hash goes in the artifact name so builds can be traced back to a commit
+      - name: Get commit hash
+        shell: bash
+        run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # tauri needs webkit/gtk, xcap needs xcb/pipewire/wayland for screen capture
+      - name: Install linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libxcb1-dev libxrandr-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev libegl-dev libgbm-dev clang
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rust-impl/midianimator/package-lock.json
+
+      - name: Set up rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl/midianimator/src-tauri
+          key: ${{ matrix.name }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npx tauri build ${{ matrix.args }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v6
+        with:
+          name: MotionKeys-${{ github.ref_name }}-${{ env.HASH }}-${{ matrix.name }}
+          path: |
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/dmg/*.dmg
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/msi/*.msi
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/nsis/*.exe
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/deb/*.deb
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/rpm/*.rpm
+            rust-impl/midianimator/src-tauri/${{ matrix.bundle }}/appimage/*.AppImage
+          if-no-files-found: error

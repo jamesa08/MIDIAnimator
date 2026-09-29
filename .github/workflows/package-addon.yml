@@ -1,0 +1,37 @@
+name: Package MotionKeys Blender add-on
+
+permissions:
+  contents: read
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      # short commit hash goes in the artifact name so builds can be traced back to a commit
+      - name: Get commit hash
+        shell: bash
+        run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # the add-on folder is renamed to a valid python module name, blender installs the zip as that module
+      - name: Stage add-on
+        run: |
+          mkdir -p artifacts/midianimator_bridge
+          cp -a rust-impl/blender-addon/. artifacts/midianimator_bridge/
+          find artifacts -name "__pycache__" -type d -prune -exec rm -rf {} +
+          find artifacts -name ".DS_Store" -delete
+
+      # the artifact download is a zip with midianimator_bridge/ at its root, installable directly in blender
+      - name: Upload add-on
+        uses: actions/upload-artifact@v6
+        with:
+          name: MIDIAnimator-Bridge-${{ github.ref_name }}-${{ env.HASH }}
+          path: artifacts/
+          if-no-files-found: error

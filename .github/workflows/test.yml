@@ -1,0 +1,44 @@
+name: Test MotionKeys
+
+permissions:
+  contents: read
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: rust-impl/midianimator
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rust-impl/midianimator/package-lock.json
+
+      - name: Set up rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl/midianimator/src-tauri
+
+      # tsc typechecks the frontend, and generate_context! needs the built frontend to exist
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run rust tests
+        working-directory: rust-impl/midianimator/src-tauri
+        run: cargo test
