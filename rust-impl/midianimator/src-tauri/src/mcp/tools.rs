@@ -1,7 +1,8 @@
 // MCP tool definitions. the graph logic lives in `crate::graph::{model, edit, outline}`,
 // this file only reads/writes `STATE`, runs execution and formats the results
 
-use std::collections::HashMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{MutexGuard, PoisonError};
 
 use base64::Engine;
@@ -14,7 +15,9 @@ use serde_json::{Map, Value};
 
 use crate::graph::edit::{self, EditResult};
 use crate::graph::execute::{execute_graph, panic_message};
-use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, NodeSpec, Position};
+use crate::graph::builtin::all_groups;
+use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
+use crate::graph::run::{instance_path, scoped_values};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
 use crate::ui::screenshot;
@@ -41,6 +44,8 @@ pub struct OutlineParams {
     pub scope: Option<String>,
     /// "concise" (default) or "full" (adds descriptions and the values arriving on connected inputs)
     pub detail: Option<String>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // node_describe, graph_remove_node
@@ -48,6 +53,8 @@ pub struct OutlineParams {
 pub struct NodeParams {
     /// Node id or unique id prefix, e.g. "get_midi_file-1"
     pub node: String,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // types_describe
@@ -75,6 +82,8 @@ pub struct AddNodeParams {
     pub position: Option<Position>,
     /// Place the new node to the right of this node (id or prefix) when position is omitted
     pub after: Option<String>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // graph_connect
@@ -88,6 +97,8 @@ pub struct ConnectParams {
     pub to_node: String,
     /// Input handle id on the consuming node; an existing connection into it is replaced
     pub to_input: String,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // graph_disconnect
@@ -97,6 +108,8 @@ pub struct DisconnectParams {
     pub to_node: String,
     /// Input handle id whose connection is removed
     pub to_input: String,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // graph_set_inputs
@@ -106,6 +119,8 @@ pub struct SetInputsParams {
     pub node: String,
     /// Input values keyed by input id; merged into the node's values, null unsets one
     pub inputs: Map<String, Value>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
 }
 
 // graph_execute
@@ -134,6 +149,17 @@ struct Snapshot {
     state: AppState,
     graph: Graph,
     specs: Vec<NodeSpec>,
+    groups: BTreeMap<String, GroupDef>,
+}
+
+/// one graph of the snapshot: the top level, or inside a node group
+struct View<'a> {
+    graph: &'a Graph,
+    /// the group, `None` at the top level
+    scope: Option<&'a GroupDef>,
+    /// values recorded for this graph's nodes, keyed by their ids
+    results: Cow<'a, HashMap<String, Value>>,
+    inputs: Cow<'a, HashMap<String, Value>>,
 }
 
 impl Snapshot {
@@ -148,22 +174,64 @@ impl Snapshot {
         // parse the graph and the node specs
         let graph = Graph::from_rf(&state.rf_instance)?;
         let specs = node_specs(&state.default_nodes);
+        let groups = all_groups(&graph);
         Ok(Self {
             state,
             graph,
             specs,
+            groups,
         })
     }
 
-    /// borrows the snapshot as the context the outline functions need
-    fn ctx(&self) -> OutlineCtx<'_> {
+    /// the top-level graph, or the graph inside a node group
+    fn view(&self, group: Option<&str>) -> Result<View<'_>, String> {
+        let Some(group_id) = group else {
+            return Ok(View {
+                graph: &self.graph,
+                scope: None,
+                results: Cow::Borrowed(&self.state.executed_results),
+                inputs: Cow::Borrowed(&self.state.executed_inputs),
+            });
+        };
+        let def = find_group(&self.groups, group_id)?;
+        // values inside a group are recorded under the path of a group node running it
+        let path = instance_path(&self.graph, &self.groups, group_id);
+        let scoped = |values: &HashMap<String, Value>| path.as_deref().map(|p| scoped_values(values, p)).unwrap_or_default();
+        Ok(View {
+            graph: &def.graph,
+            scope: Some(def),
+            results: Cow::Owned(scoped(&self.state.executed_results)),
+            inputs: Cow::Owned(scoped(&self.state.executed_inputs)),
+        })
+    }
+
+    /// borrows a view of the snapshot as the context the outline functions need
+    fn ctx<'a>(&'a self, view: &'a View<'a>) -> OutlineCtx<'a> {
         OutlineCtx {
-            graph: &self.graph,
-            specs: &self.specs,
-            results: &self.state.executed_results,
-            inputs: &self.state.executed_inputs,
+            graph: view.graph,
+            specs: Specs {
+                specs: &self.specs,
+                groups: &self.groups,
+                scope: view.scope,
+            },
+            results: &view.results,
+            inputs: &view.inputs,
             scene_data: &self.state.scene_data,
         }
+    }
+}
+
+/// a node group by id, the error lists the ones there are
+fn find_group<'a>(groups: &'a BTreeMap<String, GroupDef>, group_id: &str) -> Result<&'a GroupDef, String> {
+    groups.get(group_id).ok_or_else(|| format!("no node group '{}'; node groups are: {}", group_id, groups.keys().cloned().collect::<Vec<_>>().join(", ")))
+}
+
+/// a note for outlines inside a group whose values aren't recorded
+fn group_values_note(view: &View, group: Option<&str>) -> String {
+    match group {
+        Some(group_id) if view.results.is_empty() => format!("inside node group '{}'. no values recorded inside: a group's inside is only recorded while it's open in the app (or no group node runs it)\n\n", group_id),
+        Some(group_id) => format!("inside node group '{}'\n\n", group_id),
+        None => String::new(),
     }
 }
 
@@ -227,9 +295,9 @@ pub struct MotionKeysMcp {
 impl MotionKeysMcp {
     /// applies one edit to the stored graph, pushes it to the UI, re-runs the realtime graph
     /// and reports what changed plus the updated outline of the touched nodes
-    async fn apply_edit<F>(&self, edit: F) -> Result<CallToolResult, McpError>
+    async fn apply_edit<F>(&self, group: Option<&str>, edit: F) -> Result<CallToolResult, McpError>
     where
-        F: FnOnce(&mut Graph, &[NodeSpec], &HashMap<String, Value>) -> Result<EditResult, String>,
+        F: FnOnce(&mut Graph, &Specs, &HashMap<String, Value>) -> Result<EditResult, String>,
     {
         // lock the state for the edit only, the lock is dropped before execution
         let result = {
@@ -244,7 +312,40 @@ impl MotionKeysMcp {
             };
             // apply the edit, only write the graph back to the state if it worked
             let specs = node_specs(&state.default_nodes);
-            match edit(&mut graph, &specs, &state.executed_results) {
+            let groups = all_groups(&graph);
+            let outcome = match group {
+                None => {
+                    let specs = Specs {
+                        specs: &specs,
+                        groups: &groups,
+                        scope: None,
+                    };
+                    edit(&mut graph, &specs, &state.executed_results)
+                }
+                // edit a copy of the group, it's stored in the project (a built-in becomes the project's own copy)
+                Some(group_id) => {
+                    let def = match find_group(&groups, group_id) {
+                        Ok(def) => def,
+                        Err(e) => return tool_error(e),
+                    };
+                    let results = instance_path(&graph, &groups, group_id).map(|p| scoped_values(&state.executed_results, &p)).unwrap_or_default();
+                    let specs = Specs {
+                        specs: &specs,
+                        groups: &groups,
+                        scope: Some(def),
+                    };
+                    let mut edited = def.clone();
+                    let made_local = !graph.groups.contains_key(group_id);
+                    edit(&mut edited.graph, &specs, &results).map(|mut result| {
+                        graph.groups.insert(group_id.to_string(), edited);
+                        if made_local {
+                            result.message.push_str(&format!("; node group '{}' is now this project's own copy", group_id));
+                        }
+                        result
+                    })
+                }
+            };
+            match outcome {
                 Ok(result) => {
                     state.rf_instance = graph.to_rf();
                     result
@@ -256,17 +357,21 @@ impl MotionKeysMcp {
         // push the new graph to the UI, then re-run the realtime graph
         update_state();
         let execution = run_realtime_if_allowed().await;
-        self.edit_report(&result, &execution)
+        self.edit_report(group, &result, &execution)
     }
 
     /// builds the tool result for an edit: the message, the execution status and the outline of each touched node
-    fn edit_report(&self, result: &EditResult, execution: &str) -> Result<CallToolResult, McpError> {
+    fn edit_report(&self, group: Option<&str>, result: &EditResult, execution: &str) -> Result<CallToolResult, McpError> {
         // take a fresh snapshot so the outline shows the new results
         let snapshot = match Snapshot::take() {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
-        let ctx = snapshot.ctx();
+        let view = match snapshot.view(group) {
+            Ok(view) => view,
+            Err(e) => return tool_error(e),
+        };
+        let ctx = snapshot.ctx(&view);
         // message and execution status first, then one block per touched node
         let mut text = format!("{}\n{}", result.message, execution);
         for id in &result.touched {
@@ -315,10 +420,29 @@ impl MotionKeysMcp {
     // node_types_list: every node type with its inputs and outputs
     #[tool(description = "List the node types that can be added, with their inputs and outputs (id, UI name, type, description). 'par' inputs are hidden in the UI: set them with graph_set_inputs, never connect them. Outputs marked hidden are display-only and must not be connected either.", annotations(read_only_hint = true))]
     async fn node_types_list(&self) -> Result<CallToolResult, McpError> {
-        let specs = node_specs(&lock_state().default_nodes);
+        let state = lock_state().clone();
+        let specs = node_specs(&state.default_nodes);
+        let graph = Graph::from_rf(&state.rf_instance).unwrap_or_default();
+        let groups = all_groups(&graph);
+        let lookup = Specs {
+            specs: &specs,
+            groups: &groups,
+            scope: None,
+        };
+        // node groups are added by their id, the plain group type is only how they're stored
+        let group_specs: Vec<NodeSpec> = groups
+            .keys()
+            .filter_map(|id| {
+                lookup.for_type(id).map(|spec| NodeSpec {
+                    id: id.clone(),
+                    ..spec.into_owned()
+                })
+            })
+            .collect();
+        let all: Vec<&NodeSpec> = specs.iter().filter(|spec| spec.id != "group").chain(group_specs.iter()).collect();
         // one block per node type
-        let blocks: Vec<String> = specs
-            .iter()
+        let blocks: Vec<String> = all
+            .into_iter()
             .map(|spec| {
                 // header line: id, name, description and whether it's realtime
                 let mut lines = vec![format!(
@@ -374,9 +498,13 @@ impl MotionKeysMcp {
             Some("full") => Detail::Full,
             Some(other) => return tool_error(format!("unknown detail '{}'; use \"concise\" or \"full\"", other)),
         };
+        let view = match snapshot.view(params.group.as_deref()) {
+            Ok(view) => view,
+            Err(e) => return tool_error(e),
+        };
         // add the node and edge counts on top of the outline
-        match outline::outline(&snapshot.ctx(), params.scope.as_deref(), detail) {
-            Ok(text) => ok_text(format!("{} nodes, {} edges\n\n{}", snapshot.graph.nodes.len(), snapshot.graph.edges.len(), text)),
+        match outline::outline(&snapshot.ctx(&view), params.scope.as_deref(), detail) {
+            Ok(text) => ok_text(format!("{}{} nodes, {} edges\n\n{}", group_values_note(&view, params.group.as_deref()), view.graph.nodes.len(), view.graph.edges.len(), text)),
             Err(e) => tool_error(e),
         }
     }
@@ -388,9 +516,13 @@ impl MotionKeysMcp {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
+        let view = match snapshot.view(params.group.as_deref()) {
+            Ok(view) => view,
+            Err(e) => return tool_error(e),
+        };
         // resolve the id (prefixes are allowed) and show it in full detail
-        match snapshot.graph.resolve(&params.node) {
-            Ok(id) => ok_text(node_block(&snapshot.ctx(), &id, Detail::Full)),
+        match view.graph.resolve(&params.node) {
+            Ok(id) => ok_text(node_block(&snapshot.ctx(&view), &id, Detail::Full)),
             Err(e) => tool_error(e),
         }
     }
@@ -433,19 +565,19 @@ impl MotionKeysMcp {
     #[tool(description = "Add a node. Returns its new id (e.g. get_midi_file-2). Without position it is placed right of 'after', or right of the right-most node.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_add_node(&self, Parameters(params): Parameters<AddNodeParams>) -> Result<CallToolResult, McpError> {
         // add the node through apply_edit so the UI and realtime results get updated
-        self.apply_edit(|graph, specs, _| edit::add_node(graph, specs, &params.node_type, params.inputs.as_ref(), params.position, params.after.as_deref())).await
+        self.apply_edit(params.group.as_deref(), |graph, specs, _| edit::add_node(graph, specs, &params.node_type, params.inputs.as_ref(), params.position, params.after.as_deref())).await
     }
 
     // graph_connect
     #[tool(description = "Connect an output to an input (data flows from_node.from_output -> to_node.to_input). Checks types and cycles; replaces any existing connection into that input. Hidden handles ('par' inputs and outputs marked hidden) must never be connected and are refused.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_connect(&self, Parameters(params): Parameters<ConnectParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(|graph, specs, results| edit::connect(graph, specs, results, &params.from_node, &params.from_output, &params.to_node, &params.to_input)).await
+        self.apply_edit(params.group.as_deref(), |graph, specs, results| edit::connect(graph, specs, results, &params.from_node, &params.from_output, &params.to_node, &params.to_input)).await
     }
 
     // graph_disconnect
     #[tool(description = "Remove the connection into one input.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_disconnect(&self, Parameters(params): Parameters<DisconnectParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(|graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
+        self.apply_edit(params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
     }
 
     // graph_set_inputs
@@ -453,11 +585,13 @@ impl MotionKeysMcp {
     async fn graph_set_inputs(&self, Parameters(params): Parameters<SetInputsParams>) -> Result<CallToolResult, McpError> {
         // warn about values that aren't one of the currently known options
         let mut warnings: Vec<String> = Vec::new();
-        if let Ok(snapshot) = Snapshot::take() {
-            if let Some(node) = snapshot.graph.resolve(&params.node).ok().and_then(|id| snapshot.graph.node(&id)) {
+        let snapshot = Snapshot::take();
+        let view = snapshot.as_ref().ok().and_then(|s| s.view(params.group.as_deref()).ok());
+        if let (Ok(snapshot), Some(view)) = (&snapshot, &view) {
+            if let Some(node) = view.graph.resolve(&params.node).ok().and_then(|id| view.graph.node(&id)) {
                 // compare each string value against the options for that input (if we know them)
                 for (key, value) in &params.inputs {
-                    let (Some(value), Some(options)) = (value.as_str(), input_options(&snapshot.ctx(), node, key)) else {
+                    let (Some(value), Some(options)) = (value.as_str(), input_options(&snapshot.ctx(view), node, key)) else {
                         continue;
                     };
                     if !options.is_empty() && !options.iter().any(|o| o == value) {
@@ -468,7 +602,7 @@ impl MotionKeysMcp {
         }
 
         // apply the edit, then add the warnings to the result if it worked
-        let mut result = self.apply_edit(|graph, specs, _| edit::set_inputs(graph, specs, &params.node, &params.inputs)).await?;
+        let mut result = self.apply_edit(params.group.as_deref(), |graph, specs, _| edit::set_inputs(graph, specs, &params.node, &params.inputs)).await?;
         if result.is_error != Some(true) {
             for warning in warnings {
                 result.content.push(ContentBlock::text(warning));
@@ -480,7 +614,7 @@ impl MotionKeysMcp {
     // graph_remove_node
     #[tool(description = "Remove a node and all its connections.", annotations(read_only_hint = false, destructive_hint = true))]
     async fn graph_remove_node(&self, Parameters(params): Parameters<NodeParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(|graph, _, _| edit::remove_node(graph, &params.node)).await
+        self.apply_edit(params.group.as_deref(), |graph, _, _| edit::remove_node(graph, &params.node)).await
     }
 
     // graph_execute: realtime run, or a full run that writes keyframes to blender
@@ -519,7 +653,8 @@ impl MotionKeysMcp {
         } else {
             "realtime run"
         };
-        let text = match outline::outline(&snapshot.ctx(), None, Detail::Concise) {
+        let view = snapshot.view(None).unwrap();
+        let text = match outline::outline(&snapshot.ctx(&view), None, Detail::Concise) {
             Ok(text) => text,
             Err(e) => return tool_error(e),
         };
@@ -548,7 +683,8 @@ impl MotionKeysMcp {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
-        let text = outline::outline(&snapshot.ctx(), None, Detail::Concise).unwrap_or_else(|e| e);
+        let view = snapshot.view(None).unwrap();
+        let text = outline::outline(&snapshot.ctx(&view), None, Detail::Concise).unwrap_or_else(|e| e);
         ok_text(format!("loaded {}: {} nodes, {} edges\n{}\n\n{}", params.path, snapshot.graph.nodes.len(), snapshot.graph.edges.len(), execution, text))
     }
 

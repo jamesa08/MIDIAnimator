@@ -4,7 +4,9 @@
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
-use super::model::{compatible, dyn_inner, find_spec, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode};
+use super::model::{compatible, dyn_inner, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode, Specs};
+use super::run::GROUP;
+use std::borrow::Cow;
 
 /// horizontal gap used when placing new nodes automatically
 const AUTO_PLACE_DX: f64 = 350.0;
@@ -19,10 +21,10 @@ pub struct EditResult {
 }
 
 /// looks up the spec for a node that's already in the graph
-fn spec_for<'a>(graph: &Graph, specs: &'a [NodeSpec], node_id: &str) -> Result<&'a NodeSpec, String> {
+fn spec_for<'a>(graph: &Graph, specs: &Specs<'a>, node_id: &str) -> Result<Cow<'a, NodeSpec>, String> {
     // get the node's type, then find the spec for it
-    let node_type = graph.node(node_id).map(|n| n.resolved_node_type()).unwrap_or("");
-    find_spec(specs, node_type).ok_or_else(|| format!("node '{}' has unknown type '{}'", node_id, node_type))
+    let node = graph.node(node_id).ok_or_else(|| format!("no node '{}'", node_id))?;
+    specs.for_node(node).ok_or_else(|| format!("node '{}' has unknown type '{}'", node_id, node.resolved_node_type()))
 }
 
 /// `node › Handle Label`
@@ -75,14 +77,16 @@ fn merge_inputs(node: &mut RfNode, inputs: &Map<String, Value>) {
 ///
 /// the position comes from `position` if given, otherwise it's placed to the right of `after`,
 /// otherwise to the right of the rightmost node in the graph
-pub fn add_node(graph: &mut Graph, specs: &[NodeSpec], node_type: &str, inputs: Option<&Map<String, Value>>, position: Option<Position>, after: Option<&str>) -> Result<EditResult, String> {
+pub fn add_node(graph: &mut Graph, specs: &Specs, node_type: &str, inputs: Option<&Map<String, Value>>, position: Option<Position>, after: Option<&str>) -> Result<EditResult, String> {
     // make sure the node type exists and the inputs are valid before changing anything
-    let Some(spec) = find_spec(specs, node_type) else {
+    let Some(spec) = specs.for_type(node_type) else {
         return Err(format!("unknown node type '{}'; call node_types_list", node_type));
     };
     if let Some(inputs) = inputs {
-        validate_inputs(spec, inputs)?;
+        validate_inputs(&spec, inputs)?;
     }
+    // a group id adds a group node running that group, named after it
+    let group_id = specs.groups.contains_key(node_type).then(|| node_type.to_string());
 
     // figure out where to put the node
     let position = match (position, after) {
@@ -111,11 +115,18 @@ pub fn add_node(graph: &mut Graph, specs: &[NodeSpec], node_type: &str, inputs: 
     let id = graph.next_node_id(node_type);
     let mut node = RfNode {
         id: id.clone(),
-        node_type: node_type.to_string(),
+        node_type: if group_id.is_some() {
+            GROUP.to_string()
+        } else {
+            node_type.to_string()
+        },
         position,
         data: Map::new(),
         extra: Map::new(),
     };
+    if let Some(group_id) = group_id {
+        node.data.insert("group_id".to_string(), Value::String(group_id));
+    }
     // make sure `inputs` exists even if nothing was set, then add any given values
     node.inputs_mut();
     if let Some(inputs) = inputs {
@@ -132,7 +143,7 @@ pub fn add_node(graph: &mut Graph, specs: &[NodeSpec], node_type: &str, inputs: 
 /// connects `from_output` on `from_node` to `to_input` on `to_node` (in data-flow terms)
 ///
 /// note: an input can only have one edge, connecting to an input that is already connected replaces the old edge
-pub fn connect(graph: &mut Graph, specs: &[NodeSpec], results: &HashMap<String, Value>, from_node: &str, from_output: &str, to_node: &str, to_input: &str) -> Result<EditResult, String> {
+pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value>, from_node: &str, from_output: &str, to_node: &str, to_input: &str) -> Result<EditResult, String> {
     // resolve the node ids (prefixes are allowed) and get their specs
     let from_id = graph.resolve(from_node)?;
     let to_id = graph.resolve(to_node)?;
@@ -140,7 +151,7 @@ pub fn connect(graph: &mut Graph, specs: &[NodeSpec], results: &HashMap<String, 
     let to_spec = spec_for(graph, specs, &to_id)?;
 
     // find the output, this includes dynamic outputs if the node has executed
-    let outputs = node_outputs(from_spec, results.get(&from_id));
+    let outputs = node_outputs(&from_spec, results.get(&from_id));
     let Some(output) = outputs.iter().find(|h| h.id == from_output) else {
         // output doesn't exist, list the ones that do
         let available = outputs.iter().map(|h| format!("{} ({})", h.id, h.data_type)).collect::<Vec<_>>().join(", ");
@@ -177,7 +188,7 @@ pub fn connect(graph: &mut Graph, specs: &[NodeSpec], results: &HashMap<String, 
         return Err(msg);
     }
     // make sure the input exists and isn't a parameter (hidden input), this includes dynamic inputs
-    let inputs = node_inputs(to_spec, graph, &to_id);
+    let inputs = node_inputs(&to_spec, graph, &to_id);
     let Some(input) = inputs.iter().find(|h| h.id == to_input) else {
         let available = inputs.iter().filter(|h| dyn_inner(h).is_none()).map(|h| format!("{} ({})", h.id, h.data_type)).collect::<Vec<_>>().join(", ");
         return Err(format!("'{}' has no input '{}'; inputs are: {}", to_id, to_input, available));
@@ -187,7 +198,7 @@ pub fn connect(graph: &mut Graph, specs: &[NodeSpec], results: &HashMap<String, 
         let free = inputs.iter().rev().find(|h| h.description == format!("Dynamic input of {}.", input.id)).map_or(String::new(), |h| h.id.clone());
         return Err(format!("'{}' on '{}' is dynamic and can't be connected itself; connect to its next free input '{}' instead", to_input, to_id, free));
     }
-    if is_param(to_spec, to_input) {
+    if is_param(&to_spec, to_input) {
         return Err(format!("'{}' on '{}' is hidden in the UI and must not be connected; it is a parameter, set it with graph_set_inputs", to_input, to_id));
     }
     // no self connections or cycles
@@ -256,11 +267,11 @@ pub fn disconnect(graph: &mut Graph, to_node: &str, to_input: &str) -> Result<Ed
 }
 
 /// sets (or unsets with `null`) values on a node's inputs
-pub fn set_inputs(graph: &mut Graph, specs: &[NodeSpec], node: &str, inputs: &Map<String, Value>) -> Result<EditResult, String> {
+pub fn set_inputs(graph: &mut Graph, specs: &Specs, node: &str, inputs: &Map<String, Value>) -> Result<EditResult, String> {
     // resolve the node and validate the inputs against its spec
     let id = graph.resolve(node)?;
     let spec = spec_for(graph, specs, &id)?;
-    validate_inputs(spec, inputs)?;
+    validate_inputs(&spec, inputs)?;
 
     // remember which of these inputs are connected, their values will be ignored while connected
     let connected: Vec<String> = inputs.keys().filter(|key| graph.edge_into(&id, key).is_some()).cloned().collect();

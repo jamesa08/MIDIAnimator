@@ -3,15 +3,16 @@
 //
 // fixture: tests/fixtures/simple_scene_3_executor.mkproj, saved from the app, with short node ids
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{json, Map, Value};
 use MIDIAnimator::graph::edit;
-use MIDIAnimator::graph::model::{node_specs, Graph, NodeSpec, Position};
+use MIDIAnimator::graph::builtin::builtin_groups;
+use MIDIAnimator::graph::model::{node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
 use MIDIAnimator::graph::outline::{node_block, outline, summarize, unset_inputs, Detail, OutlineCtx};
 use MIDIAnimator::midi::MIDIFile;
 use MIDIAnimator::scene_generics::Scene;
-use MIDIAnimator::state::SavedProject;
+use MIDIAnimator::state::{migrate_rf_instance, SavedProject};
 
 // node ids from the fixture, used where a test needs the exact id
 const TRACK_DATA: &str = "get_midi_track_data-1";
@@ -29,7 +30,9 @@ fn specs() -> Vec<NodeSpec> {
 /// loads the fixture project, returns its graph and scene data
 fn fixture() -> (Graph, HashMap<String, Scene>) {
     let data = std::fs::read_to_string("tests/fixtures/simple_scene_3_executor.mkproj").unwrap();
-    let project: SavedProject = serde_json::from_str(&data).unwrap();
+    let mut project: SavedProject = serde_json::from_str(&data).unwrap();
+    // loading a project updates graphs from before node groups, like the app does
+    migrate_rf_instance(&mut project.rf_instance);
     (Graph::from_rf(&project.rf_instance).unwrap(), project.scene_data)
 }
 
@@ -37,6 +40,7 @@ fn fixture() -> (Graph, HashMap<String, Scene>) {
 struct Fixture {
     graph: Graph,
     specs: Vec<NodeSpec>,
+    groups: BTreeMap<String, GroupDef>,
     results: HashMap<String, Value>,
     inputs: HashMap<String, Value>,
     scene: HashMap<String, Scene>,
@@ -48,6 +52,7 @@ impl Fixture {
         Self {
             graph,
             specs: specs(),
+            groups: builtin_groups().clone(),
             results: HashMap::new(),
             inputs: HashMap::new(),
             scene,
@@ -57,11 +62,20 @@ impl Fixture {
     fn ctx(&self) -> OutlineCtx<'_> {
         OutlineCtx {
             graph: &self.graph,
-            specs: &self.specs,
+            specs: lookup(&self.specs, &self.groups),
             results: &self.results,
             inputs: &self.inputs,
             scene_data: &self.scene,
         }
+    }
+}
+
+/// node specs for the top-level graph
+fn lookup<'a>(specs: &'a [NodeSpec], groups: &'a BTreeMap<String, GroupDef>) -> Specs<'a> {
+    Specs {
+        specs,
+        groups,
+        scope: None,
     }
 }
 
@@ -141,9 +155,9 @@ fn topo_order_puts_producers_first() {
 fn add_node_gets_short_id_and_placement() {
     let mut f = Fixture::new();
     // add one with an input set, then a second one placed after the first
-    let result = edit::add_node(&mut f.graph, &f.specs, "get_midi_file", Some(&obj(json!({"file_path": "/tmp/a.mid"}))), None, None).unwrap();
+    let result = edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_file", Some(&obj(json!({"file_path": "/tmp/a.mid"}))), None, None).unwrap();
     assert_eq!(result.touched, vec!["get_midi_file-2"]);
-    let second = edit::add_node(&mut f.graph, &f.specs, "get_midi_file", None, None, Some("get_midi_file-2")).unwrap();
+    let second = edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_file", None, None, Some("get_midi_file-2")).unwrap();
     assert_eq!(second.touched, vec!["get_midi_file-3"]);
 
     // the first node goes to the right of the rightmost existing node
@@ -162,8 +176,8 @@ fn add_node_gets_short_id_and_placement() {
     );
 
     // unknown node types and unknown inputs are refused
-    assert!(edit::add_node(&mut f.graph, &f.specs, "midi", None, None, None).unwrap_err().contains("node_types_list"));
-    assert!(edit::add_node(&mut f.graph, &f.specs, "get_midi_file", Some(&obj(json!({"path": "x"}))), None, None).unwrap_err().contains("no input 'path'"));
+    assert!(edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "midi", None, None, None).unwrap_err().contains("node_types_list"));
+    assert!(edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_file", Some(&obj(json!({"path": "x"}))), None, None).unwrap_err().contains("no input 'path'"));
 }
 
 // checks every way connect can be refused, and that connecting to a connected input replaces the edge
@@ -171,29 +185,29 @@ fn add_node_gets_short_id_and_placement() {
 fn connect_validates_and_replaces() {
     let mut f = Fixture::new();
     // add a new midi file node to connect from
-    edit::add_node(&mut f.graph, &f.specs, "get_midi_file", None, None, None).unwrap();
+    edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_file", None, None, None).unwrap();
     let results = HashMap::new();
 
     // wrong types
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", "assign", "midi_notes").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "get_midi_file-2", "tracks", "assign", "midi_notes").unwrap_err();
     assert!(err.contains("type mismatch"), "{}", err);
     // unknown handles
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "notes", TRACK_DATA, "tracks").unwrap_err().contains("outputs are"));
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", TRACK_DATA, "trax").unwrap_err().contains("inputs are"));
+    assert!(edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "get_midi_file-2", "notes", TRACK_DATA, "tracks").unwrap_err().contains("outputs are"));
+    assert!(edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "get_midi_file-2", "tracks", TRACK_DATA, "trax").unwrap_err().contains("inputs are"));
     // hidden inputs (parameters) are not connectable
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "scene_link", "name", "get_midi_track", "track_name").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "scene_link", "name", "get_midi_track", "track_name").unwrap_err();
     assert!(err.contains("must not be connected") && err.contains("graph_set_inputs"), "{}", err);
     // hidden outputs are display-only and not connectable either
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "stats", "viewer", "data").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "get_midi_file-2", "stats", "viewer", "data").unwrap_err();
     assert!(err.contains("must not be connected"), "{}", err);
     // connecting a node to itself, or creating a cycle
-    assert!(edit::connect(&mut f.graph, &f.specs, &results, "evaluate", "keyframes", "evaluate", "object_map").unwrap_err().contains("itself"));
-    let err = edit::connect(&mut f.graph, &f.specs, &results, "viewer", "data", "evaluate", "midi_notes");
+    assert!(edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "evaluate", "keyframes", "evaluate", "object_map").unwrap_err().contains("itself"));
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "viewer", "data", "evaluate", "midi_notes");
     assert!(err.is_err());
 
     // replace the existing tracks connection, the edge count shouldn't change
     let edges_before = f.graph.edges.len();
-    let result = edit::connect(&mut f.graph, &f.specs, &results, "get_midi_file-2", "tracks", "get_midi_track", "tracks").unwrap();
+    let result = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, "get_midi_file-2", "tracks", "get_midi_track", "tracks").unwrap();
     assert!(result.message.contains("replaced"), "{}", result.message);
     assert_eq!(f.graph.edges.len(), edges_before);
     // the new edge is stored in the reversed source/target direction
@@ -215,17 +229,17 @@ fn connect_to_dynamic_output() {
     edit::disconnect(&mut f.graph, gen, "note_on_keyframes").unwrap();
 
     // without results the dynamic output is unknown
-    let err = edit::connect(&mut f.graph, &f.specs, &HashMap::new(), kfo, "location_z", gen, "note_on_keyframes").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), kfo, "location_z", gen, "note_on_keyframes").unwrap_err();
     assert!(err.contains("Dynamic outputs appear"), "{}", err);
 
     // fake the executed results so the dynamic output `location_z` exists
     let mut results = HashMap::new();
     results.insert(kfo.to_string(), json!({"dyn_output": {"location_z": {"data_path": "location", "array_index": 2, "keyframe_points": []}}}));
     // the hidden container output is refused and points at the dynamic outputs
-    let err = edit::connect(&mut f.graph, &f.specs, &results, kfo, "dyn_output", gen, "note_on_keyframes").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "dyn_output", gen, "note_on_keyframes").unwrap_err();
     assert!(err.contains("must not be connected") && err.contains("location_z"), "{}", err);
     // now connecting the dynamic output works
-    edit::connect(&mut f.graph, &f.specs, &results, kfo, "location_z", gen, "note_on_keyframes").unwrap();
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "location_z", gen, "note_on_keyframes").unwrap();
 }
 
 // checks a `Dyn<T>` input grows one numbered input per connection plus a free one
@@ -233,20 +247,20 @@ fn connect_to_dynamic_output() {
 fn connect_to_dynamic_inputs() {
     let mut f = Fixture::new();
     let results = HashMap::new();
-    edit::add_node(&mut f.graph, &f.specs, "merge_object_maps", None, None, None).unwrap();
-    edit::add_node(&mut f.graph, &f.specs, "assign_notes_to_objects", None, None, None).unwrap();
+    edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "merge_object_maps", None, None, None).unwrap();
+    edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "assign_notes_to_objects", None, None, None).unwrap();
     let (merge, assign_1, assign_2) = ("merge_object_maps-1", "assign_notes_to_objects-1", "assign_notes_to_objects-2");
 
     // the hidden container input is refused and points at the free input
-    let err = edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, assign_1, "object_map", merge, "object_maps").unwrap_err();
     assert!(err.contains("object_maps_0"), "{}", err);
     // only the free input can be connected, not one further along
-    let err = edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps_1").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, assign_1, "object_map", merge, "object_maps_1").unwrap_err();
     assert!(err.contains("no input 'object_maps_1'") && err.contains("object_maps_0"), "{}", err);
 
     // each connection adds the next free input
-    edit::connect(&mut f.graph, &f.specs, &results, assign_1, "object_map", merge, "object_maps_0").unwrap();
-    edit::connect(&mut f.graph, &f.specs, &results, assign_2, "object_map", merge, "object_maps_1").unwrap();
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, assign_1, "object_map", merge, "object_maps_0").unwrap();
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, assign_2, "object_map", merge, "object_maps_1").unwrap();
     let block = node_block(&f.ctx(), merge, Detail::Concise);
     assert!(block.contains("(object_maps_0: ObjectMap)  <- assign_notes_to_objects-1"), "{}", block);
     assert!(block.contains("(object_maps_1: ObjectMap)  <- assign_notes_to_objects-2"), "{}", block);
@@ -270,14 +284,14 @@ fn disconnect_set_inputs_and_remove() {
     assert!(f.graph.edge_into(VIEWER, "data").is_none());
 
     // set a value, then unset it with null
-    edit::set_inputs(&mut f.graph, &f.specs, "get_midi_track", &obj(json!({"track_name": "Drums"}))).unwrap();
+    edit::set_inputs(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_track", &obj(json!({"track_name": "Drums"}))).unwrap();
     assert_eq!(f.graph.node(TRACK_DATA).unwrap().input_value("track_name"), Some(&json!("Drums")));
-    edit::set_inputs(&mut f.graph, &f.specs, "get_midi_track", &obj(json!({"track_name": null}))).unwrap();
+    edit::set_inputs(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_track", &obj(json!({"track_name": null}))).unwrap();
     assert!(f.graph.node(TRACK_DATA).unwrap().input_value("track_name").is_none());
     // wrong type for an f64 input
-    assert!(edit::set_inputs(&mut f.graph, &f.specs, "animation_generator", &obj(json!({"velocity_intensity": "loud"}))).unwrap_err().contains("expects f64"));
+    assert!(edit::set_inputs(&mut f.graph, &lookup(&f.specs, &f.groups), "animation_generator", &obj(json!({"velocity_intensity": "loud"}))).unwrap_err().contains("expects f64"));
     // setting a connected input works, but the message says it's ignored
-    let result = edit::set_inputs(&mut f.graph, &f.specs, "get_midi_track", &obj(json!({"tracks": []}))).unwrap();
+    let result = edit::set_inputs(&mut f.graph, &lookup(&f.specs, &f.groups), "get_midi_track", &obj(json!({"tracks": []}))).unwrap();
     assert!(result.message.contains("ignored while connected"));
 
     // remove a node, its edges go with it and its neighbours are returned
@@ -361,4 +375,33 @@ fn summaries() {
     // long strings get truncated to 60 characters
     let long = "x".repeat(100);
     assert_eq!(summarize("String", &json!(long)), format!("\"{}…\"", "x".repeat(60)));
+}
+
+// a group id adds a group node, its sockets come from the group, inside the group input and output mirror them
+#[test]
+fn group_nodes_get_their_groups_sockets() {
+    let mut f = Fixture::new();
+    // the fixture's old evaluate_instrument node was migrated
+    assert_eq!(f.graph.node(EVALUATE).unwrap().node_type, "group");
+
+    let result = edit::add_node(&mut f.graph, &lookup(&f.specs, &f.groups), "evaluate_instrument", None, None, None).unwrap();
+    assert_eq!(result.touched, vec!["evaluate_instrument-2"]);
+    let node = f.graph.node("evaluate_instrument-2").unwrap();
+    assert_eq!((node.node_type.as_str(), node.data["group_id"].as_str()), ("group", Some("evaluate_instrument")));
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), TRACK_DATA, "notes", "evaluate_instrument-2", "midi_notes").unwrap();
+    // which group it runs isn't a socket
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), TRACK_DATA, "notes", "evaluate_instrument-2", "group_id").unwrap_err();
+    assert!(err.contains("has no input"), "{}", err);
+    assert!(node_block(&f.ctx(), "evaluate_instrument-2", Detail::Concise).contains("node group 'evaluate_instrument'"));
+
+    // inside: the group input outputs the group's inputs
+    let def = &f.groups["evaluate_instrument"];
+    let inside = Specs {
+        specs: &f.specs,
+        groups: &f.groups,
+        scope: Some(def),
+    };
+    let input = inside.for_node(def.graph.node("group_input-1").unwrap()).unwrap();
+    let ids: Vec<&str> = input.handles.outputs.iter().map(|h| h.id.as_str()).collect();
+    assert_eq!(ids, vec!["object_map", "midi_notes"]);
 }

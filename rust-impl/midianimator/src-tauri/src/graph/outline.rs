@@ -5,14 +5,14 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 use super::executors::io::node_error;
-use super::model::{dyn_inner, find_spec, is_param, node_inputs, node_outputs, Graph, HandleSpec, NodeSpec, RfNode};
+use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, RfNode, Specs};
 use crate::midi::MIDINote;
 use crate::scene_generics::Scene;
 
 /// everything needed to describe the graph, borrowed from a snapshot of `AppState`
 pub struct OutlineCtx<'a> {
     pub graph: &'a Graph,
-    pub specs: &'a [NodeSpec],
+    pub specs: Specs<'a>,
     /// `executed_results`: `{node_id: {output_id: value}}`
     pub results: &'a HashMap<String, Value>,
     /// `executed_inputs`: `{node_id: {input_id: value}}`
@@ -66,9 +66,10 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     let Some(node) = ctx.graph.node(id) else {
         return format!("{}  (removed)", id);
     };
-    let Some(spec) = find_spec(ctx.specs, node.resolved_node_type()) else {
+    let Some(spec) = ctx.specs.for_node(node) else {
         return format!("{}  (unknown node type '{}')", id, node.resolved_node_type());
     };
+    let spec = spec.as_ref();
     // results are only there if the node has executed, a failed node has an error instead
     let error = ctx.results.get(id).and_then(node_error);
     let node_results = ctx.results.get(id).filter(|_| error.is_none());
@@ -85,6 +86,10 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         });
     }
     // add the node description in full detail
+    // group nodes say which group they run and how to look inside
+    if let Some(group_id) = node.data.get("group_id").and_then(|v| v.as_str()).filter(|_| node.resolved_node_type() == "group") {
+        header.push_str(&format!("  [node group '{}', pass group=\"{}\" to see or edit inside]", group_id, group_id));
+    }
     let mut lines = vec![header];
     if detail == Detail::Full && !spec.description.is_empty() {
         lines.push(format!("  # {}", spec.description));
@@ -199,12 +204,12 @@ fn push_description(lines: &mut Vec<String>, handle: &HandleSpec, detail: Detail
 
 /// display name of an output, falls back to the id if the node or output can't be found
 fn output_name(ctx: &OutlineCtx, node_id: &str, output_id: &str) -> String {
-    ctx.graph.node(node_id).and_then(|n| find_spec(ctx.specs, n.resolved_node_type())).and_then(|spec| node_outputs(spec, ctx.results.get(node_id)).into_iter().find(|h| h.id == output_id)).map(|h| h.name).unwrap_or_else(|| output_id.to_string())
+    ctx.graph.node(node_id).and_then(|n| ctx.specs.for_node(n)).and_then(|spec| node_outputs(&spec, ctx.results.get(node_id)).into_iter().find(|h| h.id == output_id)).map(|h| h.name).unwrap_or_else(|| output_id.to_string())
 }
 
 /// display name of an input, falls back to the id if the node or input can't be found
 fn input_name(ctx: &OutlineCtx, node_id: &str, input_id: &str) -> String {
-    ctx.graph.node(node_id).and_then(|n| find_spec(ctx.specs, n.resolved_node_type())).and_then(|spec| node_inputs(spec, ctx.graph, node_id).into_iter().find(|h| h.id == input_id)).map(|h| h.name).unwrap_or_else(|| input_id.to_string())
+    ctx.graph.node(node_id).and_then(|n| ctx.specs.for_node(n)).and_then(|spec| node_inputs(&spec, ctx.graph, node_id).into_iter().find(|h| h.id == input_id)).map(|h| h.name).unwrap_or_else(|| input_id.to_string())
 }
 
 /// inputs that are neither connected nor set on the node
@@ -213,11 +218,11 @@ pub fn unset_inputs(ctx: &OutlineCtx, id: &str) -> Vec<String> {
     let Some(node) = ctx.graph.node(id) else {
         return vec![];
     };
-    let Some(spec) = find_spec(ctx.specs, node.resolved_node_type()) else {
+    let Some(spec) = ctx.specs.for_node(node) else {
         return vec![];
     };
     // keep inputs with no edge and no value
-    node_inputs(spec, ctx.graph, id).into_iter().filter(|h| dyn_inner(h).is_none() && ctx.graph.edge_into(id, &h.id).is_none() && node.input_value(&h.id).is_none()).map(|h| h.id).collect()
+    node_inputs(&spec, ctx.graph, id).into_iter().filter(|h| dyn_inner(h).is_none() && ctx.graph.edge_into(id, &h.id).is_none() && node.input_value(&h.id).is_none()).map(|h| h.id).collect()
 }
 
 // MARK: - Options
