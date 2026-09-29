@@ -3,6 +3,7 @@
         {
             "id": "get_midi_file",
             "name": "Get MIDI File",
+            "category": "midi",
             "description": "Gets a MIDI provided a path to the file with the file picker.",
             "executor": "rust",
             "realtime": true,
@@ -37,6 +38,7 @@
         {
             "id": "get_midi_track_data",
             "name": "Get MIDI Track Data",
+            "category": "midi",
             "description": "Gets a MIDI track's data from an array of MIDI Tracks.",
             "executor": "rust",
             "realtime": true,
@@ -88,6 +90,7 @@
         {
             "id": "keyframes_from_object",
             "name": "Keyframes from Object",
+            "category": "scene",
             "description": "Get keyframes from an object in the scene.",
             "executor": "rust",
             "realtime": true,
@@ -129,6 +132,7 @@
         {
             "id": "animation_generator",
             "name": "Animation Generator",
+            "category": "animation",
             "description": "Create animation generators based on keyframed data",
             "executor": "rust",
             "realtime": true,
@@ -217,6 +221,7 @@
         {
             "id": "assign_notes_to_objects",
             "name": "Assign Notes to Objects",
+            "category": "animation",
             "description": "Assign notes to objects in the scene",
             "executor": "rust",
             "realtime": true,
@@ -261,6 +266,7 @@
         {
             "id": "viewer",
             "name": "Viewer",
+            "category": "viewer",
             "description": "Display node results",
             "executor": "rust",
             "realtime": true,
@@ -280,6 +286,7 @@
         {
             "id": "scene_link",
             "name": "Scene Link",
+            "category": "scene",
             "description": "Provide access to the scene",
             "executor": "rust",
             "realtime": true,
@@ -305,6 +312,7 @@
         {
             "id": "merge_object_maps",
             "name": "Merge Object Maps",
+            "category": "animation",
             "description": "Merge object maps so objects can have several animations",
             "executor": "rust",
             "realtime": true,
@@ -332,6 +340,7 @@
         {
             "id": "scene_writer",
             "name": "Scene Writer",
+            "category": "scene",
             "description": "Write keyframes to the Blender scene",
             "executor": "rust",
             "realtime": false,
@@ -351,6 +360,7 @@
         {
             "id": "group",
             "name": "Group",
+            "category": "group",
             "description": "Runs a node group. Its sockets come from the group's Group Input and Group Output. Press Tab to open it.",
             "executor": "graph",
             "realtime": true,
@@ -363,6 +373,7 @@
         {
             "id": "group_input",
             "name": "Group Input",
+            "category": "interface",
             "description": "Inside a node group: the values given to the group node's inputs.",
             "executor": "graph",
             "realtime": true,
@@ -375,6 +386,7 @@
         {
             "id": "group_output",
             "name": "Group Output",
+            "category": "interface",
             "description": "Inside a node group: the values the group node outputs.",
             "executor": "graph",
             "realtime": true,
@@ -387,6 +399,7 @@
         {
             "id": "for_each_input",
             "name": "For Each",
+            "category": "zone",
             "description": "Start of a for each zone. The nodes between it and its For Each Output run once per item.",
             "executor": "graph",
             "realtime": true,
@@ -437,6 +450,7 @@
         {
             "id": "for_each_output",
             "name": "For Each Output",
+            "category": "zone",
             "description": "End of a for each zone. Collects what reaches Result on each item into a list.",
             "executor": "graph",
             "realtime": true,
@@ -463,6 +477,7 @@
         {
             "id": "note_targets",
             "name": "Note Targets",
+            "category": "animation",
             "description": "Lists which objects, with which animation, each note number triggers.",
             "executor": "rust",
             "realtime": true,
@@ -489,6 +504,7 @@
         {
             "id": "targets_for_note",
             "name": "Targets for Note",
+            "category": "animation",
             "description": "The objects and animations one note triggers.",
             "executor": "rust",
             "realtime": true,
@@ -521,6 +537,7 @@
         {
             "id": "note_keyframes",
             "name": "Note Keyframes",
+            "category": "animation",
             "description": "The keyframes one note plays on one target: the generator's keys moved to the note's time and scaled by velocity.",
             "executor": "rust",
             "realtime": true,
@@ -559,6 +576,7 @@
         {
             "id": "combine_keyframes",
             "name": "Combine Keyframes",
+            "category": "animation",
             "description": "Combines every note's keys per object and curve in note order, using each generator's animation overlap mode.",
             "executor": "rust",
             "realtime": true,

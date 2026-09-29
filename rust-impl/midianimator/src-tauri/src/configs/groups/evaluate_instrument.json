@@ -1,6 +1,7 @@
 {
     "name": "Evaluate Instrument",
     "description": "evaluate instrument",
+    "category": "animation",
     "interface": {
         "inputs": [
             {

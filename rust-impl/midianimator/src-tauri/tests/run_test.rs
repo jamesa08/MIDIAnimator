@@ -47,6 +47,7 @@ fn group(graph: Graph) -> GroupDef {
     GroupDef {
         name: "Test".to_string(),
         description: String::new(),
+        category: String::new(),
         interface: HandleSpecs::default(),
         graph,
     }

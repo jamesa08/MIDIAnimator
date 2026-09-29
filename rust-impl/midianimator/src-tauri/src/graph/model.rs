@@ -45,6 +45,9 @@ pub struct HandleSpecs {
 pub struct NodeSpec {
     pub id: String,
     pub name: String,
+    /// what kind of node it is (midi, scene, animation, viewer, group, interface, zone), sets the header color and add menu order
+    #[serde(default)]
+    pub category: String,
     #[serde(default)]
     pub description: String,
     #[serde(default)]
@@ -433,6 +436,9 @@ pub struct GroupDef {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// node category of a built-in group (e.g. animation), its group nodes get that category's group color. empty for the project's own groups
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub category: String,
     #[serde(default)]
     pub interface: HandleSpecs,
     #[serde(flatten)]
