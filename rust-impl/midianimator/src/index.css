@@ -163,3 +163,112 @@ img {
 * {
     user-select: none;
 }
+
+/* node groups: the open graph sits on top of the graph it's in, which is frozen, blurred and faded out */
+.node-graph-stack {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+.graph-layer {
+    position: absolute;
+    inset: 0;
+}
+
+.graph-layer.parent-layer {
+    filter: blur(1.5px);
+}
+
+.parent-dim {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.75);
+    pointer-events: none;
+}
+
+.react-flow.group-canvas {
+    background: transparent;
+    --xy-background-color: transparent;
+}
+
+.react-flow__node.open-group-node .node {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+}
+
+/* group nodes have the type "group", which React Flow also styles as its own (unrelated) group node.
+   scoped under .react-flow so it beats React Flow's stylesheet, which loads after this one */
+.react-flow .react-flow__node-group {
+    padding: 0;
+    width: auto;
+    border: none;
+    border-radius: 0;
+    background: none;
+    text-align: left;
+}
+
+.react-flow .react-flow__node-group.selectable.selected,
+.react-flow .react-flow__node-group.selectable:hover,
+.react-flow .react-flow__node-group.selectable:focus,
+.react-flow .react-flow__node-group.selectable:focus-visible {
+    box-shadow: none;
+    outline: none;
+}
+
+/* the open button on group nodes */
+.node-header .group-open {
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1.2;
+}
+
+.node-header .group-open:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* group input and output sockets */
+.interface-socket .interface-remove {
+    color: #999;
+    padding: 0 3px;
+    visibility: hidden;
+}
+
+.interface-socket:hover .interface-remove {
+    visibility: visible;
+}
+
+.interface-socket .interface-remove:hover {
+    color: #c33;
+}
+
+.interface-socket .interface-rename {
+    width: 100%;
+    font-size: 12px;
+    border: 1px solid #aaa;
+    border-radius: 3px;
+    padding: 0 3px;
+}
+
+.react-flow__handle[data-handleid="__new__"] {
+    background: transparent;
+    border: 1px dashed #777;
+}
+
+/* for each zones, drawn under the edges and nodes */
+.zone-frames {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+.zone-frame {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: 6px;
+    background: #e9e9ef;
+    border: 1px solid #c9c9d2;
+}
