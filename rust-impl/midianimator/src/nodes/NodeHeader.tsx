@@ -6,7 +6,7 @@ function NodeHeader({ label, type, children }: { label: any; type: any; children
         <div
             className="node-header"
             style={{
-                background: st.HEADER_COLORS[type],
+                background: st.HEADER_COLORS[type] ?? st.DEFAULT_HEADER_COLOR,
                 textShadow: st.TEXT_SHADOW,
                 display: "flex",
                 alignItems: "center",

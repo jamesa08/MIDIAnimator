@@ -21,39 +21,21 @@ export const SOCKET_COLORS = {
     BOOLEAN: "#d3a4d9",
 };
 
+// header color per node category (the spec's `category`), soft mid tones under white text.
+// a built-in group gets its category's `_group` color, the project's own groups `group`
 export const HEADER_COLORS = {
-    INDEX: COLORS.purple,
-    VALUE: COLORS.purple,
-    INPUT_VECTOR: COLORS.purple,
-
-    MAP_RANGE: COLORS.blue,
-    MATH: COLORS.blue,
-    VECT_MATH: COLORS.lightPurple,
-    COMBXYZ: COLORS.blue,
-    SEPXYZ: COLORS.blue,
-
-    POINTS: COLORS.green,
-    FILLET_CURVE: COLORS.green,
-    CURVE_PRIMITIVE_CIRCLE: COLORS.green,
-    CURVE_PRIMITIVE_QUADRILATERAL: COLORS.green,
-    BOUNDING_BOX: COLORS.green,
-    MESH_PRIMITIVE_CUBE: COLORS.green,
-    MESH_PRIMITIVE_CYLINDER: COLORS.green,
-    MESH_PRIMITIVE_UV_SPHERE: COLORS.green,
-    MESH_PRIMITIVE_GRID: COLORS.green,
-    CURVE_TO_MESH: COLORS.green,
-    INSTANCE_ON_POINTS: COLORS.green,
-    SET_MATERIAL: COLORS.green,
-    JOIN_GEOMETRY: COLORS.green,
-    TRANSFORM: COLORS.green,
-
-    GROUP_OUTPUT: COLORS.black,
-    GROUP_INPUT: COLORS.black,
-    GROUP: COLORS.blue,
-    ZONE: COLORS.lightPurple,
-
-    VIEWER: COLORS.darkPurple,
+    midi: "#B8962E",
+    scene: "#3E9E72",
+    animation: "#C95B6A",
+    animation_group: "#A8434F",
+    viewer: "#8A6BBE",
+    group: "#6FA83E",
+    interface: "#5A5A5A",
+    zone: "#6674C4",
 };
+
+// header color for a node with no category
+export const DEFAULT_HEADER_COLOR = "#7A7A7A";
 
 export const SOCKET_SHAPES = {
     CIRCLE: {},

@@ -12,8 +12,8 @@ function group({ id, data }: { id: any; data: any }) {
     const def = groups[data?.group_id];
 
     const nodeData = useMemo(() => {
-        if (!def) return { name: `Missing group '${data?.group_id}'`, handles: { inputs: [], outputs: [] } };
-        return { name: def.name, handles: { inputs: def.interface.inputs, outputs: def.interface.outputs } };
+        if (!def) return { name: `Missing group '${data?.group_id}'`, category: "group", handles: { inputs: [], outputs: [] } };
+        return { name: def.name, category: def.category ? `${def.category}_group` : "group", handles: { inputs: def.interface.inputs, outputs: def.interface.outputs } };
     }, [def, data?.group_id]);
 
     // sockets change when the group's interface is edited, have React Flow measure them again so edges can be drawn
@@ -34,7 +34,7 @@ function group({ id, data }: { id: any; data: any }) {
         </button>
     );
 
-    return <BaseNode nodeData={nodeData} data={data} headerType="GROUP" headerExtra={openButton} />;
+    return <BaseNode nodeData={nodeData} data={data} headerExtra={openButton} />;
 }
 
 export default group;

@@ -40,7 +40,7 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
 
     return (
         <div className={`node${preview ? " preview" : ""}`}>
-            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"} type={side === "inputs" ? "GROUP_INPUT" : "GROUP_OUTPUT"} />
+            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"} type="interface" />
             <NodeResizeControl minWidth={160} maxWidth={1000} variant={"line" as any} />
             <div className="node-inner flex flex-col">
                 {rows.map((socket) => (

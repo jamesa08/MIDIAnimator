@@ -21,10 +21,9 @@ const handleStyle = {
 /// @param executor: function to execute when the node is executed. only should be used for nodes that use JS execution
 /// @param dynamicHandles: map of handles to add to the node. looks exactly like handles found in `default_nodes.json`. good for when you want to add handles to a node that are not in the node data, dynamically as a UI feature
 /// @param data: reactflow data
-/// @param headerType: key into HEADER_COLORS for the header color
 /// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
 /// @param children: may be removed later
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, headerType, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; headerType?: string; headerExtra?: ReactNode; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; headerExtra?: ReactNode; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -74,7 +73,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
 
     return (
         <div className={`node${preview ? " preview" : ""}`}>
-            <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={headerType ?? "TRANSFORM"}>
+            <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={nodeData?.category}>
                 {headerExtra}
             </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
