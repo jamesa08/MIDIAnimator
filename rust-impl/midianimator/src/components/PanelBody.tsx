@@ -29,31 +29,18 @@ interface PanelBodyProps {
 // kept outside PanelBody, a component declared inside another is a new type every render and remounts
 const ScaledNodeWrapper: React.FC<{ Node: any; data: any; onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }> = ({ Node, data, onPointerDown }) => {
     const nodeRef = useRef<HTMLDivElement>(null);
-    const [isMeasured, setIsMeasured] = useState(false);
 
+    // the scale doesn't shrink the space the node takes up, a negative margin gives back the lower half.
+    // kept in sync with the node's size, it can render already filled in, change size or remount at any time
     useEffect(() => {
-        if (!nodeRef.current || isMeasured) return;
-
-        const node = nodeRef.current.querySelector(".node.preview") as HTMLElement;
+        const node = nodeRef.current?.querySelector(".node.preview") as HTMLElement | null;
         if (!node) return;
-
-        const observer = new MutationObserver(() => {
-            const height = node.scrollHeight;
-
-            if (height > 50) {
-                node.style.marginBottom = `-${height * 0.5}px`;
-                setIsMeasured(true);
-                observer.disconnect();
-            }
+        const observer = new ResizeObserver(() => {
+            node.style.marginBottom = `-${node.offsetHeight * 0.5}px`;
         });
-
-        observer.observe(node, {
-            childList: true,
-            subtree: true,
-        });
-
+        observer.observe(node);
         return () => observer.disconnect();
-    }, [isMeasured]);
+    }, []);
 
     return (
         <div ref={nodeRef} className="node-container" onPointerDown={onPointerDown}>
