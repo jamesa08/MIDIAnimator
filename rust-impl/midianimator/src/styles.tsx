@@ -49,6 +49,8 @@ export const HEADER_COLORS = {
 
     GROUP_OUTPUT: COLORS.black,
     GROUP_INPUT: COLORS.black,
+    GROUP: COLORS.blue,
+    ZONE: COLORS.lightPurple,
 
     VIEWER: COLORS.darkPurple,
 };

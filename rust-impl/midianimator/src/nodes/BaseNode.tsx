@@ -4,7 +4,6 @@ import { Handle, NodeResizeControl, Position } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
 import { memo } from "react";
-import { useDimensions } from "../hooks/useDimensions";
 
 const handleStyle = {
     width: "16px",
@@ -22,12 +21,15 @@ const handleStyle = {
 /// @param executor: function to execute when the node is executed. only should be used for nodes that use JS execution
 /// @param dynamicHandles: map of handles to add to the node. looks exactly like handles found in `default_nodes.json`. good for when you want to add handles to a node that are not in the node data, dynamically as a UI feature
 /// @param data: reactflow data
+/// @param headerType: key into HEADER_COLORS for the header color
+/// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
 /// @param children: may be removed later
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, headerType, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; headerType?: string; headerExtra?: ReactNode; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
-    let preview = data != undefined && data == "preview" ? true : false;
+    // previews (nodes panel, drag ghost) get "preview", or an object with preview set when they need data (group nodes)
+    let preview = data === "preview" || data?.preview === true;
 
     if (nodeData != null) {
         const handleTypes = ["outputs", "inputs"];
@@ -56,7 +58,11 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
                             <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
                             {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
-                            {preview ? <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></div> : <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></Handle>}
+                            {preview ? (
+                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></div>
+                            ) : (
+                                <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }}></Handle>
+                            )}
                         </div>
                         {uiInject}
                     </>
@@ -68,7 +74,9 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, ch
 
     return (
         <div className={`node${preview ? " preview" : ""}`}>
-            <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={"TRANSFORM"} />
+            <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={headerType ?? "TRANSFORM"}>
+                {headerExtra}
+            </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
             <div className="node-inner flex flex-col">
                 {handleObjects.map((handle, index) => (
