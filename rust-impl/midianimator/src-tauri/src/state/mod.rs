@@ -122,22 +122,17 @@ pub fn ready() -> AppState {
 
 /// this command can be called from the front end to update changes to the state from the front end
 /// you can use this by calling `window.tauri.invoke('js_update_state', {state: JSON.stringify(your_new_state_objet)})`
-/// also use setBackendState() in the front end to update React's state with the new state
-/// this function will replace the entire state, so make sure to include all the necessary data in the new state
-/// note you cannot add new fields to the state, only update the existing fields
-#[allow(unused_must_use)]
+/// only the fields the front end owns (the node graph, `rf_instance`) are taken, the rest of the state
+/// (scene data from Blender, executed results, connection info) belongs to the backend, and a stale
+/// front end copy would revert it. prefer `js_update_graph`
 #[tauri::command]
 pub fn js_update_state(state: String) {
     println!("FRONTEND STATE UPDATE");
-    // println!("{:#?}", state);
-    let mut cur_state = STATE.lock().unwrap();
-
-    // re-serealize the state
-    let new_state: AppState = serde_json::from_str(&state).unwrap_or_default();
-
-    // replace the current state with the new state
-    std::mem::replace(&mut *cur_state, new_state);
-    drop(cur_state);
+    let rf_instance = serde_json::from_str::<serde_json::Value>(&state).ok().and_then(|mut state| state.get_mut("rf_instance").map(serde_json::Value::take));
+    match rf_instance {
+        Some(rf_instance) => js_update_graph(rf_instance.to_string(), None),
+        None => eprintln!("js_update_state: no rf_instance in the state, ignored"),
+    }
 }
 
 #[tauri::command]

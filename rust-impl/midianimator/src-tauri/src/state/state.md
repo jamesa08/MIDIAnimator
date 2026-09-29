@@ -89,7 +89,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 invoke("js_update_state", {"state", JSON.stringify(newState)});
 ```
 
-This will send the newly updated state to the backend, and update it. It will not send a subsequent update to the front end, so you must set the state with `setBackendState()`.
+This will send the newly updated state to the backend, which only takes the node graph (`rf_instance`) from it. Everything else (scene data, executed results, connection info) is owned by the backend and ignored, so a stale front end copy can't revert it. Prefer `js_update_graph` for graph changes. It will not send a subsequent update to the front end, so you must set the state with `setBackendState()`.
 
 #### Full example
 

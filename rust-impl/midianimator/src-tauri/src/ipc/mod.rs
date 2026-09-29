@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::blender::scene_data;
 use crate::blender::scene_data::compare_scene_data;
-use crate::command::javascript::evaluate_js_oneshot;
+use crate::graph::execute::execute_graph;
 use crate::scene_generics;
 use crate::settings::get_setting;
 use crate::state::{update_state, STATE};
@@ -169,6 +169,40 @@ pub async fn request_scene_data() {
     update_state();
 }
 
+/// takes every complete message out of `data`, leaving a trailing partial message for the next read.
+/// both sides end each message with a newline and JSON escapes newlines inside strings,
+/// so a newline always ends a message, even when several arrive in one read.
+/// a line that isn't a valid message is logged and dropped so it can't block the ones after it
+pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
+    let mut messages = Vec::new();
+    while let Some(end) = data.iter().position(|byte| *byte == b'\n') {
+        let line: Vec<u8> = data.drain(..=end).collect();
+        let line = String::from_utf8_lossy(&line);
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Message>(&line) {
+            Ok(message) => messages.push(message),
+            Err(e) => println!("Failed to parse IPC message ({} bytes): {}", line.len(), e),
+        }
+    }
+    messages
+}
+
+/// makes a scene sent by the Blender tracker the app's scene data, returns true if the realtime graph should run.
+/// while execution is paused for review the scene becomes the pending scene data instead, so accepting it uses the newest scene.
+/// doesn't notify the front end, the caller calls `update_state()`
+pub fn apply_scene_update(message: &str) -> Result<bool, String> {
+    let scene_data = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message).map_err(|e| e.to_string())?;
+    let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+    if state.execution_paused {
+        state.pending_scene_data = Some(scene_data);
+        return Ok(false);
+    }
+    state.scene_data = scene_data;
+    Ok(true)
+}
+
 // handle a client connection
 fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
@@ -180,63 +214,40 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     loop {
         let mut buf = [0; 4096]; // 4 KiB buffer
 
-        // need to loop over until we find the full `uuid` string with ending brace `}`.
-        // This is to ensure we have read the full message.
-        // if the message itself contains a uuid message, this is not a valid message.
         match reader.read(&mut buf) {
             Ok(0) => break, // connection closed
             Ok(n) => {
                 data.extend_from_slice(&buf[..n]); // add the read bytes to data
 
-                // convert the accumulated data to a string and parse it as JSON
-                if let Ok(data_str) = String::from_utf8(data.clone()) {
-                    // similar code is in python add-on
-                    let check: Vec<&str> = data_str.split("\"}").filter(|s| !s.is_empty()).collect();
-                    if check.len() >= 2 && check.last() == Some(&"\n") && check[check.len() - 2].contains("\"uuid\":") {
-                        // valid msg, continue
+                for message in take_messages(&mut data) {
+                    // check if this message is a response to a message we sent
+                    let tx = {
+                        let server_lock = server.lock().unwrap();
+                        let mut message_map = server_lock.message_map.lock().unwrap();
+                        message_map.remove(&message.uuid) // this gets the tx sender from send_message
+                    };
 
-                        if let Ok(message) = serde_json::from_str::<Message>(&data_str) {
-                            // Check if this message is a response to a message we sent
-                            let tx = {
-                                let server_lock = server.lock().unwrap();
-                                let mut message_map = server_lock.message_map.lock().unwrap();
-                                message_map.remove(&message.uuid) // this gets the tx sender from send_message
-                            };
-
-                            if let Some(tx) = tx {
-                                // This is a response to a message we sent
-                                tx.send(message.message).unwrap();
-                            } else {
-                                // This is an unsolicited message (like a scene update)
-                                // Try to parse the message content to see if it's scene data
-                                let message_str = &message.message;
-
-                                // Check if the message contains scene data structure
-                                if message_str.contains("\"object_groups\"") {
-                                    // This looks like scene data
-                                    println!("Received scene update from Blender with UUID: {}", message.uuid);
-                                    println!("Received scene update from Blender with UUID: {}", message.message);
-
-                                    // Parse the scene data and update application state
-                                    if let Ok(scene_data) = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message_str) {
-                                        let mut state = STATE.lock().unwrap();
-                                        state.scene_data = scene_data;
-                                        drop(state);
-                                        update_state();
-                                        // tell front end to execute the graph
-                                        evaluate_js_oneshot("window.__TAURI__.invoke('execute_graph', { realtime: true });".to_string());
-                                    } else {
-                                        println!("Failed to parse scene data JSON");
-                                    }
-                                } else {
-                                    // Handle other types of unsolicited messages if needed
-                                    println!("Received unsolicited message: UUID={}", message.uuid);
+                    if let Some(tx) = tx {
+                        // a response, the sender may have timed out already
+                        tx.send(message.message).ok();
+                    } else if message.message.contains("\"object_groups\"") {
+                        // an unsolicited scene update from the tracker
+                        println!("Received scene update from Blender with UUID: {} ({} bytes)", message.uuid, message.message.len());
+                        match apply_scene_update(&message.message) {
+                            Ok(execute) => {
+                                update_state();
+                                // run the realtime graph so nodes like Scene Link pick up the new scene
+                                if execute {
+                                    tauri::async_runtime::spawn(async {
+                                        execute_graph(true).await;
+                                    });
                                 }
                             }
-
-                            // Remove processed data
-                            data.clear();
+                            Err(e) => println!("Failed to parse scene data JSON: {}", e),
                         }
+                    } else {
+                        // other unsolicited messages
+                        println!("Received unsolicited message: UUID={}", message.uuid);
                     }
                 }
             }
