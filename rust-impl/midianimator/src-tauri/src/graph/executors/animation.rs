@@ -1,9 +1,12 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use super::io::{Inputs, NodeResult, Outputs};
+use serde::Deserialize;
+
+use super::io::{Inputs, NodeResult, Outputs, Val};
 use crate::midi::MIDINote;
-use crate::scene_generics::{AnimCurve, KeyframePoint, ObjectGroup};
-use crate::utils::animation::{co_of, combine_keyframes, parse_animation_property, AnimationGenerator, BlendKeyframe, ObjectMap, OverlapSettings, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::scene_generics::{AnimCurve, ObjectGroup};
+
+use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 
 /// Node: keyframes_from_object
 ///
@@ -15,16 +18,16 @@ use crate::utils::animation::{co_of, combine_keyframes, parse_animation_property
 /// outputs:
 /// "dyn_output": `Dyn<Array<Keyframe>>`
 #[node_registry::node]
-pub fn keyframes_from_object(inputs: Inputs) -> NodeResult {
+pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, object_name: Option<&String>) -> NodeResult {
     let mut outputs = Outputs::new();
-    let object_groups: Vec<ObjectGroup> = inputs.or_default("object_groups")?;
-    let object_group_name: String = inputs.or_default("object_group_name")?;
-    let object_name: String = inputs.or_default("object_name")?;
+    let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
+    let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
+    let object_name = object_name.map(String::as_str).unwrap_or("");
 
     // nothing picked yet, no dynamic outputs
     let mut dyn_output = serde_json::Map::new();
     if object_groups.is_empty() || object_group_name.is_empty() || object_name.is_empty() {
-        outputs.set("dyn_output", &dyn_output)?;
+        outputs.set("dyn_output", dyn_output);
         return Ok(outputs);
     }
 
@@ -50,11 +53,11 @@ pub fn keyframes_from_object(inputs: Inputs) -> NodeResult {
     // one output per anim curve, flat and inside dyn_output (see nodes_and_backend.md)
     for anim_curve in &object.anim_curves {
         let name = anim_curve_name(anim_curve);
-        outputs.set(&name, anim_curve)?;
-        dyn_output.insert(name.clone(), outputs[&name].clone());
+        dyn_output.insert(name.clone(), serde_json::to_value(anim_curve).unwrap_or_default());
+        outputs.set(&name, anim_curve.clone());
     }
 
-    outputs.set("dyn_output", &dyn_output)?;
+    outputs.set("dyn_output", dyn_output);
     Ok(outputs)
 }
 
@@ -86,20 +89,18 @@ fn anim_curve_name(anim_curve: &AnimCurve) -> String {
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[node_registry::node]
-pub fn animation_generator(inputs: Inputs) -> NodeResult {
+pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&AnimCurve>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&AnimCurve>, note_off_anchor_point: Option<f64>, time_mapper: Option<String>, amplitude_mapper: Option<String>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>, animation_property: Option<String>) -> NodeResult {
     // the keyframe curves are optional, an unconnected one is just no keyframes
-    let note_on_curve: Option<AnimCurve> = inputs.opt("note_on_keyframes")?;
-    let note_off_curve: Option<AnimCurve> = inputs.opt("note_off_keyframes")?;
 
     // inherit the property from the note on curve if none is given, e.g. "location[0]"
-    let mut animation_property: String = inputs.or_default("animation_property")?;
+    let mut animation_property = animation_property.unwrap_or_default();
     if animation_property.is_empty() {
-        let (data_path, array_index) = note_on_curve.as_ref().map_or(("", 0), |c| (c.data_path.as_str(), c.array_index));
+        let (data_path, array_index) = note_on_keyframes.map_or(("", 0), |c| (c.data_path.as_str(), c.array_index));
         animation_property = format!("{}[{}]", data_path, array_index);
     }
 
     // unset is the default, "add"
-    let mut animation_overlap: String = inputs.or_default("animation_overlap")?;
+    let mut animation_overlap = animation_overlap.unwrap_or_default();
     if animation_overlap.is_empty() {
         animation_overlap = ANIMATION_OVERLAPS[0].to_string();
     }
@@ -108,27 +109,27 @@ pub fn animation_generator(inputs: Inputs) -> NodeResult {
     }
 
     // unset uses the default, a crossfade can't go backwards in time
-    let overlap_blend: f64 = inputs.opt("overlap_blend")?.unwrap_or(DEFAULT_OVERLAP_BLEND);
+    let overlap_blend = overlap_blend.unwrap_or(DEFAULT_OVERLAP_BLEND);
     if overlap_blend < 0.0 {
         return Err(format!("overlap blend can't be negative, got {}", overlap_blend));
     }
 
     let generator = AnimationGenerator {
-        name: inputs.or_default("name")?,
-        note_on_keyframes: note_on_curve.map(|c| c.keyframe_points).unwrap_or_default(),
-        note_on_anchor_point: inputs.or_default("note_on_anchor_point")?,
-        note_off_keyframes: note_off_curve.map(|c| c.keyframe_points).unwrap_or_default(),
-        note_off_anchor_point: inputs.or_default("note_off_anchor_point")?,
-        time_mapper: inputs.or_default("time_mapper")?,
-        amplitude_mapper: inputs.or_default("amplitude_mapper")?,
-        velocity_intensity: inputs.or_default("velocity_intensity")?,
+        name: name.unwrap_or_default(),
+        note_on_keyframes: note_on_keyframes.map(|c| c.keyframe_points.clone()).unwrap_or_default(),
+        note_on_anchor_point: note_on_anchor_point.unwrap_or_default(),
+        note_off_keyframes: note_off_keyframes.map(|c| c.keyframe_points.clone()).unwrap_or_default(),
+        note_off_anchor_point: note_off_anchor_point.unwrap_or_default(),
+        time_mapper: time_mapper.unwrap_or_default(),
+        amplitude_mapper: amplitude_mapper.unwrap_or_default(),
+        velocity_intensity: velocity_intensity.unwrap_or_default(),
         animation_overlap,
         overlap_blend,
         animation_property,
     };
 
     let mut outputs = Outputs::new();
-    outputs.set("generator", &generator)?;
+    outputs.set("generator", generator);
     Ok(outputs)
 }
 
@@ -322,11 +323,10 @@ While this method requires more initial setup, it provides the greatest degree o
 
 */
 #[node_registry::node]
-pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
-    let midi_notes: Vec<MIDINote> = inputs.or_default("midi_notes")?;
-    let object_groups: Vec<ObjectGroup> = inputs.or_default("object_groups")?;
-    let object_group_name: String = inputs.or_default("object_group_name")?;
-    let generator: Option<AnimationGenerator> = inputs.opt("generator")?;
+pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, generator: Option<&AnimationGenerator>) -> NodeResult {
+    let midi_notes: &[MIDINote] = midi_notes.map(Vec::as_slice).unwrap_or(&[]);
+    let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
+    let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
 
     /*  ObjectMap example:
        {
@@ -346,7 +346,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
 
     // nothing picked yet, empty object map
     if object_groups.is_empty() || object_group_name.is_empty() {
-        outputs.set("object_map", &object_map)?;
+        outputs.set("object_map", object_map);
         return Ok(outputs);
     }
 
@@ -355,13 +355,13 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
     println!("object group name: {}", object_group_name);
 
     // every object gets the generator's animation, if one is connected
-    let anim_name = generator.as_ref().map(|g| g.name.clone());
+    let anim_name = generator.map(|g| g.name.clone());
     if let Some(generator) = generator {
-        object_map.animations.insert(generator.name.clone(), generator);
+        object_map.animations.insert(generator.name.clone(), generator.clone());
     }
 
     // get all used notes from midi notes
-    let used_notes = all_used_notes_from_array(&midi_notes);
+    let used_notes = all_used_notes_from_array(midi_notes);
 
     // case 2 when the object count is the same as the note count, otherwise case 3
     let notes = if object_group.objects.len() == used_notes.len() {
@@ -380,7 +380,7 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
         }
     }
 
-    outputs.set("object_map", &object_map)?;
+    outputs.set("object_map", object_map);
     Ok(outputs)
 }
 
@@ -392,92 +392,101 @@ pub fn assign_notes_to_objects(inputs: Inputs) -> NodeResult {
 /// outputs:
 /// "object_map": `ObjectMap`
 #[node_registry::node]
-pub fn merge_object_maps(inputs: Inputs) -> NodeResult {
+pub fn merge_object_maps(inputs: &Inputs) -> NodeResult {
     // merge the maps in input order
     let mut object_map = ObjectMap::default();
     for other in inputs.dynamic::<ObjectMap>("object_maps")? {
-        object_map.merge(other)?;
+        object_map.merge(other.get::<ObjectMap>().clone())?;
     }
 
     let mut outputs = Outputs::new();
-    outputs.set("object_map", &object_map)?;
+    outputs.set("object_map", object_map);
     Ok(outputs)
 }
 
-/// Node: evaluate_instrument
+/// Node: note_targets
 ///
 /// inputs:
-/// "object_map": `ObjectMap`,
-/// "midi_notes": `Array<MIDINote>`,`
+/// "object_map": `ObjectMap`
 ///
 /// outputs:
-/// "keyframes": `HashMap<String, Array<BlendKeyframe>>`, keyframes per object, written to Blender by scene_writer
+/// "targets": `HashMap<u8, Array<NoteTarget>>`, the objects and animations each note number triggers
 #[node_registry::node]
-pub fn evaluate_instrument(inputs: Inputs) -> NodeResult {
-    let object_map: ObjectMap = inputs.get("object_map")?;
-    let midi_notes: Vec<MIDINote> = inputs.get("midi_notes")?;
-
-    // look up which objects (and with which animation) each note triggers
-    let mut note_to_objects: HashMap<u8, Vec<(String, &AnimationGenerator)>> = HashMap::new();
-    for (obj_name, entry) in &object_map.objects {
-        for (anim_name, notes) in entry {
-            let gen = object_map.animations.get(anim_name).ok_or_else(|| format!("object '{}' uses animation '{}', which isn't in the object map", obj_name, anim_name))?;
-            for &note_num in notes {
-                note_to_objects.entry(note_num).or_default().push((obj_name.clone(), gen));
-            }
-        }
-    }
-
-    // keyframes per object, then per curve. overlap only combines keys on the same curve
-    let mut obj_curves: HashMap<String, BTreeMap<(String, u32), Vec<BlendKeyframe>>> = object_map.objects.keys().map(|name| (name.clone(), BTreeMap::new())).collect();
-
-    for note in &midi_notes {
-        let Some(targets) = note_to_objects.get(&note.note_number) else {
-            continue;
-        };
-
-        for (obj_name, gen) in targets {
-            // Parse data_path and array_index from animation_property e.g. "location[0]"
-            let (data_path, array_index) = parse_animation_property(&gen.animation_property);
-
-            // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
-            let mut next_keys: Vec<BlendKeyframe> = note_keyframes(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
-            let mut note_off_keys: Vec<BlendKeyframe> = note_keyframes(&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
-
-            next_keys.append(&mut note_off_keys);
-            next_keys.sort_by(|a, b| a.time.total_cmp(&b.time));
-
-            if next_keys.is_empty() {
-                continue;
-            }
-
-            // combine with the keyframes already on this curve
-            let inserted = obj_curves.entry(obj_name.clone()).or_default().entry((data_path, array_index)).or_default();
-            let settings = OverlapSettings {
-                blend: gen.overlap_blend,
-            };
-            combine_keyframes(&gen.animation_overlap, &settings, inserted, &mut next_keys)?;
-        }
-    }
-
-    // flatten back to one list per object, objects with no keys stay so the writer still clears them
-    let obj_blend_keyframes: HashMap<String, Vec<BlendKeyframe>> = obj_curves.into_iter().map(|(name, curves)| (name, curves.into_values().flatten().collect())).collect();
-
+pub fn note_targets(object_map: &ObjectMap) -> NodeResult {
     let mut outputs = Outputs::new();
-    outputs.set("keyframes", &obj_blend_keyframes)?;
+    outputs.set("targets", object_map.note_targets()?);
     Ok(outputs)
 }
 
-/// offsets a generator's keyframes to a note's time and scales them by its velocity
-fn note_keyframes(keyframes: &[KeyframePoint], offset: f64, velocity: u8, velocity_intensity: f64, data_path: &str, array_index: u32) -> Vec<BlendKeyframe> {
-    keyframes
-        .iter()
-        .filter_map(|kf| {
-            let (time, mut value) = co_of(kf)?;
-            if velocity_intensity != 0.0 {
-                value *= velocity as f64 / 127.0 * velocity_intensity;
-            }
-            Some(BlendKeyframe::new(time + offset, value, data_path, array_index))
-        })
-        .collect()
+/// Node: targets_for_note
+///
+/// inputs:
+/// "targets": `HashMap<u8, Array<NoteTarget>>`,
+/// "note": `MIDINote`
+///
+/// outputs:
+/// "targets": `Array<NoteTarget>`, empty when the note triggers nothing
+#[node_registry::node]
+pub fn targets_for_note(targets: &BTreeMap<u8, Vec<NoteTarget>>, note: &MIDINote) -> NodeResult {
+    let mut outputs = Outputs::new();
+    outputs.set("targets", targets.get(&note.note_number).cloned().unwrap_or_default());
+    Ok(outputs)
+}
+
+/// Node: note_keyframes
+///
+/// inputs:
+/// "object_map": `ObjectMap`, where the target's animation is looked up,
+/// "target": `NoteTarget`,
+/// "note": `MIDINote`
+///
+/// outputs:
+/// "keys": `CurveKeys`, null when the generator has no keyframes
+#[node_registry::node]
+pub fn note_keyframes(object_map: &ObjectMap, target: &NoteTarget, note: &MIDINote) -> NodeResult {
+    let generator = object_map.generator(&target.animation, &target.object)?;
+    let mut outputs = Outputs::new();
+    outputs.set("keys", note_curve_keys(&target.object, generator, note));
+    Ok(outputs)
+}
+
+/// Node: combine_keyframes
+///
+/// inputs:
+/// "object_map": `ObjectMap`, every object in it gets an entry, even with no keys,
+/// "keys": `Array<Any>`, `CurveKeys` in note order, nested lists (from loops inside loops) are flattened
+///
+/// outputs:
+/// "keyframes": `HashMap<String, Array<BlendKeyframe>>`
+#[node_registry::node]
+pub fn combine_keyframes(object_map: Option<&ObjectMap>, inputs: &Inputs) -> NodeResult {
+    let mut chunks = Vec::new();
+    if let Some(keys) = inputs.val("keys") {
+        flatten_curve_keys(keys, &mut chunks)?;
+    }
+    let objects = object_map.map(|m| m.objects.keys().collect::<Vec<_>>()).unwrap_or_default();
+    let mut outputs = Outputs::new();
+    outputs.set("keyframes", combine_curve_keys(objects.into_iter(), chunks)?);
+    Ok(outputs)
+}
+
+/// collects `CurveKeys` out of nested lists in order, nulls (notes with no keys) are skipped
+fn flatten_curve_keys(value: &Val, out: &mut Vec<CurveKeys>) -> Result<(), String> {
+    if let Some(keys) = value.downcast_ref::<Option<CurveKeys>>() {
+        out.extend(keys.clone());
+    } else if let Some(keys) = value.downcast_ref::<CurveKeys>() {
+        out.push(keys.clone());
+    } else if value.is_null() {
+    } else if let Some(items) = value.items() {
+        for item in &items {
+            flatten_curve_keys(item, out)?;
+        }
+    } else {
+        // JSON from somewhere else (a test, or a value set on the node)
+        let json = value.to_json();
+        if !json.is_null() {
+            out.push(CurveKeys::deserialize(json).map_err(|e| format!("input 'keys' has the wrong type: {}", e))?);
+        }
+    }
+    Ok(())
 }

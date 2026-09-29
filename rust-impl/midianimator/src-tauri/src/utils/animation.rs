@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+use crate::midi::MIDINote;
 use crate::scene_generics::KeyframePoint;
 
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
@@ -185,6 +186,104 @@ pub fn add_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec
     inserted_keys.append(next_keys);
     inserted_keys.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
     inserted_keys.dedup_by(|a, b| (a.time - b.time).abs() < f64::EPSILON);
+}
+
+/// one object a note animates and the name of the animation it plays (a key into `ObjectMap::animations`),
+/// the Note Targets node lists these per note number
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct NoteTarget {
+    pub object: String,
+    pub animation: String,
+}
+
+/// the keyframes one note adds to one curve of an object, before overlapping notes are combined
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CurveKeys {
+    pub object: String,
+    pub data_path: String,
+    pub array_index: u32,
+    pub animation_overlap: String,
+    pub overlap_blend: f64,
+    pub keyframes: Vec<BlendKeyframe>,
+}
+
+impl ObjectMap {
+    /// which objects (and with which animation) each note number triggers, sorted by object then animation name
+    pub fn note_targets(&self) -> Result<BTreeMap<u8, Vec<NoteTarget>>, String> {
+        let mut targets: BTreeMap<u8, Vec<NoteTarget>> = BTreeMap::new();
+        // sorted so notes on the same curve always combine in the same order
+        let objects: BTreeMap<&String, &ObjectMapEntry> = self.objects.iter().collect();
+        for (obj_name, entry) in objects {
+            let animations: BTreeMap<&String, &Vec<u8>> = entry.iter().collect();
+            for (anim_name, notes) in animations {
+                self.generator(anim_name, obj_name)?;
+                for &note_number in notes {
+                    targets.entry(note_number).or_default().push(NoteTarget {
+                        object: obj_name.clone(),
+                        animation: anim_name.clone(),
+                    });
+                }
+            }
+        }
+        Ok(targets)
+    }
+
+    /// the generator an object's animation name points to
+    pub fn generator(&self, animation: &str, object: &str) -> Result<&AnimationGenerator, String> {
+        self.animations.get(animation).ok_or_else(|| format!("object '{}' uses animation '{}', which isn't in the object map", object, animation))
+    }
+}
+
+/// the keyframes a note plays on an object, offset to the note's time and scaled by its velocity. `None` if the generator has no keys
+pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote) -> Option<CurveKeys> {
+    // parse data_path and array_index from animation_property e.g. "location[0]"
+    let (data_path, array_index) = parse_animation_property(&gen.animation_property);
+
+    // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
+    let mut keyframes = note_keyframes(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
+    keyframes.extend(note_keyframes(&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index));
+    keyframes.sort_by(|a, b| a.time.total_cmp(&b.time));
+
+    if keyframes.is_empty() {
+        return None;
+    }
+    Some(CurveKeys {
+        object: object.to_string(),
+        data_path,
+        array_index,
+        animation_overlap: gen.animation_overlap.clone(),
+        overlap_blend: gen.overlap_blend,
+        keyframes,
+    })
+}
+
+/// offsets a generator's keyframes to a note's time and scales them by its velocity
+fn note_keyframes(keyframes: &[KeyframePoint], offset: f64, velocity: u8, velocity_intensity: f64, data_path: &str, array_index: u32) -> Vec<BlendKeyframe> {
+    keyframes
+        .iter()
+        .filter_map(|kf| {
+            let (time, mut value) = co_of(kf)?;
+            if velocity_intensity != 0.0 {
+                value *= velocity as f64 / 127.0 * velocity_intensity;
+            }
+            Some(BlendKeyframe::new(time + offset, value, data_path, array_index))
+        })
+        .collect()
+}
+
+/// combines each note's keys into its curve in order with the curve's overlap mode, then flattens to one list per object.
+/// every object in `objects` is in the result, ones with no keys stay empty so the writer still clears them
+pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks: impl IntoIterator<Item = CurveKeys>) -> Result<HashMap<String, Vec<BlendKeyframe>>, String> {
+    // keyframes per object, then per curve. overlap only combines keys on the same curve
+    let mut obj_curves: HashMap<String, BTreeMap<(String, u32), Vec<BlendKeyframe>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
+    for mut chunk in chunks {
+        let inserted = obj_curves.entry(chunk.object).or_default().entry((chunk.data_path, chunk.array_index)).or_default();
+        let settings = OverlapSettings {
+            blend: chunk.overlap_blend,
+        };
+        combine_keyframes(&chunk.animation_overlap, &settings, inserted, &mut chunk.keyframes)?;
+    }
+    Ok(obj_curves.into_iter().map(|(name, curves)| (name, curves.into_values().flatten().collect())).collect())
 }
 
 /// the ways a note's keyframes can combine with the keyframes already on its curve, the first is the default
