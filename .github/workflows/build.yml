@@ -14,14 +14,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # one universal binary for apple silicon and intel
           - platform: macos-latest
-            name: macos-arm64
-            args: --target aarch64-apple-darwin
-            bundle: target/aarch64-apple-darwin/release/bundle
-          - platform: macos-latest
-            name: macos-x64
-            args: --target x86_64-apple-darwin
-            bundle: target/x86_64-apple-darwin/release/bundle
+            name: macos-universal
+            args: --target universal-apple-darwin
+            bundle: target/universal-apple-darwin/release/bundle
           - platform: windows-latest
             name: windows-x64
             args: ""
