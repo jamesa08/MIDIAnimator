@@ -43,6 +43,9 @@ pub struct AppState {
     pub connected_application: String,
     pub connected_version: String,
     pub connected_file_name: String,
+    /// path of the node group open in the editor (`group-1/group-2`), empty at the top level
+    #[serde(default)]
+    pub open_group: String,
 
     // new tab instance structure
     pub instances: HashMap<String, InstanceState>,
@@ -92,6 +95,7 @@ impl Default for AppState {
             connected_application: "".to_string(),
             connected_version: "".to_string(),
             connected_file_name: "".to_string(),
+            open_group: "".to_string(),
             scene_data: HashMap::new(),
             pending_scene_data: None,
             rf_instance: HashMap::new(),
@@ -204,7 +208,51 @@ fn graph_key(rf_instance: &HashMap<String, serde_json::Value>) -> serde_json::Va
     serde_json::json!({
         "nodes": strip(rf_instance.get("nodes"), &["selected", "dragging", "measured", "resizing"]),
         "edges": strip(rf_instance.get("edges"), &["selected"]),
+        "groups": rf_instance.get("groups").cloned().map(strip_groups),
     })
+}
+
+/// a project's node groups without the UI only fields, like `graph_key`
+fn strip_groups(mut groups: serde_json::Value) -> serde_json::Value {
+    if let Some(groups) = groups.as_object_mut() {
+        for group in groups.values_mut() {
+            let Some(group) = group.as_object_mut() else {
+                continue;
+            };
+            let inner: HashMap<String, serde_json::Value> = group.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let key = graph_key(&inner);
+            group.insert("nodes".to_string(), key["nodes"].clone());
+            group.insert("edges".to_string(), key["edges"].clone());
+            group.remove("viewport");
+        }
+    }
+    groups
+}
+
+/// updates a graph saved by an older version, see `graph::builtin::migrate`
+pub fn migrate_rf_instance(rf_instance: &mut HashMap<String, serde_json::Value>) {
+    let Ok(mut graph) = crate::graph::model::Graph::from_rf(rf_instance) else {
+        return;
+    };
+    if crate::graph::builtin::migrate(&mut graph) {
+        *rf_instance = graph.to_rf();
+    }
+}
+
+/// the frontend opened a node group (or went back out), the groups on that path record their insides so they show values
+#[tauri::command]
+pub async fn set_open_group(path: String) {
+    let paused = {
+        let mut state = STATE.lock().unwrap();
+        if state.open_group == path {
+            return;
+        }
+        state.open_group = path;
+        state.execution_paused
+    };
+    if !paused {
+        crate::graph::execute::execute_graph(true).await;
+    }
 }
 
 // marks the current graph as saved
@@ -231,7 +279,10 @@ pub struct ProjectStatus {
 pub fn get_project_status() -> ProjectStatus {
     let path = PROJECT_PATH.lock().unwrap().clone();
     let name = path.as_deref().and_then(|path| std::path::Path::new(path).file_stem()).map(|stem| stem.to_string_lossy().to_string()).unwrap_or("untitled".to_string());
-    ProjectStatus { name, unsaved: has_unsaved_changes() }
+    ProjectStatus {
+        name,
+        unsaved: has_unsaved_changes(),
+    }
 }
 
 /// sends the project status to the front end ("project_status") and puts it in the window title, only when it changed.
@@ -246,7 +297,17 @@ pub fn notify_project_status() {
     drop(last);
 
     if let Some(window) = WINDOW.lock().unwrap().as_ref() {
-        window.set_title(&format!("{}{} - MotionKeys", status.name, if status.unsaved { "*" } else { "" })).ok();
+        window
+            .set_title(&format!(
+                "{}{} - MotionKeys",
+                status.name,
+                if status.unsaved {
+                    "*"
+                } else {
+                    ""
+                }
+            ))
+            .ok();
         window.emit("project_status", status).ok();
     }
 }
@@ -316,7 +377,8 @@ pub fn load_project_from(path: &str) -> Result<AppState, String> {
     // read and parse the project file
     let json = fs::read_to_string(path).map_err(|e| format!("File read error: {}", e))?;
 
-    let saved_data: SavedProject = serde_json::from_str(&json).map_err(|e| format!("Deserialization error: {}", e))?;
+    let mut saved_data: SavedProject = serde_json::from_str(&json).map_err(|e| format!("Deserialization error: {}", e))?;
+    migrate_rf_instance(&mut saved_data.rf_instance);
 
     // replace the scene data and graph in the state
     let new_state = {

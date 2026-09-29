@@ -12,7 +12,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 // MARK: - Node Specs (default_nodes.json)
 
@@ -63,6 +64,67 @@ impl NodeSpec {
     /// finds an output handle on this node spec by id
     pub fn output(&self, id: &str) -> Option<&HandleSpec> {
         self.handles.outputs.iter().find(|h| h.id == id)
+    }
+}
+
+/// looks up node specs for one graph. most nodes use their type's spec, group nodes (and the group input and output
+/// inside a group) get their sockets from the group's interface
+pub struct Specs<'a> {
+    pub specs: &'a [NodeSpec],
+    /// every group a group node can run, see `graph::builtin::all_groups`
+    pub groups: &'a BTreeMap<String, GroupDef>,
+    /// the group whose graph this is, `None` for the root graph
+    pub scope: Option<&'a GroupDef>,
+}
+
+impl<'a> Specs<'a> {
+    /// the spec of a node type, group ids count as types (adding one adds a group node running it)
+    pub fn for_type(&self, node_type: &str) -> Option<Cow<'a, NodeSpec>> {
+        if let Some(def) = self.groups.get(node_type) {
+            return self.group_spec(node_type, def);
+        }
+        find_spec(self.specs, node_type).map(Cow::Borrowed)
+    }
+
+    /// the spec of a node in the graph, with its group's sockets for group nodes
+    pub fn for_node(&self, node: &RfNode) -> Option<Cow<'a, NodeSpec>> {
+        let node_type = node.resolved_node_type();
+        let spec = find_spec(self.specs, node_type)?;
+        match node_type {
+            "group" => {
+                let group_id = node.data.get("group_id").and_then(|v| v.as_str()).unwrap_or("");
+                match self.groups.get(group_id) {
+                    Some(def) => self.group_spec(group_id, def),
+                    None => Some(Cow::Borrowed(spec)),
+                }
+            }
+            "group_input" | "group_output" => {
+                let mut spec = spec.clone();
+                if let Some(def) = self.scope {
+                    // inside, the group's inputs come out of the group input and its outputs go into the group output
+                    if node_type == "group_input" {
+                        spec.handles.outputs = def.interface.inputs.clone();
+                    } else {
+                        spec.handles.inputs = def.interface.outputs.clone();
+                    }
+                }
+                Some(Cow::Owned(spec))
+            }
+            _ => Some(Cow::Borrowed(spec)),
+        }
+    }
+
+    /// the spec a group node running `group_id` has: the group's name and sockets (which group it runs is `data.group_id`, not an input)
+    fn group_spec(&self, group_id: &str, def: &GroupDef) -> Option<Cow<'a, NodeSpec>> {
+        let mut spec = find_spec(self.specs, "group")?.clone();
+        spec.name = def.name.clone();
+        if !def.description.is_empty() {
+            spec.description = def.description.clone();
+        }
+        spec.description.push_str(&format!(" (node group '{}')", group_id));
+        spec.handles.inputs = def.interface.inputs.clone();
+        spec.handles.outputs = def.interface.outputs.clone();
+        Some(Cow::Owned(spec))
     }
 }
 
@@ -158,9 +220,19 @@ fn capitalize(word: &str) -> String {
     }
 }
 
-/// whether an output of type `out_ty` can feed an input of type `in_ty`
+/// whether an output of type `out_ty` can feed an input of type `in_ty`.
+/// `Any` matches anything either way (for each items and elements are `Any`), also inside `Array<...>`
 pub fn compatible(out_ty: &str, in_ty: &str) -> bool {
-    out_ty == in_ty || in_ty == "Any" || out_ty.starts_with("Dyn<")
+    fn array(t: &str) -> Option<&str> {
+        t.strip_prefix("Array<").and_then(|t| t.strip_suffix('>')).map(str::trim)
+    }
+    if out_ty == in_ty || in_ty == "Any" || out_ty == "Any" || out_ty.starts_with("Dyn<") {
+        return true;
+    }
+    match (array(out_ty), array(in_ty)) {
+        (Some(out_inner), Some(in_inner)) => compatible(out_inner, in_inner),
+        _ => false,
+    }
 }
 
 // MARK: - Type Schemas
@@ -183,7 +255,7 @@ pub fn base_type(data_type: &str) -> &str {
 pub fn describe_type(data_type: &str) -> Result<String, String> {
     use crate::midi::{MIDIEvent, MIDINote, MIDITrack};
     use crate::scene_generics::{AnimCurve, Keyframe, Object, ObjectGroup, Scene};
-    use crate::utils::animation::{AnimationGenerator, BlendKeyframe, ObjectMap};
+    use crate::utils::animation::{AnimationGenerator, BlendKeyframe, CurveKeys, NoteTarget, ObjectMap};
 
     // strip the wrappers so we can look up the struct
     let base = base_type(data_type);
@@ -201,6 +273,8 @@ pub fn describe_type(data_type: &str) -> Result<String, String> {
         "BlendKeyframe" => (schemars::schema_for!(BlendKeyframe), None),
         "AnimationGenerator" => (schemars::schema_for!(AnimationGenerator), None),
         "ObjectMap" => (schemars::schema_for!(ObjectMap), None),
+        "NoteTarget" => (schemars::schema_for!(NoteTarget), None),
+        "CurveKeys" => (schemars::schema_for!(CurveKeys), None),
         // primitives don't have a schema, just describe them
         "String" | "f64" | "u8" | "Any" => {
             return Ok(format!(
@@ -214,7 +288,7 @@ pub fn describe_type(data_type: &str) -> Result<String, String> {
             ))
         }
         // unknown type, list the ones we do know
-        _ => return Err(format!("unknown type '{}'; known types: MIDINote, MIDIEvent, MIDITrack, ObjectGroup, Object, Scene, Keyframe, AnimCurve, BlendKeyframe, AnimationGenerator, ObjectMap (optionally wrapped in Array<...>, Dyn<...> or HashMap<K, ...>)", data_type)),
+        _ => return Err(format!("unknown type '{}'; known types: MIDINote, MIDIEvent, MIDITrack, ObjectGroup, Object, Scene, Keyframe, AnimCurve, BlendKeyframe, AnimationGenerator, ObjectMap, NoteTarget, CurveKeys (optionally wrapped in Array<...>, Dyn<...> or HashMap<K, ...>)", data_type)),
     };
 
     // build the text, mention the wrapper type if there was one
@@ -344,8 +418,25 @@ pub struct Graph {
     pub nodes: Vec<RfNode>,
     #[serde(default)]
     pub edges: Vec<RfEdge>,
+    /// node group definitions, only the root graph has these. every `group` node pointing at one shares it
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub groups: BTreeMap<String, GroupDef>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+/// a node group: its own graph plus the sockets a `group` node shows on the outside.
+/// inside, `group_input` outputs the interface inputs and `group_output` takes the interface outputs
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct GroupDef {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub interface: HandleSpecs,
+    #[serde(flatten)]
+    pub graph: Graph,
 }
 
 impl Graph {
@@ -482,7 +573,11 @@ mod tests {
         assert!(compatible("Array<MIDINote>", "Any"));
         assert!(compatible("Dyn<Array<Keyframe>>", "Array<Keyframe>"));
         assert!(!compatible("Array<MIDITrack>", "Array<MIDINote>"));
-        assert!(!compatible("Any", "String"));
+        // for each: any list loops, its element feeds anything, results fill any list
+        assert!(compatible("Array<MIDINote>", "Array<Any>"));
+        assert!(compatible("Any", "MIDINote"));
+        assert!(compatible("Array<Any>", "Array<CurveKeys>"));
+        assert!(!compatible("MIDINote", "Array<Any>"));
     }
 
     // checks that wrapper types get stripped and that schemas are found (or errors for unknown types)

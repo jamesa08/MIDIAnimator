@@ -330,38 +330,6 @@
         },
 
         {
-            "id": "evaluate_instrument",
-            "name": "Evaluate Instrument",
-            "description": "evaluate instrument",
-            "executor": "rust",
-            "realtime": true,
-            "handles": {
-                "inputs": [
-                    {
-                        "id": "object_map",
-                        "name": "Object Map",
-                        "data_type": "ObjectMap",
-                        "description": "Object-to-note mapping from Assign Notes to Objects, or several merged with Merge Object Maps."
-                    },
-                    {
-                        "id": "midi_notes",
-                        "name": "MIDI Notes",
-                        "data_type": "Array<MIDINote>",
-                        "description": "Notes to animate, usually the same notes given to Assign Notes to Objects."
-                    }
-                ],
-                "outputs": [
-                    {
-                        "id": "keyframes",
-                        "name": "Keyframes",
-                        "data_type": "HashMap<String, Array<BlendKeyframe>>",
-                        "description": "Keyframes per object. Connect to Scene Writer to write them to Blender."
-                    }
-                ]
-            }
-        },
-
-        {
             "id": "scene_writer",
             "name": "Scene Writer",
             "description": "Write keyframes to the Blender scene",
@@ -377,6 +345,246 @@
                     }
                 ],
                 "outputs": []
+            }
+        },
+
+        {
+            "id": "group",
+            "name": "Group",
+            "description": "Runs a node group. Its sockets come from the group's Group Input and Group Output. Press Tab to open it.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [],
+                "outputs": []
+            }
+        },
+
+        {
+            "id": "group_input",
+            "name": "Group Input",
+            "description": "Inside a node group: the values given to the group node's inputs.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [],
+                "outputs": []
+            }
+        },
+
+        {
+            "id": "group_output",
+            "name": "Group Output",
+            "description": "Inside a node group: the values the group node outputs.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [],
+                "outputs": []
+            }
+        },
+
+        {
+            "id": "for_each_input",
+            "name": "For Each",
+            "description": "Start of a for each zone. The nodes between it and its For Each Output run once per item.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "items",
+                        "name": "Items",
+                        "data_type": "Array<Any>",
+                        "description": "The list to loop over."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "element",
+                        "name": "Element",
+                        "data_type": "Any",
+                        "description": "The current item."
+                    },
+                    {
+                        "id": "index",
+                        "name": "Index",
+                        "data_type": "f64",
+                        "description": "Position of the current item, starting at 0."
+                    },
+                    {
+                        "id": "count",
+                        "name": "Count",
+                        "data_type": "f64",
+                        "description": "Number of items."
+                    },
+                    {
+                        "id": "previous",
+                        "name": "Previous",
+                        "data_type": "Any",
+                        "description": "The item before the current one, nothing for the first."
+                    },
+                    {
+                        "id": "next",
+                        "name": "Next",
+                        "data_type": "Any",
+                        "description": "The item after the current one, nothing for the last."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "for_each_output",
+            "name": "For Each Output",
+            "description": "End of a for each zone. Collects what reaches Result on each item into a list.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "result",
+                        "name": "Result",
+                        "data_type": "Any",
+                        "description": "Value to collect for the current item."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "results",
+                        "name": "Results",
+                        "data_type": "Array<Any>",
+                        "description": "The collected values, one per item in order."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "note_targets",
+            "name": "Note Targets",
+            "description": "Lists which objects, with which animation, each note number triggers.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "data_type": "ObjectMap",
+                        "description": "Object-to-note mapping from Assign Notes to Objects."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "targets",
+                        "name": "Targets",
+                        "data_type": "HashMap<u8, Array<NoteTarget>>",
+                        "description": "Objects and animations per note number."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "targets_for_note",
+            "name": "Targets for Note",
+            "description": "The objects and animations one note triggers.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "targets",
+                        "name": "Targets",
+                        "data_type": "HashMap<u8, Array<NoteTarget>>",
+                        "description": "Targets per note number from Note Targets."
+                    },
+                    {
+                        "id": "note",
+                        "name": "Note",
+                        "data_type": "MIDINote",
+                        "description": "The note to look up."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "targets",
+                        "name": "Targets",
+                        "data_type": "Array<NoteTarget>",
+                        "description": "What this note triggers, empty if nothing."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "note_keyframes",
+            "name": "Note Keyframes",
+            "description": "The keyframes one note plays on one target: the generator's keys moved to the note's time and scaled by velocity.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "data_type": "ObjectMap",
+                        "description": "Where the target's animation is looked up."
+                    },
+                    {
+                        "id": "target",
+                        "name": "Target",
+                        "data_type": "NoteTarget",
+                        "description": "Object and the name of the animation to play."
+                    },
+                    {
+                        "id": "note",
+                        "name": "Note",
+                        "data_type": "MIDINote",
+                        "description": "The note that plays it."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "keys",
+                        "name": "Keys",
+                        "data_type": "CurveKeys",
+                        "description": "Keyframes on the target's curve, nothing if the generator has no keys."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "combine_keyframes",
+            "name": "Combine Keyframes",
+            "description": "Combines every note's keys per object and curve in note order, using each generator's animation overlap mode.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "data_type": "ObjectMap",
+                        "description": "Every object in the map gets keyframes, objects with no notes are cleared."
+                    },
+                    {
+                        "id": "keys",
+                        "name": "Keys",
+                        "data_type": "Array<Any>",
+                        "description": "CurveKeys from Note Keyframes in note order, lists inside lists are flattened."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "HashMap<String, Array<BlendKeyframe>>",
+                        "description": "Keyframes per object. Connect to Scene Writer to write them to Blender."
+                    }
+                ]
             }
         }
     ]

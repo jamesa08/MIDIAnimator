@@ -1,0 +1,237 @@
+{
+    "name": "Evaluate Instrument",
+    "description": "evaluate instrument",
+    "interface": {
+        "inputs": [
+            {
+                "id": "object_map",
+                "name": "Object Map",
+                "data_type": "ObjectMap",
+                "description": "Object-to-note mapping from Assign Notes to Objects, or several merged with Merge Object Maps."
+            },
+            {
+                "id": "midi_notes",
+                "name": "MIDI Notes",
+                "data_type": "Array<MIDINote>",
+                "description": "Notes to animate, usually the same notes given to Assign Notes to Objects."
+            }
+        ],
+        "outputs": [
+            {
+                "id": "keyframes",
+                "name": "Keyframes",
+                "data_type": "HashMap<String, Array<BlendKeyframe>>",
+                "description": "Keyframes per object. Connect to Scene Writer to write them to Blender."
+            }
+        ]
+    },
+    "nodes": [
+        {
+            "id": "group_input-1",
+            "type": "group_input",
+            "position": {
+                "x": 0,
+                "y": 100
+            },
+            "data": {
+                "inputs": {}
+            }
+        },
+        {
+            "id": "note_targets-1",
+            "type": "note_targets",
+            "position": {
+                "x": 320,
+                "y": -220
+            },
+            "data": {
+                "inputs": {}
+            }
+        },
+        {
+            "id": "for_each_input-1",
+            "type": "for_each_input",
+            "position": {
+                "x": 320,
+                "y": 140
+            },
+            "data": {
+                "zone": "for_each_output-1",
+                "inputs": {}
+            }
+        },
+        {
+            "id": "targets_for_note-1",
+            "type": "targets_for_note",
+            "position": {
+                "x": 640,
+                "y": 40
+            },
+            "data": {
+                "inputs": {}
+            }
+        },
+        {
+            "id": "for_each_input-2",
+            "type": "for_each_input",
+            "position": {
+                "x": 960,
+                "y": 110
+            },
+            "data": {
+                "zone": "for_each_output-2",
+                "inputs": {}
+            }
+        },
+        {
+            "id": "note_keyframes-1",
+            "type": "note_keyframes",
+            "position": {
+                "x": 1280,
+                "y": 110
+            },
+            "data": {
+                "inputs": {}
+            }
+        },
+        {
+            "id": "for_each_output-2",
+            "type": "for_each_output",
+            "position": {
+                "x": 1600,
+                "y": 110
+            },
+            "data": {
+                "zone": "for_each_input-2",
+                "inputs": {}
+            }
+        },
+        {
+            "id": "for_each_output-1",
+            "type": "for_each_output",
+            "position": {
+                "x": 1920,
+                "y": 140
+            },
+            "data": {
+                "zone": "for_each_input-1",
+                "inputs": {}
+            }
+        },
+        {
+            "id": "combine_keyframes-1",
+            "type": "combine_keyframes",
+            "position": {
+                "x": 2240,
+                "y": 60
+            },
+            "data": {
+                "inputs": {}
+            }
+        },
+        {
+            "id": "group_output-1",
+            "type": "group_output",
+            "position": {
+                "x": 2560,
+                "y": 100
+            },
+            "data": {
+                "inputs": {}
+            }
+        }
+    ],
+    "edges": [
+        {
+            "id": "xy-edge__note_targets-1object_map-group_input-1object_map",
+            "source": "note_targets-1",
+            "sourceHandle": "object_map",
+            "target": "group_input-1",
+            "targetHandle": "object_map"
+        },
+        {
+            "id": "xy-edge__for_each_input-1items-group_input-1midi_notes",
+            "source": "for_each_input-1",
+            "sourceHandle": "items",
+            "target": "group_input-1",
+            "targetHandle": "midi_notes"
+        },
+        {
+            "id": "xy-edge__targets_for_note-1targets-note_targets-1targets",
+            "source": "targets_for_note-1",
+            "sourceHandle": "targets",
+            "target": "note_targets-1",
+            "targetHandle": "targets"
+        },
+        {
+            "id": "xy-edge__targets_for_note-1note-for_each_input-1element",
+            "source": "targets_for_note-1",
+            "sourceHandle": "note",
+            "target": "for_each_input-1",
+            "targetHandle": "element"
+        },
+        {
+            "id": "xy-edge__for_each_input-2items-targets_for_note-1targets",
+            "source": "for_each_input-2",
+            "sourceHandle": "items",
+            "target": "targets_for_note-1",
+            "targetHandle": "targets"
+        },
+        {
+            "id": "xy-edge__note_keyframes-1target-for_each_input-2element",
+            "source": "note_keyframes-1",
+            "sourceHandle": "target",
+            "target": "for_each_input-2",
+            "targetHandle": "element"
+        },
+        {
+            "id": "xy-edge__note_keyframes-1note-for_each_input-1element",
+            "source": "note_keyframes-1",
+            "sourceHandle": "note",
+            "target": "for_each_input-1",
+            "targetHandle": "element"
+        },
+        {
+            "id": "xy-edge__for_each_output-2result-note_keyframes-1keys",
+            "source": "for_each_output-2",
+            "sourceHandle": "result",
+            "target": "note_keyframes-1",
+            "targetHandle": "keys"
+        },
+        {
+            "id": "xy-edge__for_each_output-1result-for_each_output-2results",
+            "source": "for_each_output-1",
+            "sourceHandle": "result",
+            "target": "for_each_output-2",
+            "targetHandle": "results"
+        },
+        {
+            "id": "xy-edge__combine_keyframes-1object_map-group_input-1object_map",
+            "source": "combine_keyframes-1",
+            "sourceHandle": "object_map",
+            "target": "group_input-1",
+            "targetHandle": "object_map"
+        },
+        {
+            "id": "xy-edge__combine_keyframes-1keys-for_each_output-1results",
+            "source": "combine_keyframes-1",
+            "sourceHandle": "keys",
+            "target": "for_each_output-1",
+            "targetHandle": "results"
+        },
+        {
+            "id": "xy-edge__group_output-1keyframes-combine_keyframes-1keyframes",
+            "source": "group_output-1",
+            "sourceHandle": "keyframes",
+            "target": "combine_keyframes-1",
+            "targetHandle": "keyframes"
+        },
+        {
+            "id": "xy-edge__note_keyframes-1object_map-group_input-1object_map",
+            "source": "note_keyframes-1",
+            "sourceHandle": "object_map",
+            "target": "group_input-1",
+            "targetHandle": "object_map"
+        }
+    ]
+}
