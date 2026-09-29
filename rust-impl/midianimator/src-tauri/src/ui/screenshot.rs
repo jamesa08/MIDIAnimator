@@ -1,7 +1,7 @@
 // screenshots of the app's windows, used by the MCP server so ML clients can see the UI while debugging.
-// xcap captures the window as it's composited on screen (native title bar included), even while it's covered
+// macOS and windows use xcap, which captures the window as it's composited on screen (native title bar included), even while it's covered.
+// linux uses WebKitGTK's own snapshot of the page instead, xcap needs pipewire there and that isn't on every distro
 
-use std::io::Cursor;
 use tauri::{Manager, WebviewWindow};
 
 use crate::state::WINDOW;
@@ -42,13 +42,17 @@ fn os_window_id(window: &WebviewWindow) -> Result<u32, String> {
     Ok(number as u32)
 }
 
-#[cfg(not(target_os = "macos"))]
-fn os_window_id(_window: &WebviewWindow) -> Result<u32, String> {
-    Err("window screenshots are only supported on macOS".to_string())
+#[cfg(target_os = "windows")]
+fn os_window_id(window: &WebviewWindow) -> Result<u32, String> {
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    Ok(hwnd.0 as u32)
 }
 
 /// captures a window as a PNG
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub async fn capture_window(label: Option<&str>) -> Result<Screenshot, String> {
+    use std::io::Cursor;
+
     let window = pick_window(label)?;
     let id = os_window_id(&window)?;
     let label = window.label().to_string();
@@ -68,4 +72,32 @@ pub async fn capture_window(label: Option<&str>) -> Result<Screenshot, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// captures a window's page as a PNG (no title bar, the page only)
+#[cfg(target_os = "linux")]
+pub async fn capture_window(label: Option<&str>) -> Result<Screenshot, String> {
+    use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
+
+    let window = pick_window(label)?;
+    let label = window.label().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<(Vec<u8>, u32, u32), String>>();
+
+    // the snapshot runs on the gtk main thread, cairo surfaces can't leave it so the PNG is encoded there too
+    window
+        .with_webview(move |webview| {
+            webview.inner().snapshot(SnapshotRegion::Visible, SnapshotOptions::NONE, None::<&webkit2gtk::gio::Cancellable>, move |result| {
+                let encoded = result.map_err(|e| e.to_string()).and_then(|surface| {
+                    let image = cairo::ImageSurface::try_from(surface).map_err(|_| "the snapshot isn't an image surface".to_string())?;
+                    let mut png = Vec::new();
+                    image.write_to_png(&mut png).map_err(|e| e.to_string())?;
+                    Ok((png, image.width() as u32, image.height() as u32))
+                });
+                let _ = tx.send(encoded);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+
+    let (png, width, height) = rx.await.map_err(|_| format!("window '{}' closed before the snapshot finished", label))??;
+    Ok(Screenshot { label, png, width, height })
 }

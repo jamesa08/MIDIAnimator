@@ -537,7 +537,7 @@ impl MotionKeysMcp {
     }
 
     // app_screenshot: PNG of a window's contents
-    #[tool(description = "Screenshot of a MotionKeys window as a PNG, for checking what the UI shows. Captures the window as drawn on screen, including the title bar, and works while it is covered or the app is in the background. Also lists the window labels that can be captured.", annotations(read_only_hint = true))]
+    #[tool(description = "Screenshot of a MotionKeys window as a PNG, for checking what the UI shows. Captures the window as drawn on screen, including the title bar (on Linux, the page only without the title bar), and works while it is covered or the app is in the background. Also lists the window labels that can be captured.", annotations(read_only_hint = true))]
     async fn app_screenshot(&self, Parameters(params): Parameters<ScreenshotParams>) -> Result<CallToolResult, McpError> {
         // list the windows so the next call can pick a specific one
         let windows: Vec<String> = screenshot::window_labels()

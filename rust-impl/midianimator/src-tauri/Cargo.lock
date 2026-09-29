@@ -10,6 +10,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "block2 0.5.1",
+ "cairo-rs",
  "lazy_static",
  "midly",
  "node_registry",
@@ -30,6 +31,7 @@ dependencies = [
  "tokio",
  "uuid",
  "walkdir",
+ "webkit2gtk",
  "xcap",
 ]
 
