@@ -74,7 +74,8 @@ img {
     min-width: 200px;
     max-width: 1000px;
     background: #fcfcfc;
-    border: 1px solid #0f1010;
+    /* category color, set per node (styles.tsx nodeColors) */
+    border: 1px solid var(--node-border, #0f1010);
     color: black;
 }
 
@@ -100,7 +101,77 @@ img {
 
 /* edge thickness */
 .react-flow {
-    --xy-edge-stroke-width: 2;
+    --xy-edge-stroke-width: 3;
+    --xy-background-pattern-color: var(--canvas-dots);
+}
+
+/* graph and socket colors, themes (src/themes) change these */
+:root {
+    --canvas-center: #ffffff;
+    --canvas-edge: #ececec;
+    --canvas-dots: #b4b4bc;
+    --canvas-dim: rgba(255, 255, 255, 0.75);
+    --canvas-line: #000;
+    --canvas-paper: none;
+    --canvas-paper-size: 1px;
+    --zone-background: #e9e9ef;
+    --zone-border: #c9c9d2;
+    --socket-number: #000;
+    --socket-string: #000;
+    /* chrome shades, themes change these. the tab strip is darkest, the toolbar and active tab lightest,
+       panel headers in between */
+    --chrome-tabs: #e5e5e5;
+    --chrome-tab: #ececec;
+    --chrome-tab-hover: #f5f5f5;
+    --chrome-toolbar: #fff;
+    --chrome-header: #fff;
+    --chrome-panel: #f0f0f0;
+    --chrome-paper: none;
+    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.08);
+    /* the new tab button's plus, drawn light gray for the dark themes */
+    --chrome-add-tab: #8e8e8e;
+    /* border and divider lines around the chrome, and the ones inside nodes (buttons, fields). solid colors,
+       a see-through line changes color over every shade it crosses */
+    --chrome-line: #bfbfbf;
+    --node-line: #000;
+}
+
+/* vignette from the center out, on the flow itself so a paper texture and the dots can sit on top of it.
+   the open group's canvas stays see-through */
+.react-flow:not(.group-canvas) {
+    background: radial-gradient(ellipse at center, var(--canvas-center) 0%, var(--canvas-edge) 100%);
+}
+
+/* optional paper texture between the vignette and the dots, pinned to the graph (NodeGraphCanvas.tsx CanvasPaper).
+   it's a layer a couple of tiles bigger than the canvas that only gets slid by less than a tile, so panning never repaints it */
+.canvas-paper {
+    --tile: calc(var(--canvas-paper-size) * var(--viewport-zoom));
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    width: calc(100% + 2 * var(--tile));
+    height: calc(100% + 2 * var(--tile));
+    background-image: var(--canvas-paper);
+    background-size: var(--tile) var(--tile);
+    transform: translate3d(calc(mod(var(--viewport-x), var(--tile)) - var(--tile)), calc(mod(var(--viewport-y), var(--tile)) - var(--tile)), 0);
+    will-change: transform;
+    pointer-events: none;
+}
+
+.react-flow.group-canvas .canvas-paper {
+    display: none;
+}
+
+/* the line being dragged out of a socket */
+.react-flow__connection .node-edge,
+.react-flow__connection .edge-plus-sign {
+    stroke: var(--canvas-line);
+}
+
+.react-flow__connection circle {
+    fill: var(--canvas-center);
+    stroke: var(--canvas-line);
 }
 
 /* handle colors are vars scoped to .react-flow, previews have no flow around them */
@@ -134,14 +205,20 @@ img {
 
 .node-header {
     color: #fff;
+    text-shadow: 0 1px rgba(0, 0, 0, 0.4);
+    background: var(--node-header, #7a7a7a);
     padding: 4px 8px;
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
-    box-shadow: inset 0 -1 rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid var(--node-border, #0f1010);
 }
 
+/* selected nodes get a thicker border and a little glow in a lighter shade of their own color. a shadow ring instead of a wider border so nothing moves */
 .react-flow__node.selected .node {
-    border: 1px solid rgb(29, 198, 255);
+    border-color: color-mix(in srgb, var(--node-border, #0f1010) 50%, white);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--node-border, #0f1010) 50%, white),
+        0 0 6px 2px color-mix(in srgb, var(--node-border, #0f1010) 50%, white);
     -webkit-box-sizing: border-box !important;
     box-sizing: border-box !important;
 }
@@ -158,6 +235,141 @@ img {
 .react-flow__nodesselection-rect {
     display: none;
     cursor: default;
+}
+
+/* chrome lines. the dark and blueprint themes also set their own */
+.border-black,
+.border-b-black {
+    border-color: var(--chrome-line);
+}
+
+.toolbar .spacer {
+    background-color: var(--chrome-line);
+}
+
+/* lines inside nodes keep their own color */
+.node .border-black {
+    border-color: var(--node-line);
+}
+
+/* MARK: - chrome shading */
+/* each band of chrome gets its own shade so the tabs, toolbar and panel headers read apart */
+.tab-bar {
+    background-color: var(--chrome-tabs);
+    background-image: var(--chrome-paper);
+}
+
+/* the active tab takes the toolbar's shade so it joins the toolbar below it */
+.tab-bar .bg-white,
+.toolbar {
+    background-color: var(--chrome-toolbar);
+    background-image: var(--chrome-paper);
+}
+
+/* the line under the tab strip is drawn as a background instead of a border, so the active tab can cover it and
+   open straight into the toolbar */
+.tab-bar {
+    border-bottom-width: 0;
+    background-image: linear-gradient(var(--chrome-line), var(--chrome-line)), var(--chrome-paper);
+    background-size:
+        100% 1px,
+        auto;
+    background-position:
+        bottom,
+        0 0;
+    background-repeat: no-repeat, repeat;
+}
+
+/* tabs shaped like classic chrome's: slanted sides with rounded tops and a small flare at the bottom, a little
+   shorter than the strip. inactive tabs are a
+   gray shape a step lighter than the strip, the active one takes the toolbar's shade and opens into it */
+.tab-bar .tab-item {
+    --tab-fill: var(--chrome-tab);
+    --tab-edge: var(--chrome-line);
+    --tab-paper: none;
+    align-self: flex-end;
+    height: calc(100% - 5px);
+    margin: 0 10px;
+    z-index: 0;
+}
+
+/* the tab's own box stays clear, the shape behind it is the tab. important so the bg classes on it (which the
+   themes restyle) can't paint a square over the shape */
+.tab-bar .tab-item,
+.tab-bar .tab-item:hover {
+    background: none !important;
+}
+
+.tab-bar .tab-item:not(.active):hover {
+    --tab-fill: var(--chrome-tab-hover);
+}
+
+.tab-bar .tab-item.active {
+    --tab-fill: var(--chrome-toolbar);
+    --tab-edge: var(--chrome-line);
+    --tab-paper: var(--chrome-paper);
+    z-index: 1;
+}
+
+/* the shape is an svg mask over the tab's colors, flat so it renders in the same colors as the toolbar it opens into.
+   the fill is the tab, a second mask draws its outline */
+.tab-bar .tab-item::before,
+.tab-bar .tab-item::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    bottom: 0;
+    left: -14px;
+    right: -14px;
+    z-index: -1;
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    pointer-events: none;
+}
+
+.tab-bar .tab-item::before {
+    background-color: var(--tab-fill);
+    background-image: var(--tab-paper);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 26C4 26 5 25 6 22L12 4.5C13 1.5 15 0 18.5 0H149.5C153 0 155 1.5 156 4.5L162 22C163 25 164 26 168 26Z'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 26C4 26 5 25 6 22L12 4.5C13 1.5 15 0 18.5 0H149.5C153 0 155 1.5 156 4.5L162 22C163 25 164 26 168 26Z'/%3E%3C/svg%3E");
+}
+
+/* inactive tabs sit on the strip, so the strip's bottom line runs on underneath them. only the active tab opens
+   into the toolbar */
+.tab-bar .tab-item:not(.active)::before {
+    background-image: linear-gradient(to top, var(--tab-edge) 1px, transparent 1px);
+}
+
+.tab-bar .tab-item::after {
+    background-color: var(--tab-edge);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 25.5C3.7 25.5 4.6 24.6 5.5 21.8L11.5 4.3C12.6 1 14.8 0.5 18.5 0.5H149.5C153.2 0.5 155.4 1 156.5 4.3L162.5 21.8C163.4 24.6 164.3 25.5 168 25.5' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 25.5C3.7 25.5 4.6 24.6 5.5 21.8L11.5 4.3C12.6 1 14.8 0.5 18.5 0.5H149.5C153.2 0.5 155.4 1 156.5 4.3L162.5 21.8C163.4 24.6 164.3 25.5 168 25.5' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* a soft shadow under the toolbar lifts it off the panels and canvas */
+.toolbar {
+    position: relative;
+    z-index: 10;
+    box-shadow: 0 2px 4px var(--chrome-toolbar-shadow);
+    /* only below it, the blur would otherwise creep up over the bottom of the active tab */
+    clip-path: inset(0 0 -8px 0);
+}
+
+.tab-bar svg[stroke="lightgray"] {
+    stroke: var(--chrome-add-tab);
+}
+
+/* docked and floating panels */
+.panel,
+.panel-window {
+    background-color: var(--chrome-panel);
+    background-image: var(--chrome-paper);
+}
+
+/* panel headers, not the status bar which reuses the class */
+.panel-header:not(.status-bar .panel-header) {
+    background-color: var(--chrome-header);
+    background-image: var(--chrome-paper);
 }
 
 /* only the line above the status bar, the window edge is below it */
@@ -192,7 +404,7 @@ img {
 .parent-dim {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.75);
+    background: var(--canvas-dim);
     pointer-events: none;
 }
 
@@ -234,7 +446,7 @@ img {
 }
 
 .node-header .group-open:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.08);
 }
 
 /* group input and output sockets */
@@ -278,6 +490,6 @@ img {
     top: 0;
     left: 0;
     border-radius: 6px;
-    background: #e9e9ef;
-    border: 1px solid #c9c9d2;
+    background: var(--zone-background);
+    border: 1px solid var(--zone-border);
 }

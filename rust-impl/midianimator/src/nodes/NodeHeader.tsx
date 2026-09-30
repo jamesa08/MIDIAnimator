@@ -1,13 +1,10 @@
 // @ts-nocheck
-import * as st from "../styles.tsx";
-
-function NodeHeader({ label, type, children }: { label: any; type: any; children?: any }) {
+// colored by the --node-header var its node sets (styles.tsx nodeColors)
+function NodeHeader({ label, children }: { label: any; children?: any }) {
     return (
         <div
             className="node-header"
             style={{
-                background: st.HEADER_COLORS[type] ?? st.DEFAULT_HEADER_COLOR,
-                textShadow: st.TEXT_SHADOW,
                 display: "flex",
                 alignItems: "center",
             }}

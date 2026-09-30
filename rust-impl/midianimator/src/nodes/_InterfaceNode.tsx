@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Handle, NodeResizeControl, Position, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
+import { nodeColors } from "../styles";
 import { socketStyle } from "../utils/sockets";
 import { useGroupContext } from "../contexts/GroupContext";
 import { NEW_SOCKET } from "../utils/groups";
@@ -40,8 +41,8 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
     const edit = (socket: string, name?: string) => window.dispatchEvent(new CustomEvent(SOCKET_EDIT_EVENT, { detail: { side, id: socket, name } }));
 
     return (
-        <div className={`node${preview ? " preview" : ""}`}>
-            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"} type="interface" />
+        <div className={`node${preview ? " preview" : ""}`} style={nodeColors("interface")}>
+            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"} />
             <NodeResizeControl minWidth={160} maxWidth={1000} variant={"line" as any} />
             <div className="node-inner flex flex-col">
                 {rows.map((socket) => (

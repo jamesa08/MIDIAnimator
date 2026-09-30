@@ -27,12 +27,13 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
                 <defs>
                     {/* user space, a bounding box gradient disappears on a perfectly straight edge */}
                     <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={targetX} y1={targetY} x2={sourceX} y2={sourceY}>
-                        <stop offset="0%" stopColor={from} />
-                        <stop offset="100%" stopColor={to} />
+                        {/* as styles, a stop-color attribute can't use the css vars some socket colors are */}
+                        <stop offset="0%" style={{ stopColor: from }} />
+                        <stop offset="100%" style={{ stopColor: to }} />
                     </linearGradient>
                 </defs>
             )}
-            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: from === to ? from : `url(#${gradientId})`, strokeWidth: selected ? 3 : undefined }} />
+            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: from === to ? from : `url(#${gradientId})`, strokeWidth: selected ? 4 : undefined }} />
         </>
     );
 }

@@ -1,0 +1,156 @@
+/* blueprint theme, loaded on top of index.css while appearance.theme is "blueprint" (utils/theme.ts).
+   the whole app is drawn in white lines on blueprint blue. node headers, sockets and edges keep their colors */
+
+/* native controls (selects, scrollbars) draw dark so they sit on the blue */
+:root {
+    color-scheme: dark;
+    --canvas-center: #266acf;
+    --canvas-edge: #0928a4;
+    --canvas-dots: #8cb3ee;
+    --canvas-dim: rgba(28, 70, 245, 0.6);
+    --canvas-line: #fff;
+    /* paper texture (public/blueprint-paper.png), black with alpha so it darkens the blue without a blend mode
+       (webkit drops background-blend-mode on large zoomed tiles).
+       texture made by Atle Mo, from transparenttextures.com */
+    --canvas-paper: url("/blueprint-paper.png");
+    --canvas-paper-size: 666px;
+    /* the same texture in white for the dark panels, where the black one can't show */
+    --panel-paper: url("/blueprint-paper-light.png?v=9");
+    --zone-background: rgba(255, 255, 255, 0.08);
+    --zone-border: var(--blueprint-line);
+    /* every border and divider line in the theme. solid so it's the same color over every shade of chrome,
+       a see-through white turns gray on the dark tab strip */
+    --blueprint-line: #3a5288;
+    /* surfaces, less saturated than the canvas. panels are the darkest, nodes a step lighter so they stand out
+       in the nodes panel and on the canvas */
+    --blueprint-panel: #1b2b52;
+    --blueprint-panel-raised: #24386a;
+    /* chrome shades (index.css chrome shading), from the darkest tab strip down through the toolbar to the panel headers */
+    --chrome-tabs: #121d39;
+    --chrome-tab: #172448;
+    --chrome-tab-hover: var(--blueprint-panel);
+    --chrome-toolbar: #22355f;
+    --chrome-header: #30497f;
+    --chrome-panel: var(--blueprint-panel);
+    --chrome-paper: var(--panel-paper);
+    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.35);
+    --chrome-add-tab: lightgray;
+    --chrome-line: var(--blueprint-line);
+    --node-line: #8193b6;
+    --blueprint-node: #2d4b86;
+    /* black number and string sockets would vanish on the blue nodes. a light blue-gray so their white ring
+       still shows, like the dark theme */
+    --socket-number: #c9d5ec;
+    --socket-string: #c9d5ec;
+}
+
+body {
+    background: var(--blueprint-panel);
+    color: #fff;
+}
+
+/* the same paper over the app's surfaces */
+body,
+.bg-white,
+.bg-zinc-100 {
+    background-image: var(--panel-paper);
+}
+
+/* MARK: - chrome */
+/* the app's tailwind colors, redrawn as white lines on blue */
+.bg-white {
+    background-color: var(--blueprint-panel);
+}
+
+.bg-zinc-100,
+.hover\:bg-zinc-100:hover {
+    background-color: var(--blueprint-panel-raised);
+}
+
+.border-black,
+.border-b-black {
+    border-color: var(--blueprint-line);
+}
+
+.text-black,
+.hover\:text-black:hover {
+    color: #fff;
+}
+
+.text-gray-700 {
+    color: #d4e2fa;
+}
+
+.text-zinc-400 {
+    color: #8cb3ee;
+}
+
+/* primary buttons are white with blue text */
+.bg-black.text-white {
+    background-color: #fff;
+    color: var(--blueprint-panel);
+}
+
+.bg-black.text-white:hover {
+    background-color: #d4e2fa;
+}
+
+/* black icon images */
+img[src="logo.png"],
+img[src="collapse-left.png"],
+img[src="collapse-right.png"] {
+    filter: invert(1);
+}
+
+/* the line between the logo and the tools */
+.toolbar .spacer {
+    background-color: var(--blueprint-line);
+}
+
+/* MARK: - nodes */
+/* like the dark theme but in blueprint blue: a muted blue body under white text.
+   headers keep their category colors */
+.node {
+    background: var(--blueprint-node);
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* fields are outlined on the blue instead of filled */
+.node input,
+.node select {
+    background-color: transparent;
+}
+
+.node .border-black,
+.node .border-gray-400 {
+    border-color: var(--node-line);
+}
+
+.node input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.zone-frame {
+    border-style: dashed;
+}
+
+/* MARK: - react flow */
+.react-flow {
+    --xy-controls-button-background-color: #061a5c;
+    --xy-controls-button-background-color-hover: #0b2f96;
+    --xy-controls-button-color: #fff;
+    --xy-controls-button-color-hover: #fff;
+    --xy-controls-button-border-color: var(--blueprint-line);
+    --xy-minimap-background-color: #061a5c;
+    --xy-minimap-node-background-color: #d4e2fa;
+    --xy-minimap-mask-background-color: rgba(3, 14, 52, 0.55);
+    --xy-minimap-mask-stroke-color: var(--blueprint-line);
+    --xy-minimap-mask-stroke-width: 1;
+}
+
+/* a darker, outlined minimap and controls so they don't melt into the canvas */
+.react-flow__minimap,
+.react-flow__controls {
+    border: 1px solid var(--blueprint-line);
+}

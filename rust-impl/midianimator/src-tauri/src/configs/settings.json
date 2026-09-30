@@ -1,4 +1,7 @@
 {
+    "appearance": {
+        "theme": "light"
+    },
     "ipc": {
         "port": 6577
     },

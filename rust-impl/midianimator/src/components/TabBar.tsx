@@ -94,7 +94,7 @@ function TabBar() {
         <div data-tauri-drag-region className="tab-bar border-b border-b-black flex h-7">
             {navigator.userAgent.includes("Mac OS") && <MacTrafficLights />}
 
-            <div className="flex min-w-0 w-full overflow-hidden pr-[32px] border-l border-black ml-[-1px]">
+            <div className="flex min-w-0 w-full overflow-hidden pl-3 pr-[32px]">
                 <Reorder.Group data-tauri-drag-region as="div" axis="x" values={tabs} onReorder={setTabs} className="flex w-full" layoutScroll>
                     <AnimatePresence mode="popLayout" initial={false}>
                         {tabs.map((tab, i) => {
@@ -113,10 +113,10 @@ function TabBar() {
                                     }}
                                     transformTemplate={(transformProps, generated) => generated.replace(/translateX\(([^)]+)\)/, (_, v) => `translateX(${Math.round(parseFloat(v))}px)`)}
                                     className={`flex items-center h-full ${isLast ? "w-[160px] min-w-[80px]" : "w-[160px] min-w-[80px]"}`}
-                                    style={{ overflow: "visible", position: "relative", marginLeft: "-1px" }}
+                                    style={{ overflow: "visible", position: "relative" }}
                                     onClick={() => setActiveId(tab.id)}
                                 >
-                                    <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none border-r border-black first:border-l w-full ${tab.id === activeId ? "bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
+                                    <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none w-full tab-item ${tab.id === activeId ? "active bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
                                         <span className="truncate flex-1">{tab.id === activeId && project ? `${project.name}${project.unsaved ? "*" : ""}` : tab.name}</span>
                                         <motion.button
                                             onClick={(e) => {

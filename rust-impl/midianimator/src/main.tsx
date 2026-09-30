@@ -9,11 +9,26 @@ import Settings from "./windows/Settings";
 import DragGhost from "./windows/DragGhost";
 import StateContextProvider from "./contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { applyTheme } from "./utils/theme";
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
 function WindowReady() {
     React.useEffect(() => {
         requestAnimationFrame(() => requestAnimationFrame(() => invoke("window_ready")));
+    }, []);
+    return null;
+}
+
+// loads the appearance.theme setting's css (utils/theme.ts), and again whenever it changes
+function ThemeSync() {
+    React.useEffect(() => {
+        const apply = (settings: any) => applyTheme(settings?.appearance?.theme ?? "light");
+        invoke("get_settings").then(apply);
+        const unlisten = listen("settings_changed", (event: any) => apply(event.payload));
+        return () => {
+            unlisten.then((f) => f());
+        };
     }, []);
     return null;
 }
@@ -26,6 +41,7 @@ if (rootElement) {
         <React.StrictMode>
             <StateContextProvider>
                 <WindowReady />
+                <ThemeSync />
                 <Router>
                     <Routes>
                         <Route path="/" element={<App />} />

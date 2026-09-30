@@ -1,0 +1,115 @@
+/* dark theme, loaded on top of index.css while appearance.theme is "dark" (utils/theme.ts) */
+
+/* native controls (selects, scrollbars) draw dark too */
+:root {
+    color-scheme: dark;
+    --canvas-center: #2c2c2c;
+    --canvas-edge: #161616;
+    --canvas-dots: #4a4a4a;
+    --canvas-dim: rgba(22, 22, 22, 0.6);
+    --canvas-line: #e6e6e6;
+    --zone-background: rgba(255, 255, 255, 0.04);
+    --zone-border: #4a4a4a;
+    --socket-number: #d8d8d8;
+    --socket-string: #d8d8d8;
+    /* chrome shades (index.css chrome shading) */
+    --chrome-tabs: #141414;
+    --chrome-tab: #1b1b1b;
+    --chrome-tab-hover: #222222;
+    --chrome-toolbar: #262626;
+    --chrome-header: #333333;
+    --chrome-panel: #1e1e1e;
+    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.5);
+    --chrome-add-tab: lightgray;
+    --chrome-line: #4a4a4a;
+    --node-line: #4a4a4a;
+}
+
+body {
+    background: #1e1e1e;
+    color: #e6e6e6;
+}
+
+/* MARK: - chrome */
+/* the app's tailwind colors, flipped */
+.bg-white {
+    background-color: #1e1e1e;
+}
+
+.bg-zinc-100,
+.hover\:bg-zinc-100:hover {
+    background-color: #2c2c2c;
+}
+
+.border-black,
+.border-b-black {
+    border-color: #4a4a4a;
+}
+
+.text-black,
+.hover\:text-black:hover {
+    color: #e6e6e6;
+}
+
+.text-gray-700 {
+    color: #b0b0b0;
+}
+
+.text-zinc-400 {
+    color: #808080;
+}
+
+/* primary buttons are light on dark */
+.bg-black.text-white {
+    background-color: #e6e6e6;
+    color: #1e1e1e;
+}
+
+.bg-black.text-white:hover {
+    background-color: #c8c8c8;
+}
+
+/* black icon images */
+img[src="logo.png"],
+img[src="collapse-left.png"],
+img[src="collapse-right.png"] {
+    filter: invert(1);
+}
+
+/* the line between the logo and the tools */
+.toolbar .spacer {
+    background-color: #4a4a4a;
+}
+
+/* MARK: - nodes */
+/* header in the category's deep color under light text */
+.node {
+    background: #2e2e2e;
+    color: #e6e6e6;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.node-header {
+    background: var(--node-border, #555555);
+    color: #fff;
+}
+
+.node .border-gray-400 {
+    border-color: #555555;
+}
+
+.node-header .group-open:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* MARK: - react flow */
+.react-flow {
+    --xy-controls-button-background-color: #2c2c2c;
+    --xy-controls-button-background-color-hover: #3a3a3a;
+    --xy-controls-button-color: #e6e6e6;
+    --xy-controls-button-color-hover: #fff;
+    --xy-controls-button-border-color: #4a4a4a;
+    --xy-minimap-background-color: #1e1e1e;
+    --xy-minimap-node-background-color: #3a3a3a;
+    --xy-minimap-mask-background-color: rgba(60, 60, 60, 0.6);
+}

@@ -1,4 +1,5 @@
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps } from "@xyflow/react";
+import { CSSProperties } from "react";
+import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, useStore } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -7,6 +8,13 @@ import TypedEdge from "./TypedEdge";
 
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
+
+// a theme's paper texture (index.css .canvas-paper), pinned to the graph. it's its own gpu layer that panning only
+// slides, so moving the graph never repaints it. the vars live on this element alone so no other styles recalculate
+function CanvasPaper() {
+    const [x, y, zoom] = useStore((s) => s.transform);
+    return <div className="canvas-paper" style={{ "--viewport-x": `${x}px`, "--viewport-y": `${y}px`, "--viewport-zoom": zoom } as CSSProperties} />;
+}
 
 // how every node graph looks, with no state of its own. the editor passes its nodes and handlers, the frozen parent
 // graph behind an open group passes `frozen` so nothing in it can be touched
@@ -30,6 +38,7 @@ function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps 
             {...props}
         >
             <ZoneFrames />
+            <CanvasPaper />
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { THEMES } from "../utils/theme";
 
 // one table row, label on the left and the control on the right. the description shows on hover
 function Row({ id, label, description, children }: { id: string; label: string; description: string; children: React.ReactNode }) {
@@ -44,6 +45,21 @@ function PortInput({ id, label, description, value, onChange }: { id: string; la
     );
 }
 
+// one choice from a list
+function Choice({ id, label, description, value, options, onChange }: { id: string; label: string; description: string; value: string; options: [string, string][]; onChange: (value: string) => void }) {
+    return (
+        <Row id={id} label={label} description={description}>
+            <select id={id} className="border border-black" value={value} onChange={(e) => onChange(e.target.value)}>
+                {options.map(([value, name]) => (
+                    <option key={value} value={value}>
+                        {name}
+                    </option>
+                ))}
+            </select>
+        </Row>
+    );
+}
+
 // settings live in the backend (src-tauri/src/settings.rs), changes are saved right away
 function Settings() {
     const [settings, setSettings] = useState<any>(null);
@@ -66,7 +82,16 @@ function Settings() {
     return (
         <div className="settings text-sm select-none">
             <section className="mb-2">
-                <div className="panel-header h-7 text-base border-b border-black flex items-center pl-2 pr-2">Panels</div>
+                <div className="panel-header h-7 text-base border-b border-black flex items-center pl-2 pr-2">Appearance</div>
+                <table className="w-full">
+                    <tbody>
+                        <Choice id="appearance-theme" label="Theme" description="How the node graph looks." value={settings.appearance?.theme ?? "light"} options={THEMES.map((theme) => [theme, theme[0].toUpperCase() + theme.slice(1)])} onChange={(theme) => update("appearance.theme", theme)} />
+                    </tbody>
+                </table>
+            </section>
+
+            <section className="mb-2">
+                <div className="panel-header h-7 text-base border-t border-b border-black flex items-center pl-2 pr-2">Panels</div>
                 <table className="w-full">
                     <tbody>
                         <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />

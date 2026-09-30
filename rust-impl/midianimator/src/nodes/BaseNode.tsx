@@ -4,6 +4,7 @@ import { Handle, NodeResizeControl, Position } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
 import { socketStyle } from "../utils/sockets";
+import { nodeColors } from "../styles";
 import { memo } from "react";
 
 const handleStyle = {
@@ -73,10 +74,8 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
     }
 
     return (
-        <div className={`node${preview ? " preview" : ""}`}>
-            <NodeHeader label={nodeData == null ? "" : nodeData["name"]} type={nodeData?.category}>
-                {headerExtra}
-            </NodeHeader>
+        <div className={`node${preview ? " preview" : ""}`} style={nodeColors(nodeData?.category)}>
+            <NodeHeader label={nodeData == null ? "" : nodeData["name"]}>{headerExtra}</NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
             <div className="node-inner flex flex-col">
                 {handleObjects.map((handle, index) => (
