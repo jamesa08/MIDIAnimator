@@ -160,9 +160,11 @@ img {
     cursor: default;
 }
 
+/* only the line above the status bar, the window edge is below it */
 .status-bar {
     border-left: none;
     border-right: none;
+    border-bottom: none;
 }
 
 * {
