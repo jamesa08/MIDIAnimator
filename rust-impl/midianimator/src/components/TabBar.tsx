@@ -24,9 +24,15 @@ function TabBar() {
     const tabCount = useRef(tabs.length);
     tabCount.current = tabs.length;
 
-    // the project's name, starred with unsaved changes, shown on the active tab
-    const [project, setProject] = useState<{ name: string; unsaved: boolean } | null>(null);
+    const activeRef = useRef(activeId);
+    activeRef.current = activeId;
+
+    // the project's name, starred with unsaved changes, written onto the tab that was active when it came in so it
+    // stays on that tab when switching
     useEffect(() => {
+        const setProject = ({ name, unsaved }: { name: string; unsaved: boolean }) => {
+            setTabs((prev) => prev.map((t) => (t.id === activeRef.current ? { ...t, name: `${name}${unsaved ? "*" : ""}` } : t)));
+        };
         invoke<{ name: string; unsaved: boolean }>("get_project_status").then(setProject);
         const unlisten = listen<{ name: string; unsaved: boolean }>("project_status", (event) => setProject(event.payload));
         return () => {
@@ -107,17 +113,18 @@ function TabBar() {
                                     initial={{ opacity: 0 }}
                                     animate={{ opacity: 1 }}
                                     exit={{ opacity: 0 }}
-                                    layout
+                                    layout="position"
                                     transition={{
                                         opacity: { duration: 0.15, ease: "easeOut" },
                                     }}
                                     transformTemplate={(transformProps, generated) => generated.replace(/translateX\(([^)]+)\)/, (_, v) => `translateX(${Math.round(parseFloat(v))}px)`)}
-                                    className={`flex items-center h-full ${isLast ? "w-[160px] min-w-[80px]" : "w-[160px] min-w-[80px]"}`}
-                                    style={{ overflow: "visible", position: "relative" }}
+                                    className="flex items-center h-full shrink max-w-[280px]"
+                                    // sized to the name, at least an even share of the strip up to 160px, pushing later tabs over
+                                    style={{ overflow: "visible", position: "relative", minWidth: `max(80px, min(160px, ${100 / tabs.length}%))` }}
                                     onClick={() => setActiveId(tab.id)}
                                 >
-                                    <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none w-full tab-item ${tab.id === activeId ? "active bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
-                                        <span className="truncate flex-1">{tab.id === activeId && project ? `${project.name}${project.unsaved ? "*" : ""}` : tab.name}</span>
+                                    <div className={`relative flex items-center gap-1 px-3 h-full text-sm cursor-pointer select-none w-full min-w-0 tab-item ${tab.id === activeId ? "active bg-white" : "bg-zinc-100 hover:bg-zinc-100"}`}>
+                                        <span className="truncate flex-1">{tab.name}</span>
                                         <motion.button
                                             onClick={(e) => {
                                                 e.stopPropagation();
