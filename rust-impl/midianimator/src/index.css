@@ -553,3 +553,16 @@ img {
     background: var(--zone-background);
     border: 1px solid var(--zone-border);
 }
+
+/* live window resize (utils/liveResize.ts): the canvas and what moves with the window's edges are layers of their own,
+   so the drag only moves layers instead of repainting them */
+.live-resize [data-live-resize="canvas"],
+.live-resize [data-live-resize="canvas"] .react-flow__panel,
+.live-resize .content > .panel {
+    will-change: transform;
+}
+
+/* the docked panels' insides don't depend on the window, so they're not laid out again on every step */
+.live-resize .content > .panel {
+    contain: strict;
+}

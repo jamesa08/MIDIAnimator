@@ -127,7 +127,7 @@ function App() {
     const contentStyle = { "--panel-left": docked(0) ? "232px" : "0px", "--panel-right": docked(1) ? "232px" : "0px" } as CSSProperties;
 
     return (
-        <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
+        <div data-live-resize="window" className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div data-tauri-drag-region className="head flex-initial">
                 {/* the tabs sit on the window, the active one opens down into the toolbar's card */}
                 <TabBar />

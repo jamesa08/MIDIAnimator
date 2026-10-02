@@ -11,6 +11,7 @@ import StateContextProvider from "./contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme } from "./utils/theme";
+import "./utils/liveResize";
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
 function WindowReady() {

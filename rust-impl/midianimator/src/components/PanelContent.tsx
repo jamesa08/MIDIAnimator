@@ -56,7 +56,7 @@ const PanelContent: React.FC = () => {
     };
 
     return (
-        <div className="panel-window w-screen h-screen flex flex-col overflow-hidden select-none bg-white">
+        <div data-live-resize="window" className="panel-window w-screen h-screen flex flex-col overflow-hidden select-none bg-white">
             <div className="panel-header h-6 flex-none border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startMove}>
                 <span className="mr-auto">{PANELS[panelId]?.name}</span>
                 <button onClick={() => sendToMain(PANEL_DOCK_EVENT, { id: panelId })}>Dock</button>

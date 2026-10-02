@@ -62,6 +62,9 @@ async fn main() {
             MIDIAnimator::ui::windows::prepare_hidden(&window);
             #[cfg(target_os = "macos")]
             MIDIAnimator::ui::windows::smooth_zoom(&window);
+            // page keeps up with the window edges during live resize
+            #[cfg(target_os = "macos")]
+            MIDIAnimator::ui::windows::sync_live_resize(&window);
             *WINDOW.lock().unwrap() = Some(window);
 
             MIDIAnimator::settings::load_settings(app.handle());
