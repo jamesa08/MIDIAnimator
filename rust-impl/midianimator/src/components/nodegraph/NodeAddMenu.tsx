@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { NodeEntry } from "../../utils/nodeEntries";
 
 // shift+a menu, searches the nodes that can be added
@@ -22,7 +23,8 @@ function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen:
 
     if (!isOpen) return null;
 
-    return (
+    // on the body so it sits above the floating panels, the canvas is its own stacking context
+    return createPortal(
         <div
             style={{
                 position: "fixed",
@@ -68,7 +70,8 @@ function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen:
                     </div>
                 ))}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import SceneDiffModal from "./SceneDiffModal";
@@ -101,7 +102,7 @@ function IPCLink() {
     const status = getStatus();
 
     const floatingPanel = (
-        <div className={`flex items-center flex-col ipc-content fixed top-[36px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
+        <div className={`flex items-center flex-col ipc-content fixed top-[36px] right-1 max-w-[320px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
             <p>{state.connected ? "" : "Disconnected. Please connect on the 3D application to start."}</p>
             {showWhenConnected()}
         </div>
@@ -113,7 +114,8 @@ function IPCLink() {
                 <div className={`${state.connected_application} size-6 ${state.connected ? "" : "hidden"}`} />
                 <div className={`mac-traffic-light ${status.color}`}></div>
                 <span className="helvetica font-bold text-[8px] translate-y-px">{status.text}</span>
-                {floatingPanel}
+                {/* on the body so it sits above the toolbar and panels, the tab strip is its own stacking context */}
+                {createPortal(floatingPanel, document.body)}
             </div>
 
             {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={() => setShowDiffModal(false)} />}

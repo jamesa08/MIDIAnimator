@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface SceneDiff {
     missing_objects: string[];
@@ -32,7 +33,8 @@ function SceneDiffModal({ diff, onAccept, onReject, onClose }: SceneDiffModalPro
 
     const hasChanges = diff.missing_objects.length > 0 || diff.new_objects.length > 0 || diff.missing_collections.length > 0 || diff.new_collections.length > 0;
 
-    return (
+    // on the body so it sits above everything, the tab strip it's opened from is its own stacking context
+    return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" onClick={onClose}>
             <div ref={modalRef} className="bg-white rounded-lg p-6 max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
                 <h2 className="text-xl font-bold mb-4">Scene Data Validation</h2>
@@ -116,7 +118,8 @@ function SceneDiffModal({ diff, onAccept, onReject, onClose }: SceneDiffModalPro
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 
