@@ -21,6 +21,7 @@
     --chrome-window: #141414;
     --chrome-card-shadow: rgba(0, 0, 0, 0.5);
     --chrome-add-tab: lightgray;
+    --chrome-traffic-light: #3a3a3a;
     --chrome-line: #4a4a4a;
     --node-line: #4a4a4a;
 }

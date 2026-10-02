@@ -35,6 +35,7 @@
     --chrome-window: #121d39;
     --chrome-card-shadow: rgba(0, 0, 0, 0.35);
     --chrome-add-tab: lightgray;
+    --chrome-traffic-light: #2a3f70;
     --chrome-line: var(--blueprint-line);
     --node-line: #8193b6;
     --blueprint-node: #2d4b86;

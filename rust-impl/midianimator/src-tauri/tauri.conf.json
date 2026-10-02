@@ -55,7 +55,7 @@
                 "title": "MotionKeys",
                 "titleBarStyle": "Overlay",
                 "hiddenTitle": true,
-                "trafficLightPosition": { "x": 19, "y": 16.25 },
+                "trafficLightPosition": { "x": 19, "y": 15.25 },
                 "visible": false,
                 "useHttpsScheme": true,
                 "label": "main",

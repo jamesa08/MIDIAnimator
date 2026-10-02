@@ -9,8 +9,8 @@
 .mac-traffic-lights-container {
     padding-left: 20px;
     padding-right: 0;
-    /* centered above the 1px the strip overlaps the card by */
-    padding-bottom: 1px;
+    /* centered above the 1px the strip overlaps the card by, then 1px higher */
+    padding-bottom: 3px;
     align-items: center;
     display: flex;
     flex-direction: row;
@@ -27,7 +27,7 @@
 
 /* FIXME eventually remove mac traffic lights */
 .mac-traffic-lights-container div {
-    background-color: lightgray;
+    background-color: var(--chrome-traffic-light);
 }
 
 .red {
@@ -136,6 +136,8 @@ img {
     --chrome-card-shadow: rgba(0, 0, 0, 0.08);
     /* the new tab button's plus, drawn light gray for the dark themes */
     --chrome-add-tab: #8e8e8e;
+    /* the circles under the native traffic lights, which show through them while the window is inactive */
+    --chrome-traffic-light: lightgray;
     /* border and divider lines around the chrome, and the ones inside nodes (buttons, fields). solid colors,
        a see-through line changes color over every shade it crosses */
     --chrome-line: #bfbfbf;
