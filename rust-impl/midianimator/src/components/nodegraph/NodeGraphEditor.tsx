@@ -233,6 +233,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, specs, op
             // only when released over the graph
             const rect = store.getState().domNode?.getBoundingClientRect();
             if (!rect || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+            // docked panels float over the graph, a node released on one isn't added under it
+            if (document.elementFromPoint(clientX, clientY)?.closest(".panel")) return;
             if (!canEdit()) return;
 
             // keep the node under the cursor where it was grabbed

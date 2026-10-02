@@ -3,7 +3,7 @@ import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -122,6 +122,10 @@ function App() {
         console.log("Frontend state updated:", frontEndState);
     }, [frontEndState]);
 
+    // docked panels float over the canvas, so the canvas' own controls move in past them
+    const docked = (id: number) => frontEndState.panelsShown.includes(id) && !frontEndState.panelsPoppedOut.includes(id);
+    const contentStyle = { "--panel-left": docked(0) ? "232px" : "0px", "--panel-right": docked(1) ? "232px" : "0px" } as CSSProperties;
+
     return (
         <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div data-tauri-drag-region className="head flex-initial">
@@ -131,13 +135,13 @@ function App() {
                     <ToolBar />
                 </div>
             </div>
-            <div className="content relative flex flex-auto">
-                <Panel id="0" name="Nodes" />
+            <div className="content relative flex flex-auto" style={contentStyle}>
                 <div className="node-graph card flex-grow">
                     <NodeGraph />
                 </div>
+                <Panel id="0" name="Nodes" />
                 <Panel id="1" name="Properties" />
-                {dockHover !== null && <div className={`dock-indicator card absolute inset-y-1 w-60 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${PANELS[dockHover]?.side === "right" ? "right-1" : "left-1"}`} />}
+                {dockHover !== null && <div className={`dock-indicator card absolute inset-y-3 w-56 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${PANELS[dockHover]?.side === "right" ? "right-3" : "left-3"}`} />}
             </div>
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />

@@ -19,8 +19,8 @@ export const PANEL_DOCK_EVENT = "panel-dock";
 // same as NODE_DROP_EVENT's detail, with screenX/screenY instead of clientX/clientY
 export const PANEL_NODE_DROP_EVENT = "panel-node-drop";
 
-// docked panel width (w-60) plus how far past it a floating panel still docks
-const DOCK_ZONE_WIDTH = 240 + 60;
+// docked panel inset and width (w-56) plus how far past it a floating panel still docks
+const DOCK_ZONE_WIDTH = 12 + 224 + 60;
 
 export const panelLabel = (id: number) => `panel-${id}`;
 

@@ -403,6 +403,42 @@ img {
     padding-bottom: 1px;
 }
 
+/* the canvas is its own stacking context, so nodes (which get z-indexes of their own) stay under the docked panels */
+.node-graph {
+    isolation: isolate;
+}
+
+/* docked panels float over the canvas, inset from its edges (the content's padding plus 8px) */
+.content > .panel {
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    z-index: 5;
+    box-shadow: 0 2px 10px var(--chrome-card-shadow);
+}
+
+.content > .panel.dock-left {
+    left: 12px;
+}
+
+.content > .panel.dock-right {
+    right: 12px;
+}
+
+/* the canvas' zoom controls and minimap move in past the docked panels (App.tsx sets the widths) */
+.react-flow__panel.left {
+    margin-left: calc(15px + var(--panel-left, 0px));
+}
+
+.react-flow__panel.right {
+    margin-right: calc(15px + var(--panel-right, 0px));
+}
+
+/* the group breadcrumbs and buttons in the canvas' top left corner */
+.graph-overlay {
+    left: calc(8px + var(--panel-left, 0px));
+}
+
 * {
     user-select: none;
 }

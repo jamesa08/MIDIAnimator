@@ -224,7 +224,7 @@ function NodeGraph() {
                 return <GraphView key={key} levels={viewLevels} groups={groups} project={project} specs={specs} shown={key === shownPathKey} setPath={setPath} selections={selections.current} onReady={onReady} />;
             })}
             {shownPath.length > 0 && (
-                <div className="absolute top-2 left-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
+                <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
                     <button className="px-1 italic hover:underline" onClick={() => setPath([])}>
                         Root
                     </button>
@@ -239,7 +239,7 @@ function NodeGraph() {
                 </div>
             )}
             {isBuiltin && (
-                <div className="absolute top-9 left-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
+                <div className="graph-overlay absolute top-9 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
                     {isLocal ? (
                         <button className="px-3 h-6 border border-black bg-white hover:bg-zinc-100" onClick={revertToBuiltin}>
                             Revert to Built-in
