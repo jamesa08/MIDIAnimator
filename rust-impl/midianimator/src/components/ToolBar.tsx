@@ -25,8 +25,8 @@ function MenuBar() {
     return (
         <div className="toolbar flex h-8 items-center pr-[3px]">
             {/* logo */}
-            <div className="logo w-[71px] flex justify-center">
-                <img src="logo.png" alt="logo" width="90%" className="p-1" />
+            <div className="logo flex justify-center px-1">
+                <img src="logo.webp" alt="logo" className="h-8 py-1" />
             </div>
 
             <div className="spacer h-5 w-[1px] bg-black mr-1" />

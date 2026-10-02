@@ -70,10 +70,14 @@ body {
 }
 
 /* black icon images */
-img[src="logo.png"],
 img[src="collapse-left.png"],
 img[src="collapse-right.png"] {
     filter: invert(1);
+}
+
+/* themed logo */
+img[src="logo.webp"] {
+    content: url("/logo-dark.webp");
 }
 
 /* the line between the logo and the tools */
