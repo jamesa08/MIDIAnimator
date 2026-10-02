@@ -13,10 +13,10 @@ function StatusBar({ event }: { event: string }) {
     }, []);
 
     return (
-        <div className="status-bar w-screen border-black border select-none">
-            <div className="panel-header text-xs p-0.3 flex items-center pl-2 pr-2 h-4">
-                <div className="text-xs mr-auto">{event}</div>
-                <div className="text-xs">MotionKeys {version} {hash}</div>
+        <div className="status-bar card select-none">
+            <div className="panel-header text-[11px] leading-none flex items-center px-3 pb-0.5 h-4">
+                <div className="mr-auto">{event}</div>
+                <div>MotionKeys {version} {hash}</div>
             </div>
         </div>
     );

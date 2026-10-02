@@ -13,20 +13,19 @@
     --socket-number: #d8d8d8;
     --socket-string: #d8d8d8;
     /* chrome shades (index.css chrome shading) */
-    --chrome-tabs: #141414;
     --chrome-tab: #1b1b1b;
     --chrome-tab-hover: #222222;
     --chrome-toolbar: #262626;
     --chrome-header: #333333;
     --chrome-panel: #1e1e1e;
-    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.5);
+    --chrome-window: #141414;
+    --chrome-card-shadow: rgba(0, 0, 0, 0.5);
     --chrome-add-tab: lightgray;
     --chrome-line: #4a4a4a;
     --node-line: #4a4a4a;
 }
 
 body {
-    background: #1e1e1e;
     color: #e6e6e6;
 }
 

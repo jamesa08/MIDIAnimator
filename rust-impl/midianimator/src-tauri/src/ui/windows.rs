@@ -86,6 +86,13 @@ pub fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
                 ns_window.setAlphaValue(1.0);
                 ns_window.setIgnoresMouseEvents(false);
                 ns_window.makeKeyAndOrderFront(None);
+                // tao only moves the traffic lights to trafficLightPosition when its view draws, which a window
+                // revealed this way skips until the first resize
+                use objc2::runtime::{AnyObject, Bool};
+                let view: *mut AnyObject = objc2::msg_send![ns_window, contentView];
+                if !view.is_null() {
+                    let _: () = objc2::msg_send![view, setNeedsDisplay: Bool::YES];
+                }
             }
         })
         .ok();

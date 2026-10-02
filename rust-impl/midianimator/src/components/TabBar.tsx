@@ -97,7 +97,7 @@ function TabBar() {
     }, []);
 
     return (
-        <div data-tauri-drag-region className="tab-bar border-b border-b-black flex h-7">
+        <div data-tauri-drag-region className="tab-bar border-b border-b-black flex h-9">
             {navigator.userAgent.includes("Mac OS") && <MacTrafficLights />}
 
             <div className="flex min-w-0 w-full overflow-hidden pl-3 pr-[32px]">
@@ -132,9 +132,12 @@ function TabBar() {
                                             }}
                                             whileHover={{ scale: 1.2 }}
                                             whileTap={{ scale: 0.9 }}
-                                            className="ml-1 text-zinc-400 hover:text-black leading-none"
+                                            className="ml-1 text-zinc-400 hover:text-black"
                                         >
-                                            ×
+                                            {/* drawn instead of a × character, which sits low in its line and won't center on the tab */}
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="size-3 block">
+                                                <path strokeLinecap="round" d="M6.5 6.5l11 11m0-11l-11 11" />
+                                            </svg>
                                         </motion.button>
                                     </div>
                                     {isLast && (
@@ -144,7 +147,7 @@ function TabBar() {
                                                 addTab();
                                             }}
                                             className="shrink-0"
-                                            style={{ position: "absolute", left: "100%", top: 0, height: "100%" }}
+                                            style={{ position: "absolute", left: "100%", top: "var(--tab-inset)", bottom: 1 }}
                                         >
                                             <AddTabButton onClick={() => {}} />
                                         </div>

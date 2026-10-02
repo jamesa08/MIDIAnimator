@@ -101,7 +101,7 @@ function IPCLink() {
     const status = getStatus();
 
     const floatingPanel = (
-        <div className={`flex items-center flex-col ipc-content fixed top-[27px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
+        <div className={`flex items-center flex-col ipc-content fixed top-[36px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
             <p>{state.connected ? "" : "Disconnected. Please connect on the 3D application to start."}</p>
             {showWhenConnected()}
         </div>
@@ -109,10 +109,10 @@ function IPCLink() {
 
     return (
         <>
-            <div data-tauri-drag-region onClick={openMenu} className="flex items-center pl-5 pr-5 ml-auto">
-                <div className={`${state.connected_application} size-6 p-[inherit] ${state.connected ? "" : "hidden"}`} />
-                <div className={`mac-traffic-light ${status.color} ml-1 m-[inherit]`}></div>
-                <span className="mr-1 helvetica font-bold text-[8px] p-[inherit]">{status.text}</span>
+            <div data-tauri-drag-region onClick={openMenu} className="ipc-link flex items-center gap-2 pl-3 pr-5 ml-auto">
+                <div className={`${state.connected_application} size-6 ${state.connected ? "" : "hidden"}`} />
+                <div className={`mac-traffic-light ${status.color}`}></div>
+                <span className="helvetica font-bold text-[8px] translate-y-px">{status.text}</span>
                 {floatingPanel}
             </div>
 

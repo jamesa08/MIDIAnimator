@@ -23,13 +23,13 @@ function MenuBar() {
     };
 
     return (
-        <div className="toolbar border-b border-b-black flex h-8 items-center pr-1">
+        <div className="toolbar flex h-8 items-center pr-[3px]">
             {/* logo */}
             <div className="logo w-[71px] flex justify-center">
                 <img src="logo.png" alt="logo" width="90%" className="p-1" />
             </div>
 
-            <div className="spacer h-[inherit] w-[1px] bg-black mr-1" />
+            <div className="spacer h-5 w-[1px] bg-black mr-1" />
 
             {/* left aligned items */}
             <div className="float-left inline-flex">

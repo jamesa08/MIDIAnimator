@@ -25,15 +25,15 @@
        in the nodes panel and on the canvas */
     --blueprint-panel: #1b2b52;
     --blueprint-panel-raised: #24386a;
-    /* chrome shades (index.css chrome shading), from the darkest tab strip down through the toolbar to the panel headers */
-    --chrome-tabs: #121d39;
+    /* chrome shades (index.css chrome shading), from the darkest window and tab strip down through the toolbar to the panel headers */
     --chrome-tab: #172448;
     --chrome-tab-hover: var(--blueprint-panel);
     --chrome-toolbar: #22355f;
     --chrome-header: #30497f;
     --chrome-panel: var(--blueprint-panel);
     --chrome-paper: var(--panel-paper);
-    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.35);
+    --chrome-window: #121d39;
+    --chrome-card-shadow: rgba(0, 0, 0, 0.35);
     --chrome-add-tab: lightgray;
     --chrome-line: var(--blueprint-line);
     --node-line: #8193b6;
@@ -45,7 +45,6 @@
 }
 
 body {
-    background: var(--blueprint-panel);
     color: #fff;
 }
 

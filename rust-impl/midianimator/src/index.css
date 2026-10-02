@@ -3,10 +3,14 @@
 @tailwind utilities;
 
 /* FIXME little hacky right now, will fix this later */
+/* centered on the tab strip, 20px in from the window's edge like a macOS toolbar window. the connection status on
+   the right is mirrored, 20px in with the same 8px gaps.
+   the native lights are moved over these by trafficLightPosition in tauri.conf.json */
 .mac-traffic-lights-container {
-    padding-top: 1px;
-    padding-left: 8px;
-    padding-right: 12px;
+    padding-left: 20px;
+    padding-right: 0;
+    /* centered above the 1px the strip overlaps the card by */
+    padding-bottom: 1px;
     align-items: center;
     display: flex;
     flex-direction: row;
@@ -51,6 +55,7 @@
 /* prevent overscroll bounce */
 body {
     overflow: hidden;
+    background-color: var(--chrome-window);
 }
 
 #gtx-trans {
@@ -118,16 +123,17 @@ img {
     --zone-border: #c9c9d2;
     --socket-number: #000;
     --socket-string: #000;
-    /* chrome shades, themes change these. the tab strip is darkest, the toolbar and active tab lightest,
-       panel headers in between */
-    --chrome-tabs: #e5e5e5;
+    /* chrome shades, themes change these. the window (and the tab strip on it) is darkest, the toolbar and active
+       tab lightest, panel headers in between */
     --chrome-tab: #ececec;
     --chrome-tab-hover: #f5f5f5;
     --chrome-toolbar: #fff;
     --chrome-header: #fff;
     --chrome-panel: #f0f0f0;
     --chrome-paper: none;
-    --chrome-toolbar-shadow: rgba(0, 0, 0, 0.08);
+    /* the window behind the floating cards, and the shadow under them */
+    --chrome-window: #e5e5e5;
+    --chrome-card-shadow: rgba(0, 0, 0, 0.08);
     /* the new tab button's plus, drawn light gray for the dark themes */
     --chrome-add-tab: #8e8e8e;
     /* border and divider lines around the chrome, and the ones inside nodes (buttons, fields). solid colors,
@@ -253,31 +259,30 @@ img {
 }
 
 /* MARK: - chrome shading */
-/* each band of chrome gets its own shade so the tabs, toolbar and panel headers read apart */
+/* each band of chrome gets its own shade so the tabs, toolbar and panel headers read apart. the tab strip is the
+   window itself, above the toolbar's card so the active tab can cover the card's top border */
 .tab-bar {
-    background-color: var(--chrome-tabs);
-    background-image: var(--chrome-paper);
+    position: relative;
+    z-index: 1;
+    /* the gap above the tabs, the new tab button starts below it too so it lines up with the tab names. the traffic
+       lights and connection status belong to the window and sit on the strip's center */
+    --tab-inset: 4px;
+    /* 1px taller than its h-9 and pulled 1px over the toolbar card, so the active tab can cover the card's top border.
+       the inner overflow-hidden would otherwise clip anything hanging out of the strip */
+    height: 37px;
+    margin-bottom: -1px;
 }
 
-/* the active tab takes the toolbar's shade so it joins the toolbar below it */
+/* the active tab takes the toolbar's shade so it joins the toolbar below it. the status bar matches the toolbar */
 .tab-bar .bg-white,
-.toolbar {
+.toolbar,
+.status-bar {
     background-color: var(--chrome-toolbar);
     background-image: var(--chrome-paper);
 }
 
-/* the line under the tab strip is drawn as a background instead of a border, so the active tab can cover it and
-   open straight into the toolbar */
 .tab-bar {
     border-bottom-width: 0;
-    background-image: linear-gradient(var(--chrome-line), var(--chrome-line)), var(--chrome-paper);
-    background-size:
-        100% 1px,
-        auto;
-    background-position:
-        bottom,
-        0 0;
-    background-repeat: no-repeat, repeat;
 }
 
 /* tabs shaped like classic chrome's: slanted sides with rounded tops and a small flare at the bottom, a little
@@ -288,7 +293,7 @@ img {
     --tab-edge: var(--chrome-line);
     --tab-paper: none;
     align-self: flex-end;
-    height: calc(100% - 5px);
+    height: calc(100% - var(--tab-inset));
     margin: 0 10px;
     z-index: 0;
 }
@@ -311,13 +316,24 @@ img {
     z-index: 1;
 }
 
+/* the tab's name and close button center on the visible tab, above the 1px it overlaps the card by */
+.tab-bar .tab-item {
+    padding-bottom: 1px;
+}
+
+/* inactive tabs stop at the card's top border, the active one covers it and opens into the toolbar */
+.tab-bar .tab-item:not(.active)::before,
+.tab-bar .tab-item:not(.active)::after {
+    bottom: 1px;
+}
+
 /* the shape is an svg mask over the tab's colors, flat so it renders in the same colors as the toolbar it opens into.
    the fill is the tab, a second mask draws its outline */
 .tab-bar .tab-item::before,
 .tab-bar .tab-item::after {
     content: "";
     position: absolute;
-    top: -3px;
+    top: 0;
     bottom: 0;
     left: -14px;
     right: -14px;
@@ -334,25 +350,10 @@ img {
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 26C4 26 5 25 6 22L12 4.5C13 1.5 15 0 18.5 0H149.5C153 0 155 1.5 156 4.5L162 22C163 25 164 26 168 26Z'/%3E%3C/svg%3E");
 }
 
-/* inactive tabs sit on the strip, so the strip's bottom line runs on underneath them. only the active tab opens
-   into the toolbar */
-.tab-bar .tab-item:not(.active)::before {
-    background-image: linear-gradient(to top, var(--tab-edge) 1px, transparent 1px);
-}
-
 .tab-bar .tab-item::after {
     background-color: var(--tab-edge);
     -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 25.5C3.7 25.5 4.6 24.6 5.5 21.8L11.5 4.3C12.6 1 14.8 0.5 18.5 0.5H149.5C153.2 0.5 155.4 1 156.5 4.3L162.5 21.8C163.4 24.6 164.3 25.5 168 25.5' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
     mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 168 26' preserveAspectRatio='none'%3E%3Cpath d='M0 25.5C3.7 25.5 4.6 24.6 5.5 21.8L11.5 4.3C12.6 1 14.8 0.5 18.5 0.5H149.5C153.2 0.5 155.4 1 156.5 4.3L162.5 21.8C163.4 24.6 164.3 25.5 168 25.5' fill='none' stroke='black' stroke-width='1'/%3E%3C/svg%3E");
-}
-
-/* a soft shadow under the toolbar lifts it off the panels and canvas */
-.toolbar {
-    position: relative;
-    z-index: 10;
-    box-shadow: 0 2px 4px var(--chrome-toolbar-shadow);
-    /* only below it, the blur would otherwise creep up over the bottom of the active tab */
-    clip-path: inset(0 0 -8px 0);
 }
 
 .tab-bar svg[stroke="lightgray"] {
@@ -372,11 +373,34 @@ img {
     background-image: var(--chrome-paper);
 }
 
-/* only the line above the status bar, the window edge is below it */
-.status-bar {
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
+/* MARK: - floating cards */
+/* the tabs and toolbar, the panels, the canvas and the status bar each float as a rounded card on the window */
+.card {
+    border: 1px solid var(--chrome-line);
+    border-radius: 8px;
+    overflow: hidden;
+    /* no offset, so every gap is shaded the same whichever side of a card it's on */
+    box-shadow: 0 0 3px var(--chrome-card-shadow);
+}
+
+.head-card {
+    margin: 0 4px;
+}
+
+/* min-height so a tall nodes list can't grow the row and push the status bar off the window */
+.content {
+    gap: 4px;
+    padding: 4px;
+    min-height: 0;
+}
+
+.foot {
+    padding: 0 4px 4px;
+}
+
+/* centered above the 1px the tab strip overlaps the toolbar card by */
+.tab-bar .ipc-link {
+    padding-bottom: 1px;
 }
 
 * {

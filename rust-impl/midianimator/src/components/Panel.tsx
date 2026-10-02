@@ -89,7 +89,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const shown = frontEndState.panelsShown.includes(panelId) && !poppedOut;
 
     return (
-        <div ref={ref} className="panel w-60 select-none p-0" style={shown ? {} : { display: "none" }}>
+        <div ref={ref} className="panel card w-60 select-none p-0" style={shown ? {} : { display: "none" }}>
             <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startTearOff}>
                 <span className="mr-auto">{name}</span>
                 <button className="float-right" onClick={popOutButton}>

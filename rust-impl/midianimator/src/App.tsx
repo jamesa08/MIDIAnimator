@@ -124,19 +124,20 @@ function App() {
 
     return (
         <div className="wrapper w-screen h-screen overflow-hidden flex flex-col">
-            <div className="head flex-initial">
+            <div data-tauri-drag-region className="head flex-initial">
+                {/* the tabs sit on the window, the active one opens down into the toolbar's card */}
                 <TabBar />
-                <ToolBar />
+                <div className="card head-card">
+                    <ToolBar />
+                </div>
             </div>
-            <div className="content relative flex flex-auto ">
+            <div className="content relative flex flex-auto">
                 <Panel id="0" name="Nodes" />
-                <div className="node-graph flex-grow border-black border-l border-r">
+                <div className="node-graph card flex-grow">
                     <NodeGraph />
                 </div>
-                <div className="ml-auto flex">
-                    <Panel id="1" name="Properties" />
-                </div>
-                {dockHover !== null && <div className={`dock-indicator absolute inset-y-0 w-60 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${PANELS[dockHover]?.side === "right" ? "right-0" : "left-0"}`} />}
+                <Panel id="1" name="Properties" />
+                {dockHover !== null && <div className={`dock-indicator card absolute inset-y-1 w-60 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${PANELS[dockHover]?.side === "right" ? "right-1" : "left-1"}`} />}
             </div>
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />
