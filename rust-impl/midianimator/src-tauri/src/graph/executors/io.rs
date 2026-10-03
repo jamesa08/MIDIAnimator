@@ -11,12 +11,16 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 use std::any::{Any, TypeId};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// the key a failed node's results hold the error message under
 pub const ERROR_KEY: &str = "motionkeys_error";
+
+/// the key a failed node's results hold its bad inputs under, input id to what's wrong with it. the UI marks the
+/// connection into each one
+pub const BAD_INPUTS_KEY: &str = "motionkeys_bad_inputs";
 
 /// what every node executor returns: its outputs, or an error message for the node
 pub type NodeResult = Result<Outputs, String>;
@@ -236,6 +240,10 @@ impl Conversions {
 pub struct Inputs<'a> {
     values: Vec<(Arc<str>, Val)>,
     conversions: Option<&'a Conversions>,
+    /// inputs that couldn't be converted to the type the node asked for
+    wrong_type: RefCell<Vec<Arc<str>>>,
+    /// a required input wasn't there
+    missing: Cell<bool>,
 }
 
 impl<'a> Inputs<'a> {
@@ -243,7 +251,19 @@ impl<'a> Inputs<'a> {
         Self {
             values,
             conversions: Some(conversions),
+            wrong_type: RefCell::default(),
+            missing: Cell::default(),
         }
+    }
+
+    /// true if the node asked for a required input it didn't get
+    pub fn missing(&self) -> bool {
+        self.missing.get()
+    }
+
+    /// the inputs that had the wrong type for what the node asked for
+    pub fn wrong_type(&self) -> Vec<Arc<str>> {
+        self.wrong_type.borrow().clone()
     }
 
     /// an input as it came in, `None` if it's missing or null
@@ -253,19 +273,25 @@ impl<'a> Inputs<'a> {
 
     /// a required input as `T`, errors if it's missing, null, or the wrong type
     pub fn value<T: NodeData + DeserializeOwned>(&self, key: &str) -> Result<Val, String> {
-        self.value_opt::<T>(key)?.ok_or_else(|| format!("missing input '{}'", key))
+        self.value_opt::<T>(key)?.ok_or_else(|| {
+            self.missing.set(true);
+            format!("missing input '{}'", key)
+        })
     }
 
     /// an optional input as `T`, `None` if it's missing or null, errors if it's the wrong type
     pub fn value_opt<T: NodeData + DeserializeOwned>(&self, key: &str) -> Result<Option<Val>, String> {
-        let Some(value) = self.val(key) else {
+        let Some((name, value)) = self.values.iter().find(|(k, v)| &**k == key && !v.is_null()) else {
             return Ok(None);
         };
         let converted = match self.conversions {
             Some(conversions) => conversions.convert::<T>(value),
             None => value.convert::<T>(),
         };
-        converted.map(Some).map_err(|e| format!("input '{}' has the wrong type: {}", key, e))
+        converted.map(Some).map_err(|e| {
+            self.wrong_type.borrow_mut().push(name.clone());
+            format!("input '{}' has the wrong type: {}", key, e)
+        })
     }
 
     /// the numbered inputs of a `Dyn<T>` input in order, e.g. `object_maps_0`, `object_maps_1`, ... for `object_maps`.
@@ -293,6 +319,8 @@ impl From<HashMap<String, Value>> for Inputs<'_> {
         Self {
             values: map.into_iter().map(|(k, v)| (Arc::from(k), Val::json(v))).collect(),
             conversions: None,
+            wrong_type: RefCell::default(),
+            missing: Cell::default(),
         }
     }
 }
@@ -302,6 +330,8 @@ impl<const N: usize> From<[(&str, Value); N]> for Inputs<'_> {
         Self {
             values: pairs.into_iter().map(|(k, v)| (Arc::from(k), Val::json(v))).collect(),
             conversions: None,
+            wrong_type: RefCell::default(),
+            missing: Cell::default(),
         }
     }
 }

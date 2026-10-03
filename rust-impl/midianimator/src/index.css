@@ -123,6 +123,10 @@ img {
     --zone-border: #c9c9d2;
     --socket-number: #000;
     --socket-string: #000;
+    /* failed nodes, connections of the wrong type and their warning signs */
+    --error: #e03a3a;
+    --error-edge: #b02a2a;
+    --error-badge: #a32626;
     /* chrome shades, themes change these. the window (and the tab strip on it) is darkest, the toolbar and active
        tab lightest, panel headers in between */
     --chrome-tab: #ececec;
@@ -233,6 +237,65 @@ img {
         0 0 6px 2px color-mix(in srgb, var(--node-border, #0f1010) 50%, white);
     -webkit-box-sizing: border-box !important;
     box-sizing: border-box !important;
+}
+
+/* a node that failed in the last run: a thick red ring and glow, over the selected one */
+.react-flow__node .node.node-error,
+.react-flow__node.selected .node.node-error {
+    border-color: var(--error);
+    box-shadow:
+        0 0 0 3px var(--error),
+        0 0 14px 4px color-mix(in srgb, var(--error) 60%, transparent);
+}
+
+.react-flow__node.selected .node.node-error {
+    box-shadow:
+        0 0 0 3px var(--error),
+        0 0 0 5px color-mix(in srgb, var(--error) 50%, white),
+        0 0 14px 4px color-mix(in srgb, var(--error) 60%, transparent);
+}
+
+/* the warning sign on failed nodes and bad connections */
+.error-badge {
+    flex: none;
+    cursor: default;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+.node-header .error-badge {
+    margin-left: 6px;
+}
+
+.error-badge-back {
+    fill: var(--error-badge);
+}
+
+.error-badge-mark {
+    fill: var(--error-badge);
+}
+
+.edge-error {
+    position: absolute;
+    pointer-events: all;
+}
+
+/* what's wrong, shown while hovering the warning sign. it's fixed to the screen so it stays readable at any zoom */
+.error-popover {
+    position: fixed;
+    transform: translateY(-50%);
+    z-index: 10000;
+    max-width: 420px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #1e1e1e;
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    color: #e6e6e6;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    pointer-events: none;
 }
 
 .react-flow__pane.draggable {

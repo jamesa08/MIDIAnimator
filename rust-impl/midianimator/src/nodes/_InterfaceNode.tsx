@@ -6,6 +6,7 @@ import { nodeColors } from "../styles";
 import { socketStyle } from "../utils/sockets";
 import { useGroupContext } from "../contexts/GroupContext";
 import { NEW_SOCKET } from "../utils/groups";
+import ErrorBadge, { useNodeError } from "../components/nodegraph/ErrorBadge";
 
 // window event to rename or remove a socket of the group being edited, the node graph editor applies it.
 // detail: { side: "inputs" | "outputs", id, name? } (no name removes it)
@@ -28,6 +29,7 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
     const preview = data === "preview" || data?.preview === true;
     const sockets = scope?.interface[side] ?? [];
     const [renaming, setRenaming] = useState<string | null>(null);
+    const error = useNodeError();
 
     // the group's inputs are outputs of this node and the other way around
     const isOutput = side === "inputs";
@@ -41,8 +43,8 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
     const edit = (socket: string, name?: string) => window.dispatchEvent(new CustomEvent(SOCKET_EDIT_EVENT, { detail: { side, id: socket, name } }));
 
     return (
-        <div className={`node${preview ? " preview" : ""}`} style={nodeColors("interface")}>
-            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"} />
+        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors("interface")}>
+            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"}>{error && !preview && <ErrorBadge message={error} size={16} />}</NodeHeader>
             <NodeResizeControl minWidth={160} maxWidth={1000} variant={"line" as any} />
             <div className="node-inner flex flex-col">
                 {rows.map((socket) => (

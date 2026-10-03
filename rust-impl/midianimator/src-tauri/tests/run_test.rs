@@ -7,10 +7,10 @@ use std::time::Instant;
 
 use serde_json::{json, Map, Value};
 use MIDIAnimator::graph::builtin::{builtin_groups, migrate};
-use MIDIAnimator::graph::executors::io::{node_error, NodeFunction};
+use MIDIAnimator::graph::executors::io::{node_error, NodeFunction, BAD_INPUTS_KEY};
 use MIDIAnimator::midi::MIDINote;
 use MIDIAnimator::utils::animation::{combine_curve_keys, note_curve_keys, BlendKeyframe, ObjectMap};
-use MIDIAnimator::graph::model::{node_specs, Graph, GroupDef, HandleSpecs, NodeSpec, Position, RfEdge, RfNode};
+use MIDIAnimator::graph::model::{node_specs, Graph, GroupDef, HandleSpec, HandleSpecs, NodeSpec, Position, RfEdge, RfNode};
 use MIDIAnimator::graph::run::{run, Memo, Record, RunCtx};
 use MIDIAnimator::node_registry::get_node_registry;
 
@@ -51,6 +51,26 @@ fn group(graph: Graph) -> GroupDef {
         interface: HandleSpecs::default(),
         graph,
     }
+}
+
+/// a socket on a group's interface
+fn socket(id: &str, data_type: &str) -> HandleSpec {
+    HandleSpec {
+        id: id.to_string(),
+        name: id.to_string(),
+        data_type: data_type.to_string(),
+        description: String::new(),
+        hidden: false,
+    }
+}
+
+/// group: input › note targets › output
+fn targets_group() -> GroupDef {
+    let inner = graph(vec![node("group_input-1", json!({})), node("note_targets-1", json!({})), node("group_output-1", json!({}))], &[("group_input-1", "object_map", "note_targets-1", "object_map"), ("note_targets-1", "targets", "group_output-1", "targets")]);
+    let mut def = group(inner);
+    def.interface.inputs.push(socket("object_map", "ObjectMap"));
+    def.interface.outputs.push(socket("targets", "HashMap<u8, Array<NoteTarget>>"));
+    def
 }
 
 /// runs a graph with these groups, returns the record and the run's error
@@ -129,9 +149,7 @@ fn object_map() -> Value {
 
 #[test]
 fn group_runs_its_graph_with_the_group_nodes_inputs() {
-    // group: input › note targets › output
-    let inner = graph(vec![node("group_input-1", json!({})), node("note_targets-1", json!({})), node("group_output-1", json!({}))], &[("group_input-1", "object_map", "note_targets-1", "object_map"), ("note_targets-1", "targets", "group_output-1", "targets")]);
-    let groups = BTreeMap::from([("targets".to_string(), group(inner))]);
+    let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
     let root = graph(vec![node("group-1", json!({ "group_id": "targets", "inputs": { "object_map": object_map() } })), node("viewer-1", json!({}))], &[("group-1", "targets", "viewer-1", "data")]);
 
     // closed: the group outputs what reached its output node, nothing inside is recorded
@@ -149,8 +167,7 @@ fn group_runs_its_graph_with_the_group_nodes_inputs() {
 
 #[test]
 fn a_failed_node_inside_fails_the_group() {
-    let inner = graph(vec![node("group_input-1", json!({})), node("note_targets-1", json!({})), node("group_output-1", json!({}))], &[("group_input-1", "object_map", "note_targets-1", "object_map"), ("note_targets-1", "targets", "group_output-1", "targets")]);
-    let groups = BTreeMap::from([("targets".to_string(), group(inner))]);
+    let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
     // the object uses an animation that isn't in the map
     let bad_map = json!({ "animations": {}, "objects": { "Cube": { "missing": [60] } } });
     let root = graph(vec![node("group-1", json!({ "group_id": "targets", "inputs": { "object_map": bad_map } })), node("viewer-1", json!({}))], &[("group-1", "targets", "viewer-1", "data")]);
@@ -230,6 +247,102 @@ fn a_failed_item_stops_the_loop() {
     let (record, _) = run_graph(&root, &BTreeMap::new(), true);
     let error = node_error(&record.results["for_each_output-1"]).unwrap();
     assert!(error.starts_with("item 1: targets_for_note-1:"), "{}", error);
+}
+
+// MARK: - Types
+
+/// what's wrong with each bad input of a failed node
+fn bad_inputs(record: &Record, path: &str) -> Value {
+    record.results[path].get(BAD_INPUTS_KEY).cloned().unwrap_or(Value::Null)
+}
+
+#[test]
+fn a_connection_of_the_wrong_type_fails_the_node_it_goes_into() {
+    // note targets gives targets, targets for note's note input wants a note
+    let root = graph(vec![node("note_targets-1", json!({ "inputs": { "object_map": object_map() } })), node("targets_for_note-1", json!({})), node("viewer-1", json!({}))], &[("note_targets-1", "targets", "targets_for_note-1", "targets"), ("note_targets-1", "targets", "targets_for_note-1", "note"), ("targets_for_note-1", "targets", "viewer-1", "data")]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), true);
+    let message = node_error(&record.results["targets_for_note-1"]).unwrap();
+    assert_eq!(message, "Note expects MIDINote, but Note Targets › Targets gives HashMap<u8, Array<NoteTarget>>");
+    assert!(error.unwrap().starts_with("targets_for_note-1:"));
+    // only the bad input is marked, the node didn't run and neither did the one after it
+    assert_eq!(bad_inputs(&record, "targets_for_note-1"), json!({ "note": message }));
+    assert!(!record.results.contains_key("viewer-1"));
+}
+
+#[test]
+fn a_connection_of_the_wrong_type_shows_even_when_what_feeds_it_failed() {
+    let bad_map = json!({ "animations": {}, "objects": { "Cube": { "missing": [60] } } });
+    let root = graph(vec![node("note_targets-1", json!({ "inputs": { "object_map": bad_map } })), node("targets_for_note-1", json!({}))], &[("note_targets-1", "targets", "targets_for_note-1", "note")]);
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    assert!(node_error(&record.results["note_targets-1"]).is_some());
+    assert!(bad_inputs(&record, "targets_for_note-1")["note"].as_str().unwrap().contains("expects MIDINote"));
+}
+
+#[test]
+fn connections_are_checked_against_a_groups_sockets() {
+    let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
+    // the group's object map input gets targets
+    let root = graph(vec![node("note_targets-1", json!({ "inputs": { "object_map": object_map() } })), node("group-1", json!({ "group_id": "targets" }))], &[("note_targets-1", "targets", "group-1", "object_map")]);
+    let (record, _) = run_graph(&root, &groups, true);
+    assert_eq!(node_error(&record.results["group-1"]).unwrap(), "object_map expects ObjectMap, but Note Targets › Targets gives HashMap<u8, Array<NoteTarget>>");
+}
+
+#[test]
+fn a_dynamic_output_has_its_inner_type() {
+    // keyframes from object's curves are Array<Keyframe>
+    let root = graph(vec![node("keyframes_from_object-1", json!({})), node("targets_for_note-1", json!({}))], &[("keyframes_from_object-1", "location_z", "targets_for_note-1", "note")]);
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(bad_inputs(&record, "targets_for_note-1")["note"], "Note expects MIDINote, but Keyframes from Object › location_z gives Array<Keyframe>");
+}
+
+#[test]
+fn a_missing_socket_is_left_alone() {
+    let root = graph(vec![node("note_targets-1", json!({ "inputs": { "object_map": object_map() } })), node("viewer-1", json!({}))], &[("note_targets-1", "nope", "viewer-1", "data")]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(error, None);
+    assert_eq!(record.inputs["viewer-1"]["data"], Value::Null);
+}
+
+#[test]
+fn a_node_missing_an_input_waits_without_an_error() {
+    // nothing goes into note targets, the targets for note after it doesn't run either
+    let root = graph(vec![node("note_targets-1", json!({})), node("targets_for_note-1", json!({}))], &[("note_targets-1", "targets", "targets_for_note-1", "targets")]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(error, None);
+    assert!(!record.results.contains_key("note_targets-1"));
+    assert!(record.inputs.contains_key("note_targets-1"));
+    assert!(!record.inputs.contains_key("targets_for_note-1"));
+
+    // the same from the memo
+    let root = graph(vec![node("note_targets-1", json!({ "inputs": { "object_map": object_map() } })), node("targets_for_note-1", json!({}))], &[("note_targets-1", "targets", "targets_for_note-1", "targets")]);
+    let (_, _, memo) = run_memo(&root, &BTreeMap::new(), "", true, Memo::default());
+    let (record, error, memo) = run_memo(&root, &BTreeMap::new(), "", true, memo);
+    assert_eq!(memo.hits(), 1);
+    assert_eq!(error, None);
+    assert!(!record.results.contains_key("targets_for_note-1"));
+}
+
+#[test]
+fn a_value_of_the_wrong_type_marks_its_input() {
+    // for each elements are Any, so the connection is fine until an item isn't a note
+    let mut root = targets_per_note();
+    root.node_mut("for_each_input-1").unwrap().inputs_mut().insert("items".to_string(), json!(["nope"]));
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    let message = node_error(&record.results["targets_for_note-1"]).unwrap();
+    assert!(message.contains("input 'note' has the wrong type"), "{}", message);
+    assert_eq!(bad_inputs(&record, "targets_for_note-1"), json!({ "note": message }));
+}
+
+#[test]
+fn a_bad_connection_into_a_zone_stops_it() {
+    // items has to be a list
+    let mut root = targets_per_note();
+    root.nodes.push(node("note_targets-2", json!({ "inputs": { "object_map": object_map() } })));
+    root.edges.push(RfEdge::new("note_targets-2", "targets", "for_each_input-1", "items"));
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    assert!(bad_inputs(&record, "for_each_input-1")["items"].as_str().unwrap().contains("expects Array<Any>"));
+    assert!(!record.results.contains_key("targets_for_note-1"));
+    assert!(!record.results.contains_key("viewer-1"));
 }
 
 // MARK: - Memo

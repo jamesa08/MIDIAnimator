@@ -1,12 +1,14 @@
 import { useId, useMemo } from "react";
-import { BaseEdge, EdgeProps, getBezierPath, useInternalNode } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath, useInternalNode } from "@xyflow/react";
 import { useGroupContext } from "../../contexts/GroupContext";
 import { inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_COLORS } from "../../styles";
 import { socketCategory } from "../../utils/sockets";
+import ErrorBadge, { useBadInput } from "./ErrorBadge";
 
-// an edge in the color of the sockets it connects, fading from one to the other when their types differ
+// an edge in the color of the sockets it connects, fading from one to the other when their types differ.
+// one whose value was the wrong type for its input in the last run is drawn red with a warning sign on it
 function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, style, interactionWidth }: EdgeProps) {
     const { groups, scope } = useGroupContext();
     const specs = useNodeSpecs();
@@ -15,11 +17,25 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
     const targetNode = useInternalNode(target);
     // the same edge id can be drawn twice (an open group's frozen parent), gradient ids have to be unique on the page
     const gradientId = `edge-gradient-${useId()}`;
+    const bad = useBadInput(source, sourceHandleId);
 
     // inputs are react flow's source handles and outputs its targets, data flows from the target to the source
     const from = targetNode ? SOCKET_COLORS[socketCategory(outputHandle(lookup, targetNode, targetHandleId ?? "", scope).data_type)] : SOCKET_COLORS.any;
     const to = sourceNode ? SOCKET_COLORS[socketCategory(inputHandle(lookup, sourceNode, sourceHandleId ?? "", scope).data_type)] : SOCKET_COLORS.any;
-    const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+    const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+
+    if (bad) {
+        return (
+            <>
+                <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: "var(--error-edge)", strokeWidth: selected ? 8 : 6 }} />
+                <EdgeLabelRenderer>
+                    <div className="edge-error" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
+                        <ErrorBadge message={bad} size={26} />
+                    </div>
+                </EdgeLabelRenderer>
+            </>
+        );
+    }
 
     return (
         <>

@@ -6,6 +6,7 @@ import NodeHeader from "./NodeHeader";
 import { socketStyle } from "../utils/sockets";
 import { nodeColors } from "../styles";
 import { memo } from "react";
+import ErrorBadge, { useNodeError } from "../components/nodegraph/ErrorBadge";
 
 const handleStyle = {
     width: "14px",
@@ -31,6 +32,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
 
     // previews (nodes panel, drag ghost) get "preview", or an object with preview set when they need data (group nodes)
     let preview = data === "preview" || data?.preview === true;
+    const error = useNodeError();
 
     if (nodeData != null) {
         const handleTypes = ["outputs", "inputs"];
@@ -74,8 +76,11 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
     }
 
     return (
-        <div className={`node${preview ? " preview" : ""}`} style={nodeColors(nodeData?.category)}>
-            <NodeHeader label={nodeData == null ? "" : nodeData["name"]}>{headerExtra}</NodeHeader>
+        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors(nodeData?.category)}>
+            <NodeHeader label={nodeData == null ? "" : nodeData["name"]}>
+                {error && !preview && <ErrorBadge message={error} size={16} />}
+                {headerExtra}
+            </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
             <div className="node-inner flex flex-col">
                 {handleObjects.map((handle, index) => (

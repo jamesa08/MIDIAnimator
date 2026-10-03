@@ -11,16 +11,23 @@
 // run again, and neither is a zone. the graph shows which nodes bring in the outside world: a node with nothing
 // connected (a file, the Blender scene) always runs, and keeps its old values when they come out the same so the
 // nodes after it still hit the memo. a node that isn't realtime (writing to Blender) always runs
+//
+// TYPES: anything can be connected to anything in the editor, the run checks it. a connection whose output type
+// doesn't fit its input (`model::compatible`) fails the node it goes into without running it, and so does a value
+// that can't be converted to what the node asked for. a failed node records which inputs were bad.
+// a node that's only missing a required input isn't an error, it waits: it isn't shown as failed and the nodes
+// after it don't run
 
 use serde_json::{json, Map, Value};
 use std::cell::RefCell;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use super::executors::io::{Conversions, Inputs, NodeFunction, Outputs, Val, ERROR_KEY};
-use super::model::{find_spec, Graph, GroupDef, NodeSpec};
+use super::executors::io::{Conversions, Inputs, NodeFunction, Outputs, Val, BAD_INPUTS_KEY, ERROR_KEY};
+use super::model::{compatible, dyn_index, dyn_inner, find_spec, Graph, GroupDef, HandleSpec, NodeSpec, RfNode, Specs};
 
 pub const GROUP: &str = "group";
 pub const GROUP_INPUT: &str = "group_input";
@@ -33,6 +40,9 @@ pub const PATH_SEP: char = '/';
 
 /// input or output id to value
 type Values = Vec<(Arc<str>, Val)>;
+
+/// input id to what's wrong with the value it got
+type BadInputs = Vec<(Arc<str>, String)>;
 
 // MARK: - Context
 
@@ -84,12 +94,12 @@ impl<'a> RunCtx<'a> {
     /// the plan for a graph, each group is planned once per run
     fn plan(&self, graph: &Graph, group_id: Option<&str>) -> Rc<Plan> {
         let Some(group_id) = group_id else {
-            return Rc::new(Plan::new(self, graph));
+            return Rc::new(Plan::new(self, graph, None));
         };
         if let Some(plan) = self.plans.borrow().get(group_id) {
             return plan.clone();
         }
-        let plan = Rc::new(Plan::new(self, graph));
+        let plan = Rc::new(Plan::new(self, graph, self.groups.get(group_id)));
         self.plans.borrow_mut().insert(group_id.to_string(), plan.clone());
         plan
     }
@@ -117,6 +127,8 @@ struct NodeMemo {
     /// the values it was given, for a zone also what the inside reads from outside
     key: Values,
     outputs: Result<Outputs, String>,
+    bad_inputs: BadInputs,
+    waiting: bool,
     /// for a zone: what its nodes recorded for the first item, and its output node
     record: Vec<Entry>,
 }
@@ -172,6 +184,8 @@ struct Entry {
     path: String,
     outputs: Option<Result<Outputs, String>>,
     inputs: Values,
+    /// for a failed node, the inputs that got the wrong type
+    bad_inputs: BadInputs,
 }
 
 /// the results and inputs of every node that ran, keyed by node path, what the UI and the MCP outline show.
@@ -195,7 +209,13 @@ pub fn run(ctx: &RunCtx, graph: &Graph) -> (Record, Option<String>) {
         record.inputs.insert(entry.path.clone(), inputs);
         match &entry.outputs {
             Some(Ok(outputs)) => record.results.insert(entry.path, Value::Object(outputs.iter().map(|(k, v)| (k.to_string(), memo.json(v))).collect())),
-            Some(Err(message)) => record.results.insert(entry.path, json!({ ERROR_KEY: message })),
+            Some(Err(message)) => {
+                let mut failed = json!({ ERROR_KEY: message });
+                if !entry.bad_inputs.is_empty() {
+                    failed[BAD_INPUTS_KEY] = Value::Object(entry.bad_inputs.iter().map(|(k, m)| (k.to_string(), Value::String(m.clone()))).collect());
+                }
+                record.results.insert(entry.path, failed)
+            }
             None => None,
         };
     }
@@ -224,6 +244,8 @@ struct PlanNode {
     /// type and values set on the node, part of the memo key
     signature: String,
     realtime: bool,
+    /// connections whose type doesn't fit the input they go into, the node fails without running
+    bad_inputs: BadInputs,
 }
 
 struct ZonePlan {
@@ -251,13 +273,22 @@ struct Plan {
 }
 
 impl Plan {
-    fn new(ctx: &RunCtx, graph: &Graph) -> Self {
+    /// `scope` is the group whose graph this is, `None` for the root graph
+    fn new(ctx: &RunCtx, graph: &Graph, scope: Option<&GroupDef>) -> Self {
         let index: HashMap<&str, usize> = graph.nodes.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
+        // the sockets of every node, to check the types of its connections
+        let specs = Specs {
+            specs: ctx.specs,
+            groups: ctx.groups,
+            scope,
+        };
+        let sockets: Vec<Option<Cow<NodeSpec>>> = graph.nodes.iter().map(|node| socket_spec(&specs, node)).collect();
 
         let nodes: Vec<PlanNode> = graph
             .nodes
             .iter()
-            .map(|node| {
+            .enumerate()
+            .map(|(i, node)| {
                 let node_type = node.resolved_node_type();
                 let spec = find_spec(ctx.specs, node_type);
                 let kind = match (node_type, spec) {
@@ -276,6 +307,10 @@ impl Plan {
                 let connections = graph.edges.iter().filter(|e| e.to_node() == node.id).filter_map(|e| Some((Arc::from(e.to_input()), *index.get(e.from_node())?, Arc::from(e.from_output())))).collect();
                 let group_id = node.data.get("group_id").map(|v| v.to_string()).unwrap_or_default();
                 let set = node.inputs().map(|i| Value::Object(i.clone()).to_string()).unwrap_or_default();
+                let bad_inputs = match (&kind, &sockets[i]) {
+                    (Kind::Broken(_), _) | (_, None) => BadInputs::new(),
+                    (_, Some(to)) => graph.edges.iter().filter(|e| e.to_node() == node.id).filter_map(|e| Some((Arc::from(e.to_input()), connection_error(sockets[*index.get(e.from_node())?].as_deref()?, e.from_output(), to, e.to_input())?))).collect(),
+                };
                 PlanNode {
                     id: node.id.clone(),
                     kind,
@@ -283,6 +318,7 @@ impl Plan {
                     connections,
                     signature: format!("{}|{}|{}", node_type, group_id, set),
                     realtime: spec.map_or(true, |s| s.realtime),
+                    bad_inputs,
                 }
             })
             .collect();
@@ -376,7 +412,50 @@ fn descendants(graph: &Graph, start: &str) -> HashSet<String> {
     seen
 }
 
+/// the sockets to check a node's connections against, `None` when they aren't known (an unknown node type, a group
+/// node whose group is missing, a group input or output outside a group)
+fn socket_spec<'s>(specs: &Specs<'s>, node: &RfNode) -> Option<Cow<'s, NodeSpec>> {
+    match node.resolved_node_type() {
+        GROUP if !node.data.get("group_id").and_then(|v| v.as_str()).is_some_and(|g| specs.groups.contains_key(g)) => None,
+        GROUP_INPUT | GROUP_OUTPUT if specs.scope.is_none() => None,
+        _ => specs.for_node(node),
+    }
+}
+
+/// an input's handle and type, a dynamic input (`object_maps_0`) has its `Dyn<T>` handle and `T`
+fn input_handle<'s>(spec: &'s NodeSpec, input: &str) -> Option<(&'s HandleSpec, &'s str)> {
+    if let Some(handle) = spec.input(input) {
+        return Some((handle, handle.data_type.as_str()));
+    }
+    spec.handles.inputs.iter().find(|h| dyn_index(&h.id, input).is_some()).and_then(|h| Some((h, dyn_inner(h)?)))
+}
+
+/// an output's name and type, any other output of a node with a `Dyn<T>` output is one of its dynamic outputs of type `T`
+fn output_handle<'s>(spec: &'s NodeSpec, output: &'s str) -> Option<(&'s str, &'s str)> {
+    if let Some(handle) = spec.output(output) {
+        return Some((handle.name.as_str(), handle.data_type.as_str()));
+    }
+    spec.handles.outputs.iter().find_map(dyn_inner).map(|inner| (output, inner))
+}
+
+/// what's wrong with a connection from `output` on `from` to `input` on `to`, `None` if its types fit.
+/// a socket that isn't there is left alone, the input gets nothing and the node uses its default
+fn connection_error(from: &NodeSpec, output: &str, to: &NodeSpec, input: &str) -> Option<String> {
+    let (in_handle, in_ty) = input_handle(to, input)?;
+    let (out_name, out_ty) = output_handle(from, output)?;
+    if compatible(out_ty, in_ty) {
+        return None;
+    }
+    Some(format!("{} expects {}, but {} › {} gives {}", in_handle.name, in_ty, from.name, out_name, out_ty))
+}
+
 // MARK: - Run
+
+/// how running an executor went: what it gave and the inputs that had the wrong type, or it's missing a required input
+enum Ran {
+    Done(Result<Outputs, String>, BadInputs),
+    Waiting,
+}
 
 /// what a node gave in this run
 #[derive(Clone)]
@@ -500,7 +579,7 @@ impl<'a, 'c> Runner<'a, 'c> {
     }
 
     /// stores what a node gave and records it, errors with the path when it failed
-    fn finish(&self, index: usize, outcome: Result<Outputs, String>, inputs: Values, frame: &mut Frame, record: &mut Sink) -> Result<(), String> {
+    fn finish(&self, index: usize, outcome: Result<Outputs, String>, inputs: Values, bad_inputs: BadInputs, frame: &mut Frame, record: &mut Sink) -> Result<(), String> {
         frame.set(index, &outcome);
         // the path is only made when something needs it, most nodes in a loop don't
         let error = outcome.as_ref().err().map(|message| {
@@ -513,14 +592,26 @@ impl<'a, 'c> Runner<'a, 'c> {
                 path: self.path(index),
                 outputs: Some(outcome),
                 inputs,
+                bad_inputs,
             });
         }
         error.map_or(Ok(()), Err)
     }
 
+    /// fails a node with connections of the wrong type without running it, even if what it's connected to didn't run
+    fn reject(&self, index: usize, frame: &mut Frame, record: &mut Sink) -> Result<(), String> {
+        let node = &self.plan.nodes[index];
+        let inputs = self.gather(index, frame).unwrap_or_else(|| node.literals.clone());
+        let message = node.bad_inputs.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>().join("; ");
+        self.finish(index, Err(message), inputs, node.bad_inputs.clone(), frame, record)
+    }
+
     /// runs one node that isn't part of a zone
     fn run_node(&self, index: usize, frame: &mut Frame, stack: &mut Vec<String>, record: &mut Sink, in_item: bool) -> Result<(), String> {
         let node = &self.plan.nodes[index];
+        if !node.bad_inputs.is_empty() {
+            return self.reject(index, frame, record);
+        }
         let Some(inputs) = self.gather(index, frame) else {
             return Ok(());
         };
@@ -531,24 +622,41 @@ impl<'a, 'c> Runner<'a, 'c> {
                     path: self.path(index),
                     outputs: None,
                     inputs,
+                    bad_inputs: BadInputs::new(),
                 });
             }
             return Ok(());
         }
 
-        let outcome = match &node.kind {
-            Kind::GroupInput => Ok(self.group_inputs.clone()),
-            Kind::GroupOutput => Ok(values_to_outputs(&inputs)),
-            Kind::Group(group_id) => self.run_group(index, group_id, &inputs, stack, record),
-            Kind::ZoneEnd => Err(format!("'{}' isn't part of a for each zone", node.id)),
-            Kind::Broken(message) => Err(message.clone()),
-            Kind::Executor(func) => self.run_executor(index, *func, &inputs, in_item),
+        let (outcome, bad_inputs) = match &node.kind {
+            Kind::GroupInput => (Ok(self.group_inputs.clone()), BadInputs::new()),
+            Kind::GroupOutput => (Ok(values_to_outputs(&inputs)), BadInputs::new()),
+            Kind::Group(group_id) => (self.run_group(index, group_id, &inputs, stack, record), BadInputs::new()),
+            Kind::ZoneEnd => (Err(format!("'{}' isn't part of a for each zone", node.id)), BadInputs::new()),
+            Kind::Broken(message) => (Err(message.clone()), BadInputs::new()),
+            Kind::Executor(func) => match self.run_executor(index, *func, &inputs, in_item) {
+                Ran::Done(outcome, bad_inputs) => (outcome, bad_inputs),
+                Ran::Waiting => return Ok(self.wait(index, inputs, frame, record)),
+            },
         };
-        self.finish(index, outcome, inputs, frame, record)
+        self.finish(index, outcome, inputs, bad_inputs, frame, record)
+    }
+
+    /// a node missing a required input: it shows what it got, and the nodes after it don't run
+    fn wait(&self, index: usize, inputs: Values, frame: &mut Frame, record: &mut Sink) {
+        frame.slots[index] = Some(Slot::Failed);
+        if let Some(record) = record {
+            record.push(Entry {
+                path: self.path(index),
+                outputs: None,
+                inputs,
+                bad_inputs: BadInputs::new(),
+            });
+        }
     }
 
     /// runs an executor, or takes what it gave last time for the same inputs
-    fn run_executor(&self, index: usize, func: NodeFunction, inputs: &Values, in_item: bool) -> Result<Outputs, String> {
+    fn run_executor(&self, index: usize, func: NodeFunction, inputs: &Values, in_item: bool) -> Ran {
         let node = &self.plan.nodes[index];
         let path = self.path(index);
         // nothing connected: it brings in the outside world (a file, the scene), which can change without the graph changing.
@@ -557,13 +665,21 @@ impl<'a, 'c> Runner<'a, 'c> {
         let reusable = !source && node.realtime;
         if !in_item && reusable {
             if let Some(memo) = self.ctx.memo.borrow_mut().hit(&path, &node.signature, inputs) {
-                return memo.outputs.clone();
+                return match memo.waiting {
+                    true => Ran::Waiting,
+                    false => Ran::Done(memo.outputs.clone(), memo.bad_inputs.clone()),
+                };
             }
         }
 
         // a panic that slipped through is turned into an error too so it can't take the app down
         let call = Inputs::new(inputs.clone(), &self.ctx.conversions);
         let mut outcome = catch_unwind(AssertUnwindSafe(|| func(&call))).unwrap_or_else(|panic| Err(format!("crashed: {}", panic_message(&panic))));
+        let bad_inputs: BadInputs = match &outcome {
+            Err(message) => call.wrong_type().into_iter().map(|input| (input, message.clone())).collect(),
+            Ok(_) => BadInputs::new(),
+        };
+        let waiting = outcome.is_err() && call.missing() && bad_inputs.is_empty();
 
         if !in_item {
             let mut memo = self.ctx.memo.borrow_mut();
@@ -580,11 +696,16 @@ impl<'a, 'c> Runner<'a, 'c> {
                     signature: node.signature.clone(),
                     key: inputs.clone(),
                     outputs: outcome.clone(),
+                    bad_inputs: bad_inputs.clone(),
+                    waiting,
                     record: Vec::new(),
                 },
             );
         }
-        outcome
+        match waiting {
+            true => Ran::Waiting,
+            false => Ran::Done(outcome, bad_inputs),
+        }
     }
 
     /// runs a group node's graph with the group node's inputs
@@ -614,6 +735,14 @@ impl<'a, 'c> Runner<'a, 'c> {
     /// runs a for each zone: the nodes inside once per item, collecting what reaches the zone output
     fn run_zone(&self, zone_index: usize, frame: &mut Frame, stack: &mut Vec<String>, record: &mut Sink, in_item: bool) -> Result<(), String> {
         let zone = &self.plan.zones[zone_index];
+        // a connection of the wrong type into either end stops the whole zone
+        for end in [zone.input, zone.output] {
+            if !self.plan.nodes[end].bad_inputs.is_empty() {
+                frame.slots[zone.input] = Some(Slot::Failed);
+                frame.slots[zone.output] = Some(Slot::Failed);
+                return self.reject(end, frame, record);
+            }
+        }
         let Some(inputs) = self.gather(zone.input, frame) else {
             return Ok(());
         };
@@ -644,6 +773,8 @@ impl<'a, 'c> Runner<'a, 'c> {
                             signature: zone.signature.clone(),
                             key,
                             outputs: outputs.clone(),
+                            bad_inputs: BadInputs::new(),
+                            waiting: false,
                             record: zone_record.clone(),
                         },
                     );
@@ -672,6 +803,7 @@ impl<'a, 'c> Runner<'a, 'c> {
             path: self.path(zone.output),
             outputs: Some(outputs.clone()),
             inputs: result,
+            bad_inputs: BadInputs::new(),
         };
         let fail = |message: String, mut zone_record: Vec<Entry>| {
             let outputs = Err(message);
@@ -721,7 +853,7 @@ impl<'a, 'c> Runner<'a, 'c> {
             } else {
                 None
             };
-            let _ = self.finish(zone.input, Ok(item_values), inputs.clone(), &mut item_frame, &mut sink);
+            let _ = self.finish(zone.input, Ok(item_values), inputs.clone(), BadInputs::new(), &mut item_frame, &mut sink);
             let error = self.run_nodes(Some(zone_index), &mut item_frame, stack, &mut sink, true);
             zone_record.extend(first);
             if let Some(error) = error {
