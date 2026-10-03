@@ -4,11 +4,18 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 
-// every dockable panel and the side of the main window it docks to
-export const PANELS: Record<number, { name: string; side: "left" | "right" }> = {
+export type Side = "left" | "right";
+
+// every dockable panel and the side of the main window it first docks to, any panel can be docked on either side
+export const PANELS: Record<number, { name: string; side: Side }> = {
     0: { name: "Nodes", side: "left" },
     1: { name: "Properties", side: "right" },
 };
+
+// the side a panel is docked on (or goes back to when it's docked again)
+export function panelSide(frontEndState: any, id: number): Side {
+    return frontEndState.panelSides?.[id] ?? PANELS[id]?.side ?? "right";
+}
 
 // tauri events sent to the main window while a panel is floating, coordinates are screen pixels
 // { id, screenX, screenY }
@@ -50,12 +57,17 @@ export async function clientToScreen(clientX: number, clientY: number) {
     return { x: clientX + origin.x, y: clientY + origin.y };
 }
 
-// true when a client point in the main window is over the panel's dock slot
-export function inDockZone(id: number, clientX: number, clientY: number) {
+// true when a client point in the main window is over a side's dock slot
+export function inDockZone(side: Side, clientX: number, clientY: number) {
     const content = document.querySelector(".content")?.getBoundingClientRect();
     if (!content || clientY < content.top || clientY > content.bottom) return false;
-    if (PANELS[id]?.side === "right") return clientX >= content.right - DOCK_ZONE_WIDTH && clientX <= content.right;
+    if (side === "right") return clientX >= content.right - DOCK_ZONE_WIDTH && clientX <= content.right;
     return clientX >= content.left && clientX <= content.left + DOCK_ZONE_WIDTH;
+}
+
+// the dock slot a client point in the main window is over, if any
+export function dockSideAt(clientX: number, clientY: number): Side | null {
+    return (["left", "right"] as const).find((side) => inDockZone(side, clientX, clientY)) ?? null;
 }
 
 // moves a window to follow the cursor, at most once a frame and only once it's ready

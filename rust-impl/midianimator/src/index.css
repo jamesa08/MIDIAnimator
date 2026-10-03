@@ -478,20 +478,31 @@ img {
     isolation: isolate;
 }
 
-/* docked panels float over the canvas, inset from its edges (the content's padding plus 8px) */
-.content > .panel {
+/* docked panels float over the canvas in a column on each side, inset from its edges (the content's padding plus 8px).
+   panels docked on the same side share its height. the column itself lets clicks through to the canvas */
+.content > .dock-column {
     position: absolute;
     top: 12px;
     bottom: 12px;
     z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.dock-column > .panel {
+    flex: 1 1 0;
+    min-height: 0;
+    pointer-events: auto;
     box-shadow: 0 2px 10px var(--chrome-card-shadow);
 }
 
-.content > .panel.dock-left {
+.content > .dock-column.dock-left {
     left: 12px;
 }
 
-.content > .panel.dock-right {
+.content > .dock-column.dock-right {
     right: 12px;
 }
 
@@ -653,11 +664,11 @@ img {
 }
 
 .live-resize .react-flow__viewport,
-.live-resize .content > .panel {
+.live-resize .content > .dock-column {
     will-change: transform;
 }
 
 /* the docked panels' insides don't depend on the window, so they're not laid out again on every step */
-.live-resize .content > .panel {
+.live-resize .content > .dock-column {
     contain: strict;
 }

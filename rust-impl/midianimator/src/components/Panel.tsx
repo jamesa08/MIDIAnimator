@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../utils/node";
-import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
+import { PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, panelSide, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
 import PanelBody, { PanelNodeDrop } from "./PanelBody";
 
 interface PanelProps {
@@ -9,12 +9,14 @@ interface PanelProps {
     name: string;
 }
 
-// docked panel in the main window, pops out into its own window from the button or by dragging the header out
+// docked panel in the main window (in its side's dock column, App.tsx), pops out into its own window from the button or by
+// dragging the header out
 const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const { frontEndState, setFrontEndState } = useStateContext();
     const ref = useRef<HTMLDivElement>(null);
     const panelId = Number(id);
     const poppedOut = frontEndState.panelsPoppedOut.includes(panelId);
+    const side = panelSide(frontEndState, panelId);
 
     // warm up the floating window at the docked size so popping out is instant
     useEffect(() => {
@@ -48,7 +50,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         const handleMove = (e: PointerEvent) => {
             // stays docked until the cursor leaves the dock slot
             if (!move) {
-                if (inDockZone(panelId, e.clientX, e.clientY)) return;
+                if (inDockZone(side, e.clientX, e.clientY)) return;
                 move = windowMover(popOut(e.screenX - grabX, e.screenY - grabY, rect.width, rect.height));
             }
             move(e.screenX - grabX, e.screenY - grabY);
@@ -89,14 +91,16 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const shown = frontEndState.panelsShown.includes(panelId) && !poppedOut;
 
     return (
-        <div ref={ref} className={`panel card w-56 select-none p-0 dock-${PANELS[panelId]?.side}`} style={shown ? {} : { display: "none" }}>
-            <div className="panel-header h-6 border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startTearOff}>
+        <div ref={ref} className="panel card select-none p-0 flex flex-col" style={shown ? {} : { display: "none" }}>
+            <div className="panel-header h-6 flex-none border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startTearOff}>
                 <span className="mr-auto">{name}</span>
                 <button className="float-right" onClick={popOutButton}>
                     Popout
                 </button>
             </div>
-            <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
+            <div className="flex-auto overflow-y-auto">
+                <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
+            </div>
         </div>
     );
 };

@@ -4,23 +4,15 @@ import { useStateContext } from "../contexts/StateContext";
 function MenuBar() {
     const { frontEndState, setFrontEndState } = useStateContext();
 
-    const collapseLeft = () => {
+    // shows or hides everything docked on a side
+    const collapse = (side: "left" | "right") => {
         setFrontEndState((prev: any) => ({
             ...prev,
-            panelsShown: prev.panelsShown.includes(0)
-                ? prev.panelsShown.filter((id: number) => id !== 0)
-                : [...prev.panelsShown, 0],
+            sidesHidden: prev.sidesHidden.includes(side) ? prev.sidesHidden.filter((s: string) => s !== side) : [...prev.sidesHidden, side],
         }));
     };
-
-    const collapseRight = () => {
-        setFrontEndState((prev: any) => ({
-            ...prev,
-            panelsShown: prev.panelsShown.includes(1)
-                ? prev.panelsShown.filter((id: number) => id !== 1)
-                : [...prev.panelsShown, 1],
-        }));
-    };
+    const collapseLeft = () => collapse("left");
+    const collapseRight = () => collapse("right");
 
     return (
         <div className="toolbar flex h-8 items-center pr-[3px]">

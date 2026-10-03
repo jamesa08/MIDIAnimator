@@ -3,7 +3,9 @@ import { createContext, useContext, useState } from "react";
 export const StateContext = createContext<StateContext | null>(null);
 
 const defaultBackendState = { ready: false };
-const defaultFrontendState = { panelsShown: [0, 1], panelsPoppedOut: [] as number[] };
+// panelsShown: open panels, docked or floating, in the order they were docked. panelsPoppedOut: panels that float.
+// panelSides: the side each panel docks on. sidesHidden: sides collapsed from the toolbar
+const defaultFrontendState = { panelsShown: [0, 1], panelsPoppedOut: [] as number[], panelSides: {} as Record<number, "left" | "right">, sidesHidden: [] as ("left" | "right")[] };
 
 type StateContextProviderProps = {
     children: React.ReactNode;
