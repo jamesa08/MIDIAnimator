@@ -19,6 +19,8 @@ use crate::graph::builtin::all_groups;
 use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
 use crate::graph::run::{instance_path, scoped_values};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
+use crate::graph::history::{EntryInfo, Source, Step};
+use crate::state::history::{self, Capture};
 use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
 use crate::ui::screenshot;
 
@@ -28,6 +30,7 @@ Call graph_outline first to see the current graph, and node_types_list for the n
 Data flows from outputs to inputs; edit with graph_add_node, graph_connect, graph_set_inputs, graph_disconnect and graph_remove_node. \
 Never connect hidden handles: 'par' inputs are set with graph_set_inputs, and outputs marked hidden are display-only. \
 Edits show up live in the app and re-run the realtime graph, which never writes to Blender; \
+the app and these tools share one undo history: graph_history lists it, graph_undo and graph_redo step through it; \
 graph_execute with write_to_blender=true writes keyframes to Blender. Node ids accept any unique prefix. \
 app_screenshot shows what the UI currently looks like.";
 
@@ -235,6 +238,19 @@ fn group_values_note(view: &View, group: Option<&str>) -> String {
     }
 }
 
+/// one history entry as a line: `add_node (mcp): added viewer-1 "Viewer"`
+fn history_line(entry: &EntryInfo) -> String {
+    let source = match entry.source {
+        Source::Ui => "app",
+        Source::Mcp => "mcp",
+    };
+    if entry.detail.is_empty() {
+        format!("{} ({})", entry.op, source)
+    } else {
+        format!("{} ({}): {}", entry.op, source, entry.detail)
+    }
+}
+
 /// a successful tool result with some text
 fn ok_text(text: impl Into<String>) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
@@ -293,9 +309,9 @@ pub struct MotionKeysMcp {
 }
 
 impl MotionKeysMcp {
-    /// applies one edit to the stored graph, pushes it to the UI, re-runs the realtime graph
+    /// applies one edit to the stored graph as an undo step named `op`, pushes it to the UI, re-runs the realtime graph
     /// and reports what changed plus the updated outline of the touched nodes
-    async fn apply_edit<F>(&self, group: Option<&str>, edit: F) -> Result<CallToolResult, McpError>
+    async fn apply_edit<F>(&self, op: &str, group: Option<&str>, edit: F) -> Result<CallToolResult, McpError>
     where
         F: FnOnce(&mut Graph, &Specs, &HashMap<String, Value>) -> Result<EditResult, String>,
     {
@@ -347,7 +363,7 @@ impl MotionKeysMcp {
             };
             match outcome {
                 Ok(result) => {
-                    state.rf_instance = graph.to_rf();
+                    history::commit(&mut state, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
                     result
                 }
                 Err(e) => return tool_error(e),
@@ -358,6 +374,31 @@ impl MotionKeysMcp {
         update_state();
         let execution = run_realtime_if_allowed().await;
         self.edit_report(group, &result, &execution)
+    }
+
+    /// undoes or redoes one step, re-runs the realtime graph and says which step it was
+    async fn history_step(&self, redo: bool) -> Result<CallToolResult, McpError> {
+        if !lock_state().ready {
+            return tool_error(NOT_READY);
+        }
+        let Some((entry, _)) = history::step(redo) else {
+            return tool_error(if redo {
+                "nothing to redo"
+            } else {
+                "nothing to undo"
+            });
+        };
+        let execution = run_realtime_if_allowed().await;
+        ok_text(format!(
+            "{} {}\n{}",
+            if redo {
+                "redid"
+            } else {
+                "undid"
+            },
+            history_line(&entry),
+            execution
+        ))
     }
 
     /// builds the tool result for an edit: the message, the execution status and the outline of each touched node
@@ -565,19 +606,19 @@ impl MotionKeysMcp {
     #[tool(description = "Add a node. Returns its new id (e.g. get_midi_file-2). Without position it is placed right of 'after', or right of the right-most node.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_add_node(&self, Parameters(params): Parameters<AddNodeParams>) -> Result<CallToolResult, McpError> {
         // add the node through apply_edit so the UI and realtime results get updated
-        self.apply_edit(params.group.as_deref(), |graph, specs, _| edit::add_node(graph, specs, &params.node_type, params.inputs.as_ref(), params.position, params.after.as_deref())).await
+        self.apply_edit("add_node", params.group.as_deref(), |graph, specs, _| edit::add_node(graph, specs, &params.node_type, params.inputs.as_ref(), params.position, params.after.as_deref())).await
     }
 
     // graph_connect
     #[tool(description = "Connect an output to an input (data flows from_node.from_output -> to_node.to_input). Checks types and cycles; replaces any existing connection into that input. Hidden handles ('par' inputs and outputs marked hidden) must never be connected and are refused.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_connect(&self, Parameters(params): Parameters<ConnectParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(params.group.as_deref(), |graph, specs, results| edit::connect(graph, specs, results, &params.from_node, &params.from_output, &params.to_node, &params.to_input)).await
+        self.apply_edit("connect", params.group.as_deref(), |graph, specs, results| edit::connect(graph, specs, results, &params.from_node, &params.from_output, &params.to_node, &params.to_input)).await
     }
 
     // graph_disconnect
     #[tool(description = "Remove the connection into one input.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_disconnect(&self, Parameters(params): Parameters<DisconnectParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
+        self.apply_edit("disconnect", params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
     }
 
     // graph_set_inputs
@@ -602,7 +643,7 @@ impl MotionKeysMcp {
         }
 
         // apply the edit, then add the warnings to the result if it worked
-        let mut result = self.apply_edit(params.group.as_deref(), |graph, specs, _| edit::set_inputs(graph, specs, &params.node, &params.inputs)).await?;
+        let mut result = self.apply_edit("set_inputs", params.group.as_deref(), |graph, specs, _| edit::set_inputs(graph, specs, &params.node, &params.inputs)).await?;
         if result.is_error != Some(true) {
             for warning in warnings {
                 result.content.push(ContentBlock::text(warning));
@@ -614,7 +655,39 @@ impl MotionKeysMcp {
     // graph_remove_node
     #[tool(description = "Remove a node and all its connections.", annotations(read_only_hint = false, destructive_hint = true))]
     async fn graph_remove_node(&self, Parameters(params): Parameters<NodeParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit(params.group.as_deref(), |graph, _, _| edit::remove_node(graph, &params.node)).await
+        self.apply_edit("remove_node", params.group.as_deref(), |graph, _, _| edit::remove_node(graph, &params.node)).await
+    }
+
+    // MARK: - History Tools
+
+    // graph_history: the undo history shared with the app
+    #[tool(description = "List the undo history, oldest first. The app and MCP share it: entries from the app are the user's own edits. Entries after the current position can be redone.", annotations(read_only_hint = true))]
+    async fn graph_history(&self) -> Result<CallToolResult, McpError> {
+        let info = history::info();
+        if info.entries.is_empty() {
+            return ok_text("the history is empty");
+        }
+        let mut text = format!("{} of {} steps done (oldest first):\n", info.current, info.entries.len());
+        for (i, entry) in info.entries.iter().enumerate() {
+            if i == info.current {
+                text.push_str("-- undone, can be redone --\n");
+            }
+            text.push_str(&history_line(entry));
+            text.push('\n');
+        }
+        ok_text(text)
+    }
+
+    // graph_undo
+    #[tool(description = "Undo the newest step in the undo history. The history is shared with the app, so this can undo the user's own edits; check graph_history first.", annotations(read_only_hint = false, destructive_hint = true))]
+    async fn graph_undo(&self) -> Result<CallToolResult, McpError> {
+        self.history_step(false).await
+    }
+
+    // graph_redo
+    #[tool(description = "Redo the newest undone step in the undo history.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn graph_redo(&self) -> Result<CallToolResult, McpError> {
+        self.history_step(true).await
     }
 
     // graph_execute: realtime run, or a full run that writes keyframes to blender
