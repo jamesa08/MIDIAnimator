@@ -319,6 +319,14 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
 
 // MARK: - Helpers
 
+/// the graph `scope` names, read only: the top level, one of the project's groups or a built-in one
+pub(super) fn graph_in<'a>(project: &'a Graph, scope: Option<&str>) -> Result<&'a Graph, String> {
+    match scope {
+        None => Ok(project),
+        Some(id) => project.groups.get(id).or_else(|| builtin_groups().get(id)).map(|def| &def.graph).ok_or_else(|| format!("no group '{}'", id)),
+    }
+}
+
 /// the graph `scope` names: the top level, or one of the project's own groups. a built-in group is read-only until it's made local
 pub(super) fn target<'a>(project: &'a mut Graph, scope: Option<&str>) -> Result<&'a mut Graph, String> {
     match scope {
@@ -394,6 +402,123 @@ fn edge_like(base: &RfEdge, from_node: &str, from_output: &str, to_node: &str, t
     edge.extra = base.extra.clone();
     edge.extra.remove("selected");
     edge
+}
+
+// MARK: - History
+
+/// the names of nodes in the graph `scope`, each once in graph order with how many there are (`Get MIDI File ×2, Viewer`)
+pub fn node_names(project: &Graph, scope: Option<&str>, specs: &[NodeSpec], ids: &[String]) -> String {
+    let Ok(graph) = graph_in(project, scope) else {
+        return String::new();
+    };
+    let groups = all_groups(project);
+    let specs = Specs {
+        specs,
+        groups: &groups,
+        scope: scope.and_then(|id| groups.get(id)),
+    };
+    // each name once, in the order they first come up, with how many there are
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for node in graph.nodes.iter().filter(|n| ids.contains(&n.id)) {
+        let name = specs.for_node(node).map_or(node.node_type.clone(), |spec| spec.name.clone());
+        match counts.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((name, 1)),
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(name, count)| {
+            if count > 1 {
+                format!("{} ×{}", name, count)
+            } else {
+                name
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// what an op did in a few words, for its row in the history panel: the nodes it acted on, or the socket or group it
+/// changed. `before` and `after` are the project around the op, `added` the nodes it added
+pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, specs: &[NodeSpec], added: &[Added]) -> String {
+    let names = |project: &Graph, ids: &[String]| node_names(project, scope, specs, ids);
+    let name = |project: &Graph, id: &str| names(project, &[id.to_string()]);
+    let group_name = |project: &Graph| scope.and_then(|id| all_groups(project).get(id).map(|def| def.name.clone())).unwrap_or_default();
+    match op {
+        Op::AddNodes {
+            ..
+        }
+        | Op::Duplicate {
+            ..
+        }
+        | Op::Paste {
+            ..
+        }
+        | Op::Ungroup {
+            ..
+        } => names(after, &added.iter().map(|a| a.id.clone()).collect::<Vec<_>>()),
+        Op::Group {
+            nodes,
+            ..
+        } => names(before, nodes),
+        // removed connections are named by the nodes on their ends
+        Op::Delete {
+            nodes,
+            edges,
+        }
+        | Op::Cut {
+            nodes,
+            edges,
+        } => {
+            let mut ids = nodes.clone();
+            if let Ok(graph) = graph_in(before, scope) {
+                for edge in graph.edges.iter().filter(|e| edges.contains(&e.id)) {
+                    ids.extend([edge.from_node().to_string(), edge.to_node().to_string()]);
+                }
+            }
+            names(before, &ids)
+        }
+        Op::Connect {
+            from_node,
+            to_node,
+            ..
+        } => format!("{} → {}", name(after, from_node), name(after, to_node)),
+        Op::SetInputs {
+            node,
+            ..
+        }
+        | Op::Resize {
+            node,
+            ..
+        } => name(after, node),
+        Op::Move {
+            positions,
+        } => names(after, &positions.keys().cloned().collect::<Vec<_>>()),
+        Op::Select {
+            nodes,
+            ..
+        } => names(after, nodes),
+        Op::RenameSocket {
+            name,
+            ..
+        } => name.clone(),
+        Op::RemoveSocket {
+            side,
+            id,
+        } => scope
+            .and_then(|scope| before.groups.get(scope))
+            .and_then(|def| match side {
+                Side::Inputs => def.interface.inputs.iter().find(|h| &h.id == id),
+                Side::Outputs => def.interface.outputs.iter().find(|h| &h.id == id),
+            })
+            .map_or(id.clone(), |h| h.name.clone()),
+        Op::MakeLocal => group_name(after),
+        Op::RevertGroup => group_name(before),
+        Op::Viewport {
+            ..
+        } => String::new(),
+    }
 }
 
 // MARK: - Nodes

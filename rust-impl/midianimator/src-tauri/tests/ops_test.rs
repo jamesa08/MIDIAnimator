@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use serde_json::{json, Value};
 use MIDIAnimator::graph::history::{Diff, History, Source, Step};
 use MIDIAnimator::graph::model::{node_specs, Graph, NodeSpec, Position};
-use MIDIAnimator::graph::ops::{apply, Added, Ctx, Op};
+use MIDIAnimator::graph::ops::{apply, describe, Added, Ctx, Op};
 use MIDIAnimator::state::{migrate_rf_instance, SavedProject};
 
 /// loads the node specs from default_nodes.json
@@ -240,4 +240,34 @@ fn ops_undo() {
     let diff = Diff::between(&start, &graph.to_rf());
     assert!(!diff.affects_output());
     assert!(history.record(diff, Step::new("select", Source::Ui)));
+}
+
+// each step says what it acted on, for its row in the history panel
+#[test]
+fn describe_steps() {
+    let specs = specs();
+    let step = |graph: &mut Graph, scope: Option<&str>, op: Value| -> String {
+        let before = graph.clone();
+        let added = run(graph, scope, json!([op.clone()])).unwrap();
+        let op: Op = serde_json::from_value(op).unwrap();
+        describe(&op, &before, graph, scope, &specs, &added)
+    };
+    let mut graph = fixture();
+    let edge = graph.edges.iter().find(|e| e.to_node() == "viewer-1").unwrap().id.clone();
+
+    assert_eq!(step(&mut graph, None, json!({ "op": "add_nodes", "nodes": [{ "type": "viewer", "position": { "x": 0, "y": 0 } }] })), "Viewer");
+    assert_eq!(step(&mut graph, None, json!({ "op": "select", "nodes": ["get_midi_file-1", "viewer-2"] })), "Get MIDI File, Viewer");
+    assert_eq!(step(&mut graph, None, json!({ "op": "duplicate", "nodes": ["viewer-1", "viewer-2"], "offset": { "x": 20, "y": 20 } })), "Viewer ×2");
+    assert_eq!(step(&mut graph, None, json!({ "op": "set_inputs", "node": "animation_generator-1", "inputs": { "name": "x" } })), "Animation Generator");
+    assert_eq!(step(&mut graph, None, json!({ "op": "connect", "from_node": "get_midi_track_data-1", "from_output": "notes", "to_node": "viewer-2", "to_input": "data" })), "Get MIDI Track Data → Viewer");
+    // a connection is named by its ends
+    assert_eq!(step(&mut graph, None, json!({ "op": "delete", "edges": [edge] })), "Viewer, Evaluate Instrument");
+    assert_eq!(step(&mut graph, None, json!({ "op": "delete", "nodes": ["viewer-3"] })), "Viewer");
+    assert_eq!(step(&mut graph, None, json!({ "op": "group", "nodes": ["get_midi_file-1", "get_midi_track_data-1"] })), "Get MIDI File, Get MIDI Track Data");
+
+    let scope = Some("node_group");
+    let socket = graph.groups["node_group"].interface.outputs[0].clone();
+    assert_eq!(step(&mut graph, scope, json!({ "op": "rename_socket", "side": "outputs", "id": socket.id, "name": "Song Notes" })), "Song Notes");
+    assert_eq!(step(&mut graph, scope, json!({ "op": "remove_socket", "side": "outputs", "id": socket.id })), "Song Notes");
+    assert_eq!(step(&mut graph, Some("evaluate_instrument"), json!({ "op": "make_local" })), "Evaluate Instrument");
 }

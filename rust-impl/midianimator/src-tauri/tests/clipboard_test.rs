@@ -6,9 +6,9 @@
 use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{json, Value};
-use MIDIAnimator::graph::clipboard::{copy, node_names, paste};
+use MIDIAnimator::graph::clipboard::{copy, paste};
 use MIDIAnimator::graph::model::{node_specs, Graph, NodeSpec, Position};
-use MIDIAnimator::graph::ops::{apply, Added, Ctx, Op};
+use MIDIAnimator::graph::ops::{apply, node_names, Added, Ctx, Op};
 use MIDIAnimator::state::{migrate_rf_instance, SavedProject};
 
 fn specs() -> Vec<NodeSpec> {

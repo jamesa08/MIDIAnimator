@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use super::builtin::{all_groups, builtin_groups, migrate};
+use super::builtin::{all_groups, migrate};
 use super::model::{Graph, GroupDef, NodeSpec, Position, RfEdge, RfNode, Specs};
-use super::ops::{id_prefix, select, target, with_zone_partners, zone_of, Added, UI_KEYS};
+use super::ops::{graph_in, id_prefix, select, target, with_zone_partners, zone_of, Added, UI_KEYS};
 use super::run::{GROUP, GROUP_INPUT, GROUP_OUTPUT};
 
 /// what copied nodes say they are
@@ -34,14 +34,6 @@ struct Payload {
 }
 
 // MARK: - Copy
-
-/// the graph `scope` names, read only: the top level, one of the project's groups or a built-in one
-fn graph_in<'a>(project: &'a Graph, scope: Option<&str>) -> Result<&'a Graph, String> {
-    match scope {
-        None => Ok(project),
-        Some(id) => project.groups.get(id).or_else(|| builtin_groups().get(id)).map(|def| &def.graph).ok_or_else(|| format!("no group '{}'", id)),
-    }
-}
 
 /// a graph without the fields only the UI uses, for the clipboard and for comparing groups
 fn clean_graph(graph: &Graph) -> Graph {
@@ -103,39 +95,6 @@ pub fn copy(project: &Graph, scope: Option<&str>, nodes: &[String]) -> Result<St
         groups,
     };
     serde_json::to_string(&payload).map_err(|e| format!("could not copy: {}", e))
-}
-
-/// the names of nodes in the graph `scope` (`Get MIDI File ×2, Viewer`), for the history panel
-pub fn node_names(project: &Graph, scope: Option<&str>, specs: &[NodeSpec], ids: &[String]) -> String {
-    let Ok(graph) = graph_in(project, scope) else {
-        return String::new();
-    };
-    let groups = all_groups(project);
-    let specs = Specs {
-        specs,
-        groups: &groups,
-        scope: scope.and_then(|id| groups.get(id)),
-    };
-    // each name once, in the order they first come up, with how many there are
-    let mut counts: Vec<(String, usize)> = Vec::new();
-    for node in graph.nodes.iter().filter(|n| ids.contains(&n.id)) {
-        let name = specs.for_node(node).map_or(node.node_type.clone(), |spec| spec.name.clone());
-        match counts.iter_mut().find(|(n, _)| *n == name) {
-            Some((_, count)) => *count += 1,
-            None => counts.push((name, 1)),
-        }
-    }
-    counts
-        .into_iter()
-        .map(|(name, count)| {
-            if count > 1 {
-                format!("{} ×{}", name, count)
-            } else {
-                name
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 // MARK: - Paste
