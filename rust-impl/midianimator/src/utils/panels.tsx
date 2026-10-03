@@ -10,6 +10,7 @@ export type Side = "left" | "right";
 export const PANELS: Record<number, { name: string; side: Side }> = {
     0: { name: "Nodes", side: "left" },
     1: { name: "Properties", side: "right" },
+    2: { name: "History", side: "right" },
 };
 
 // the side a panel is docked on (or goes back to when it's docked again)
@@ -23,6 +24,8 @@ export const PANEL_DRAG_EVENT = "panel-drag";
 export const PANEL_DROP_EVENT = "panel-drop";
 // { id }
 export const PANEL_DOCK_EVENT = "panel-dock";
+// from the window menu (src-tauri/src/ui/menu.rs), payload the panel id: opens a closed panel, closes an open one
+export const PANEL_TOGGLE_EVENT = "panel-toggle";
 // same as NODE_DROP_EVENT's detail, with screenX/screenY instead of clientX/clientY
 export const PANEL_NODE_DROP_EVENT = "panel-node-drop";
 
@@ -150,11 +153,22 @@ export function ensurePanelWindow(id: number, width: number, height: number) {
     });
 }
 
+// panels whose window has been shown, a hidden one keeps its spot and comes back there
+const placedPanels = new Set<number>();
+
 // pops the panel's window out at a spot, resolves once it's showing
 export async function showPanelWindow(id: number, x: number, y: number, width: number, height: number) {
     const win = await ensurePanelWindow(id, width, height);
     await invoke("floating_window_set_shown", { label: panelLabel(id), shown: true, position: [x, y], size: [width, height] });
+    placedPanels.add(id);
     return win;
+}
+
+// shows a floating panel's window again where it was, false if it has never been shown
+export function reshowPanelWindow(id: number) {
+    if (!placedPanels.has(id)) return false;
+    invoke("floating_window_set_shown", { label: panelLabel(id), shown: true }).catch((e) => console.error(`Error showing ${panelLabel(id)}: ${e}`));
+    return true;
 }
 
 export function hidePanelWindow(id: number) {

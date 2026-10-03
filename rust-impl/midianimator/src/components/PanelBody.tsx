@@ -6,6 +6,7 @@ import { StateContext } from "../contexts/StateContext";
 import { GroupContext } from "../contexts/GroupContext";
 import { GroupDef, allGroups, loadBuiltinGroups } from "../utils/groups";
 import { nodeEntries, previewData, useNodeSpecs } from "../utils/nodeEntries";
+import HistoryList from "./HistoryList";
 
 // where a node from the nodes panel was released, offset is where it was grabbed in node (unscaled) pixels
 export interface PanelNodeDrop {
@@ -130,6 +131,7 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
     const entries = useMemo(() => nodeEntries(groups, specs), [groups, specs]);
     const groupContext = useMemo(() => ({ groups, scope: null, scopeId: null, editable: false, openGroup: () => {} }), [groups]);
 
+    if (PANELS[id]?.name === "History") return <HistoryList />;
     if (PANELS[id]?.name !== "Nodes") return null;
 
     return (

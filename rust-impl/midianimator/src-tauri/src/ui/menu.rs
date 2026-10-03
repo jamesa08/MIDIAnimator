@@ -9,6 +9,10 @@ use tauri::{
 pub const CLOSE_TAB_EVENT: &str = "close-tab";
 // sent to the focused window when undo or redo is picked from the edit menu (or its shortcut), payload "undo" or "redo"
 pub const EDIT_EVENT: &str = "menu-edit";
+// sent to the main window to show or hide a panel, payload the panel id (PANELS in src/utils/panels.tsx)
+pub const PANEL_TOGGLE_EVENT: &str = "panel-toggle";
+/// the history panel's id
+const HISTORY_PANEL: u32 = 2;
 
 static KEYBINDS: &str = include_str!("../configs/keybinds.json");
 
@@ -21,7 +25,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     // recreate the app submenu with the settings item inserted
     let app_submenu = SubmenuBuilder::new(app, app.package_info().name.as_str()).about(None).separator().item(&settings).separator().item(&quit).build()?;
-    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&close).build()?;
+    let history = MenuItemBuilder::with_id("history", "History").build(app)?;
+    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).separator().item(&close).build()?;
 
     // undo/redo are ours, the focused window decides between a text field's own undo and the graph's.
     // cut/copy/paste/select all are the native ones so text fields keep working
@@ -49,6 +54,9 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::menu::Me
             } else {
                 window.close().ok();
             }
+        }
+        "history" => {
+            app.emit_to("main", PANEL_TOGGLE_EVENT, HISTORY_PANEL).ok();
         }
         "undo" | "redo" => {
             // sent to the focused window, it knows whether a text field has focus. the main window when none is (menu used from the background)

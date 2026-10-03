@@ -105,6 +105,24 @@ pub fn step(redo: bool) -> Option<(EntryInfo, bool)> {
     Some((entry, run))
 }
 
+/// undoes or redoes until the first `current` entries are done, sending the graph once. returns whether the realtime
+/// graph should re-run
+pub fn goto(current: usize) -> bool {
+    let (run, info) = {
+        let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut history = lock();
+        if history.info().current == current {
+            return false;
+        }
+        let affects_output = history.goto(current, &mut state.rf_instance);
+        state.graph_rev += 1;
+        (affects_output && !state.execution_paused, history.info())
+    };
+    push_graph();
+    notify(info);
+    run
+}
+
 /// forgets the history (a project was loaded or a new one started)
 pub fn clear() {
     let info = {
@@ -137,6 +155,14 @@ pub async fn history_redo() -> Option<EntryInfo> {
 #[tauri::command]
 pub fn get_history() -> HistoryInfo {
     info()
+}
+
+/// undoes or redoes until the first `current` entries are done (a row in the history panel), the realtime graph re-runs once
+#[tauri::command]
+pub async fn history_goto(current: usize) {
+    if goto(current) {
+        crate::graph::execute::execute_graph(true).await;
+    }
 }
 
 /// ends a transaction from the node editor (a grab was placed)

@@ -362,3 +362,25 @@ fn group_removal() {
     assert_eq!(key(&project).get("groups").map_or(0, |g| g.as_object().unwrap().len()), 0);
     assert_eq!(key(&project)["nodes"], without_group["nodes"]);
 }
+
+// jumping to a row undoes or redoes everything between, the same as stepping there
+#[test]
+fn goto() {
+    let mut project = fixture();
+    let mut history = History::default();
+    let mut states = vec![key(&project)];
+    for x in 1..=4 {
+        record(&mut history, &mut project, Step::new("set_inputs", Source::Ui), |p| p.get_mut("nodes").unwrap()[x]["data"]["inputs"]["n"] = json!(x));
+        states.push(key(&project));
+    }
+    for target in [0, 3, 1, 4, 4, 2] {
+        history.goto(target, &mut project);
+        assert_eq!(history.info().current, target);
+        assert_eq!(key(&project), states[target]);
+    }
+    // a selection only step changes nothing the graph computes
+    history.goto(4, &mut project);
+    record(&mut history, &mut project, Step::new("select", Source::Ui), |p| p.get_mut("nodes").unwrap()[1]["selected"] = json!(true));
+    assert!(!history.goto(4, &mut project));
+    assert!(history.goto(0, &mut project));
+}

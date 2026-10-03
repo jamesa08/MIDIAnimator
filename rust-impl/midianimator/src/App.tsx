@@ -3,16 +3,21 @@ import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
 import { NODE_DROP_EVENT } from "./utils/node";
 import { takeGraph, takeState } from "./utils/graphOps";
-import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, Side, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, screenToClient, withPoppedOut } from "./utils/panels";
+import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, showPanelWindow, withPoppedOut } from "./utils/panels";
+
+// size of a panel's window the first time it opens floating from the window menu
+const FLOATING_WIDTH = 240;
+const FLOATING_HEIGHT = 360;
 
 function App() {
     const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
@@ -127,6 +132,32 @@ function App() {
         // FIXME temporary
         console.log("Frontend state updated:", frontEndState);
     }, [frontEndState]);
+
+    // the window menu opens a closed panel the way it was (floating, or docked on its side) and closes an open one
+    const frontEndRef = useRef(frontEndState);
+    frontEndRef.current = frontEndState;
+    useEffect(() => {
+        const unlisten = getCurrentWebviewWindow().listen<number>(PANEL_TOGGLE_EVENT, async ({ payload: id }) => {
+            const state = frontEndRef.current;
+            const floating = state.panelsPoppedOut.includes(id);
+            if (state.panelsShown.includes(id)) {
+                if (floating) hidePanelWindow(id);
+                setFrontEndState((prev: any) => ({ ...prev, panelsShown: prev.panelsShown.filter((p: number) => p !== id) }));
+                return;
+            }
+            setFrontEndState((prev: any) => ({ ...prev, panelsShown: [...prev.panelsShown, id], sidesHidden: floating ? prev.sidesHidden : prev.sidesHidden.filter((s: Side) => s !== panelSide(prev, id)) }));
+            // the first time it floats, it goes inside the main window's right edge
+            if (floating && !reshowPanelWindow(id)) {
+                const content = document.querySelector(".content")?.getBoundingClientRect();
+                if (!content) return;
+                const { x, y } = await clientToScreen(content.right - FLOATING_WIDTH - 260, content.top + 40);
+                showPanelWindow(id, x, y, FLOATING_WIDTH, FLOATING_HEIGHT);
+            }
+        });
+        return () => {
+            unlisten.then((f) => f());
+        };
+    }, []);
 
     // docked panels float over the canvas in a column on each side, the canvas' own controls move in past them
     const ids = Object.keys(PANELS).map(Number);

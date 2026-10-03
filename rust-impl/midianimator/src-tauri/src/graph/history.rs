@@ -479,6 +479,25 @@ impl History {
         Some(stepped)
     }
 
+    /// undoes or redoes until the first `current` entries are done (the history panel's rows), returns whether any of
+    /// those steps changes what the graph computes
+    pub fn goto(&mut self, current: usize, project: &mut HashMap<String, Value>) -> bool {
+        let mut affects_output = false;
+        while self.done.len() > current {
+            let Some((_, affects)) = self.undo(project) else {
+                break;
+            };
+            affects_output |= affects;
+        }
+        while self.done.len() < current {
+            let Some((_, affects)) = self.redo(project) else {
+                break;
+            };
+            affects_output |= affects;
+        }
+        affects_output
+    }
+
     /// forgets everything (a project was loaded or a new one started)
     pub fn clear(&mut self) {
         self.done.clear();
