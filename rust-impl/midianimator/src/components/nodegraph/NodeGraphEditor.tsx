@@ -6,6 +6,7 @@ import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT, PROJECT_LOADED_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, Project } from "../../utils/groups";
 import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
+import { isTextField } from "../../utils/editMenu";
 import { nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas from "./NodeGraphCanvas";
@@ -95,21 +96,21 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // edits in a read-only graph (an unedited built-in group) don't happen
     const canEdit = useCallback(() => editable, [editable]);
 
-    // sends ops to the backend, a failed one changed nothing
-    const apply = useCallback(
-        async (list: Op[], options: ApplyOptions = {}) => {
-            inFlightRef.current++;
-            try {
-                return await ops.apply(list, options);
-            } catch (e) {
-                console.error(`${list.map((o) => o.op).join(", ")}: ${e}`);
-                return null;
-            } finally {
-                inFlightRef.current--;
-            }
-        },
-        [ops]
-    );
+    // an edit on its way to the backend, a failed one changed nothing
+    const track = useCallback(async <T,>(label: string, run: () => Promise<T>) => {
+        inFlightRef.current++;
+        try {
+            return await run();
+        } catch (e) {
+            console.error(`${label}: ${e}`);
+            return null;
+        } finally {
+            inFlightRef.current--;
+        }
+    }, []);
+
+    // sends ops to the backend
+    const apply = useCallback((list: Op[], options: ApplyOptions = {}) => track(list.map((o) => o.op).join(", "), () => ops.apply(list, options)), [ops, track]);
 
     // MARK: - Selection
 
@@ -280,6 +281,57 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             window.removeEventListener("click", handleSwallow, true);
         };
     }, []);
+
+    // MARK: - Clipboard
+
+    // copy, cut and paste (the edit menu or its shortcuts) arrive as the page's clipboard events, never as keys (both fire).
+    // a text field, or text selected on the page, keeps its own. the graph's go to the backend, which uses the system clipboard
+    const lastPasteRef = useRef<{ x: number; y: number; count: number } | null>(null);
+    useEffect(() => {
+        const ownsClipboard = () => shownRef.current && !isTextField(document.activeElement) && !window.getSelection()?.toString();
+
+        const handleCopy = (event: ClipboardEvent) => {
+            const nodes = selectedIds(getNodes());
+            if (!ownsClipboard() || nodes.length === 0) return;
+            event.preventDefault();
+            ops.copy(nodes).catch((e) => console.error(`copy: ${e}`));
+        };
+
+        const handleCut = (event: ClipboardEvent) => {
+            const nodes = selectedIds(getNodes());
+            const edges = selectedIds(getEdges());
+            if (!ownsClipboard() || !canEdit() || (nodes.length === 0 && edges.length === 0)) return;
+            event.preventDefault();
+            track("cut", () => ops.cut(nodes, edges));
+        };
+
+        // under the cursor when it's over the graph, otherwise in the middle of the view. pasting again without moving
+        // the cursor steps each paste down and to the right
+        const handlePaste = (event: ClipboardEvent) => {
+            const rect = store.getState().domNode?.getBoundingClientRect();
+            if (!ownsClipboard() || !canEdit() || !rect) return;
+            event.preventDefault();
+            const { x, y } = mousePositionRef.current;
+            const over = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+            const at = screenToFlowPosition(over ? { x, y } : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, { snapToGrid: false });
+            const last = lastPasteRef.current;
+            const count = last && Math.abs(last.x - at.x) < 1 && Math.abs(last.y - at.y) < 1 ? last.count + 1 : 0;
+            lastPasteRef.current = { ...at, count };
+            track("paste", () => ops.paste({ x: at.x + 20 * count, y: at.y + 20 * count }));
+        };
+
+        // webkit enables the edit menu's copy, cut and paste for a page that claims these. copied nodes aren't text, so
+        // without it paste stays off
+        const claim = (event: Event) => {
+            if (ownsClipboard() && (event.type !== "beforecopy" || selectedIds(getNodes()).length > 0)) event.preventDefault();
+        };
+
+        const listeners = { copy: handleCopy, cut: handleCut, paste: handlePaste, beforecopy: claim, beforecut: claim, beforepaste: claim } as Record<string, (event: any) => void>;
+        for (const [type, listener] of Object.entries(listeners)) document.addEventListener(type, listener);
+        return () => {
+            for (const [type, listener] of Object.entries(listeners)) document.removeEventListener(type, listener);
+        };
+    }, [getNodes, getEdges, canEdit, ops, track, store, screenToFlowPosition]);
 
     // MARK: - Groups
 

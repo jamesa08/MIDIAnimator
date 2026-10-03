@@ -37,6 +37,7 @@ rmcp = { version = "3.4", features = ["server", "macros", "transport-streamable-
 axum = "0.8"
 base64 = "0.22"
 schemars = "1"
+clipboard-rs = { version = "0.3", default-features = false }
 
 # window screenshots, linux uses the webview's own snapshot instead (xcap needs pipewire there)
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]

@@ -15,6 +15,8 @@ export type Op =
     | { op: "resize"; node: string; width: number; height: number; position: XY }
     | { op: "select"; nodes: string[]; edges: string[] }
     | { op: "duplicate"; nodes: string[]; offset: XY }
+    | { op: "paste"; text: string; position: XY }
+    | { op: "cut"; nodes?: string[]; edges?: string[] }
     | { op: "group"; nodes: string[]; widths: Record<string, number> }
     | { op: "ungroup"; nodes: string[] }
     | { op: "rename_socket"; side: "inputs" | "outputs"; id: string; name: string }
@@ -43,21 +45,25 @@ export function takeState(state: any, next: any): any {
 }
 
 // applies ops to the graph `scope` (a group id, null for the top level), see graph_apply in src-tauri/src/state/graph.rs.
-// the graph that comes back is taken right away, so it's there when the promise resolves
+// copy, cut and paste use the system clipboard from the backend. the graph that comes back is taken right away, so it's
+// there when the promise resolves
 export function useGraphOps(scope: string | null) {
     const { setBackEndState } = useStateContext();
-    return useMemo(
-        () => ({
-            apply: async (ops: Op[], options: ApplyOptions = {}): Promise<Applied> => {
-                const applied = await invoke<Applied>("graph_apply", { scope, ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true });
-                setBackEndState((s: any) => takeGraph(s, applied));
-                return applied;
-            },
+    return useMemo(() => {
+        const edit = async (command: string, args: Record<string, any>): Promise<Applied> => {
+            const applied = await invoke<Applied>(command, { scope, ...args });
+            setBackEndState((s: any) => takeGraph(s, applied));
+            return applied;
+        };
+        return {
+            apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true }),
+            copy: (nodes: string[]) => invoke("graph_copy", { scope, nodes }),
+            cut: (nodes: string[], edges: string[]) => edit("graph_cut", { nodes, edges }),
+            paste: (position: XY) => edit("graph_paste", { position }),
             end: (txn: string) => invoke("history_end", { txn }),
             cancel: (txn: string) => invoke("history_cancel", { txn }),
-        }),
-        [scope, setBackEndState]
-    );
+        };
+    }, [scope, setBackEndState]);
 }
 
 // sets values on a node's inputs (`null` unsets one), for node components. nothing happens in a graph that can't be edited

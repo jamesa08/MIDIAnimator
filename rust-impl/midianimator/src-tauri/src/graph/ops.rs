@@ -17,7 +17,7 @@ const ZONE_WIDTH: f64 = 450.0;
 /// width of a node that hasn't been measured, for laying out a new group
 const NODE_WIDTH: f64 = 200.0;
 /// node fields only the UI uses, left out of nodes moved into a new group
-const UI_KEYS: &[&str] = &["selected", "dragging", "measured", "resizing"];
+pub(super) const UI_KEYS: &[&str] = &["selected", "dragging", "measured", "resizing"];
 
 /// a node to add: its type, data and where it goes. a group node is type `group` with `data.group_id`
 #[derive(Deserialize, Debug, Clone)]
@@ -85,6 +85,18 @@ pub enum Op {
         nodes: Vec<String>,
         offset: Position,
     },
+    /// adds nodes copied as text (`graph::clipboard`) centered on `position`, the pasted nodes become the selection
+    Paste {
+        text: String,
+        position: Position,
+    },
+    /// removes nodes and edges like `Delete`, once they're copied
+    Cut {
+        #[serde(default)]
+        nodes: Vec<String>,
+        #[serde(default)]
+        edges: Vec<String>,
+    },
     /// moves nodes into a new group, a group node takes their place. `widths` are the nodes' drawn widths, for the layout
     Group {
         nodes: Vec<String>,
@@ -143,6 +155,12 @@ impl Op {
             Op::Duplicate {
                 ..
             } => "duplicate",
+            Op::Paste {
+                ..
+            } => "paste",
+            Op::Cut {
+                ..
+            } => "cut",
             Op::Group {
                 ..
             } => "group",
@@ -221,6 +239,10 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
         Op::Delete {
             nodes,
             edges,
+        }
+        | Op::Cut {
+            nodes,
+            edges,
         } => {
             delete(target(project, scope)?, nodes, edges);
             Ok(())
@@ -270,6 +292,10 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
             nodes,
             offset,
         } => duplicate(target(project, scope)?, nodes, offset, added),
+        Op::Paste {
+            text,
+            position,
+        } => super::clipboard::paste(project, scope, ctx.specs, text, position, added),
         Op::Group {
             nodes,
             widths,
@@ -294,7 +320,7 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
 // MARK: - Helpers
 
 /// the graph `scope` names: the top level, or one of the project's own groups. a built-in group is read-only until it's made local
-fn target<'a>(project: &'a mut Graph, scope: Option<&str>) -> Result<&'a mut Graph, String> {
+pub(super) fn target<'a>(project: &'a mut Graph, scope: Option<&str>) -> Result<&'a mut Graph, String> {
     match scope {
         None => Ok(project),
         Some(id) => match project.groups.get_mut(id) {
@@ -320,7 +346,7 @@ fn set_selected(extra: &mut Map<String, Value>, selected: bool) {
 }
 
 /// selects exactly these nodes and edges
-fn select(graph: &mut Graph, nodes: &HashSet<&str>, edges: &HashSet<&str>) {
+pub(super) fn select(graph: &mut Graph, nodes: &HashSet<&str>, edges: &HashSet<&str>) {
     for node in &mut graph.nodes {
         set_selected(&mut node.extra, nodes.contains(node.id.as_str()));
     }
@@ -330,7 +356,7 @@ fn select(graph: &mut Graph, nodes: &HashSet<&str>, edges: &HashSet<&str>) {
 }
 
 /// what new ids for a node start with: group nodes are named after their group (`evaluate_instrument-2`)
-fn id_prefix(node: &RfNode) -> &str {
+pub(super) fn id_prefix(node: &RfNode) -> &str {
     match node.data.get("group_id").and_then(Value::as_str) {
         Some(group_id) if node.node_type == GROUP => group_id,
         _ => node.resolved_node_type(),
@@ -345,12 +371,12 @@ fn next_free_id<'a>(taken: impl Iterator<Item = &'a str>, prefix: &str) -> Strin
 }
 
 /// the node's zone partner, the other end of a for each zone
-fn zone_of(node: &RfNode) -> Option<&str> {
+pub(super) fn zone_of(node: &RfNode) -> Option<&str> {
     node.data.get("zone").and_then(Value::as_str)
 }
 
 /// the ids plus the other end of every zone among them, half a zone can't run
-fn with_zone_partners(graph: &Graph, ids: &[String]) -> HashSet<String> {
+pub(super) fn with_zone_partners(graph: &Graph, ids: &[String]) -> HashSet<String> {
     let mut all: HashSet<String> = ids.iter().cloned().collect();
     for node in &graph.nodes {
         if all.contains(&node.id) {

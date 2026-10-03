@@ -16,6 +16,8 @@ const LABELS: Record<string, string> = {
     resize: "Resize",
     select: "Select",
     duplicate: "Duplicate",
+    paste: "Paste",
+    cut: "Cut",
     group: "Group",
     ungroup: "Ungroup",
     rename_socket: "Rename Socket",
