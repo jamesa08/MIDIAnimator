@@ -49,7 +49,7 @@ update_state();  // MUST call update_state() to keep front & backend state synch
 
 Dropping the state is crucial to prevent deadlocks. A deadlock can occur when one part of the application is accessing the state while another part is trying to acquire the state lock. By dropping the state after reading or writing, you release the lock, allowing other parts of the application to access the state without getting stuck in a deadlock. `clone()` parts of the state if you need multiple parts of the application to access state. _One at a time, please!_
 
-## Frontend: TypeScript /contexts/StateContext.tsx & `js_update_state`
+## Frontend: TypeScript /contexts/StateContext.tsx
 
 Reading state from the front end is quite simple. The entire `<App>` component is wrapped in a `<StateContextProvider>`, which provides global state across the entire application.
 
@@ -63,60 +63,31 @@ To read the state, you must import the `useStateContext` hook from `/contexts/St
 import { useStateContext } from "../contexts/StateContext";
 
 function MyCustomComponent() {
-    const { backendState, setBackEndState } = useStateContext();
-    return <p>{backendState}</p>;
+    const { backEndState, setBackEndState } = useStateContext();
+    return <p>{backEndState}</p>;
 }
 ```
 
 ### Writing to the State
 
-In order to write to the state, first, you must make your changes to a new object. For instance:
+The front end never writes the backend state directly. The node graph (`rf_instance`) is changed with ops, every one is
+an undo step (see `graph/ops.rs`, `graph_apply` in `state/graph.rs` and `src/utils/graphOps.ts`):
 
 ```tsx
-const newState = { ...backendState, ready: true };
-setBackendState(newState);
+import { useGraphOps, useSetInputs } from "../utils/graphOps";
+
+// in the node editor, `scope` is the open group's id (null at the top level)
+const { apply } = useGraphOps(scope);
+apply([{ op: "connect", from_node: "get_midi_file-1", from_output: "tracks", to_node: "get_midi_track_data-1", to_input: "tracks" }]);
+
+// in a node component
+const setInputs = useSetInputs();
+setInputs(id, { track_name: "Piano" });
 ```
 
-writes the backendState to a new object. This is so we can pass the updated state to the backend, where it can be processed.
-
-In order to write to the backend, we must invoke Tauri with the custom function `js_update_state` & the single paramter `state`.
-
-#### Example
-
-```tsx
-import { invoke } from "@tauri-apps/api/tauri";
-
-invoke("js_update_state", {"state", JSON.stringify(newState)});
-```
-
-This will send the newly updated state to the backend, which only takes the node graph (`rf_instance`) from it. Everything else (scene data, executed results, connection info) is owned by the backend and ignored, so a stale front end copy can't revert it. Prefer `js_update_graph` for graph changes. It will not send a subsequent update to the front end, so you must set the state with `setBackendState()`.
-
-#### Full example
-
-```tsx
-import { useCallback } from "react";
-import { invoke } from "@tauri-apps/api/tauri";
-import { useStateContext } from "../contexts/StateContext";
-
-function MyCustomComponent() {
-    const { backEndState, setBackEndState } = useStateContext();
-
-    const toggleConnected = useCallback(() => {
-        let newState = { ...backEndState, connected: !backEndState.connected };
-        setBackEndState(newState);
-        invoke("js_update_state", { state: JSON.stringify(newState) });
-    }, [backEndState]);
-
-    return (
-        <>
-            <p>State object: {JSON.stringify(backEndState)}</p>
-            <button onClick={toggleConnected}>Toggle Connected</button>
-        </>
-    );
-}
-
-export default MyCustomComponent;
-```
+The backend sends the new graph back (`graph_changed`, with `graph_rev`, which only goes up so an older graph never
+replaces a newer one). Everything else (scene data, executed results, connection info) is owned by the backend and
+changed through its own commands.
 
 ## Word of Warning
-On app initalization, I am waiting for the entire App component to be rendered to send an update to the backend to retrieve the entire state object. This is the `ready` key in the state object. If your component is initalizing before the state is ready, you will get errors. You must ensure you have the updated state when `state.ready == True`. Once that is true, you are okay to modify the state. 
+On app initalization, I am waiting for the entire App component to be rendered to send an update to the backend to retrieve the entire state object. This is the `ready` key in the state object. If your component is initalizing before the state is ready, you will get errors. You must ensure you have the updated state when `state.ready == True`. Once that is true, you are okay to modify the state.

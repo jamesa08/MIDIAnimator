@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use tauri::Emitter;
 
-use super::{update_state, AppState, STATE, WINDOW};
+use super::{push_graph, AppState, STATE, WINDOW};
 use crate::graph::history::{Diff, EntryInfo, History, HistoryInfo, Step};
 
 /// sent to every window when the history changes, payload `HistoryInfo`
@@ -21,8 +21,8 @@ lazy_static! {
 pub enum Capture {
     /// an undo step (or part of one, see `Step`)
     Record(Step),
-    /// changes the graph without an undo step: values filled in automatically, migrations
-    Ambient,
+    /// changes the graph without committing it to history (no undo step): values filled in automatically, the viewport
+    Skip,
 }
 
 // a panic while holding the lock still leaves a usable history
@@ -37,13 +37,16 @@ fn notify(info: HistoryInfo) {
     }
 }
 
-/// replaces the project graph and records the change. call with the state locked, and send the state to the frontend after
-pub fn commit(state: &mut AppState, rf_instance: HashMap<String, Value>, capture: Capture) {
+/// replaces the project graph and records the change, returns whether it changes what the graph computes.
+/// call with the state locked, and send the graph to the frontend after
+pub fn commit(state: &mut AppState, rf_instance: HashMap<String, Value>, capture: Capture) -> bool {
     let before = std::mem::replace(&mut state.rf_instance, rf_instance);
-    let Capture::Record(step) = capture else {
-        return;
-    };
+    state.graph_rev += 1;
     let diff = Diff::between(&before, &state.rf_instance);
+    let affects_output = diff.affects_output();
+    let Capture::Record(step) = capture else {
+        return affects_output;
+    };
     let info = {
         let mut history = lock();
         history.record(diff, step).then(|| history.info())
@@ -51,6 +54,7 @@ pub fn commit(state: &mut AppState, rf_instance: HashMap<String, Value>, capture
     if let Some(info) = info {
         notify(info);
     }
+    affects_output
 }
 
 /// ends a transaction, see `Step::txn`
@@ -63,37 +67,42 @@ pub fn end(txn: &str) {
     notify(info);
 }
 
-/// cancels a transaction, its changes are undone. sends the state to the frontend if anything changed
+/// cancels a transaction, its changes are undone. sends the graph to the frontend if anything changed
 pub fn cancel(txn: &str) -> bool {
     let cancelled = {
         let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
         let mut history = lock();
-        history.cancel(txn, &mut state.rf_instance).then(|| history.info())
+        let cancelled = history.cancel(txn, &mut state.rf_instance);
+        if cancelled {
+            state.graph_rev += 1;
+        }
+        cancelled.then(|| history.info())
     };
     let Some(info) = cancelled else {
         return false;
     };
-    update_state();
+    push_graph();
     notify(info);
     true
 }
 
-/// undoes (or redoes) one step and sends the new graph to the frontend. returns the step and whether execution is paused,
-/// the caller re-runs the realtime graph
+/// undoes (or redoes) one step and sends the new graph to the frontend. returns the step and whether the realtime graph
+/// should re-run (it changed what the graph computes and execution isn't paused), the caller re-runs it
 pub fn step(redo: bool) -> Option<(EntryInfo, bool)> {
-    let (entry, paused, info) = {
+    let (entry, run, info) = {
         let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
         let mut history = lock();
-        let entry = if redo {
+        let (entry, affects_output) = if redo {
             history.redo(&mut state.rf_instance)
         } else {
             history.undo(&mut state.rf_instance)
         }?;
-        (entry, state.execution_paused, history.info())
+        state.graph_rev += 1;
+        (entry, affects_output && !state.execution_paused, history.info())
     };
-    update_state();
+    push_graph();
     notify(info);
-    Some((entry, paused))
+    Some((entry, run))
 }
 
 /// forgets the history (a project was loaded or a new one started)
@@ -130,9 +139,23 @@ pub fn get_history() -> HistoryInfo {
     info()
 }
 
+/// ends a transaction from the node editor (a grab was placed)
+#[tauri::command]
+pub fn history_end(txn: String) {
+    end(&txn);
+}
+
+/// cancels a transaction from the node editor (a grab was cancelled), what it did is undone
+#[tauri::command]
+pub async fn history_cancel(txn: String) {
+    if cancel(&txn) && !STATE.lock().unwrap_or_else(PoisonError::into_inner).execution_paused {
+        crate::graph::execute::execute_graph(true).await;
+    }
+}
+
 async fn run_step(redo: bool) -> Option<EntryInfo> {
-    let (entry, paused) = step(redo)?;
-    if !paused {
+    let (entry, run) = step(redo)?;
+    if run {
         crate::graph::execute::execute_graph(true).await;
     }
     Some(entry)

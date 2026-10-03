@@ -10,10 +10,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub const DEFAULT_LIMIT: usize = 100;
 
 /// node fields only the UI cares about, never recorded and left as they are when a record is put back.
-/// selection isn't recorded yet, the frontend doesn't send it with every change
-const UI_NODE_KEYS: &[&str] = &["selected", "dragging", "measured", "resizing"];
+/// selection is recorded, selecting is an undo step like in blender
+const UI_NODE_KEYS: &[&str] = &["dragging", "measured", "resizing"];
 /// edge fields only the UI cares about
-const UI_EDGE_KEYS: &[&str] = &["selected"];
+const UI_EDGE_KEYS: &[&str] = &[];
+/// node and edge fields that change how the graph looks but not what it computes
+const LAYOUT_KEYS: &[&str] = &["position", "selected", "width", "height"];
 /// fields of a graph that aren't part of its own record: its nodes, edges and groups are records of their own,
 /// and the viewport (where the graph is looked at) is never recorded
 const GRAPH_KEYS: &[&str] = &["nodes", "edges", "groups", "viewport"];
@@ -57,9 +59,9 @@ impl Key {
     }
 }
 
-/// `object` without `keys`
+/// `object` without `keys`. not selected and no `selected` are the same
 fn without(object: &Map<String, Value>, keys: &[&str]) -> Value {
-    Value::Object(object.iter().filter(|(k, _)| !keys.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect())
+    Value::Object(object.iter().filter(|(k, v)| !keys.contains(&k.as_str()) && !(k.as_str() == "selected" && **v == Value::Bool(false))).map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
 /// every record in a project with its place in its list
@@ -72,7 +74,7 @@ fn records(project: &Map<String, Value>) -> BTreeMap<Key, (Value, usize)> {
     };
 
     // the nodes and edges of one graph, ones without an id can't be told apart and are left out
-    let mut graph_records = |graph: &Map<String, Value>, scope: Option<&String>, out: &mut BTreeMap<Key, (Value, usize)>| {
+    let graph_records = |graph: &Map<String, Value>, scope: Option<&String>, out: &mut BTreeMap<Key, (Value, usize)>| {
         for (kind, list) in [(Kind::Node, "nodes"), (Kind::Edge, "edges")] {
             let items = graph.get(list).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
             for (at, item) in items.iter().enumerate() {
@@ -245,6 +247,15 @@ impl Diff {
             }
         }
         self.0.retain(|c| c.before != c.after);
+    }
+
+    /// true if the change can change what the graph computes, not only where things are or what's selected
+    pub fn affects_output(&self) -> bool {
+        let layout_only = |c: &Change| match (&c.before, &c.after) {
+            (Some(Value::Object(before)), Some(Value::Object(after))) if matches!(c.key.kind, Kind::Node | Kind::Edge) => without(before, LAYOUT_KEYS) == without(after, LAYOUT_KEYS),
+            _ => false,
+        };
+        !self.0.iter().all(layout_only)
     }
 
     /// ids of the nodes this change touched, by the group they're in (`None` at the top level)
@@ -448,24 +459,24 @@ impl History {
         true
     }
 
-    /// undoes the newest entry, returns it
-    pub fn undo(&mut self, project: &mut HashMap<String, Value>) -> Option<EntryInfo> {
+    /// undoes the newest entry, returns it and whether it changes what the graph computes
+    pub fn undo(&mut self, project: &mut HashMap<String, Value>) -> Option<(EntryInfo, bool)> {
         self.end_open();
         let entry = self.done.pop()?;
         entry.diff.apply(project, false);
-        let info = entry.info();
+        let stepped = (entry.info(), entry.diff.affects_output());
         self.undone.push(entry);
-        Some(info)
+        Some(stepped)
     }
 
-    /// redoes the newest undone entry, returns it
-    pub fn redo(&mut self, project: &mut HashMap<String, Value>) -> Option<EntryInfo> {
+    /// redoes the newest undone entry, returns it and whether it changes what the graph computes
+    pub fn redo(&mut self, project: &mut HashMap<String, Value>) -> Option<(EntryInfo, bool)> {
         self.end_open();
         let entry = self.undone.pop()?;
         entry.diff.apply(project, true);
-        let info = entry.info();
+        let stepped = (entry.info(), entry.diff.affects_output());
         self.done.push(entry);
-        Some(info)
+        Some(stepped)
     }
 
     /// forgets everything (a project was loaded or a new one started)

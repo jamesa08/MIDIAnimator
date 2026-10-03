@@ -2,13 +2,14 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::sync::Arc;
+use std::sync::PoisonError;
 use std::{collections::HashMap, sync::Mutex};
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::graph::history::{Source, Step};
 use crate::scene_generics::Scene;
 
+pub mod graph;
 pub mod history;
 
 lazy_static! {
@@ -49,6 +50,9 @@ pub struct AppState {
     /// path of the node group open in the editor (`group-1/group-2`), empty at the top level
     #[serde(default)]
     pub open_group: String,
+    /// goes up every time `rf_instance` changes, so the frontend can tell an older graph from a newer one
+    #[serde(default)]
+    pub graph_rev: u64,
 
     // new tab instance structure
     pub instances: HashMap<String, InstanceState>,
@@ -99,6 +103,7 @@ impl Default for AppState {
             connected_version: "".to_string(),
             connected_file_name: "".to_string(),
             open_group: "".to_string(),
+            graph_rev: 0,
             scene_data: HashMap::new(),
             pending_scene_data: None,
             rf_instance: HashMap::new(),
@@ -125,21 +130,6 @@ pub fn ready() -> AppState {
     let mut state = STATE.lock().unwrap();
     state.ready = true;
     return state.clone();
-}
-
-/// this command can be called from the front end to update changes to the state from the front end
-/// you can use this by calling `window.tauri.invoke('js_update_state', {state: JSON.stringify(your_new_state_objet)})`
-/// only the fields the front end owns (the node graph, `rf_instance`) are taken, the rest of the state
-/// (scene data from Blender, executed results, connection info) belongs to the backend, and a stale
-/// front end copy would revert it. prefer `js_update_graph`
-#[tauri::command]
-pub fn js_update_state(state: String) {
-    println!("FRONTEND STATE UPDATE");
-    let rf_instance = serde_json::from_str::<serde_json::Value>(&state).ok().and_then(|mut state| state.get_mut("rf_instance").map(serde_json::Value::take));
-    match rf_instance {
-        Some(rf_instance) => js_update_graph(rf_instance.to_string(), None),
-        None => eprintln!("js_update_state: no rf_instance in the state, ignored"),
-    }
 }
 
 #[tauri::command]
@@ -174,25 +164,32 @@ pub struct SavedProject {
     pub rf_instance: HashMap<String, serde_json::Value>,
 }
 
-/// this command only replaces the node graph (`rf_instance`) in the backend state
-/// the front end uses this instead of `js_update_state` so its (possibly stale) copy of the
-/// rest of the state, like `executed_results`, doesn't overwrite the backend's.
-/// `clean` marks the graph as saved, sent once with the starting graph
-#[tauri::command]
-pub fn js_update_graph(rf_instance: String, clean: Option<bool>) {
-    println!("FRONTEND GRAPH UPDATE");
-    // parse the graph and swap it in, a bad graph is just logged and ignored
-    match serde_json::from_str::<HashMap<String, serde_json::Value>>(&rf_instance) {
-        // the starting graph has nothing to undo, every later one is an undo step
-        Ok(rf_instance) if clean == Some(true) => STATE.lock().unwrap().rf_instance = rf_instance,
-        Ok(rf_instance) => history::commit(&mut STATE.lock().unwrap(), rf_instance, history::Capture::Record(Step::new("edit", Source::Ui))),
-        Err(e) => eprintln!("js_update_graph: could not parse rf_instance: {}", e),
-    }
-    if clean == Some(true) {
-        history::clear();
-        mark_saved();
+/// sends the node graph to every window ("graph_changed"), lighter than `update_state` for edits that only change the graph.
+/// call without holding the state or window locks
+pub fn push_graph() {
+    let payload = {
+        let state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+        serde_json::json!({ "graph_rev": state.graph_rev, "rf_instance": state.rf_instance })
+    };
+    if let Some(window) = WINDOW.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
+        window.emit("graph_changed", payload).ok();
     }
     notify_project_status();
+}
+
+/// starts a new project with an empty graph, nothing to save and nothing to undo. returns the graph's revision
+#[tauri::command]
+pub fn new_project() -> u64 {
+    let rev = {
+        let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+        state.rf_instance = HashMap::from([("nodes".to_string(), serde_json::json!([])), ("edges".to_string(), serde_json::json!([])), ("viewport".to_string(), serde_json::json!({ "x": 0, "y": 0, "zoom": 1 }))]);
+        state.graph_rev += 1;
+        state.graph_rev
+    };
+    history::clear();
+    mark_saved();
+    notify_project_status();
+    rev
 }
 
 /// the parts of a graph that get saved, selection, drag state, measured sizes and the viewport are UI only
@@ -236,14 +233,14 @@ fn strip_groups(mut groups: serde_json::Value) -> serde_json::Value {
     groups
 }
 
-/// updates a graph saved by an older version, see `graph::builtin::migrate`
+/// updates a graph saved by an older version, see `graph::builtin::migrate`. the graph is always written back the way
+/// `Graph` writes it (`0` positions become `0.0`), so the first edit after loading doesn't also show up as those changes
 pub fn migrate_rf_instance(rf_instance: &mut HashMap<String, serde_json::Value>) {
     let Ok(mut graph) = crate::graph::model::Graph::from_rf(rf_instance) else {
         return;
     };
-    if crate::graph::builtin::migrate(&mut graph) {
-        *rf_instance = graph.to_rf();
-    }
+    crate::graph::builtin::migrate(&mut graph);
+    *rf_instance = graph.to_rf();
 }
 
 /// the frontend opened a node group (or went back out), the groups on that path record their insides so they show values
@@ -392,6 +389,7 @@ pub fn load_project_from(path: &str) -> Result<AppState, String> {
         let mut state = STATE.lock().unwrap();
         state.scene_data = saved_data.scene_data;
         state.rf_instance = saved_data.rf_instance;
+        state.graph_rev += 1;
 
         // pause execution if connected so the scene changes can be reviewed first
         if state.connected {

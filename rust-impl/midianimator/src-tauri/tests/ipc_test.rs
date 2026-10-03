@@ -3,7 +3,7 @@
 use serde_json::json;
 use std::sync::Mutex;
 use MIDIAnimator::ipc::{apply_scene_update, take_messages, Message};
-use MIDIAnimator::state::{js_update_state, AppState, STATE};
+use MIDIAnimator::state::{AppState, STATE};
 
 // the tests share the global state, so they run one at a time
 static STATE_TEST: Mutex<()> = Mutex::new(());
@@ -115,23 +115,4 @@ fn scene_update_rejects_bad_scene() {
     *STATE.lock().unwrap() = AppState::default();
     assert!(apply_scene_update(r#"{"Scene": {"object_groups": 5}}"#).is_err());
     assert!(STATE.lock().unwrap().scene_data.is_empty());
-}
-
-#[test]
-fn frontend_state_push_keeps_scene_data() {
-    let _guard = lock_test();
-    *STATE.lock().unwrap() = AppState::default();
-
-    // the front end's copy is from before the scene update
-    let stale = STATE.lock().unwrap().clone();
-    apply_scene_update(&scene_json(&["Pianos", "Drums"], 1)).unwrap();
-
-    let mut pushed = serde_json::to_value(&stale).unwrap();
-    pushed["rf_instance"] = json!({"nodes": [{"id": "a"}], "edges": []});
-    js_update_state(pushed.to_string());
-
-    // the graph is taken, the stale scene data isn't
-    let state = STATE.lock().unwrap();
-    assert_eq!(state.rf_instance["nodes"], json!([{"id": "a"}]));
-    assert_eq!(state.scene_data["Scene"].object_groups.len(), 2);
 }

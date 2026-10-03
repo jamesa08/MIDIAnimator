@@ -241,18 +241,23 @@ fn new_edit_drops_redo() {
     assert!(history.redo(&mut project).is_none());
 }
 
-// the viewport and UI only fields aren't steps, and putting a record back keeps the UI fields it has now
+// the viewport and UI only fields aren't steps, selecting is. putting a record back keeps the UI fields it has now
 #[test]
 fn ui_fields_are_not_recorded() {
     let mut project = fixture();
     let mut history = History::default();
 
-    // panning and selecting change nothing that's recorded
-    let recorded = record(&mut history, &mut project, Step::new("edit", Source::Ui), |p| {
+    // panning and measuring change nothing that's recorded
+    let recorded = record(&mut history, &mut project, Step::new("viewport", Source::Ui), |p| {
         p.insert("viewport".to_string(), json!({ "x": 50, "y": 20, "zoom": 2 }));
-        p.get_mut("nodes").unwrap()[0]["selected"] = json!(true);
+        p.get_mut("nodes").unwrap()[1]["measured"] = json!({ "width": 3, "height": 4 });
     });
     assert!(!recorded);
+    // selecting is a step, not selected and no `selected` are the same
+    assert!(record(&mut history, &mut project, Step::new("select", Source::Ui), |p| p.get_mut("nodes").unwrap()[1]["selected"] = json!(true)));
+    assert!(!record(&mut history, &mut project, Step::new("select", Source::Ui), |p| p.get_mut("nodes").unwrap()[2]["selected"] = json!(false)));
+    history.undo(&mut project);
+    assert!(project["nodes"][1].get("selected").is_none());
 
     // move a node, then the UI measures it again, undo keeps the new size
     record(&mut history, &mut project, Step::new("move", Source::Ui), |p| p.get_mut("nodes").unwrap()[0]["position"]["x"] = json!(-500.0));
