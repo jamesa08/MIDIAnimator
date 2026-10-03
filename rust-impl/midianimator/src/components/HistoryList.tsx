@@ -54,14 +54,14 @@ function HistoryList() {
     const rows = [{ key: "original", label: ORIGINAL, detail: "" }, ...history.entries.map((entry) => ({ key: String(entry.id), label: LABELS[entry.op] ?? entry.op, detail: entry.source === "ui" ? entry.detail : "" }))];
 
     return (
-        <div className="font-[Arial,sans-serif] text-sm py-1">
+        <div className="font-[Arial,sans-serif] text-xs p-1">
             {rows.map((row, i) => {
                 const current = i === history.current;
                 const undone = i > history.current;
                 return (
-                    <div key={row.key} ref={current ? currentRef : undefined} className={`h-6 px-2 flex items-center whitespace-nowrap ${current ? "bg-black text-white" : `hover:bg-zinc-100 ${undone ? "text-zinc-400" : ""}`}`} onClick={() => invoke("history_goto", { current: i })}>
+                    <div key={row.key} ref={current ? currentRef : undefined} className={`h-5 px-1.5 flex items-center whitespace-nowrap ${current ? "bg-black text-white" : `hover:bg-zinc-100 ${undone ? "text-zinc-400" : ""}`}`} onClick={() => invoke("history_goto", { current: i })}>
                         <span className="flex-none">{row.label}</span>
-                        {row.detail && <span className="ml-2 min-w-0 truncate text-zinc-400">{row.detail}</span>}
+                        {row.detail && <span className="ml-1.5 min-w-0 truncate text-zinc-400">{row.detail}</span>}
                     </div>
                 );
             })}
