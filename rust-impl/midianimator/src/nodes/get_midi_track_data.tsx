@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { useReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
+import { useSetInputs } from "../utils/graphOps";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const { updateNodeData } = useReactFlow();
+    const setInputs = useSetInputs();
     const [nodeData, setNodeData] = useState<any | null>(null);
     const { backEndState: state } = useStateContext();
 
@@ -22,17 +22,17 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
     // the track name that is currently set on the node
     const selectedTrackName: string = data.inputs?.track_name ?? "";
 
-    // only pick a track automatically when none is set or the set one doesn't exist in the tracks
+    // only pick a track automatically when none is set or the set one doesn't exist in the tracks, not an undo step.
     // the names are joined in the deps so this only re-runs when the track list actually changes
     useEffect(() => {
         if (trackNames.length > 0 && !trackNames.includes(selectedTrackName)) {
-            updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: trackNames[0] } });
+            setInputs(id, { track_name: trackNames[0] }, { commitToHistory: false });
         }
     }, [trackNames.join("\n"), selectedTrackName]);
 
     const trackNameComponent = (
         <>
-            <select className="node-field nodrag nopan" value={selectedTrackName} onChange={(event) => updateNodeData(id, { ...data, inputs: { ...data.inputs, track_name: event.target.value } })}>
+            <select className="node-field nodrag nopan" value={selectedTrackName} onChange={(event) => setInputs(id, { track_name: event.target.value })}>
                 {trackNames.length > 0 ? (
                     trackNames.map((track, index) => (
                         <option key={index} value={track}>

@@ -11,6 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
 import { NODE_DROP_EVENT } from "./utils/node";
+import { takeGraph, takeState } from "./utils/graphOps";
 import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, ensureDragGhostWindow, hidePanelWindow, inDockZone, screenToClient, withPoppedOut } from "./utils/panels";
 
 function App() {
@@ -20,8 +21,12 @@ function App() {
         invoke("log", { message: "App mounted, starting initialization..." });
         invoke("splash_progress", { message: "Initializing..." });
         invoke("splash_progress", { message: "Setting up state listeners..." });
+        // a graph older than the one shown (an edit came back first) isn't taken
         const stateListner = listen("update_state", (event: any) => {
-            setBackEndState(event.payload);
+            setBackEndState((s: any) => takeState(s, event.payload));
+        });
+        const graphListener = listen("graph_changed", (event: any) => {
+            setBackEndState((s: any) => takeGraph(s, event.payload));
         });
 
         const executionRunner = listen("execute_function", (event: any) => {
@@ -40,6 +45,7 @@ function App() {
 
         return () => {
             stateListner.then((f) => f());
+            graphListener.then((f) => f());
             executionRunner.then((f) => f());
         };
     }, []);

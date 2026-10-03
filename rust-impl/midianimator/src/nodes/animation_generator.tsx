@@ -4,7 +4,7 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
-import { useReactFlow } from "@xyflow/react";
+import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
@@ -20,7 +20,7 @@ const overlapModes = [
 ];
 
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const { updateNodeData } = useReactFlow();
+    const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const [nodeData, setNodeData] = useState<any | null>(null);
@@ -45,33 +45,24 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     }, [data.inputs?.overlap_blend]);
 
     const handleUpdate = useCallback(() => {
-        updateNodeData(id, { 
-            ...data, 
-            inputs: { 
-                ...(data.inputs || {}), 
-                name: name 
-            } 
-        });
-    }, [id, data, name, updateNodeData]);
+        setInputs(id, { name });
+    }, [id, name, setInputs]);
 
     // empty inherits the property from the note on keyframes
     const handlePropertyUpdate = useCallback(() => {
-        updateNodeData(id, { ...data, inputs: { ...(data.inputs || {}), animation_property: property } });
-    }, [id, data, property, updateNodeData]);
+        setInputs(id, { animation_property: property });
+    }, [id, property, setInputs]);
 
     // empty unsets it so the backend default is used, anything that isn't a number is ignored
     const handleBlendUpdate = useCallback(() => {
-        const inputs = { ...(data.inputs || {}) };
         if (blend === "") {
-            delete inputs.overlap_blend;
+            setInputs(id, { overlap_blend: null });
         } else if (!isNaN(Number(blend))) {
-            inputs.overlap_blend = Number(blend);
+            setInputs(id, { overlap_blend: Number(blend) });
         } else {
             setBlend(data.inputs?.overlap_blend ?? "");
-            return;
         }
-        updateNodeData(id, { ...data, inputs });
-    }, [id, data, blend, updateNodeData]);
+    }, [id, data, blend, setInputs]);
 
     const nameComponent = (
         <>
@@ -93,7 +84,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
             <div className="node-field field-inputs">
                 <span>Animation Overlap</span>
             </div>
-            <select className="node-field nodrag nopan" value={data.inputs?.animation_overlap || "add"} onChange={(e) => updateNodeData(id, { ...data, inputs: { ...(data.inputs || {}), animation_overlap: e.target.value } })}>
+            <select className="node-field nodrag nopan" value={data.inputs?.animation_overlap || "add"} onChange={(e) => setInputs(id, { animation_overlap: e.target.value })}>
                 {overlapModes.map((mode) => (
                     <option key={mode.id} value={mode.id}>
                         {mode.name}

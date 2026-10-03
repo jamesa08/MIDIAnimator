@@ -3,10 +3,10 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
-import { useReactFlow } from "@xyflow/react";
+import { useSetInputs } from "../utils/graphOps";
 
 function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const { updateNodeData } = useReactFlow();
+    const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const [nodeData, setNodeData] = useState<any | null>(null);
@@ -21,14 +21,8 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     }, [data.inputs?.object_group_name]);
 
     const handleUpdate = useCallback(() => {
-        updateNodeData(id, { 
-            ...data, 
-            inputs: { 
-                ...(data.inputs || {}), 
-                object_group_name: name 
-            } 
-        });
-    }, [id, data, name, updateNodeData]);
+        setInputs(id, { object_group_name: name });
+    }, [id, name, setInputs]);
 
     const objectGroupNameComponent = (
         <>

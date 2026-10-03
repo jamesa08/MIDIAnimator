@@ -1,12 +1,12 @@
-import { useReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import { useEffect, useState } from "react";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
+import { useSetInputs } from "../utils/graphOps";
 
 function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const { updateNodeData } = useReactFlow();
+    const setInputs = useSetInputs();
     const [nodeData, setNodeData] = useState<any | null>(null);
     const { backEndState: state } = useStateContext();
 
@@ -38,13 +38,14 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     useEffect(() => {
         console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
+        // filled in automatically, not an undo step
         if (selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) {
-            updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: selectedGroupName, object_name: selectedObjectName } });
+            setInputs(id, { object_group_name: selectedGroupName, object_name: selectedObjectName }, { commitToHistory: false });
         }
     }, [selectedGroupName, selectedObjectName]);
 
     const objectGroupNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => updateNodeData(id, { ...data, inputs: { ...data.inputs, object_group_name: e.target.value } })}>
+        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
             {objectGroupNames.length > 0 ? (
                 objectGroupNames.map((name, i) => (
                     <option key={i} value={name}>
@@ -58,7 +59,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     );
 
     const objectNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedObjectName} onChange={(e) => updateNodeData(id, { ...data, inputs: { ...data.inputs, object_name: e.target.value } })}>
+        <select className="node-field nodrag nopan" value={selectedObjectName} onChange={(e) => setInputs(id, { object_name: e.target.value })}>
             {objectNames.length > 0 ? (
                 objectNames.map((name, i) => (
                     <option key={i} value={name}>

@@ -4,11 +4,11 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
-import { useReactFlow } from "@xyflow/react";
+import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 
 function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const { updateNodeData } = useReactFlow();
+    const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const [nodeData, setNodeData] = useState<any | null>(null);
@@ -51,9 +51,9 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
         if (res != null) {
             console.log("updating data{} object");
             setFile(res.toString());
-            updateNodeData(id, { ...data, inputs: { ...data.inputs, file_path: res.toString() } });
+            setInputs(id, { file_path: res.toString() });
         }
-    }, [id, data]);
+    }, [id, setInputs]);
 
     const filePathComponent = (
         <>

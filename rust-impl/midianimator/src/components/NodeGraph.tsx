@@ -7,7 +7,8 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useStateContext } from "../contexts/StateContext";
 import { GroupContext, ScopedState } from "../contexts/GroupContext";
 import { PROJECT_LOADED_EVENT } from "../utils/node";
-import { GroupDef, Level, PATH_SEP, Project, allGroups, loadBuiltinGroups, resolvePath, withGroup, withoutGroup } from "../utils/groups";
+import { GroupDef, Level, PATH_SEP, Project, allGroups, loadBuiltinGroups, resolvePath } from "../utils/groups";
+import { takeGraph, useGraphOps } from "../utils/graphOps";
 import NodeGraphEditor, { ProjectAccess } from "./nodegraph/NodeGraphEditor";
 import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
 
@@ -25,16 +26,14 @@ type GraphViewProps = {
     levels: Level[];
     groups: Record<string, GroupDef>;
     project: ProjectAccess;
-    specs: Record<string, any>;
     // false while it's getting ready behind the view on screen: drawn but see-through, and it takes no input
     shown: boolean;
     setPath: (path: string[]) => void;
-    selections: Map<string, Set<string>>;
     onReady: (key: string) => void;
 };
 
 // one open graph: its editor, and while it's a group the graph it's in behind it, frozen and faded out
-function GraphView({ levels, groups, project, specs, shown, setPath, selections, onReady }: GraphViewProps) {
+function GraphView({ levels, groups, project, shown, setPath, onReady }: GraphViewProps) {
     const openPath = levels.slice(1).map((l) => l.nodeId!);
     const key = openPath.join(PATH_SEP);
     const active = levels[levels.length - 1];
@@ -61,8 +60,6 @@ function GraphView({ levels, groups, project, specs, shown, setPath, selections,
     );
 
     const ready = useCallback(() => onReady(key), [key, onReady]);
-    const onLeave = useCallback((selected: string[]) => selections.set(key, new Set(selected)), [key, selections]);
-    const initialSelection = useMemo(() => selections.get(key) ?? new Set<string>(), [key, selections]);
     // opacity, not visibility or display: React Flow sets visibility on every node, and needs layout to measure them
     const style = shown ? undefined : { opacity: 0, pointerEvents: "none" as const };
 
@@ -88,7 +85,7 @@ function GraphView({ levels, groups, project, specs, shown, setPath, selections,
                 <GroupContext.Provider value={groupContext}>
                     <ScopedState path={key}>
                         <ReactFlowProvider>
-                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} specs={specs} openGroup={openGroup} exitGroup={exitGroup} initialSelection={initialSelection} onLeave={onLeave} onReady={ready} shown={shown} />
+                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} openGroup={openGroup} exitGroup={exitGroup} onReady={ready} shown={shown} />
                         </ReactFlowProvider>
                     </ScopedState>
                 </GroupContext.Provider>
@@ -99,7 +96,7 @@ function GraphView({ levels, groups, project, specs, shown, setPath, selections,
 
 // the node graph: the open graph's editor, and while a group is open the graph it's in behind it with a path back out.
 // opening or leaving a group draws the next graph behind the scenes, the one on screen stays until it's ready.
-// owns the project graph (the top-level graph plus the project's node groups) and sends it to the backend
+// reads the project graph (the top-level graph plus the project's node groups), the backend owns it
 function NodeGraph() {
     const { backEndState: state, setBackEndState: setState } = useStateContext();
     const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
@@ -107,8 +104,6 @@ function NodeGraph() {
     const [path, setPath] = useState<string[]>([]);
     // the graph on screen (a path), it changes to the one asked for once that one has finished drawing
     const [shownKey, setShownKey] = useState("");
-    // what was selected in each graph when it was left, by path
-    const selections = useRef(new Map<string, Set<string>>());
 
     useEffect(() => {
         loadBuiltinGroups().then(setBuiltin);
@@ -128,29 +123,18 @@ function NodeGraph() {
         () => ({
             get: () => projectRef.current,
             groups: (p?: Project) => allGroups(p ?? projectRef.current, builtinRef.current),
-            commit: (p: Project, execute: boolean) => {
-                projectRef.current = p;
-                setState((s: any) => ({ ...s, rf_instance: p }));
-                // only send the graph, the rest of our copy of the state may be stale
-                invoke("js_update_graph", { rfInstance: JSON.stringify(p) });
-                // Block execution if paused, a plain sync (moving nodes) doesn't need a re-run
-                if (execute && !stateRef.current.execution_paused) {
-                    invoke("execute_graph", { realtime: true });
-                }
-            },
         }),
-        [setState]
+        []
     );
 
-    // a new project starts with an empty graph, marked clean since there's nothing to save
+    // a new project starts with an empty graph, nothing to save and nothing to undo
     const initDone = useRef(false);
     useEffect(() => {
         if (!initDone.current && state.ready && state.rf_instance != undefined) {
             initDone.current = true;
             const empty = { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };
             projectRef.current = empty;
-            setState((s: any) => ({ ...s, rf_instance: empty }));
-            invoke("js_update_graph", { rfInstance: JSON.stringify(empty), clean: true });
+            invoke<number>("new_project").then((rev) => setState((s: any) => takeGraph(s, { graph_rev: rev, rf_instance: empty })));
         }
     }, [state.ready, state.rf_instance, setState]);
 
@@ -195,21 +179,19 @@ function NodeGraph() {
         if (key === pathKeyRef.current) setShownKey(key);
     }, []);
 
-    // node specs by type, for the types and names of new group sockets
-    const specs = useMemo(() => Object.fromEntries((state.default_nodes?.nodes ?? []).map((node: any) => [node.id, node])), [state.default_nodes]);
-
     // a built-in group is shared by reference: making it local copies it into the project, for every group node using it
+    const groupOps = useGraphOps(active.groupId);
     const makeLocal = useCallback(() => {
         if (active.groupId === null) return;
-        project.commit(withGroup(project.get(), active.groupId, structuredClone(builtin[active.groupId])), true);
-    }, [active.groupId, builtin, project]);
+        groupOps.apply([{ op: "make_local" }]).catch((e) => console.error(`make_local: ${e}`));
+    }, [active.groupId, groupOps]);
 
     const revertToBuiltin = useCallback(async () => {
         if (active.groupId === null) return;
         const name = groups[active.groupId]?.name ?? active.groupId;
         if (!(await ask(`Go back to the built-in "${name}"? Every change made to this project's copy is lost.`, { title: "Revert to Built-in", kind: "warning" }))) return;
-        project.commit(withoutGroup(project.get(), active.groupId), true);
-    }, [active.groupId, groups, project]);
+        groupOps.apply([{ op: "revert_group" }]).catch((e) => console.error(`revert_group: ${e}`));
+    }, [active.groupId, groups, groupOps]);
 
     // the graph on screen, and the one asked for drawing on top of it (see-through) until it's ready
     const views = shownPathKey === pathKey ? [shownLevels] : [shownLevels, levels];
@@ -221,7 +203,7 @@ function NodeGraph() {
                     .slice(1)
                     .map((l) => l.nodeId!)
                     .join(PATH_SEP);
-                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} specs={specs} shown={key === shownPathKey} setPath={setPath} selections={selections.current} onReady={onReady} />;
+                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} setPath={setPath} onReady={onReady} />;
             })}
             {shownPath.length > 0 && (
                 <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
