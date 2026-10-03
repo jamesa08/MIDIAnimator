@@ -491,6 +491,17 @@ img {
     pointer-events: none;
 }
 
+/* a docked panel's width: its contents (w-56) plus room for a scrollbar, main.tsx measures it (0 with overlay scrollbars) */
+.dock-width {
+    width: calc(14rem + var(--scrollbar-width, 0px));
+}
+
+/* a panel's contents scroll, the scrollbar's room is kept even when it isn't showing so the contents don't jump */
+.panel-scroll {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
 .dock-column > .panel {
     flex: 1 1 0;
     min-height: 0;

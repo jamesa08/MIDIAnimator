@@ -12,6 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { applyTheme } from "./utils/theme";
 import "./utils/liveResize";
+import { scrollbarWidth } from "./utils/panels";
 import "./utils/editMenu";
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
@@ -34,6 +35,9 @@ function ThemeSync() {
     }, []);
     return null;
 }
+
+// the dock columns and floating panels make room for a scrollbar beside their contents (index.css .dock-width)
+document.documentElement.style.setProperty("--scrollbar-width", `${scrollbarWidth()}px`);
 
 const rootElement = document.getElementById("root");
 

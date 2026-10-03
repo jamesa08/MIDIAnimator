@@ -13,10 +13,9 @@ import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
 import { NODE_DROP_EVENT } from "./utils/node";
 import { takeGraph, takeState } from "./utils/graphOps";
-import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, showPanelWindow, withPoppedOut } from "./utils/panels";
+import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, scrollbarWidth, showPanelWindow, withPoppedOut, PANEL_WIDTH } from "./utils/panels";
 
-// size of a panel's window the first time it opens floating from the window menu
-const FLOATING_WIDTH = 240;
+// height of a panel's window the first time it opens floating from the window menu, it's as wide as a docked panel
 const FLOATING_HEIGHT = 360;
 
 function App() {
@@ -150,8 +149,9 @@ function App() {
             if (floating && !reshowPanelWindow(id)) {
                 const content = document.querySelector(".content")?.getBoundingClientRect();
                 if (!content) return;
-                const { x, y } = await clientToScreen(content.right - FLOATING_WIDTH - 260, content.top + 40);
-                showPanelWindow(id, x, y, FLOATING_WIDTH, FLOATING_HEIGHT);
+                const width = PANEL_WIDTH + scrollbarWidth();
+                const { x, y } = await clientToScreen(content.right - width - 260, content.top + 40);
+                showPanelWindow(id, x, y, width, FLOATING_HEIGHT);
             }
         });
         return () => {
@@ -162,7 +162,8 @@ function App() {
     // docked panels float over the canvas in a column on each side, the canvas' own controls move in past them
     const ids = Object.keys(PANELS).map(Number);
     const dockedOn = (side: Side) => !frontEndState.sidesHidden.includes(side) && ids.some((id) => panelSide(frontEndState, id) === side && frontEndState.panelsShown.includes(id) && !frontEndState.panelsPoppedOut.includes(id));
-    const contentStyle = { "--panel-left": dockedOn("left") ? "232px" : "0px", "--panel-right": dockedOn("right") ? "232px" : "0px" } as CSSProperties;
+    const docked = "calc(232px + var(--scrollbar-width, 0px))";
+    const contentStyle = { "--panel-left": dockedOn("left") ? docked : "0px", "--panel-right": dockedOn("right") ? docked : "0px" } as CSSProperties;
     // a side's panels in the order they were docked
     const panelsOn = (side: Side) => {
         const order = (id: number) => (frontEndState.panelsShown.includes(id) ? frontEndState.panelsShown.indexOf(id) : ids.length + id);
@@ -184,13 +185,13 @@ function App() {
                     <NodeGraph />
                 </div>
                 {(["left", "right"] as const).map((side) => (
-                    <div key={side} className={`dock-column w-56 dock-${side}`} style={dockedOn(side) ? {} : { display: "none" }}>
+                    <div key={side} className={`dock-column dock-width dock-${side}`} style={dockedOn(side) ? {} : { display: "none" }}>
                         {panelsOn(side).map((id) => (
                             <Panel key={id} id={String(id)} name={PANELS[id].name} />
                         ))}
                     </div>
                 ))}
-                {dockHover !== null && <div className={`dock-indicator card absolute inset-y-3 w-56 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
+                {dockHover !== null && <div className={`dock-indicator dock-width card absolute inset-y-3 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
             </div>
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />

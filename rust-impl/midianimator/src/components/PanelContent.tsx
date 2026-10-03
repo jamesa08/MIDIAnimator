@@ -61,7 +61,7 @@ const PanelContent: React.FC = () => {
                 <span className="mr-auto">{PANELS[panelId]?.name}</span>
                 <button onClick={() => sendToMain(PANEL_DOCK_EVENT, { id: panelId })}>Dock</button>
             </div>
-            <div className="flex-auto overflow-y-auto">
+            <div className="panel-scroll flex-auto">
                 <PanelBody id={panelId} onNodeDrop={handleNodeDrop} ghostWindow />
             </div>
         </div>

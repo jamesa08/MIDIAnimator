@@ -98,7 +98,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
                     Popout
                 </button>
             </div>
-            <div className="flex-auto overflow-y-auto">
+            <div className="panel-scroll flex-auto">
                 <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
             </div>
         </div>

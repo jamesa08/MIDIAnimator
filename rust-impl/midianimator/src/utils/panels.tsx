@@ -6,6 +6,20 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type Side = "left" | "right";
 
+// width a panel's contents get (w-56), the nodes panel's previews need all of it
+export const PANEL_WIDTH = 224;
+
+// width of a classic scrollbar, 0 with overlay scrollbars. panels add it to their width, a scrollbar never takes it from
+// their contents
+export function scrollbarWidth() {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position: absolute; top: -9999px; width: 100px; height: 100px; overflow: scroll";
+    document.body.appendChild(probe);
+    const width = probe.offsetWidth - probe.clientWidth;
+    probe.remove();
+    return width;
+}
+
 // every dockable panel and the side of the main window it first docks to, any panel can be docked on either side
 export const PANELS: Record<number, { name: string; side: Side }> = {
     0: { name: "Nodes", side: "left" },
@@ -146,7 +160,7 @@ export function ensurePanelWindow(id: number, width: number, height: number) {
         title: PANELS[id].name,
         width,
         height,
-        minWidth: 160,
+        minWidth: PANEL_WIDTH + scrollbarWidth(),
         minHeight: 120,
         resizable: true,
         backgroundColor: "#ffffff",
