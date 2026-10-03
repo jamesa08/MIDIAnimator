@@ -6,7 +6,10 @@ use std::{collections::HashMap, sync::Mutex};
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::graph::history::{Source, Step};
 use crate::scene_generics::Scene;
+
+pub mod history;
 
 lazy_static! {
     pub static ref STATE: Mutex<AppState> = Mutex::new(AppState::default());
@@ -180,10 +183,13 @@ pub fn js_update_graph(rf_instance: String, clean: Option<bool>) {
     println!("FRONTEND GRAPH UPDATE");
     // parse the graph and swap it in, a bad graph is just logged and ignored
     match serde_json::from_str::<HashMap<String, serde_json::Value>>(&rf_instance) {
-        Ok(rf_instance) => STATE.lock().unwrap().rf_instance = rf_instance,
+        // the starting graph has nothing to undo, every later one is an undo step
+        Ok(rf_instance) if clean == Some(true) => STATE.lock().unwrap().rf_instance = rf_instance,
+        Ok(rf_instance) => history::commit(&mut STATE.lock().unwrap(), rf_instance, history::Capture::Record(Step::new("edit", Source::Ui))),
         Err(e) => eprintln!("js_update_graph: could not parse rf_instance: {}", e),
     }
     if clean == Some(true) {
+        history::clear();
         mark_saved();
     }
     notify_project_status();
@@ -208,7 +214,8 @@ fn graph_key(rf_instance: &HashMap<String, serde_json::Value>) -> serde_json::Va
     serde_json::json!({
         "nodes": strip(rf_instance.get("nodes"), &["selected", "dragging", "measured", "resizing"]),
         "edges": strip(rf_instance.get("edges"), &["selected"]),
-        "groups": rf_instance.get("groups").cloned().map(strip_groups),
+        // no groups and an empty `groups` are the same graph
+        "groups": rf_instance.get("groups").filter(|groups| groups.as_object().is_some_and(|g| !g.is_empty())).cloned().map(strip_groups),
     })
 }
 
@@ -398,6 +405,8 @@ pub fn load_project_from(path: &str) -> Result<AppState, String> {
     };
     *PROJECT_PATH.lock().unwrap() = Some(path.to_string());
     mark_saved();
+    // the loaded project starts with nothing to undo
+    history::clear();
 
     // tell the front end about the new state, then to start the graph over from it (no selection, drags or operations carried over)
     update_state();
