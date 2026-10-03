@@ -105,6 +105,39 @@ pub fn copy(project: &Graph, scope: Option<&str>, nodes: &[String]) -> Result<St
     serde_json::to_string(&payload).map_err(|e| format!("could not copy: {}", e))
 }
 
+/// the names of nodes in the graph `scope` (`Get MIDI File ×2, Viewer`), for the history panel
+pub fn node_names(project: &Graph, scope: Option<&str>, specs: &[NodeSpec], ids: &[String]) -> String {
+    let Ok(graph) = graph_in(project, scope) else {
+        return String::new();
+    };
+    let groups = all_groups(project);
+    let specs = Specs {
+        specs,
+        groups: &groups,
+        scope: scope.and_then(|id| groups.get(id)),
+    };
+    // each name once, in the order they first come up, with how many there are
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for node in graph.nodes.iter().filter(|n| ids.contains(&n.id)) {
+        let name = specs.for_node(node).map_or(node.node_type.clone(), |spec| spec.name.clone());
+        match counts.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((name, 1)),
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(name, count)| {
+            if count > 1 {
+                format!("{} ×{}", name, count)
+            } else {
+                name
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 // MARK: - Paste
 
 /// true if `group` is `inner` or runs it somewhere inside (a group node of it, at any depth)

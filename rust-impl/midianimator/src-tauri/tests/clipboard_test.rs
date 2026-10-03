@@ -6,7 +6,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use serde_json::{json, Value};
-use MIDIAnimator::graph::clipboard::{copy, paste};
+use MIDIAnimator::graph::clipboard::{copy, node_names, paste};
 use MIDIAnimator::graph::model::{node_specs, Graph, NodeSpec, Position};
 use MIDIAnimator::graph::ops::{apply, Added, Ctx, Op};
 use MIDIAnimator::state::{migrate_rf_instance, SavedProject};
@@ -185,4 +185,14 @@ fn cut_removes() {
     run(&mut graph, None, json!([{ "op": "cut", "nodes": ["viewer-1"] }]));
     assert!(graph.node("viewer-1").is_none());
     assert!(!graph.edges.iter().any(|e| e.to_node() == "viewer-1"));
+}
+
+// cut and paste steps name their nodes for the history panel, each name once with how many, in graph order
+#[test]
+fn names_for_history() {
+    let mut graph = fixture();
+    let text = copy(&graph, None, &["get_midi_file-1".to_string(), "viewer-1".to_string()]).unwrap();
+    paste_text(&mut graph, None, &text, at(0.0, 0.0)).unwrap();
+    let ids: Vec<String> = ["get_midi_file-1", "get_midi_file-2", "viewer-1", "evaluate_instrument-1"].iter().map(|s| s.to_string()).collect();
+    assert_eq!(node_names(&graph, None, &specs(), &ids), "Viewer, Get MIDI File ×2, Evaluate Instrument");
 }

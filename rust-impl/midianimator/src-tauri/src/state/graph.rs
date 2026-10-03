@@ -98,6 +98,20 @@ fn apply(scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_his
             results: &results,
         };
 
+        // the nodes cut, named before they're gone, for the history panel
+        let cut: Vec<String> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Cut {
+                    nodes,
+                    ..
+                } => Some(nodes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let cut_names = clipboard::node_names(&graph, scope.as_deref(), &specs, &cut);
+
         // every op works on the same copy, it's only kept if they all worked
         let mut added = Vec::new();
         for op in &ops {
@@ -107,7 +121,17 @@ fn apply(scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_his
         let capture = if !commit_to_history {
             Capture::Skip
         } else {
-            let step = Step::new(ops.first().map_or("edit", Op::name), Source::Ui);
+            // cut and paste steps say which nodes, the history panel shows them
+            let detail = match ops.first() {
+                Some(Op::Paste {
+                    ..
+                }) => clipboard::node_names(&graph, scope.as_deref(), &specs, &added.iter().map(|a| a.id.clone()).collect::<Vec<_>>()),
+                Some(Op::Cut {
+                    ..
+                }) => cut_names,
+                _ => String::new(),
+            };
+            let step = Step::new(ops.first().map_or("edit", Op::name), Source::Ui).detail(detail);
             Capture::Record(match &txn {
                 Some(txn) => step.txn(txn.clone()),
                 None => step,
