@@ -2,7 +2,8 @@
 // changes, so for a window drag the page is laid out at a fixed size (the screen's) and the native side calls size()
 // every step to fit the app to the window instead, inline on just what follows the window so nothing else restyles.
 // end() runs as the page goes back to being laid out at the window's size.
-// data-live-resize="window" marks a page's root sized with viewport units, "canvas" the node graph
+// data-live-resize="window" marks a page's root sized with viewport units, "vignette" the canvas' vignette. the
+// canvas' other costly parts keep one size for the drag on their own (index.css .live-resize)
 
 declare global {
     interface Window {
@@ -10,43 +11,39 @@ declare global {
     }
 }
 
-const each = (selector: string, apply: (element: HTMLElement) => void) => document.querySelectorAll<HTMLElement>(selector).forEach(apply);
+const sized = () => [document.documentElement, ...document.querySelectorAll<HTMLElement>('[data-live-resize="window"]')];
+const vignettes = () => document.querySelectorAll<HTMLElement>('[data-live-resize="vignette"]');
+
+// how much smaller than the window the vignette's card is, measured once a drag
+let cardInset: { width: number; height: number } | null = null;
 
 window.liveResize = {
     size(width, height, layoutWidth, layoutHeight) {
-        const root = document.documentElement;
-        root.classList.add("live-resize");
-        root.style.width = `${width}px`;
-        root.style.height = `${height}px`;
-        each('[data-live-resize="window"]', (element) => {
+        document.documentElement.classList.add("live-resize");
+        for (const element of sized()) {
             element.style.width = `${width}px`;
             element.style.height = `${height}px`;
-        });
+        }
 
-        // the canvas keeps one size, as big as its card can get (the card's size plus what the window can still grow by,
-        // which works out the same every step), so it's never repainted. its controls on the right and bottom edges are
-        // moved back onto the card's edges by what the canvas overhangs them
-        const overhangX = layoutWidth - width;
-        const overhangY = layoutHeight - height;
-        each('[data-live-resize="canvas"]', (element) => {
-            element.style.width = `calc(100% + ${overhangX}px)`;
-            element.style.height = `calc(100% + ${overhangY}px)`;
-        });
-        each('[data-live-resize="canvas"] .react-flow__panel:not(.center)', (element) => {
-            const x = element.classList.contains("right") ? -overhangX : 0;
-            const y = element.classList.contains("bottom") ? -overhangY : 0;
-            if (x || y) element.style.transform = `translate(${x}px, ${y}px)`;
-        });
+        // the vignette is laid out at the page's size for the drag and scaled down to its card, so it's never repainted
+        for (const element of vignettes()) {
+            const card = element.parentElement;
+            if (!card) continue;
+            cardInset ??= { width: width - card.clientWidth, height: height - card.clientHeight };
+            const scaleX = (width - cardInset.width) / layoutWidth;
+            const scaleY = (height - cardInset.height) / layoutHeight;
+            element.style.transform = `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`;
+        }
     },
 
     end() {
-        const root = document.documentElement;
-        root.classList.remove("live-resize");
-        for (const element of [root, ...document.querySelectorAll<HTMLElement>("[data-live-resize]")]) {
+        document.documentElement.classList.remove("live-resize");
+        for (const element of sized()) {
             element.style.width = "";
             element.style.height = "";
         }
-        each('[data-live-resize="canvas"] .react-flow__panel', (element) => (element.style.transform = ""));
+        for (const element of vignettes()) element.style.transform = "";
+        cardInset = null;
     },
 };
 

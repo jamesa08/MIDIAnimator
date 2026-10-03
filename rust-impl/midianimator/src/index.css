@@ -144,10 +144,14 @@ img {
     --node-line: #000;
 }
 
-/* vignette from the center out, on the flow itself so a paper texture and the dots can sit on top of it.
-   the open group's canvas stays see-through */
-.react-flow:not(.group-canvas) {
+/* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's
+   canvas stays see-through. an element of its own so a live window resize can scale it instead of repainting it */
+.canvas-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
     background: radial-gradient(ellipse at center, var(--canvas-center) 0%, var(--canvas-edge) 100%);
+    pointer-events: none;
 }
 
 /* optional paper texture between the vignette and the dots, pinned to the graph (NodeGraphCanvas.tsx CanvasPaper).
@@ -407,6 +411,7 @@ img {
 
 /* the canvas is its own stacking context, so nodes (which get z-indexes of their own) stay under the docked panels */
 .node-graph {
+    position: relative;
     isolation: isolate;
 }
 
@@ -556,10 +561,35 @@ img {
     border: 1px solid var(--zone-border);
 }
 
-/* live window resize (utils/liveResize.ts): the canvas and what moves with the window's edges are layers of their own,
-   so the drag only moves layers instead of repainting them */
-.live-resize [data-live-resize="canvas"],
-.live-resize [data-live-resize="canvas"] .react-flow__panel,
+/* live window resize (utils/liveResize.ts): the canvas' costly parts keep one size for the whole drag, the page's (which
+   is the screen's then), on layers of their own that the canvas clips, so only the cards around them are repainted:
+   the dots, the paper texture, the frozen graph under an open group, and the nodes and edges. the docked panels move
+   as layers */
+.live-resize .react-flow__background,
+.live-resize .graph-layer.parent-layer {
+    right: auto;
+    bottom: auto;
+    width: 100vw !important;
+    height: 100vh !important;
+    will-change: transform;
+}
+
+/* the vignette is scaled to its card for the drag (utils/liveResize.ts) */
+.live-resize .canvas-vignette {
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    width: 100vw;
+    height: 100vh;
+    will-change: transform;
+}
+
+.live-resize .canvas-paper {
+    width: calc(100vw + 2 * var(--tile));
+    height: calc(100vh + 2 * var(--tile));
+}
+
+.live-resize .react-flow__viewport,
 .live-resize .content > .panel {
     will-change: transform;
 }

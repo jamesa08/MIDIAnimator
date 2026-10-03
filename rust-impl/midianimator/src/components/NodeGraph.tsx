@@ -215,7 +215,7 @@ function NodeGraph() {
     const views = shownPathKey === pathKey ? [shownLevels] : [shownLevels, levels];
 
     return (
-        <div data-live-resize="canvas" className="node-graph-stack">
+        <div className="node-graph-stack">
             {views.map((viewLevels) => {
                 const key = viewLevels
                     .slice(1)

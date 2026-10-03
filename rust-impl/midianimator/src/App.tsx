@@ -137,6 +137,7 @@ function App() {
             </div>
             <div className="content relative flex flex-auto" style={contentStyle}>
                 <div className="node-graph card flex-grow">
+                    <div data-live-resize="vignette" className="canvas-vignette" />
                     <NodeGraph />
                 </div>
                 <Panel id="0" name="Nodes" />
