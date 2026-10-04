@@ -7,9 +7,6 @@ import { BaseDirectory, readTextFile } from '@tauri-apps/plugin-fs';
 // detail: { nodeType, clientX, clientY, offsetX, offsetY }, offset is where the node was grabbed in node (unscaled) pixels
 export const NODE_DROP_EVENT = "motionkeys:node-drop";
 
-// backend event sent after a project is loaded (payload: the loaded rf_instance), the node graph starts over from it
-export const PROJECT_LOADED_EVENT = "project_loaded";
-
 export async function getNodeData(nodeId: string) {
     let data: any = await readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource });
     if (data == null) {

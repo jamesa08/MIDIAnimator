@@ -1,9 +1,8 @@
-import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
 import { useStateContext } from "../../contexts/StateContext";
-import { NODE_DROP_EVENT, PROJECT_LOADED_EVENT } from "../../utils/node";
+import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, Project } from "../../utils/groups";
 import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
 import { isTextField } from "../../utils/editMenu";
@@ -36,6 +35,8 @@ type EditorProps = {
     onReady: () => void;
     // false while this graph is getting ready behind the one on screen, it doesn't take keys or drops then
     shown: boolean;
+    // frame the graph to fit instead of opening where it was last looked at (a loaded project's tab)
+    fitOnOpen: boolean;
 };
 
 // nodes following the cursor until a click places them (G, Shift+D, adding from the menu). `txn` is the transaction the
@@ -48,7 +49,7 @@ const selectedIds = (items: { id: string; selected?: boolean }[]) => items.filte
 // edits one graph: selection, adding, grabbing, duplicating, deleting, connecting, grouping. every edit is sent to the
 // backend as an op and the graph it sends back is shown, only selection and positions mid drag are ahead of it.
 // NodeGraph mounts a fresh one (in its own ReactFlowProvider) for each graph that's opened
-function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup, exitGroup, onReady, shown }: EditorProps) {
+function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup, exitGroup, onReady, shown, fitOnOpen }: EditorProps) {
     // start with the graph already there, the selection is part of it
     const [nodes, setNodes] = useNodesState((level.graph.nodes ?? []).map(({ dragging, measured, resizing, ...node }: any) => node));
     const [edges, setEdges] = useEdgesState(level.graph.edges ?? []);
@@ -169,6 +170,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             setNodes((nds) => nds.map((node) => (start.has(node.id) ? { ...node, position: start.get(node.id)! } : node)));
         }
     }, [ops, setNodes]);
+
+    // leaving the graph mid grab (another tab or group is shown) undoes the add or duplicate it belongs to
+    const opsRef = useRef(ops);
+    opsRef.current = ops;
+    useEffect(
+        () => () => {
+            const txn = grabRef.current?.txn;
+            if (txn) opsRef.current.cancel(txn);
+        },
+        []
+    );
 
     // close the add menu without adding anything
     const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -503,37 +515,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         };
     }, [store]);
 
-    // fit the view after a project load, or when a group without a saved view is opened.
+    // fit the view when a loaded project's tab is first shown, or when a group without a saved view is opened.
     // not the fitView prop, that one stays armed on an empty graph and zooms onto the first node added
     const nodesInitialized = useNodesInitialized();
-    const fitPendingRef = useRef(!isRoot && !level.graph.viewport);
-
-    // a loaded project starts the graph over, nothing from the old graph carries over.
-    // short ids repeat between projects, so merging would keep the old drags and operations on the new nodes.
-    // only the top level listens, NodeGraph goes back to it on a load
-    useEffect(() => {
-        if (!isRoot) return;
-        const unlisten = listen(PROJECT_LOADED_EVENT, (event: any) => {
-            const graph = event.payload ?? {};
-
-            // drop any operation in progress (grab, add menu, placing a node)
-            grabRef.current = null;
-            swallowClickRef.current = false;
-            setGrabbing(false);
-            setMenuOpen(false);
-
-            // replace the graph without the ui only fields, measured is left out so the nodes get sized fresh
-            setNodes((graph.nodes ?? []).map(({ dragging, measured, resizing, ...node }: any) => node));
-            setEdges(graph.edges ?? []);
-            store.setState({ nodesSelectionActive: false });
-
-            // fit once the new nodes have sizes
-            fitPendingRef.current = true;
-        });
-        return () => {
-            unlisten.then((f) => f());
-        };
-    }, [isRoot, setNodes, setEdges, store]);
+    const fitPendingRef = useRef(fitOnOpen || (!isRoot && !level.graph.viewport));
 
     // hold the graph hidden until it has finished drawing: every node filled in (a node's spec loads after its first
     // frame), sizes that stayed the same for two frames, and the view framed. a second at most, it never stays hidden
@@ -583,7 +568,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     }, [ready, rfInstance, getNodes, store, onReady]);
 
     useEffect(() => {
-        // a project load while the graph is up (framing on the first draw is done above)
+        // nodes that only got their sizes after the graph was shown (framing on the first draw is done above)
         if (ready && fitPendingRef.current && nodesInitialized && rfInstance && getNodes().length > 0) {
             fitPendingRef.current = false;
             rfInstance.fitView({ maxZoom: 1 });

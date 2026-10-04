@@ -1,14 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { useStateContext } from "../contexts/StateContext";
 import { GroupContext, ScopedState } from "../contexts/GroupContext";
-import { PROJECT_LOADED_EVENT } from "../utils/node";
 import { GroupDef, Level, PATH_SEP, Project, allGroups, loadBuiltinGroups, resolvePath } from "../utils/groups";
-import { takeGraph, useGraphOps } from "../utils/graphOps";
+import { TabContext, useGraphOps } from "../utils/graphOps";
 import NodeGraphEditor, { ProjectAccess } from "./nodegraph/NodeGraphEditor";
 import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
 
@@ -28,12 +26,14 @@ type GraphViewProps = {
     project: ProjectAccess;
     // false while it's getting ready behind the view on screen: drawn but see-through, and it takes no input
     shown: boolean;
+    // frame the graph to fit instead of opening where it was last looked at (a loaded project's tab)
+    fitOnOpen: boolean;
     setPath: (path: string[]) => void;
     onReady: (key: string) => void;
 };
 
 // one open graph: its editor, and while it's a group the graph it's in behind it, frozen and faded out
-function GraphView({ levels, groups, project, shown, setPath, onReady }: GraphViewProps) {
+function GraphView({ levels, groups, project, shown, fitOnOpen, setPath, onReady }: GraphViewProps) {
     const openPath = levels.slice(1).map((l) => l.nodeId!);
     const key = openPath.join(PATH_SEP);
     const active = levels[levels.length - 1];
@@ -85,7 +85,7 @@ function GraphView({ levels, groups, project, shown, setPath, onReady }: GraphVi
                 <GroupContext.Provider value={groupContext}>
                     <ScopedState path={key}>
                         <ReactFlowProvider>
-                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} openGroup={openGroup} exitGroup={exitGroup} onReady={ready} shown={shown} />
+                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} openGroup={openGroup} exitGroup={exitGroup} onReady={ready} shown={shown} fitOnOpen={fitOnOpen} />
                         </ReactFlowProvider>
                     </ScopedState>
                 </GroupContext.Provider>
@@ -94,23 +94,45 @@ function GraphView({ levels, groups, project, shown, setPath, onReady }: GraphVi
     );
 }
 
-// the node graph: the open graph's editor, and while a group is open the graph it's in behind it with a path back out.
-// opening or leaving a group draws the next graph behind the scenes, the one on screen stays until it's ready.
-// reads the project graph (the top-level graph plus the project's node groups), the backend owns it
+// tabs that have been on screen, the first time a tab is shown (a loaded project's) its graph is framed to fit. a tab
+// shown again opens where it was left
+const seenTabs = new Set<string>();
+
+// the node graph of the tab on screen, each tab gets editors of its own (its edits go to that tab)
 function NodeGraph() {
-    const { backEndState: state, setBackEndState: setState } = useStateContext();
+    const { backEndState: state } = useStateContext();
+    const tab: string | undefined = state.active_tab;
+    if (!state.ready || !tab) return <div className="node-graph-stack" />;
+    return (
+        <TabContext.Provider value={tab}>
+            <TabGraph key={tab} tab={tab} />
+        </TabContext.Provider>
+    );
+}
+
+// a tab's node graph: the open graph's editor, and while a group is open the graph it's in behind it with a path back
+// out. opening or leaving a group draws the next graph behind the scenes, the one on screen stays until it's ready.
+// reads the tab's graph (the top-level graph plus the project's node groups), the backend owns it
+function TabGraph({ tab }: { tab: string }) {
+    const { backEndState: state } = useStateContext();
     const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
-    // group node ids from the top level down to the graph asked for
-    const [path, setPath] = useState<string[]>([]);
+    // group node ids from the top level down to the graph asked for, the tab opens in the group it was left in
+    const [path, setPath] = useState<string[]>(() => (state.open_group ? state.open_group.split(PATH_SEP) : []));
     // the graph on screen (a path), it changes to the one asked for once that one has finished drawing
     const [shownKey, setShownKey] = useState("");
+
+    // framed to fit until the top level has been drawn once
+    const fitRef = useRef(!seenTabs.has(tab));
+    useEffect(() => {
+        seenTabs.add(tab);
+    }, [tab]);
 
     useEffect(() => {
         loadBuiltinGroups().then(setBuiltin);
     }, []);
 
     // the latest project and state for callbacks, a backend push replaces the project
-    const projectRef = useRef<Project>({ nodes: [], edges: [] });
+    const projectRef = useRef<Project>(state.rf_instance ?? { nodes: [], edges: [] });
     const stateRef = useRef(state);
     stateRef.current = state;
     const builtinRef = useRef(builtin);
@@ -127,28 +149,6 @@ function NodeGraph() {
         []
     );
 
-    // a new project starts with an empty graph, nothing to save and nothing to undo
-    const initDone = useRef(false);
-    useEffect(() => {
-        if (!initDone.current && state.ready && state.rf_instance != undefined) {
-            initDone.current = true;
-            const empty = { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };
-            projectRef.current = empty;
-            invoke<number>("new_project").then((rev) => setState((s: any) => takeGraph(s, { graph_rev: rev, rf_instance: empty })));
-        }
-    }, [state.ready, state.rf_instance, setState]);
-
-    // a loaded project starts at the top level
-    useEffect(() => {
-        const unlisten = listen(PROJECT_LOADED_EVENT, (event: any) => {
-            projectRef.current = event.payload ?? { nodes: [], edges: [] };
-            setPath([]);
-        });
-        return () => {
-            unlisten.then((f) => f());
-        };
-    }, []);
-
     // the graphs down the path asked for, a group node that's gone (deleted, or over MCP) closes the groups from there
     const current: Project = state.rf_instance ?? { nodes: [], edges: [] };
     const groups = useMemo(() => allGroups(current, builtin), [current, builtin]);
@@ -161,8 +161,8 @@ function NodeGraph() {
 
     // the backend records the insides of the open groups, so they have values to show
     useEffect(() => {
-        if (stateRef.current.ready) invoke("set_open_group", { path: pathKey });
-    }, [pathKey, state.ready]);
+        if (stateRef.current.ready) invoke("set_open_group", { tab, path: pathKey });
+    }, [tab, pathKey, state.ready]);
 
     // the graph on screen
     const shownLevels = useMemo(() => resolvePath(current, groups, shownKey ? shownKey.split(PATH_SEP) : []), [current, groups, shownKey]);
@@ -176,6 +176,7 @@ function NodeGraph() {
     const pathKeyRef = useRef(pathKey);
     pathKeyRef.current = pathKey;
     const onReady = useCallback((key: string) => {
+        if (key === "") fitRef.current = false;
         if (key === pathKeyRef.current) setShownKey(key);
     }, []);
 
@@ -203,7 +204,7 @@ function NodeGraph() {
                     .slice(1)
                     .map((l) => l.nodeId!)
                     .join(PATH_SEP);
-                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} setPath={setPath} onReady={onReady} />;
+                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} fitOnOpen={key === "" && fitRef.current} setPath={setPath} onReady={onReady} />;
             })}
             {shownPath.length > 0 && (
                 <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">

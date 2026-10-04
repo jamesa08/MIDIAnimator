@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 
@@ -25,45 +25,52 @@ export type Op =
     | { op: "revert_group" }
     | { op: "viewport"; viewport: any };
 
-// the graph after an edit and the nodes it added
-export type Applied = { graph_rev: number; rf_instance: any; added: { id: string; position: XY }[] };
+// a tab's graph after an edit and the nodes it added
+export type Applied = { tab: string; graph_rev: number; rf_instance: any; added: { id: string; position: XY }[] };
+
+// the tab the graph below it belongs to, its edits go to that tab even if another one is shown by the time they land
+export const TabContext = createContext<string>("");
 
 // `txn`: ops with the same transaction are one undo step until it's ended or cancelled (a grab after adding or duplicating).
 // `commitToHistory`: false for no undo step (values filled in automatically), true when left out
 export type ApplyOptions = { txn?: string; commitToHistory?: boolean };
 
-// the state with a graph from the backend, unless the state already has a newer one (graph_rev only goes up)
-export function takeGraph(state: any, graph: { graph_rev?: number; rf_instance: any }): any {
-    if ((graph.graph_rev ?? 0) < (state.graph_rev ?? 0)) return state;
+// the state with a tab's graph from the backend: only the tab on screen's, and not if the state already has a newer one
+// (graph_rev only goes up)
+export function takeGraph(state: any, graph: { tab: string; graph_rev?: number; rf_instance: any }): any {
+    if (graph.tab !== state.active_tab || (graph.graph_rev ?? 0) < (state.graph_rev ?? 0)) return state;
     return { ...state, graph_rev: graph.graph_rev, rf_instance: graph.rf_instance };
 }
 
-// a whole state from the backend, keeping the graph the state has if it's newer
+// a whole state from the backend unless the state is newer (state_rev only goes up), keeping the graph the state has if
+// it's the same tab's and newer
 export function takeState(state: any, next: any): any {
-    if ((next.graph_rev ?? 0) < (state.graph_rev ?? 0)) return { ...next, graph_rev: state.graph_rev, rf_instance: state.rf_instance };
+    if ((next.state_rev ?? 0) < (state.state_rev ?? 0)) return state;
+    if (next.active_tab === state.active_tab && (next.graph_rev ?? 0) < (state.graph_rev ?? 0)) return { ...next, graph_rev: state.graph_rev, rf_instance: state.rf_instance };
     return next;
 }
 
-// applies ops to the graph `scope` (a group id, null for the top level), see graph_apply in src-tauri/src/state/graph.rs.
+// applies ops to the graph `scope` (a group id, null for the top level) of the tab, see graph_apply in src-tauri/src/state/graph.rs.
 // copy, cut and paste use the system clipboard from the backend. the graph that comes back is taken right away, so it's
 // there when the promise resolves
 export function useGraphOps(scope: string | null) {
     const { setBackEndState } = useStateContext();
+    const tab = useContext(TabContext);
     return useMemo(() => {
         const edit = async (command: string, args: Record<string, any>): Promise<Applied> => {
-            const applied = await invoke<Applied>(command, { scope, ...args });
+            const applied = await invoke<Applied>(command, { tab, scope, ...args });
             setBackEndState((s: any) => takeGraph(s, applied));
             return applied;
         };
         return {
             apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true }),
-            copy: (nodes: string[]) => invoke("graph_copy", { scope, nodes }),
+            copy: (nodes: string[]) => invoke("graph_copy", { tab, scope, nodes }),
             cut: (nodes: string[], edges: string[]) => edit("graph_cut", { nodes, edges }),
             paste: (position: XY) => edit("graph_paste", { position }),
-            end: (txn: string) => invoke("history_end", { txn }),
-            cancel: (txn: string) => invoke("history_cancel", { txn }),
+            end: (txn: string) => invoke("history_end", { tab, txn }),
+            cancel: (txn: string) => invoke("history_cancel", { tab, txn }),
         };
-    }, [scope, setBackEndState]);
+    }, [tab, scope, setBackEndState]);
 }
 
 // sets values on a node's inputs (`null` unsets one), for node components. nothing happens in a graph that can't be edited
