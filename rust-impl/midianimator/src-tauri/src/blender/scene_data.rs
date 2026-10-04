@@ -1,7 +1,8 @@
 use crate::ipc;
 use crate::scene_generics::Scene;
-use crate::state::{update_state, STATE};
-use crate::{graph::execute::execute_graph, scene_generics};
+use crate::graph::execute::run_instance;
+use crate::scene_generics;
+use crate::state::{lock, update_state};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::collections::HashMap;
@@ -181,49 +182,6 @@ pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<SceneW
     serde_json::from_str::<SceneWriteReport>(&result).map_err(|_| std::io::Error::other(format!("Blender couldn't write the keyframes: {}", result)))
 }
 
-pub fn process_scene_update(json_data: &str) {
-    match serde_json::from_str::<SceneUpdate>(json_data) {
-        Ok(update) => {
-            if update.r#type == "scene_update" {
-                println!("Received scene update: {:?}", update.change_type);
-
-                let mut state = STATE.lock().unwrap();
-                state.scene_data = update.scene_data;
-                drop(state);
-                update_state();
-            }
-        }
-        Err(e) => {
-            println!("Error processing scene update: {}", e);
-        }
-    }
-}
-
-pub async fn reconnect_with_validation() -> Result<SceneDiff, String> {
-    let state = STATE.lock().unwrap();
-    let saved_scene_data = state.scene_data.clone();
-    drop(state);
-
-    // Fetch fresh scene data from Blender
-    let fresh_scene_data = get_scene_data().await;
-
-    // Diff the data
-    let diff = compare_scene_data(&saved_scene_data, &fresh_scene_data);
-
-    if diff.has_changes() {
-        // Return diff to frontend, let user decide
-        Ok(diff)
-    } else {
-        // No changes, just update and connect
-        let mut state = STATE.lock().unwrap();
-        state.scene_data = fresh_scene_data;
-        state.connected = true;
-        drop(state);
-        update_state();
-        Ok(SceneDiff::empty())
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SceneDiff {
     pub missing_objects: Vec<String>, // Objects in saved but not in fresh
@@ -287,68 +245,67 @@ pub fn compare_scene_data(saved: &HashMap<String, Scene>, fresh: &HashMap<String
     diff
 }
 
+// the review of scene changes, for the tab on screen: Blender's scene differed from the tab's when it went live
+
+/// what differs between the scene the tab on screen has and the one waiting for review
 #[tauri::command]
 pub async fn check_scene_changes() -> Result<SceneDiff, String> {
-    let (saved_scene_data, pending_scene_data) = {
-        let mut state = STATE.lock().unwrap();
-
-        if !state.execution_paused {
-            drop(state);
+    let scenes = {
+        let mut state = lock();
+        let instance = state.active_mut();
+        if !instance.execution_paused {
             return Err("No validation pending".to_string());
         }
-
-        let pending = match &state.pending_scene_data {
-            Some(data) => data.clone(),
+        match &instance.pending_scene_data {
+            Some(pending) => Ok((instance.scene_data.clone(), pending.clone())),
+            // nothing to review, it runs again
             None => {
-                state.execution_paused = false;
-                drop(state);
-                update_state();
-                tauri::async_runtime::spawn(async move {
-                    execute_graph(true).await;
-                });
-                return Err("No pending scene data".to_string());
+                instance.execution_paused = false;
+                Err(instance.id.clone())
             }
-        };
-
-        (state.scene_data.clone(), pending)
-    };
-
-    let diff = compare_scene_data(&saved_scene_data, &pending_scene_data);
-    Ok(diff)
-}
-
-#[tauri::command]
-pub async fn accept_scene_changes() -> Result<(), String> {
-    let mut state = STATE.lock().unwrap();
-
-    let fresh_scene_data = match state.pending_scene_data.take() {
-        Some(data) => data,
-        None => {
-            state.execution_paused = false;
-            drop(state);
-            update_state();
-            tauri::async_runtime::spawn(async move {
-                execute_graph(true).await;
-            });
-            return Err("No pending scene data".to_string());
         }
     };
 
-    state.scene_data = fresh_scene_data;
-    state.execution_paused = false;
-    drop(state);
-
-    update_state();
-    Ok(())
+    match scenes {
+        Ok((saved_scene_data, pending_scene_data)) => Ok(compare_scene_data(&saved_scene_data, &pending_scene_data)),
+        Err(id) => {
+            update_state();
+            run_instance(id, true).await;
+            Err("No pending scene data".to_string())
+        }
+    }
 }
 
+/// the tab on screen takes the scene waiting for review and runs again
+#[tauri::command]
+pub async fn accept_scene_changes() -> Result<(), String> {
+    let (id, accepted) = {
+        let mut state = lock();
+        let instance = state.active_mut();
+        let accepted = match instance.pending_scene_data.take() {
+            Some(data) => {
+                instance.scene_data = data;
+                true
+            }
+            None => false,
+        };
+        instance.execution_paused = false;
+        (instance.id.clone(), accepted)
+    };
+
+    update_state();
+    run_instance(id, true).await;
+    if accepted {
+        Ok(())
+    } else {
+        Err("No pending scene data".to_string())
+    }
+}
+
+/// drops the scene waiting for review, the tab on screen stays paused with the scene it had
 #[tauri::command]
 pub fn reject_scene_changes() -> Result<(), String> {
-    let mut state = STATE.lock().unwrap();
-    state.pending_scene_data = None;
-    // Stay paused
-    drop(state);
-
+    lock().active_mut().pending_scene_data = None;
     update_state();
     Ok(())
 }

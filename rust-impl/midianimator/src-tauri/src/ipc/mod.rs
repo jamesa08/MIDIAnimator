@@ -10,12 +10,10 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
-use crate::blender::scene_data;
-use crate::blender::scene_data::compare_scene_data;
-use crate::graph::execute::execute_graph;
+use crate::graph::execute::run_instance;
 use crate::scene_generics;
 use crate::settings::get_setting;
-use crate::state::{update_state, STATE};
+use crate::state::{relink, update_state, STATE};
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -81,41 +79,10 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
 
                     let server_clone = Arc::clone(&server);
                     // when spawnning a new thread, get the client information as well
+                    // Blender links to the tab it was linked to before, or the tab on screen (it checks the scene first)
                     rt.spawn(async move {
                         request_client_info().await;
-
-                        // Check if we need validation BEFORE fetching new scene data
-                        let (needs_validation, saved_scene_data) = {
-                            let state = STATE.lock().unwrap();
-                            (!state.rf_instance.is_empty(), state.scene_data.clone())
-                        };
-
-                        if needs_validation {
-                            // Fetch fresh scene data
-                            let fresh_scene_data = scene_data::get_scene_data().await;
-
-                            // Compare old vs new
-                            let diff = compare_scene_data(&saved_scene_data, &fresh_scene_data);
-
-                            if diff.has_changes() {
-                                // Store pending data in state
-                                let mut state = STATE.lock().unwrap();
-                                state.pending_scene_data = Some(fresh_scene_data);
-                                state.execution_paused = true;
-                                drop(state);
-                                update_state();
-                                println!("Scene data changes detected, execution paused for validation.");
-                            } else {
-                                // No changes, just update normally
-                                let mut state = STATE.lock().unwrap();
-                                state.scene_data = fresh_scene_data;
-                                drop(state);
-                                update_state();
-                            }
-                        } else {
-                            // Normal connection, no validation needed
-                            request_scene_data().await;
-                        }
+                        relink().await;
                     });
 
                     thread::spawn(move || {
@@ -160,15 +127,6 @@ def execute():
     update_state();
 }
 
-pub async fn request_scene_data() {
-    let result = scene_data::get_scene_data().await;
-    println!("Scene data: {:?}", result);
-    let mut state = STATE.lock().unwrap();
-    state.scene_data = result;
-    drop(state);
-    update_state();
-}
-
 /// takes every complete message out of `data`, leaving a trailing partial message for the next read.
 /// both sides end each message with a newline and JSON escapes newlines inside strings,
 /// so a newline always ends a message, even when several arrive in one read.
@@ -189,18 +147,26 @@ pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
     messages
 }
 
-/// makes a scene sent by the Blender tracker the app's scene data, returns true if the realtime graph should run.
-/// while execution is paused for review the scene becomes the pending scene data instead, so accepting it uses the newest scene.
+/// makes a scene sent by the Blender tracker the scene data of the tab Blender is linked to, returns the tab if it should
+/// run (it's on screen, a tab in the background runs once it's shown). while the tab is paused for review the scene
+/// becomes its pending scene data instead, so accepting it uses the newest scene. with no tab linked it goes nowhere.
 /// doesn't notify the front end, the caller calls `update_state()`
-pub fn apply_scene_update(message: &str) -> Result<bool, String> {
+pub fn apply_scene_update(message: &str) -> Result<Option<String>, String> {
     let scene_data = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message).map_err(|e| e.to_string())?;
     let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
-    if state.execution_paused {
-        state.pending_scene_data = Some(scene_data);
-        return Ok(false);
+    let Some(id) = state.connected_instance_id.clone() else {
+        return Ok(None);
+    };
+    let shown = state.active_instance_id == id;
+    let Some(instance) = state.instance_mut(&id) else {
+        return Ok(None);
+    };
+    if instance.execution_paused {
+        instance.pending_scene_data = Some(scene_data);
+        return Ok(None);
     }
-    state.scene_data = scene_data;
-    Ok(true)
+    instance.scene_data = scene_data;
+    Ok(shown.then_some(id))
 }
 
 // handle a client connection
@@ -234,13 +200,11 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                         // an unsolicited scene update from the tracker
                         println!("Received scene update from Blender with UUID: {} ({} bytes)", message.uuid, message.message.len());
                         match apply_scene_update(&message.message) {
-                            Ok(execute) => {
+                            Ok(run) => {
                                 update_state();
                                 // run the realtime graph so nodes like Scene Link pick up the new scene
-                                if execute {
-                                    tauri::async_runtime::spawn(async {
-                                        execute_graph(true).await;
-                                    });
+                                if let Some(id) = run {
+                                    tauri::async_runtime::spawn(run_instance(id, true));
                                 }
                             }
                             Err(e) => println!("Failed to parse scene data JSON: {}", e),
@@ -263,7 +227,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     }
 
     // if disconnected, remove the client from the server
-    // clear all previous info
+    // clear all previous info, the linked tab stays linked (offline) until Blender is back
     println!("client disconnected");
     let mut state = STATE.lock().unwrap();
     state.connected = false;

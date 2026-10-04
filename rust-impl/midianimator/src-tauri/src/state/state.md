@@ -45,6 +45,25 @@ drop(state); // Release the lock to prevent deadlocks
 update_state();  // MUST call update_state() to keep front & backend state synchronized
 ```
 
+## Tabs
+
+Every tab is its own `.mkproj` file, like an instance of the app of its own (`AppState::instances`, an `InstanceState`
+each): it has its own file path and name, node graph, scene data, results, undo history, execution state and window
+layout (the frontend's panels and floating windows, saved with the file). The app's parts (the Blender connection, the
+node specs) stay on `AppState`. `state.active()` is the tab on screen, `state.instance(id)` any tab, and `connected_instance_id` the
+tab Blender is linked to (only it gets Blender's scene changes and writes to Blender, see `go_live`).
+
+```rs
+let mut state = STATE.lock().unwrap();
+state.active_mut().execution_paused = false;
+drop(state);
+update_state();
+```
+
+The front end gets a `StateView`: the app's parts, the `tabs` and `active_tab`, and the tab on screen's parts under
+the names they had before tabs (`rf_instance`, `executed_results`, ..., and `layout`). In the frontend `frontEndState`
+is the window layout of the tab on screen (`src/contexts/StateContext.tsx`).
+
 ## Why Drop the State?
 
 Dropping the state is crucial to prevent deadlocks. A deadlock can occur when one part of the application is accessing the state while another part is trying to acquire the state lock. By dropping the state after reading or writing, you release the lock, allowing other parts of the application to access the state without getting stuck in a deadlock. `clone()` parts of the state if you need multiple parts of the application to access state. _One at a time, please!_
@@ -70,8 +89,9 @@ function MyCustomComponent() {
 
 ### Writing to the State
 
-The front end never writes the backend state directly. The node graph (`rf_instance`) is changed with ops, every one is
-an undo step (see `graph/ops.rs`, `graph_apply` in `state/graph.rs` and `src/utils/graphOps.ts`):
+The front end never writes the backend state directly. A tab's node graph (`rf_instance`) is changed with ops, every one
+is an undo step in that tab's history (see `graph/ops.rs`, `graph_apply` in `state/graph.rs` and `src/utils/graphOps.ts`).
+The ops go to the tab in `TabContext`, which `NodeGraph` sets for the graph it shows:
 
 ```tsx
 import { useGraphOps, useSetInputs } from "../utils/graphOps";
@@ -85,8 +105,8 @@ const setInputs = useSetInputs();
 setInputs(id, { track_name: "Piano" });
 ```
 
-The backend sends the new graph back (`graph_changed`, with `graph_rev`, which only goes up so an older graph never
-replaces a newer one). Everything else (scene data, executed results, connection info) is owned by the backend and
+The backend sends the new graph back (`graph_changed`, with its `tab` and `graph_rev`, which only goes up so an older
+graph never replaces a newer one, and a background tab's graph is ignored). Everything else (scene data, executed results, connection info) is owned by the backend and
 changed through its own commands.
 
 ## Word of Warning

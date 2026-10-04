@@ -30,8 +30,16 @@ fn frame(message: &str, uuid: &str) -> Vec<u8> {
     (serde_json::to_string(&message).unwrap() + "\n").into_bytes()
 }
 
-fn group_names() -> Vec<String> {
-    STATE.lock().unwrap().scene_data["Scene"].object_groups.iter().map(|group| group.name.clone()).collect()
+// a fresh state with Blender connected and linked to the first tab
+fn linked_state() -> AppState {
+    let mut state = AppState::default();
+    state.connected = true;
+    state.connected_instance_id = Some("tab-1".to_string());
+    state
+}
+
+fn group_names(tab: &str) -> Vec<String> {
+    STATE.lock().unwrap().instance(tab).unwrap().scene_data["Scene"].object_groups.iter().map(|group| group.name.clone()).collect()
 }
 
 #[test]
@@ -83,36 +91,61 @@ fn take_messages_skips_a_bad_message() {
 #[test]
 fn scene_update_replaces_scene_data() {
     let _guard = lock_test();
-    *STATE.lock().unwrap() = AppState::default();
+    *STATE.lock().unwrap() = linked_state();
 
-    assert_eq!(apply_scene_update(&scene_json(&["Pianos"], 2)), Ok(true));
-    assert_eq!(group_names(), ["Pianos"]);
+    // the linked tab is on screen, it runs
+    assert_eq!(apply_scene_update(&scene_json(&["Pianos"], 2)), Ok(Some("tab-1".to_string())));
+    assert_eq!(group_names("tab-1"), ["Pianos"]);
 
     // a new top level collection comes through
     let mut data = frame(&scene_json(&["Pianos", "Drums"], 2), "b");
     let messages = take_messages(&mut data);
-    assert_eq!(apply_scene_update(&messages[0].message), Ok(true));
-    assert_eq!(group_names(), ["Pianos", "Drums"]);
+    assert_eq!(apply_scene_update(&messages[0].message), Ok(Some("tab-1".to_string())));
+    assert_eq!(group_names("tab-1"), ["Pianos", "Drums"]);
+}
+
+#[test]
+fn scene_update_goes_to_the_linked_tab() {
+    let _guard = lock_test();
+    *STATE.lock().unwrap() = linked_state();
+    {
+        let mut state = STATE.lock().unwrap();
+        let id = state.add_instance();
+        state.active_instance_id = id;
+    }
+
+    // the linked tab is in the background: it takes the scene, the tab on screen doesn't, and nothing runs yet
+    assert_eq!(apply_scene_update(&scene_json(&["Pianos"], 1)), Ok(None));
+    assert_eq!(group_names("tab-1"), ["Pianos"]);
+    assert!(STATE.lock().unwrap().instance("tab-2").unwrap().scene_data.is_empty());
+}
+
+#[test]
+fn scene_update_without_a_linked_tab_goes_nowhere() {
+    let _guard = lock_test();
+    *STATE.lock().unwrap() = AppState::default();
+    assert_eq!(apply_scene_update(&scene_json(&["Pianos"], 1)), Ok(None));
+    assert!(STATE.lock().unwrap().active().scene_data.is_empty());
 }
 
 #[test]
 fn scene_update_while_paused_is_pending() {
     let _guard = lock_test();
-    *STATE.lock().unwrap() = AppState::default();
+    *STATE.lock().unwrap() = linked_state();
     apply_scene_update(&scene_json(&["Pianos"], 1)).unwrap();
-    STATE.lock().unwrap().execution_paused = true;
+    STATE.lock().unwrap().active_mut().execution_paused = true;
 
     // waits for review instead of replacing the scene
-    assert_eq!(apply_scene_update(&scene_json(&["Pianos", "Drums"], 1)), Ok(false));
+    assert_eq!(apply_scene_update(&scene_json(&["Pianos", "Drums"], 1)), Ok(None));
     let state = STATE.lock().unwrap();
-    assert_eq!(state.scene_data["Scene"].object_groups.len(), 1);
-    assert_eq!(state.pending_scene_data.as_ref().unwrap()["Scene"].object_groups.len(), 2);
+    assert_eq!(state.active().scene_data["Scene"].object_groups.len(), 1);
+    assert_eq!(state.active().pending_scene_data.as_ref().unwrap()["Scene"].object_groups.len(), 2);
 }
 
 #[test]
 fn scene_update_rejects_bad_scene() {
     let _guard = lock_test();
-    *STATE.lock().unwrap() = AppState::default();
+    *STATE.lock().unwrap() = linked_state();
     assert!(apply_scene_update(r#"{"Scene": {"object_groups": 5}}"#).is_err());
-    assert!(STATE.lock().unwrap().scene_data.is_empty());
+    assert!(STATE.lock().unwrap().active().scene_data.is_empty());
 }

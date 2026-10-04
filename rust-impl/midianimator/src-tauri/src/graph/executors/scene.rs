@@ -1,12 +1,23 @@
-use std::sync::PoisonError;
-
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::io::{NodeResult, Outputs};
 use crate::blender::scene_data::write_scene_data;
-use crate::scene_generics::ObjectGroup;
-use crate::state::STATE;
+use crate::scene_generics::{ObjectGroup, Scene};
 use crate::utils::animation::BlendKeyframe;
+
+thread_local! {
+    // the scene of the tab being run, see `with_scene`
+    static SCENE: RefCell<Option<Scene>> = const { RefCell::new(None) };
+}
+
+/// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene
+pub fn with_scene<T>(scene: Option<Scene>, f: impl FnOnce() -> T) -> T {
+    let before = SCENE.with(|current| current.replace(scene));
+    let result = f();
+    SCENE.with(|current| *current.borrow_mut() = before);
+    result
+}
 
 // Node: scene_link
 ///
@@ -20,8 +31,8 @@ use crate::utils::animation::BlendKeyframe;
 pub fn scene_link() -> NodeResult {
     let mut outputs = Outputs::new();
 
-    // copy the scene out, a poisoned lock (a panic somewhere else) still has usable scene data
-    let scene = STATE.lock().unwrap_or_else(PoisonError::into_inner).scene_data.get("Scene").cloned();
+    // the scene of the tab being run
+    let scene = SCENE.with(|scene| scene.borrow().clone());
 
     // no scene yet (Blender hasn't sent one), empty outputs
     let Some(scene) = scene else {

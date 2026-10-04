@@ -21,7 +21,7 @@ use crate::graph::run::{instance_path, scoped_values};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::graph::history::{EntryInfo, Source, Step};
 use crate::state::history::{self, Capture};
-use crate::state::{load_project_from, save_project_to, update_state, AppState, STATE};
+use crate::state::{open_file, save_project_to, start_instance, update_state, AppState, InstanceState, Opened, STATE};
 use crate::ui::screenshot;
 
 // instructions sent to the MCP client when it connects
@@ -147,9 +147,10 @@ fn lock_state() -> MutexGuard<'static, AppState> {
     STATE.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// a copy of the parts of `AppState` the tools read
+/// a copy of the parts of `AppState` the tools read, with the tab on screen
 struct Snapshot {
     state: AppState,
+    tab: InstanceState,
     graph: Graph,
     specs: Vec<NodeSpec>,
     groups: BTreeMap<String, GroupDef>,
@@ -175,11 +176,13 @@ impl Snapshot {
             return Err(NOT_READY.to_string());
         }
         // parse the graph and the node specs
-        let graph = Graph::from_rf(&state.rf_instance)?;
+        let tab = state.active().clone();
+        let graph = Graph::from_rf(&tab.rf_instance)?;
         let specs = node_specs(&state.default_nodes);
         let groups = all_groups(&graph);
         Ok(Self {
             state,
+            tab,
             graph,
             specs,
             groups,
@@ -192,8 +195,8 @@ impl Snapshot {
             return Ok(View {
                 graph: &self.graph,
                 scope: None,
-                results: Cow::Borrowed(&self.state.executed_results),
-                inputs: Cow::Borrowed(&self.state.executed_inputs),
+                results: Cow::Borrowed(&self.tab.executed_results),
+                inputs: Cow::Borrowed(&self.tab.executed_inputs),
             });
         };
         let def = find_group(&self.groups, group_id)?;
@@ -203,8 +206,8 @@ impl Snapshot {
         Ok(View {
             graph: &def.graph,
             scope: Some(def),
-            results: Cow::Owned(scoped(&self.state.executed_results)),
-            inputs: Cow::Owned(scoped(&self.state.executed_inputs)),
+            results: Cow::Owned(scoped(&self.tab.executed_results)),
+            inputs: Cow::Owned(scoped(&self.tab.executed_inputs)),
         })
     }
 
@@ -219,7 +222,7 @@ impl Snapshot {
             },
             results: &view.results,
             inputs: &view.inputs,
-            scene_data: &self.state.scene_data,
+            scene_data: &self.tab.scene_data,
         }
     }
 }
@@ -273,12 +276,13 @@ async fn run_execution(realtime: bool) -> Result<(), String> {
     })
 }
 
-/// runs the realtime graph unless execution is paused, returns a one-line status
+/// runs the realtime graph of the tab on screen unless execution is paused, returns a one-line status
 async fn run_realtime_if_allowed() -> String {
     // grab what we need and drop the lock before executing
     let (paused, empty) = {
         let state = lock_state();
-        (state.execution_paused, Graph::from_rf(&state.rf_instance).map_or(true, |g| g.nodes.is_empty()))
+        let tab = state.active();
+        (tab.execution_paused, Graph::from_rf(&tab.rf_instance).map_or(true, |g| g.nodes.is_empty()))
     };
     // don't run while scene changes are waiting to be reviewed in the app
     if paused {
@@ -292,7 +296,7 @@ async fn run_realtime_if_allowed() -> String {
         return format!("{}; values below are from the last successful run", e);
     }
     // the edit worked either way, but say which nodes failed
-    let errors = node_errors(&lock_state().executed_results);
+    let errors = node_errors(&lock_state().active().executed_results);
     if errors.is_empty() {
         "realtime execution ok".to_string()
     } else {
@@ -321,8 +325,10 @@ impl MotionKeysMcp {
             if !state.ready {
                 return tool_error(NOT_READY);
             }
-            // parse the graph out of the state
-            let mut graph = match Graph::from_rf(&state.rf_instance) {
+            // parse the graph of the tab on screen out of the state
+            let tab = state.active_instance_id.clone();
+            let results = &state.active().executed_results;
+            let mut graph = match Graph::from_rf(&state.active().rf_instance) {
                 Ok(graph) => graph,
                 Err(e) => return tool_error(e),
             };
@@ -336,7 +342,7 @@ impl MotionKeysMcp {
                         groups: &groups,
                         scope: None,
                     };
-                    edit(&mut graph, &specs, &state.executed_results)
+                    edit(&mut graph, &specs, results)
                 }
                 // edit a copy of the group, it's stored in the project (a built-in becomes the project's own copy)
                 Some(group_id) => {
@@ -344,7 +350,7 @@ impl MotionKeysMcp {
                         Ok(def) => def,
                         Err(e) => return tool_error(e),
                     };
-                    let results = instance_path(&graph, &groups, group_id).map(|p| scoped_values(&state.executed_results, &p)).unwrap_or_default();
+                    let results = instance_path(&graph, &groups, group_id).map(|p| scoped_values(results, &p)).unwrap_or_default();
                     let specs = Specs {
                         specs: &specs,
                         groups: &groups,
@@ -363,7 +369,7 @@ impl MotionKeysMcp {
             };
             match outcome {
                 Ok(result) => {
-                    history::commit(&mut state, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
+                    history::commit(&mut state, &tab, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
                     result
                 }
                 Err(e) => return tool_error(e),
@@ -378,10 +384,14 @@ impl MotionKeysMcp {
 
     /// undoes or redoes one step, re-runs the realtime graph and says which step it was
     async fn history_step(&self, redo: bool) -> Result<CallToolResult, McpError> {
-        if !lock_state().ready {
-            return tool_error(NOT_READY);
-        }
-        let Some((entry, _)) = history::step(redo) else {
+        let tab = {
+            let state = lock_state();
+            if !state.ready {
+                return tool_error(NOT_READY);
+            }
+            state.active_instance_id.clone()
+        };
+        let Some((entry, _)) = history::step(&tab, redo) else {
             return tool_error(if redo {
                 "nothing to redo"
             } else {
@@ -435,11 +445,37 @@ impl MotionKeysMcp {
     // MARK: - Read-only Tools
 
     // app_status: ready flag, blender connection, graph size and execution state
-    #[tool(description = "App status: whether the UI is ready, Blender connection (app, version, file), node and edge counts, whether execution is paused and scene changes are pending.", annotations(read_only_hint = true))]
+    #[tool(description = "App status: whether the UI is ready, Blender connection (app, version, file), the tabs (which is on screen, which is live), and for the tab on screen its node and edge counts, whether execution is paused and scene changes are pending.", annotations(read_only_hint = true))]
     async fn app_status(&self) -> Result<CallToolResult, McpError> {
         let state = lock_state().clone();
+        let tab = state.active();
         // count the nodes and edges, 0 if the graph can't be read
-        let (nodes, edges) = Graph::from_rf(&state.rf_instance).map_or((0, 0), |g| (g.nodes.len(), g.edges.len()));
+        let (nodes, edges) = Graph::from_rf(&tab.rf_instance).map_or((0, 0), |g| (g.nodes.len(), g.edges.len()));
+        // one line per tab
+        let tabs: Vec<String> = state
+            .instances
+            .iter()
+            .map(|instance| {
+                let mut line = format!("  {} \"{}\"", instance.id, instance.name());
+                if let Some(path) = &instance.path {
+                    line.push_str(&format!(" {}", path));
+                }
+                if instance.id == tab.id {
+                    line.push_str(" (on screen)");
+                }
+                if state.connected_instance_id.as_ref() == Some(&instance.id) {
+                    line.push_str(if state.connected {
+                        " (live)"
+                    } else {
+                        " (linked, Blender away)"
+                    });
+                }
+                if instance.unsaved() {
+                    line.push_str(" (unsaved)");
+                }
+                line
+            })
+            .collect();
         // describe the blender connection
         let blender = if state.connected {
             format!(
@@ -455,7 +491,7 @@ impl MotionKeysMcp {
         } else {
             "not connected".to_string()
         };
-        ok_text(format!("ready: {}\nblender: {}\ngraph: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}", state.ready, blender, nodes, edges, state.execution_paused, state.pending_scene_data.is_some()))
+        ok_text(format!("ready: {}\nblender: {}\ntabs:\n{}\ngraph on screen: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}", state.ready, blender, tabs.join("\n"), nodes, edges, tab.execution_paused, tab.pending_scene_data.is_some()))
     }
 
     // node_types_list: every node type with its inputs and outputs
@@ -463,7 +499,7 @@ impl MotionKeysMcp {
     async fn node_types_list(&self) -> Result<CallToolResult, McpError> {
         let state = lock_state().clone();
         let specs = node_specs(&state.default_nodes);
-        let graph = Graph::from_rf(&state.rf_instance).unwrap_or_default();
+        let graph = Graph::from_rf(&state.active().rf_instance).unwrap_or_default();
         let groups = all_groups(&graph);
         let lookup = Specs {
             specs: &specs,
@@ -661,9 +697,10 @@ impl MotionKeysMcp {
     // MARK: - History Tools
 
     // graph_history: the undo history shared with the app
-    #[tool(description = "List the undo history, oldest first. The app and MCP share it: entries from the app are the user's own edits. Entries after the current position can be redone.", annotations(read_only_hint = true))]
+    #[tool(description = "List the undo history of the tab on screen, oldest first. The app and MCP share it: entries from the app are the user's own edits. Entries after the current position can be redone.", annotations(read_only_hint = true))]
     async fn graph_history(&self) -> Result<CallToolResult, McpError> {
-        let info = history::info();
+        let tab = lock_state().active_instance_id.clone();
+        let info = history::info(&tab);
         if info.entries.is_empty() {
             return ok_text("the history is empty");
         }
@@ -698,11 +735,14 @@ impl MotionKeysMcp {
             Err(e) => return tool_error(e),
         };
         // make sure we're allowed to execute: not paused, connected if writing to blender, and not empty
-        if snapshot.state.execution_paused {
+        if snapshot.tab.execution_paused {
             return tool_error("execution is paused because Blender scene changes are pending; accept or reject them in the app first");
         }
         if params.write_to_blender && !snapshot.state.connected {
             return tool_error("Blender is not connected; connect it (app_status shows the connection) or run with write_to_blender=false");
+        }
+        if params.write_to_blender && !snapshot.state.is_live(&snapshot.tab.id) {
+            return tool_error("the tab on screen isn't live, only the live tab writes to Blender; switch to it or link this one with tab_go_live (app_status shows which is live)");
         }
         if snapshot.graph.nodes.is_empty() {
             return tool_error("the graph is empty; add nodes with graph_add_node first");
@@ -719,8 +759,8 @@ impl MotionKeysMcp {
             Err(e) => return tool_error(e),
         };
         // count how many nodes ran without an error and say what kind of run it was
-        let errors = node_errors(&snapshot.state.executed_results);
-        let executed = snapshot.state.executed_results.len() - errors.len();
+        let errors = node_errors(&snapshot.tab.executed_results);
+        let executed = snapshot.tab.executed_results.len() - errors.len();
         let mode = if params.write_to_blender {
             "full run, keyframes sent to Blender"
         } else {
@@ -739,18 +779,25 @@ impl MotionKeysMcp {
         }
     }
 
-    // project_load: replaces the graph and scene data from a .mkproj file
-    #[tool(description = "Load a .mkproj project file, replacing the current graph and scene data.", annotations(read_only_hint = false, destructive_hint = true))]
+    // project_load: opens a .mkproj file in a tab of its own
+    #[tool(description = "Open a .mkproj project file in a tab of its own and show it: it takes the place of the tab on screen if that one is an untouched empty graph, otherwise it's added after the others. A file that's already open in a tab just switches to it. Blender links to it if no other tab is live.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn project_load(&self, Parameters(params): Parameters<PathParams>) -> Result<CallToolResult, McpError> {
-        // the frontend has to be loaded before we replace its state
+        // the frontend has to be loaded before we change its state
         if !lock_state().ready {
             return tool_error(NOT_READY);
         }
-        // load the project into the state
-        if let Err(e) = load_project_from(&params.path) {
-            return tool_error(format!("could not load '{}': {}", params.path, e));
+        // open it in a tab, then link Blender to it or run it
+        let (id, already) = match open_file(&params.path) {
+            Ok(Opened::New(id)) => (id, false),
+            Ok(Opened::Already(id)) => (id, true),
+            Err(e) => return tool_error(format!("could not open '{}': {}", params.path, e)),
+        };
+        if already {
+            crate::state::switch_active_instance(id.clone()).await;
+        } else {
+            start_instance(id.clone()).await;
         }
-        // re-run the realtime graph with the loaded project, then outline it
+        // outline it with the fresh results
         let execution = run_realtime_if_allowed().await;
         let snapshot = match Snapshot::take() {
             Ok(snapshot) => snapshot,
@@ -758,11 +805,16 @@ impl MotionKeysMcp {
         };
         let view = snapshot.view(None).unwrap();
         let text = outline::outline(&snapshot.ctx(&view), None, Detail::Concise).unwrap_or_else(|e| e);
-        ok_text(format!("loaded {}: {} nodes, {} edges\n{}\n\n{}", params.path, snapshot.graph.nodes.len(), snapshot.graph.edges.len(), execution, text))
+        let how = if already {
+            "was already open in"
+        } else {
+            "opened in"
+        };
+        ok_text(format!("{} {} {} \"{}\" (on screen): {} nodes, {} edges\n{}\n\n{}", params.path, how, id, snapshot.tab.name(), snapshot.graph.nodes.len(), snapshot.graph.edges.len(), execution, text))
     }
 
-    // project_save: writes the graph and scene data to a .mkproj file
-    #[tool(description = "Save the current graph and scene data to a .mkproj file (overwrites it).", annotations(read_only_hint = false, destructive_hint = true))]
+    // project_save: writes the tab on screen to a .mkproj file
+    #[tool(description = "Save the tab on screen (its graph, scene data and layout) to a .mkproj file, which becomes the tab's file and name (overwrites it).", annotations(read_only_hint = false, destructive_hint = true))]
     async fn project_save(&self, Parameters(params): Parameters<PathParams>) -> Result<CallToolResult, McpError> {
         // only allow absolute paths ending in .mkproj, so we don't overwrite something by accident
         let path = std::path::Path::new(&params.path);
