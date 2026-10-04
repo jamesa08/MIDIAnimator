@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
@@ -236,6 +237,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             if (document.elementFromPoint(clientX, clientY)?.closest(".panel")) return;
             const entry = entries.find((e) => e.key === nodeType);
             if (!entry || !canEdit()) return;
+
+            // dropped from a floating panel, that window still has the keys. the graph takes them so the next key (X to
+            // delete it) goes straight to it
+            if (!document.hasFocus()) getCurrentWindow().setFocus();
 
             // keep the node under the cursor where it was grabbed
             const flowPosition = screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false });
