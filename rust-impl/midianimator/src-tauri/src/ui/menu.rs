@@ -7,6 +7,9 @@ use tauri::{
 
 // sent to the main window to close its tab, or the window on the last one
 pub const CLOSE_TAB_EVENT: &str = "close-tab";
+// sent to the main window when open, save or save as is picked from the file menu (or its shortcut), payload "open",
+// "save" or "save_as". the frontend does them for the tab on screen
+pub const FILE_EVENT: &str = "menu-file";
 // sent to the focused window when undo or redo is picked from the edit menu (or its shortcut), payload "undo" or "redo"
 pub const EDIT_EVENT: &str = "menu-edit";
 // sent to the main window to show or hide a panel, payload the panel id (PANELS in src/utils/panels.tsx)
@@ -25,6 +28,10 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 
     // recreate the app submenu with the settings item inserted
     let app_submenu = SubmenuBuilder::new(app, app.package_info().name.as_str()).about(None).separator().item(&settings).separator().item(&quit).build()?;
+    let open = MenuItemBuilder::with_id("open", "Open...").accelerator(keybinds::get_keybind(KEYBINDS, "open".to_string())).build(app)?;
+    let save = MenuItemBuilder::with_id("save", "Save").accelerator(keybinds::get_keybind(KEYBINDS, "save".to_string())).build(app)?;
+    let save_as = MenuItemBuilder::with_id("save_as", "Save As...").accelerator(keybinds::get_keybind(KEYBINDS, "save_as".to_string())).build(app)?;
+    let file_submenu = SubmenuBuilder::new(app, "File").item(&open).separator().item(&save).item(&save_as).build()?;
     let history = MenuItemBuilder::with_id("history", "History").build(app)?;
     let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).separator().item(&close).build()?;
 
@@ -34,7 +41,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let redo = MenuItemBuilder::with_id("redo", "Redo").accelerator(keybinds::get_keybind(KEYBINDS, "redo".to_string())).build(app)?;
     let edit_submenu = SubmenuBuilder::new(app, "Edit").item(&undo).item(&redo).separator().cut().copy().paste().select_all().build()?;
 
-    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&edit_submenu).item(&window_submenu).build()?;
+    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&window_submenu).build()?;
 
     Ok(menu)
 }
@@ -54,6 +61,9 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::menu::Me
             } else {
                 window.close().ok();
             }
+        }
+        "open" | "save" | "save_as" => {
+            app.emit_to("main", FILE_EVENT, event.id().as_ref()).ok();
         }
         "history" => {
             app.emit_to("main", PANEL_TOGGLE_EVENT, HISTORY_PANEL).ok();
