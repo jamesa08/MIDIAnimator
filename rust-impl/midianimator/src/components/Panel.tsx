@@ -3,6 +3,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../utils/node";
 import { PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, panelSide, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
 import PanelBody, { PanelNodeDrop } from "./PanelBody";
+import { pushModal } from "../utils/keymap";
 
 interface PanelProps {
     id: string;
@@ -46,6 +47,13 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         const grabX = event.clientX - rect.left;
         const grabY = event.clientY - rect.top;
         let move: ((x: number, y: number) => void) | null = null;
+        // the drag takes the keys, cancelling (escape) puts a torn off panel back
+        const endModal = pushModal("drag", {
+            cancel: () => {
+                cleanup();
+                if (move) sendToMain(PANEL_DOCK_EVENT, { id: panelId });
+            },
+        });
 
         const handleMove = (e: PointerEvent) => {
             // stays docked until the cursor leaves the dock slot
@@ -58,10 +66,10 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
         };
 
         const cleanup = () => {
+            endModal();
             document.body.style.cursor = "";
             window.removeEventListener("pointermove", handleMove);
             window.removeEventListener("pointerup", handleUp);
-            window.removeEventListener("keydown", handleKey, true);
         };
 
         const handleUp = (e: PointerEvent) => {
@@ -69,19 +77,10 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
             if (move) sendToMain(PANEL_DROP_EVENT, { id: panelId, screenX: e.screenX, screenY: e.screenY });
         };
 
-        // escape puts a torn off panel back
-        const handleKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape") return;
-            e.stopPropagation();
-            cleanup();
-            if (move) sendToMain(PANEL_DOCK_EVENT, { id: panelId });
-        };
-
         event.preventDefault();
         document.body.style.cursor = "grabbing";
         window.addEventListener("pointermove", handleMove);
         window.addEventListener("pointerup", handleUp);
-        window.addEventListener("keydown", handleKey, true);
     };
 
     const handleNodeDrop = (drop: PanelNodeDrop) => {

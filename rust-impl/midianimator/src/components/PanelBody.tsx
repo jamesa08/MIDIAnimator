@@ -7,6 +7,7 @@ import { GroupContext } from "../contexts/GroupContext";
 import { GroupDef, allGroups, loadBuiltinGroups } from "../utils/groups";
 import { nodeEntries, previewData, useNodeSpecs } from "../utils/nodeEntries";
 import HistoryList from "./HistoryList";
+import { pushModal } from "../utils/keymap";
 
 // where a node from the nodes panel was released, offset is where it was grabbed in node (unscaled) pixels
 export interface PanelNodeDrop {
@@ -80,6 +81,8 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
         let dragging = false;
         // ghost window version, set up now so the node is ready by the time the drag starts
         const ghostWin = ghostWindow ? startDragGhost(nodeType, rect.width) : null;
+        // the drag takes the keys, cancelling (escape) drops nothing
+        const endModal = pushModal("drag", { cancel: () => cleanup() });
 
         const handleMove = (e: PointerEvent) => {
             // small dead zone so a plain click doesn't start a drag
@@ -99,12 +102,12 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
         };
 
         const cleanup = () => {
+            endModal();
             ghostWin?.end();
             ghost?.remove();
             document.body.style.cursor = "";
             window.removeEventListener("pointermove", handleMove);
             window.removeEventListener("pointerup", handleUp);
-            window.removeEventListener("keydown", handleKey, true);
         };
 
         const handleUp = (e: PointerEvent) => {
@@ -113,17 +116,9 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
             onNodeDrop({ nodeType, clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY, offsetX: grabX / scale, offsetY: grabY / scale });
         };
 
-        // escape cancels the drag
-        const handleKey = (e: KeyboardEvent) => {
-            if (e.key !== "Escape") return;
-            e.stopPropagation();
-            cleanup();
-        };
-
         event.preventDefault();
         window.addEventListener("pointermove", handleMove);
         window.addEventListener("pointerup", handleUp);
-        window.addEventListener("keydown", handleKey, true);
     };
 
     const groups = usePanelGroups();

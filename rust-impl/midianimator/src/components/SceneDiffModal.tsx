@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
+import { useModal } from "../utils/keymap";
 
 interface SceneDiff {
     missing_objects: string[];
@@ -18,16 +19,8 @@ interface SceneDiffModalProps {
 function SceneDiffModal({ diff, onAccept, onReject, onClose }: SceneDiffModalProps) {
     const modalRef = useRef<HTMLDivElement>(null);
 
-    // Close on Escape key
-    useEffect(() => {
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                onClose();
-            }
-        };
-        window.addEventListener("keydown", handleEscape);
-        return () => window.removeEventListener("keydown", handleEscape);
-    }, [onClose]);
+    // takes the keys while it's up, cancel closes it
+    useModal("dialog", { cancel: onClose }, !!diff, { passthrough: true });
 
     if (!diff) return null;
 

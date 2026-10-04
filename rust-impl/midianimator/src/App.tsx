@@ -240,7 +240,7 @@ function App() {
                 </div>
             </div>
             <div className="content relative flex flex-auto" style={contentStyle}>
-                <div className="node-graph card flex-grow">
+                <div className="node-graph card flex-grow" data-keymap-area="node_editor">
                     <div data-live-resize="vignette" className="canvas-vignette" />
                     <NodeGraph />
                 </div>

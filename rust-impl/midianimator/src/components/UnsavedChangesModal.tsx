@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useModal } from "../utils/keymap";
 
 interface UnsavedChangesModalProps {
     onSave: () => void;
@@ -8,20 +8,16 @@ interface UnsavedChangesModalProps {
 
 // asked before the main window closes with unsaved changes
 function UnsavedChangesModal({ onSave, onDiscard, onCancel }: UnsavedChangesModalProps) {
-    // escape cancels, enter saves unless a button is focused
-    useEffect(() => {
-        const handleKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.stopPropagation();
-                onCancel();
-            } else if (e.key === "Enter" && !(document.activeElement instanceof HTMLButtonElement)) {
-                e.stopPropagation();
-                onSave();
-            }
-        };
-        window.addEventListener("keydown", handleKey, true);
-        return () => window.removeEventListener("keydown", handleKey, true);
-    }, [onSave, onCancel]);
+    // takes the keys while it's up: cancel, or confirm which saves unless a button is focused (that one's pressed)
+    useModal(
+        "dialog",
+        {
+            confirm: () => (document.activeElement instanceof HTMLButtonElement ? document.activeElement.click() : onSave()),
+            cancel: onCancel,
+        },
+        true,
+        { passthrough: true }
+    );
 
     const button = "px-3 h-6 border border-black text-sm";
 

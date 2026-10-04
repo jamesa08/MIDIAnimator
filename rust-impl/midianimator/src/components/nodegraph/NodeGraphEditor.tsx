@@ -5,7 +5,7 @@ import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
-import { isTextField } from "../../utils/editMenu";
+import { blockUntilRelease, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas from "./NodeGraphCanvas";
@@ -69,8 +69,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     const grabRef = useRef<Grab | null>(null);
     const [grabbing, setGrabbing] = useState(false);
 
-    //emulate 3 button mouse panning
-    const [isPanningWithAlt, setIsPanningWithAlt] = useState(false);
+    // left drag pans while the pan key is held, emulating a 3 button mouse
+    const panHeld = useHold("node_editor", "pan");
 
     const { backEndState: state } = useStateContext();
     const groupId = level.groupId;
@@ -80,9 +80,6 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // read by the window listeners, a graph getting ready behind the one on screen ignores keys and drops
     const shownRef = useRef(shown);
     shownRef.current = shown;
-
-    // set by the click that places nodes, the rest of that click gets swallowed
-    const swallowClickRef = useRef(false);
 
     // ops sent (or a selection about to be sent) that haven't come back yet, the selection on screen is ahead of the
     // backend's until they have
@@ -261,51 +258,13 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             setNodes((nds) => nds.map((node) => (start.has(node.id) ? { ...node, position: { x: start.get(node.id)!.x + dx, y: start.get(node.id)!.y + dy } } : node)));
         };
 
-        // left click places the nodes, like blender the click only confirms.
-        // capture phase on pointerdown (fires before mousedown) and swallowed so react flow doesn't also
-        // treat it as a click: no deselect on the pane, no selecting/dragging a node under the cursor.
-        // right click is left alone so the context menu can cancel
-        const handlePointerDown = (event: PointerEvent) => {
-            if (event.button !== 0) return;
-            event.stopPropagation();
-            swallowClickRef.current = true;
-            confirmGrab();
-        };
-
         window.addEventListener("mousemove", handleMouseMove);
-        window.addEventListener("pointerdown", handlePointerDown, true);
+        return () => window.removeEventListener("mousemove", handleMouseMove);
+    }, [grabbing, screenToFlowPosition, setNodes]);
 
-        return () => {
-            window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("pointerdown", handlePointerDown, true);
-        };
-    }, [grabbing, screenToFlowPosition, setNodes, confirmGrab]);
-
-    // swallow the rest of the placing click (mousedown/mouseup/click) so react flow never sees it.
-    // lives outside the drag effect, which is torn down before the click event arrives
-    useEffect(() => {
-        const handleSwallow = (event: MouseEvent) => {
-            if (!swallowClickRef.current) return;
-            event.stopPropagation();
-            if (event.type === "click") swallowClickRef.current = false;
-        };
-        // if the click never arrived (released outside the window), don't eat the next one
-        const handlePointerDown = () => {
-            swallowClickRef.current = false;
-        };
-
-        // registered before the drag effect's pointerdown, so a placing pointerdown sets the flag after this clears it
-        window.addEventListener("pointerdown", handlePointerDown, true);
-        window.addEventListener("mousedown", handleSwallow, true);
-        window.addEventListener("mouseup", handleSwallow, true);
-        window.addEventListener("click", handleSwallow, true);
-        return () => {
-            window.removeEventListener("pointerdown", handlePointerDown, true);
-            window.removeEventListener("mousedown", handleSwallow, true);
-            window.removeEventListener("mouseup", handleSwallow, true);
-            window.removeEventListener("click", handleSwallow, true);
-        };
-    }, []);
+    // a grab takes every key and click until it's confirmed or cancelled (left click and right click by default). like
+    // blender the confirming click only confirms, react flow never sees it (src/utils/keymap.ts swallows it)
+    useModal("grab", { confirm: confirmGrab, cancel: cancelGrab }, grabbing);
 
     // MARK: - Clipboard
 
@@ -387,91 +346,74 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => window.removeEventListener(SOCKET_EDIT_EVENT, handleSocketEdit);
     }, [groupId, canEdit, apply]);
 
-    // Keyboard listener
-    useEffect(() => {
-        const handleKeyDown = async (event: KeyboardEvent) => {
-            if (!shownRef.current) return;
-            // ignore if focused on input and not keybind
-            const target = event.target as HTMLElement;
-            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable) {
-                return;
-            }
+    // MARK: - Commands
 
-            if (event.key === "Tab") {
-                // tab opens the selected group, or goes back out when no group is selected. ctrl+tab goes back to the top
-                event.preventDefault();
-                cancelGrab();
+    // the node editor's commands, their keys come from the keymap (src/utils/keymap.ts). a graph getting ready behind the
+    // one on screen doesn't take them
+    useKeymap(
+        "node_editor",
+        {
+            // tab opens the selected group, or goes back out when no group is selected
+            edit_group: () => {
                 const selectedGroups = getNodes().filter((n) => n.selected && n.type === GROUP);
-                if (event.ctrlKey) {
-                    exitGroup(true);
-                } else if (selectedGroups.length === 1) {
-                    openGroup(selectedGroups[0].id);
-                } else {
-                    exitGroup(false);
-                }
-            } else if (event.code === "KeyG" && (event.ctrlKey || event.metaKey) && !event.altKey) {
-                event.preventDefault();
+                if (selectedGroups.length === 1) openGroup(selectedGroups[0].id);
+                else exitGroup(false);
+            },
+            exit_to_root: () => exitGroup(true),
+            group: () => {
                 if (canEdit()) groupSelection();
-            } else if (event.code === "KeyG" && event.altKey) {
-                event.preventDefault();
+            },
+            ungroup: () => {
                 if (canEdit()) ungroupSelection();
-            } else if (event.shiftKey && event.key === "A") {
-                event.preventDefault();
+            },
+            add_node: () => {
                 if (!canEdit()) return;
                 const { x, y } = mousePositionRef.current;
                 setMenuPosition({ x, y });
                 setMenuLink(null);
                 setMenuOpen(true);
-            } else if (event.key === "Escape") {
-                // cancel a grab in progress, otherwise just close the menu
-                if (grabRef.current) {
-                    cancelGrab();
-                } else {
-                    closeMenu();
-                }
-            } else if (event.key.toLowerCase() === "x" && !event.metaKey && !event.ctrlKey) {
-                event.preventDefault();
+            },
+            // the selected nodes (a zone as a pair) and edges, edges of deleted nodes go with them.
+            // read from the store, the closure's nodes can be a render behind
+            delete: () => {
                 if (!canEdit()) return;
-                // the selected nodes (a zone as a pair) and edges, edges of deleted nodes go with them
-                // read from the store, the closure's nodes can be a render behind
                 const nodes = selectedIds(getNodes());
                 const edges = selectedIds(getEdges());
                 if (nodes.length === 0 && edges.length === 0) return;
                 apply([{ op: "delete", nodes, edges }]);
-            } else if (event.key === "g" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                event.preventDefault();
+            },
+            grab: () => {
                 if (!editable) return;
                 const selected = getNodes().filter((node) => node.selected);
-                if (selected.length > 0) {
-                    const { x, y } = mousePositionRef.current;
-                    startGrab(selected, screenToFlowPosition({ x, y }, { snapToGrid: false }), null);
-                }
-            } else if (event.shiftKey && event.key === "D") {
-                event.preventDefault();
+                if (selected.length === 0) return;
+                const { x, y } = mousePositionRef.current;
+                startGrab(selected, screenToFlowPosition({ x, y }, { snapToGrid: false }), null);
+            },
+            // the copies are grabbed, placing them ends the duplicate and cancelling undoes it
+            duplicate: async () => {
                 if (!canEdit()) return;
-                // read from the store, the closure's nodes can be a render behind
                 const selected = selectedIds(getNodes());
                 if (selected.length === 0) return;
-
-                // the copies are grabbed, placing them ends the duplicate and cancelling undoes it
                 const { x, y } = mousePositionRef.current;
                 const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
                 const txn = crypto.randomUUID();
                 const applied = await apply([{ op: "duplicate", nodes: selected, offset: { x: 20, y: 20 } }], { txn });
                 if (applied) startGrab(applied.added, flowPosition, txn);
-            } else if (event.key === "a" && !event.metaKey && !event.ctrlKey) {
-                event.preventDefault();
-
-                // deselect everything if anything is selected, otherwise select every node
+            },
+            // deselect everything if anything is selected, otherwise select every node
+            select_all: () => {
                 const hasSelection = getNodes().some((node) => node.selected) || getEdges().some((edge) => edge.selected);
                 setNodes((nds) => nds.map((node) => ({ ...node, selected: !hasSelection })));
                 setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
                 scheduleSelection();
-            }
-        };
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [screenToFlowPosition, setNodes, setEdges, getNodes, getEdges, cancelGrab, closeMenu, openGroup, exitGroup, groupSelection, ungroupSelection, editable, canEdit, apply, startGrab, scheduleSelection]);
+            },
+        },
+        () => shownRef.current
+    );
+
+    // react flow's own drags (box select, dragging a link or a node) take every key until the mouse is let go, so a key
+    // can't open a group or start a grab halfway through one
+    const blockKeys = useCallback(() => blockUntilRelease(), []);
 
     // Close menu on click outside
     useEffect(() => {
@@ -484,22 +426,6 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
         return () => window.removeEventListener("mousedown", handleClick);
     }, [menuOpen, closeMenu]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === "Alt") setIsPanningWithAlt(true);
-        };
-        const handleKeyUp = (e: KeyboardEvent) => {
-            if (e.key === "Alt") setIsPanningWithAlt(false);
-        };
-
-        window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("keyup", handleKeyUp);
-        return () => {
-            window.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener("keyup", handleKeyUp);
-        };
-    }, []);
 
     // shift multi select, tracked here instead of multiSelectionKeyCode.
     // react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
@@ -618,35 +544,26 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     // MARK: -
     // HANDLERS FOR REACT FLOW EVENTS
-    const handlePaneClick = useCallback(() => {
-        if (grabRef.current) confirmGrab();
-    }, [confirmGrab]);
-
+    // a click while grabbing never reaches react flow, the grab modal confirms or cancels it
     const handleNodeClickStop = useCallback(
         (event: React.MouseEvent, node: any) => {
-            if (grabRef.current) confirmGrab();
-
             // If shift key is not held, deselect all other nodes
             if (!event.shiftKey) {
                 setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
                 scheduleSelection();
             }
         },
-        [confirmGrab, setNodes, scheduleSelection]
+        [setNodes, scheduleSelection]
     );
 
     const handleNodeDrag = useCallback(() => {
         if (grabRef.current) confirmGrab();
     }, [confirmGrab]);
 
-    // Right Click to cancel
-    const handleContextMenu = useCallback(
-        (event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
-            event.preventDefault();
-            cancelGrab();
-        },
-        [cancelGrab]
-    );
+    // no browser context menu on the graph
+    const handleContextMenu = useCallback((event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
+        event.preventDefault();
+    }, []);
 
     useOnViewportChange({
         onStart: () => {
@@ -779,8 +696,11 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectStart={blockKeys}
                 onConnectEnd={onConnectEnd}
-                onPaneClick={handlePaneClick}
+                onSelectionStart={blockKeys}
+                onNodeDragStart={blockKeys}
+                onSelectionDragStart={blockKeys}
                 onNodeClick={handleNodeClickStop}
                 onNodeDrag={handleNodeDrag}
                 onPaneContextMenu={handleContextMenu}
@@ -790,7 +710,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onEdgeContextMenu={handleContextMenu}
                 onInit={onInit}
                 isValidConnection={isValidConnection}
-                panOnDrag={isPanningWithAlt ? true : [1]}
+                panOnDrag={panHeld ? true : [1]}
                 nodesDraggable={editable}
                 nodesConnectable={editable}
                 className={isRoot ? "" : "group-canvas"}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NodeEntry } from "../../utils/nodeEntries";
+import { useModal } from "../../utils/keymap";
 
 // shift+a menu, searches the nodes that can be added
 function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen: boolean; entries: NodeEntry[]; onClose: () => void; onSelect: (key: string) => void; position: { x: number; y: number } }) {
@@ -21,6 +22,19 @@ function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen:
         }
     }, [isOpen]);
 
+    // takes the keys while it's open, typing still goes to the search
+    useModal(
+        "add_menu",
+        {
+            confirm: () => {
+                if (filteredEntries.length > 0) onSelect(filteredEntries[0].key);
+            },
+            cancel: onClose,
+        },
+        isOpen,
+        { passthrough: true }
+    );
+
     if (!isOpen) return null;
 
     // on the body so it sits above the floating panels, the canvas is its own stacking context
@@ -34,21 +48,7 @@ function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen:
             className="bg-[#2a2a2a] border border-[#444] rounded w-[250px] max-h-[400px] z-[1000] flex flex-col"
             onMouseDown={(e) => e.stopPropagation()}
         >
-            <input
-                ref={searchInputRef}
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search nodes..."
-                className="px-2 py-1 bg-[#1a1a1a] border-0 border-b border-[#444] text-white outline-none text-[13px]"
-                onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                        onClose();
-                    } else if (e.key === "Enter" && filteredEntries.length > 0) {
-                        onSelect(filteredEntries[0].key);
-                    }
-                }}
-            />
+            <input ref={searchInputRef} type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search nodes..." className="px-2 py-1 bg-[#1a1a1a] border-0 border-b border-[#444] text-white outline-none text-[13px]" />
             <div style={{ overflowY: "auto", maxHeight: "350px" }}>
                 {filteredEntries.map((entry) => (
                     <div
