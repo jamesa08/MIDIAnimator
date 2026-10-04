@@ -117,15 +117,27 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     // MARK: - Selection
 
-    // the selection on screen goes to the backend once per frame (a click selects and deselects in several changes),
-    // after a box selection has ended. selecting is an undo step
+    // the selection on screen goes to the backend once the change has rendered (a click selects and deselects in several
+    // changes), after a box selection has ended. selecting is an undo step.
+    // not on the next frame: react flow's store takes the new selection in an effect after the render, and a frame could
+    // come first and send nothing (a click that moved a pixel selected nothing, its move's reply put the old selection back)
     const selectionPendingRef = useRef(false);
+    const [selectionChanged, setSelectionChanged] = useState(0);
     const scheduleSelection = useCallback(() => {
         if (selectionPendingRef.current) return;
         selectionPendingRef.current = true;
         inFlightRef.current++;
+        setSelectionChanged((n) => n + 1);
+    }, []);
+    // after react flow's own effects (it's a child), so its store has the selection
+    useEffect(() => {
+        if (!selectionPendingRef.current) return;
+        let frame = 0;
         const flush = () => {
-            if (store.getState().userSelectionActive) return requestAnimationFrame(flush);
+            if (store.getState().userSelectionActive) {
+                frame = requestAnimationFrame(flush);
+                return;
+            }
             selectionPendingRef.current = false;
             const nodes = selectedIds(getNodes());
             const edges = selectedIds(getEdges());
@@ -136,8 +148,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             }
             inFlightRef.current--;
         };
-        requestAnimationFrame(flush);
-    }, [store, getNodes, getEdges, canEdit, apply]);
+        flush();
+        // a box selection still going is waited on again when this runs again
+        return () => cancelAnimationFrame(frame);
+    }, [selectionChanged, store, getNodes, getEdges, canEdit, apply]);
 
     // MARK: - Grab
 

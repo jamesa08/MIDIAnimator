@@ -10,6 +10,11 @@ import { useHoldCodes } from "../../utils/keymap";
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
 
+// how far the mouse can move between press and release and still be a click, further is a drag (blender's 3px). the
+// same for both, react flow's defaults (a drag past 1px, a click only with no movement at all) left a click that moved a
+// pixel as neither, it selected nothing
+const CLICK_DISTANCE = 3;
+
 // a theme's paper texture (index.css .canvas-paper), pinned to the graph. it's its own gpu layer that panning only
 // slides, so moving the graph never repaints it. the vars live on this element alone so no other styles recalculate
 function CanvasPaper() {
@@ -32,6 +37,9 @@ function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps 
             multiSelectionKeyCode={null}
             selectionKeyCode={frozen || boxSelectKeys.length === 0 ? null : boxSelectKeys}
             deleteKeyCode={null}
+            nodeDragThreshold={CLICK_DISTANCE}
+            nodeClickDistance={CLICK_DISTANCE}
+            paneClickDistance={CLICK_DISTANCE}
             panActivationKeyCode={null}
             selectionMode={SelectionMode.Partial}
             minZoom={0.05}
