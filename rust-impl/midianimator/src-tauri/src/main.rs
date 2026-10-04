@@ -32,7 +32,8 @@ async fn main() {
             }
         })
         .setup(|app| {
-            // build and set menu
+            // build and set menu, with the user's keyboard shortcuts
+            MIDIAnimator::ui::keybinds::load_keymap(app.handle());
             let menu = menu::build_menu(app.handle())?;
             app.set_menu(menu)?;
 

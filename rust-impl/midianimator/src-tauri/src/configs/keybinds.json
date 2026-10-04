@@ -1,58 +1,74 @@
-{
-    "settings": {
-        "name": "Settings",
-        "description": "Open Settings window",
-        "key": "CmdOrCtrl+,"
+[
+    {
+        "id": "app",
+        "name": "Application",
+        "kind": "app",
+        "commands": [
+            { "id": "settings", "name": "Settings", "keys": ["CmdOrCtrl+,"], "menu": true },
+            { "id": "quit", "name": "Quit", "keys": ["CmdOrCtrl+Q"], "menu": true },
+            { "id": "new_tab", "name": "New Tab", "keys": ["CmdOrCtrl+T"], "menu": true },
+            { "id": "open", "name": "Open", "keys": ["CmdOrCtrl+O"], "menu": true },
+            { "id": "save", "name": "Save", "keys": ["CmdOrCtrl+S"], "menu": true },
+            { "id": "save_as", "name": "Save As", "keys": ["CmdOrCtrl+Shift+S"], "menu": true },
+            { "id": "close", "name": "Close", "keys": ["CmdOrCtrl+W"], "menu": true },
+            { "id": "undo", "name": "Undo", "keys": ["CmdOrCtrl+Z"], "menu": true },
+            { "id": "redo", "name": "Redo", "keys": ["CmdOrCtrl+Shift+Z"], "menu": true },
+            { "id": "cut", "name": "Cut", "keys": ["CmdOrCtrl+X"], "menu": true, "fixed": true },
+            { "id": "copy", "name": "Copy", "keys": ["CmdOrCtrl+C"], "menu": true, "fixed": true },
+            { "id": "paste", "name": "Paste", "keys": ["CmdOrCtrl+V"], "menu": true, "fixed": true },
+            { "id": "select_all", "name": "Select All", "keys": ["CmdOrCtrl+A"], "menu": true, "fixed": true },
+            { "id": "history", "name": "History", "keys": [], "menu": true }
+        ]
     },
-    "open": {
-        "name": "Open",
-        "description": "Open a file",
-        "key": "CmdOrCtrl+O"
+    {
+        "id": "node_editor",
+        "name": "Node Editor",
+        "kind": "area",
+        "commands": [
+            { "id": "add_node", "name": "Add Node", "keys": ["Shift+A"] },
+            { "id": "grab", "name": "Grab", "keys": ["G"] },
+            { "id": "duplicate", "name": "Duplicate", "keys": ["Shift+D"] },
+            { "id": "delete", "name": "Delete", "keys": ["X", "Backspace", "Delete"] },
+            { "id": "select_all", "name": "Select All", "keys": ["A"] },
+            { "id": "group", "name": "Make Group", "keys": ["Ctrl+G", "CmdOrCtrl+G"] },
+            { "id": "ungroup", "name": "Ungroup", "keys": ["Alt+G"] },
+            { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
+            { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },
+            { "id": "box_select", "name": "Box Select", "keys": ["B"], "hold": true },
+            { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
+        ]
     },
-    "close": {
-        "name": "Close",
-        "description": "Close the current tab or window",
-        "key": "CmdOrCtrl+W"
+    {
+        "id": "grab",
+        "name": "Grab",
+        "kind": "modal",
+        "commands": [
+            { "id": "confirm", "name": "Confirm", "keys": ["LeftMouse", "Enter", "NumEnter"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["RightMouse", "Escape"] }
+        ]
     },
-    "save": {
-        "name": "Save",
-        "description": "Save the current file",
-        "key": "CmdOrCtrl+S"
+    {
+        "id": "add_menu",
+        "name": "Add Menu",
+        "kind": "modal",
+        "commands": [
+            { "id": "confirm", "name": "Add First", "keys": ["Enter", "NumEnter"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["Escape"] }
+        ]
     },
-    "save_as": {
-        "name": "Save As",
-        "description": "Save the current file as a new file",
-        "key": "CmdOrCtrl+Shift+S"
+    {
+        "id": "dialog",
+        "name": "Dialog",
+        "kind": "modal",
+        "commands": [
+            { "id": "confirm", "name": "Confirm", "keys": ["Enter", "NumEnter"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["Escape"] }
+        ]
     },
-    "undo": {
-        "name": "Undo",
-        "description": "Undo the last action",
-        "key": "CmdOrCtrl+Z"
-    },
-    "redo": {
-        "name": "Redo",
-        "description": "Redo the last action",
-        "key": "CmdOrCtrl+Shift+Z"
-    },
-    "cut": {
-        "name": "Cut",
-        "description": "Cut the selected text",
-        "key": "CmdOrCtrl+X"
-    },
-    "copy": {
-        "name": "Copy",
-        "description": "Copy the selected text",
-        "key": "CmdOrCtrl+C"
-    },
-    "paste": {
-        "name": "Paste",
-        "description": "Paste the copied text",
-        "key": "CmdOrCtrl+V"
-    },
-    "select_all": {
-        "name": "Select All",
-        "description": "Select all",
-        "key": "CmdOrCtrl+A"
+    {
+        "id": "drag",
+        "name": "Panel Drag",
+        "kind": "modal",
+        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["Escape"] }]
     }
-
-}
+]

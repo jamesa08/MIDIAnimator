@@ -105,21 +105,11 @@ function TabBar() {
         if (index !== latest.current.tabs.findIndex((t) => t.id === id)) invoke("move_instance", { id, index });
     };
 
+    // close (cmd/ctrl+w, Close Window in the menu) closes the active tab, or the window on the last one. new tab is the
+    // menu's (ui/menu.rs)
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (!(e.metaKey || e.ctrlKey)) return;
-            if (e.key === "t") {
-                e.preventDefault();
-                addTab();
-            }
-        };
-        window.addEventListener("keydown", handler);
-
-        // cmd/ctrl+w (Close Window in the menu) closes the active tab, or the window on the last one
         const closeListener = listen("close-tab", () => closeTab(latest.current.activeId));
-
         return () => {
-            window.removeEventListener("keydown", handler);
             closeListener.then((f) => f());
         };
     }, []);

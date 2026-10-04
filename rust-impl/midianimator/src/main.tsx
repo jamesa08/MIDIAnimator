@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { applyTheme } from "./utils/theme";
 import "./utils/liveResize";
 import { scrollbarWidth } from "./utils/panels";
+import "./utils/keymap";
 import "./utils/editMenu";
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
