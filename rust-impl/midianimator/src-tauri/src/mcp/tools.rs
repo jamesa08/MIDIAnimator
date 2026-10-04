@@ -32,7 +32,10 @@ Never connect hidden handles: 'par' inputs are set with graph_set_inputs, and ou
 Edits show up live in the app and re-run the realtime graph, which never writes to Blender; \
 the app and these tools share one undo history: graph_history lists it, graph_undo and graph_redo step through it; \
 graph_execute with write_to_blender=true writes keyframes to Blender. Node ids accept any unique prefix. \
-app_screenshot shows what the UI currently looks like.";
+app_screenshot shows what the UI currently looks like. \
+Each tab is its own .mkproj file with its own graph, undo history and window layout, like a separate instance of the app; \
+every graph tool acts on the tab on screen. app_status lists the tabs, tab_new/tab_switch/tab_close/tab_rename manage them, \
+project_load opens a file in a tab of its own, and tab_go_live links Blender to one: only the live tab gets Blender's scene changes and writes keyframes.";
 
 // returned by every tool when the frontend hasn't called `ready` yet
 const NOT_READY: &str = "app not ready: the MotionKeys window has not finished loading; try again in a moment";
@@ -140,11 +143,33 @@ pub struct PathParams {
     pub path: String,
 }
 
+// tab_switch, tab_close, tab_go_live
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TabParams {
+    /// Tab id (e.g. "tab-2") or its exact name (e.g. "Graph 2"), as listed by app_status
+    pub tab: String,
+}
+
+// tab_rename
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RenameTabParams {
+    /// Tab id (e.g. "tab-2") or its exact name (e.g. "Graph 2"), as listed by app_status
+    pub tab: String,
+    /// The new label
+    pub label: String,
+}
+
 // MARK: - State Helpers
 
 /// locks the global state, a poisoned lock (a panic somewhere else) shouldn't take the MCP server down too
 fn lock_state() -> MutexGuard<'static, AppState> {
     STATE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// a tab's id from its id or exact name, the error lists the tabs
+fn resolve_tab(state: &AppState, tab: &str) -> Result<String, String> {
+    let found = state.instance(tab).or_else(|| state.instances.iter().find(|instance| instance.name() == tab));
+    found.map(|instance| instance.id.clone()).ok_or_else(|| format!("no tab '{}'; tabs are: {}", tab, state.instances.iter().map(|instance| format!("{} \"{}\"", instance.id, instance.name())).collect::<Vec<_>>().join(", ")))
 }
 
 /// a copy of the parts of `AppState` the tools read, with the tab on screen
@@ -826,6 +851,78 @@ impl MotionKeysMcp {
             Ok(path) => ok_text(format!("saved {}", path)),
             Err(e) => tool_error(e),
         }
+    }
+
+    // MARK: - Tab Tools
+
+    // tab_new
+    #[tool(description = "Add an empty tab after the others and show it. Graph tools then act on it.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn tab_new(&self) -> Result<CallToolResult, McpError> {
+        if !lock_state().ready {
+            return tool_error(NOT_READY);
+        }
+        let id = crate::state::create_instance();
+        let label = lock_state().instance(&id).map(InstanceState::name).unwrap_or_default();
+        ok_text(format!("added {} \"{}\", it's on screen", id, label))
+    }
+
+    // tab_switch
+    #[tool(description = "Show a tab. Graph tools then act on it; it re-runs the realtime graph.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn tab_switch(&self, Parameters(params): Parameters<TabParams>) -> Result<CallToolResult, McpError> {
+        let id = match resolve_tab(&lock_state(), &params.tab) {
+            Ok(id) => id,
+            Err(e) => return tool_error(e),
+        };
+        crate::state::switch_active_instance(id.clone()).await;
+        ok_text(format!("{} is on screen", id))
+    }
+
+    // tab_close
+    #[tool(description = "Close a tab without asking, its graph and undo history are gone (unless the project file has them). The last tab can't be closed. Blender unlinks if it was the live tab.", annotations(read_only_hint = false, destructive_hint = true))]
+    async fn tab_close(&self, Parameters(params): Parameters<TabParams>) -> Result<CallToolResult, McpError> {
+        let id = match resolve_tab(&lock_state(), &params.tab) {
+            Ok(id) => id,
+            Err(e) => return tool_error(e),
+        };
+        if !crate::state::close_instance(id.clone()).await {
+            return tool_error("the last tab can't be closed");
+        }
+        let shown = lock_state().active_instance_id.clone();
+        ok_text(format!("closed {}, {} is on screen", id, shown))
+    }
+
+    // tab_rename
+    #[tool(description = "Rename a tab that hasn't been saved yet (a saved tab is named after its file); the name is what the save dialog suggests.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn tab_rename(&self, Parameters(params): Parameters<RenameTabParams>) -> Result<CallToolResult, McpError> {
+        let id = match resolve_tab(&lock_state(), &params.tab) {
+            Ok(id) => id,
+            Err(e) => return tool_error(e),
+        };
+        if params.label.trim().is_empty() {
+            return tool_error("the label can't be blank");
+        }
+        if !crate::state::rename_instance(id.clone(), params.label.clone()) {
+            return tool_error("a saved tab is named after its file and can't be renamed");
+        }
+        ok_text(format!("renamed {} to \"{}\"", id, params.label.trim()))
+    }
+
+    // tab_go_live
+    #[tool(description = "Link Blender to a tab (it goes live): it gets Blender's scene changes and is the only tab that writes keyframes. When Blender's objects or collections differ from the tab's saved scene, the tab pauses until the user reviews the changes in the app.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn tab_go_live(&self, Parameters(params): Parameters<TabParams>) -> Result<CallToolResult, McpError> {
+        let id = match resolve_tab(&lock_state(), &params.tab) {
+            Ok(id) => id,
+            Err(e) => return tool_error(e),
+        };
+        if let Err(e) = crate::state::link(id.clone()).await {
+            return tool_error(e);
+        }
+        let paused = lock_state().instance(&id).is_some_and(|instance| instance.execution_paused);
+        ok_text(if paused {
+            format!("{} is live; Blender's scene differs from the tab's, so it's paused until the changes are reviewed in the app", id)
+        } else {
+            format!("{} is live", id)
+        })
     }
 }
 
