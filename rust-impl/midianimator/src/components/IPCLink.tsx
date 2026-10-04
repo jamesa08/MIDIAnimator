@@ -65,6 +65,10 @@ function IPCLink() {
         }
     };
 
+    // links Blender to the tab on screen, it checks the scene first (see go_live in src-tauri/src/state/mod.rs)
+    const goLive = () => invoke("go_live", { id: state.active_tab }).catch((error) => console.error("Go live failed:", error));
+    const activeLinked = (state.tabs ?? []).some((tab: any) => tab.id === state.active_tab && tab.linked);
+
     function showWhenConnected() {
         if (state.connected) {
             return (
@@ -79,6 +83,11 @@ function IPCLink() {
                                 Validate Scene Data
                             </button>
                         </>
+                    )}
+                    {!activeLinked && (
+                        <button className="bg-transparent font-semibold py-2 px-4 border border-black rounded" onClick={goLive}>
+                            Go Live
+                        </button>
                     )}
                     <button className="bg-transparent font-semibold py-2 px-4 border border-black rounded" onClick={disconnect}>
                         Disconnect

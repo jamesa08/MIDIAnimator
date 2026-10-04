@@ -429,6 +429,18 @@ img {
     stroke: var(--chrome-add-tab);
 }
 
+/* the dot on the tab Blender is linked to, green (.green) while it's live and gray while Blender is away */
+.tab-bar .tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+}
+
+.tab-bar .tab-dot.offline {
+    background-color: var(--chrome-add-tab);
+}
+
 /* docked and floating panels */
 .panel,
 .panel-window {
