@@ -146,6 +146,10 @@ img {
        a see-through line changes color over every shade it crosses */
     --chrome-line: #bfbfbf;
     --node-line: #000;
+    /* the shortcut editor's keyboard (src/windows/KeymapEditor.tsx), like premiere's: app shortcuts, and the chosen area's
+       or modal's shortcuts */
+    --keymap-app: #7650d0;
+    --keymap-area: #17a07a;
 }
 
 /* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's
