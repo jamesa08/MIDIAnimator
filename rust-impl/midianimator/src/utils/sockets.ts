@@ -42,3 +42,12 @@ export function socketCategory(dataType: string): keyof typeof SOCKET_COLORS {
 export function socketStyle(dataType: string | undefined): Record<string, any> {
     return dataType ? { background: SOCKET_COLORS[socketCategory(dataType)] } : {};
 }
+
+// whether an output of type `outType` can feed an input of type `inType`. keep in sync with compatible in src-tauri/src/graph/model.rs
+export function compatible(outType: string, inType: string): boolean {
+    const array = (type: string) => (type.startsWith("Array<") && type.endsWith(">") ? type.slice(6, -1).trim() : null);
+    if (outType === inType || inType === "Any" || outType === "Any" || outType.startsWith("Dyn<")) return true;
+    const outInner = array(outType);
+    const inInner = array(inType);
+    return outInner !== null && inInner !== null && compatible(outInner, inInner);
+}

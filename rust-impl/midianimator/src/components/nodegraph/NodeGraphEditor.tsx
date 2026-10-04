@@ -3,10 +3,10 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
-import { GROUP, GroupDef, Level, Project } from "../../utils/groups";
+import { GROUP, GroupDef, Level, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
 import { isTextField } from "../../utils/editMenu";
-import { nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
+import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
@@ -61,6 +61,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     const [menuOpen, setMenuOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+    // the link the add menu was opened by dragging off a socket, null for shift+a
+    const [menuLink, setMenuLink] = useState<LinkFrom | null>(null);
     const mousePositionRef = useRef({ x: 0, y: 0 });
 
     // the grab in progress, `grabbing` re-renders when one starts or ends
@@ -93,6 +95,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     const groups = project.groups();
     const nodeSpecs = useNodeSpecs();
     const entries = useMemo(() => nodeEntries(groups, nodeSpecs, !isRoot, new Set(pathGroups)), [groups, nodeSpecs, isRoot, pathGroups]);
+    // opened from a link, only the nodes with a socket it can connect to
+    const menuEntries = useMemo(() => (menuLink ? entries.filter((entry) => linkSocket(entry, menuLink, nodeSpecs, groups)) : entries), [entries, menuLink, nodeSpecs, groups]);
+    const lookup = useMemo(() => specLookup(Object.fromEntries(nodeSpecs.map((spec: any) => [spec.id, spec])), groups), [nodeSpecs, groups]);
 
     // edits in a read-only graph (an unedited built-in group) don't happen
     const canEdit = useCallback(() => editable, [editable]);
@@ -186,7 +191,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     const closeMenu = useCallback(() => setMenuOpen(false), []);
 
     // ADD NODE MENU HANDLERS
-    // the node (a for each zone brings its other end) is added under the cursor and grabbed until a click places it
+    // the node (a for each zone brings its other end) is added under the cursor and grabbed until a click places it.
+    // opened from a link, the link is connected to the new node's matching socket in the same undo step
     const addNode = useCallback(
         async (key: string) => {
             setMenuOpen(false);
@@ -195,9 +201,16 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const flowPosition = screenToFlowPosition(mousePositionRef.current, { snapToGrid: false });
             const txn = crypto.randomUUID();
             const applied = await apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x + 10, y: flowPosition.y + 10 } }] }], { txn });
-            if (applied) startGrab(applied.added, flowPosition, txn);
+            if (!applied) return;
+            const socket = menuLink && linkSocket(entry, menuLink, nodeSpecs, groups);
+            const added = socket && applied.added[socket.node];
+            if (menuLink && socket && added) {
+                const ends = menuLink.isOutput ? { from_node: menuLink.nodeId, from_output: menuLink.handleId, to_node: added.id, to_input: socket.handle } : { from_node: added.id, from_output: socket.handle, to_node: menuLink.nodeId, to_input: menuLink.handleId };
+                await apply([{ op: "connect", ...ends }], { txn });
+            }
+            startGrab(applied.added, flowPosition, txn);
         },
-        [entries, canEdit, screenToFlowPosition, apply, startGrab]
+        [entries, canEdit, screenToFlowPosition, apply, startGrab, menuLink, nodeSpecs, groups]
     );
     // node dragged in from the nodes panel, added where it was released
     useEffect(() => {
@@ -407,6 +420,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 if (!canEdit()) return;
                 const { x, y } = mousePositionRef.current;
                 setMenuPosition({ x, y });
+                setMenuLink(null);
                 setMenuOpen(true);
             } else if (event.key === "Escape") {
                 // cancel a grab in progress, otherwise just close the menu
@@ -654,10 +668,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [editable, apply]
     );
 
-    // link dragged off a handle and dropped on nothing (the + sign), open the add menu where it was released
+    // link dragged off a handle and dropped on nothing (the + sign), open the add menu where it was released with the
+    // nodes it can connect to
     const onConnectEnd = useCallback(
         (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
-            if (connectionState.isValid || connectionState.toHandle || !editable) return;
+            const { fromNode, fromHandle } = connectionState;
+            if (connectionState.isValid || connectionState.toHandle || !editable || !fromNode || !fromHandle?.id) return;
+
+            // react flow's targets are outputs
+            const isOutput = fromHandle.type === "target";
+            const handle = (isOutput ? outputHandle : inputHandle)(lookup, fromNode, fromHandle.id, level.def);
+            setMenuLink({ nodeId: fromNode.id, handleId: fromHandle.id, isOutput, dataType: handle.data_type });
 
             const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
             // the new node gets placed from this position, same as shift+a
@@ -665,7 +686,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             setMenuPosition({ x: clientX, y: clientY });
             setMenuOpen(true);
         },
-        [editable]
+        [editable, lookup, level.def]
     );
 
     // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops
@@ -774,7 +795,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 nodesConnectable={editable}
                 className={isRoot ? "" : "group-canvas"}
             />
-            <NodeAddMenu isOpen={menuOpen} entries={entries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
+            <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
         </>
     );
 }

@@ -5,7 +5,8 @@ import nodeTypes from "../nodes/NodeTypes";
 import { CATEGORY_ORDER } from "../styles";
 import { StateContext } from "../contexts/StateContext";
 import { loadNodeSpecs } from "./node";
-import { FOR_EACH_INPUT, GROUP_INPUT, GROUP_OUTPUT, GroupDef } from "./groups";
+import { FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT, GroupDef, Handle, NEW_SOCKET } from "./groups";
+import { compatible } from "./sockets";
 
 // `key` is what the menus and drops pass around: a node type, or a group id for a group node
 export type NodeEntry = { key: string; label: string; nodeType: string; category: string; data: any };
@@ -51,4 +52,48 @@ export function nodeEntries(groups: Record<string, GroupDef>, specs: any[], inGr
 // what a preview of an entry is drawn with (nodes panel, drag ghost)
 export function previewData(entry: NodeEntry): any {
     return Object.keys(entry.data).length > 0 ? { ...entry.data, preview: true } : "preview";
+}
+
+// a link dragged off a socket and dropped on nothing: the node and socket it came from, and that socket's type
+export type LinkFrom = { nodeId: string; handleId: string; isOutput: boolean; dataType: string };
+
+// the socket on an entry's new node that a link from `from` connects to, null when none fits. exact types come before
+// ones that only fit through `Any`, then the first in order. `node` is which of the added nodes it's on (a for each adds
+// its input, then its output)
+export function linkSocket(entry: NodeEntry, from: LinkFrom, specs: any[], groups: Record<string, GroupDef>): { node: number; handle: string } | null {
+    const side = from.isOutput ? "inputs" : "outputs";
+    const specHandles = (nodeType: string): Handle[] => specs.find((spec) => spec.id === nodeType)?.handles?.[side] ?? [];
+
+    let candidates: { node: number; handle: Handle }[];
+    if (entry.nodeType === GROUP) {
+        candidates = (groups[entry.key]?.interface[side] ?? []).map((handle) => ({ node: 0, handle }));
+    } else if (entry.nodeType === GROUP_INPUT || entry.nodeType === GROUP_OUTPUT) {
+        // only the empty socket, connecting to it adds a group socket typed after the other end. not from another empty socket
+        const open = entry.nodeType === GROUP_INPUT ? "outputs" : "inputs";
+        candidates = side === open && from.handleId !== NEW_SOCKET ? [{ node: 0, handle: { id: NEW_SOCKET, name: "", data_type: "Any" } }] : [];
+    } else if (entry.nodeType === FOR_EACH_INPUT) {
+        candidates = [...specHandles(FOR_EACH_INPUT).map((handle) => ({ node: 0, handle })), ...specHandles(FOR_EACH_OUTPUT).map((handle) => ({ node: 1, handle }))];
+    } else {
+        candidates = specHandles(entry.nodeType).map((handle) => ({ node: 0, handle }));
+    }
+
+    // parameters and dynamic outputs can't be connected, a dynamic input is connected through its first numbered one
+    const sockets = candidates.filter(({ handle }) => !handle.hidden && !(side === "outputs" && handle.data_type.startsWith("Dyn<"))).map(({ node, handle }) => (handle.data_type.startsWith("Dyn<") ? { node, id: `${handle.id}_0`, type: handle.data_type.slice(4, -1) } : { node, id: handle.id, type: handle.data_type }));
+
+    const rank = (type: string) => {
+        const [outType, inType] = from.isOutput ? [from.dataType, type] : [type, from.dataType];
+        if (!compatible(outType, inType)) return Infinity;
+        if (outType === inType) return 0;
+        return outType.includes("Any") || inType.includes("Any") ? 2 : 1;
+    };
+    let best: { node: number; handle: string } | null = null;
+    let bestRank = Infinity;
+    for (const socket of sockets) {
+        const r = rank(socket.type);
+        if (r < bestRank) {
+            best = { node: socket.node, handle: socket.id };
+            bestRank = r;
+        }
+    }
+    return best;
 }
