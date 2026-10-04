@@ -13,13 +13,32 @@ import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
 import { NODE_DROP_EVENT } from "./utils/node";
 import { takeGraph, takeState } from "./utils/graphOps";
+import { floatingPanels, useOpenFile, useSaveTab, withFloatingFrames } from "./utils/tabs";
 import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, scrollbarWidth, showPanelWindow, withPoppedOut, PANEL_WIDTH } from "./utils/panels";
 
 // height of a panel's window the first time it opens floating from the window menu, it's as wide as a docked panel
 const FLOATING_HEIGHT = 360;
+// sent to the main window by the file menu (src-tauri/src/ui/menu.rs), payload "open", "save" or "save_as"
+const FILE_EVENT = "menu-file";
+
+// shows a floating panel's window: at `frame`, where it was last, or the first time inside the main window's right edge
+async function showFloating(id: number, frame?: { x: number; y: number; width: number; height: number }) {
+    if (frame) {
+        await showPanelWindow(id, frame.x, frame.y, frame.width, frame.height);
+        return;
+    }
+    if (reshowPanelWindow(id)) return;
+    const content = document.querySelector(".content")?.getBoundingClientRect();
+    if (!content) return;
+    const width = PANEL_WIDTH + scrollbarWidth();
+    const { x, y } = await clientToScreen(content.right - width - 260, content.top + 40);
+    await showPanelWindow(id, x, y, width, FLOATING_HEIGHT);
+}
 
 function App() {
-    const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState } = useStateContext();
+    const { backEndState: backEndState, setBackEndState: setBackEndState, frontEndState: frontEndState, setFrontEndState: setFrontEndState, setTabLayout } = useStateContext();
+    const saveTab = useSaveTab();
+    const openFile = useOpenFile();
 
     useEffect(() => {
         invoke("log", { message: "App mounted, starting initialization..." });
@@ -54,30 +73,77 @@ function App() {
         };
     }, []);
 
-    // closing the main window asks to save unsaved changes first, the app quits once it's gone
-    const [confirmClose, setConfirmClose] = useState(false);
+    // the unsaved changes prompt while the window is closing, it resolves to what was picked
+    const [closePrompt, setClosePrompt] = useState<((answer: "save" | "discard" | "cancel") => void) | null>(null);
+    const answerClose = (answer: "save" | "discard" | "cancel") => {
+        closePrompt?.(answer);
+        setClosePrompt(null);
+    };
 
+    // closing the main window asks about each tab with unsaved changes first (showing it), the app quits once it's gone.
+    // cancelling, or cancelling a save dialog, keeps the window open
     useEffect(() => {
         const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
             event.preventDefault();
-            if (await invoke<boolean>("has_unsaved_changes")) setConfirmClose(true);
-            else getCurrentWindow().destroy();
+            const { unsaved_tabs } = await invoke<{ unsaved_tabs: string[] }>("get_project_status");
+            for (const id of unsaved_tabs) {
+                await invoke("switch_active_instance", { id });
+                const answer = await new Promise<"save" | "discard" | "cancel">((resolve) => setClosePrompt(() => resolve));
+                if (answer === "cancel") return;
+                if (answer === "save") {
+                    try {
+                        await saveTab(id);
+                    } catch (error) {
+                        if (error !== "Save cancelled") console.error("Save failed:", error);
+                        return;
+                    }
+                }
+            }
+            getCurrentWindow().destroy();
         });
         return () => {
             unlisten.then((f) => f());
         };
-    }, []);
+    }, [saveTab]);
 
-    // a cancelled save dialog keeps the window open
-    const saveAndClose = async () => {
-        setConfirmClose(false);
-        try {
-            await invoke("save_project");
-            getCurrentWindow().destroy();
-        } catch (error) {
-            if (error !== "Save cancelled") console.error("Save failed:", error);
-        }
-    };
+    // the file menu acts on the tab on screen
+    useEffect(() => {
+        const unlisten = getCurrentWebviewWindow().listen<string>(FILE_EVENT, async ({ payload }) => {
+            if (payload === "open") return openFile();
+            try {
+                await saveTab(undefined, payload === "save_as");
+            } catch (error) {
+                if (error !== "Save cancelled") console.error("Save failed:", error);
+            }
+        });
+        return () => {
+            unlisten.then((f) => f());
+        };
+    }, [saveTab, openFile]);
+
+    // each tab has floating panels of its own: switching keeps where the old tab's are, then shows the new tab's where
+    // it had them and hides the rest. switches are done in order
+    const tab: string | undefined = backEndState.active_tab;
+    const layoutByTab = useRef<Record<string, any>>({});
+    if (tab) layoutByTab.current[tab] = frontEndState;
+    const shownTab = useRef<string | null>(null);
+    const switching = useRef(Promise.resolve());
+    useEffect(() => {
+        if (!tab || tab === shownTab.current) return;
+        const previous = shownTab.current;
+        shownTab.current = tab;
+        switching.current = switching.current.then(async () => {
+            const left = previous ? layoutByTab.current[previous] : null;
+            if (previous && left) setTabLayout(previous, await withFloatingFrames(left));
+            const layout = layoutByTab.current[tab];
+            const floating = floatingPanels(layout);
+            for (const id of Object.keys(PANELS).map(Number)) {
+                if (floating.includes(id)) await showFloating(id, layout.floating?.[id]);
+                else hidePanelWindow(id);
+            }
+        });
+        switching.current.catch((e) => console.error(`Error switching floating panels: ${e}`));
+    }, [tab]);
 
     // the dock slot a floating panel is being dragged over
     const [dockHover, setDockHover] = useState<Side | null>(null);
@@ -145,14 +211,8 @@ function App() {
                 return;
             }
             setFrontEndState((prev: any) => ({ ...prev, panelsShown: [...prev.panelsShown, id], sidesHidden: floating ? prev.sidesHidden : prev.sidesHidden.filter((s: Side) => s !== panelSide(prev, id)) }));
-            // the first time it floats, it goes inside the main window's right edge
-            if (floating && !reshowPanelWindow(id)) {
-                const content = document.querySelector(".content")?.getBoundingClientRect();
-                if (!content) return;
-                const width = PANEL_WIDTH + scrollbarWidth();
-                const { x, y } = await clientToScreen(content.right - width - 260, content.top + 40);
-                showPanelWindow(id, x, y, width, FLOATING_HEIGHT);
-            }
+            // where this tab last had it
+            if (floating) showFloating(id, state.floating?.[id]);
         });
         return () => {
             unlisten.then((f) => f());
@@ -196,7 +256,7 @@ function App() {
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />
             </div>
-            {confirmClose && <UnsavedChangesModal onSave={saveAndClose} onDiscard={() => getCurrentWindow().destroy()} onCancel={() => setConfirmClose(false)} />}
+            {closePrompt && <UnsavedChangesModal onSave={() => answerClose("save")} onDiscard={() => answerClose("discard")} onCancel={() => answerClose("cancel")} />}
         </div>
     );
 }

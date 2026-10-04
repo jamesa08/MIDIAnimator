@@ -185,6 +185,17 @@ export function reshowPanelWindow(id: number) {
     return true;
 }
 
+// where a floating panel's window is on screen (logical pixels, like showPanelWindow takes), null if it was never made
+export async function panelWindowFrame(id: number) {
+    const made = floatingWindows.get(panelLabel(id));
+    if (!made) return null;
+    const win = await made;
+    const scale = await win.scaleFactor();
+    const position = (await win.outerPosition()).toLogical(scale);
+    const size = (await win.innerSize()).toLogical(scale);
+    return { x: position.x, y: position.y, width: size.width, height: size.height };
+}
+
 export function hidePanelWindow(id: number) {
     floatingWindows
         .get(panelLabel(id))

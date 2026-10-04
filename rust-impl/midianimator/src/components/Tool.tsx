@@ -1,9 +1,12 @@
 import React from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
+import { useOpenFile, useSaveTab } from "../utils/tabs";
 
 function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
-    const { backEndState, setBackEndState } = useStateContext(); // Add this import at top
+    const { backEndState } = useStateContext();
+    const saveTab = useSaveTab();
+    const openFile = useOpenFile();
 
     var icon;
     if (type == "run") {
@@ -42,20 +45,13 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
                     invoke("execute_graph", { realtime: false });
                 } else if (type == "save") {
                     try {
-                        const path = await invoke<string>("save_project");
+                        const path = await saveTab();
                         console.log("Saved to:", path);
                     } catch (error) {
-                        console.error("Save failed:", error);
+                        if (error !== "Save cancelled") console.error("Save failed:", error);
                     }
                 } else if (type == "load") {
-                    try {
-                        const newState = await invoke("load_project");
-                        setBackEndState(newState);
-                    } catch (error) {
-                        if (error !== "Load cancelled") {
-                            console.error("Load failed:", error);
-                        }
-                    }
+                    openFile();
                 }
 
                 onClick?.();
