@@ -64,6 +64,15 @@ fn without(object: &Map<String, Value>, keys: &[&str]) -> Value {
     Value::Object(object.iter().filter(|(k, v)| !keys.contains(&k.as_str()) && !(k.as_str() == "selected" && **v == Value::Bool(false))).map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
+/// a node or edge without what only changes how it looks, its label too
+fn without_layout(object: &Map<String, Value>) -> Value {
+    let mut value = without(object, LAYOUT_KEYS);
+    if let Some(data) = value.get_mut("data").and_then(|d| d.as_object_mut()) {
+        data.remove("label");
+    }
+    value
+}
+
 /// every record in a project with its place in its list
 fn records(project: &Map<String, Value>) -> BTreeMap<Key, (Value, usize)> {
     let mut out = BTreeMap::new();
@@ -252,7 +261,7 @@ impl Diff {
     /// true if the change can change what the graph computes, not only where things are or what's selected
     pub fn affects_output(&self) -> bool {
         let layout_only = |c: &Change| match (&c.before, &c.after) {
-            (Some(Value::Object(before)), Some(Value::Object(after))) if matches!(c.key.kind, Kind::Node | Kind::Edge) => without(before, LAYOUT_KEYS) == without(after, LAYOUT_KEYS),
+            (Some(Value::Object(before)), Some(Value::Object(after))) if matches!(c.key.kind, Kind::Node | Kind::Edge) => without_layout(before) == without_layout(after),
             _ => false,
         };
         !self.0.iter().all(layout_only)

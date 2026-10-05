@@ -76,6 +76,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
 
     // header line: id, name and whether it has executed yet (or failed)
     let mut header = format!("{}  \"{}\"", id, spec.name);
+    if let Some(label) = node.label() {
+        header.push_str(&format!("  label \"{}\"", label));
+    }
     if let Some(error) = error {
         header.push_str(&format!("  FAILED: {}", error));
     } else if node_results.is_none() {

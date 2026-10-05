@@ -341,6 +341,11 @@ impl RfNode {
         }
     }
 
+    /// the name set for the node, shown in its header instead of its type's
+    pub fn label(&self) -> Option<&str> {
+        self.data.get("label").and_then(|v| v.as_str()).filter(|label| !label.is_empty())
+    }
+
     /// values set on the node itself (not coming from a connection)
     pub fn inputs(&self) -> Option<&Map<String, Value>> {
         self.data.get("inputs").and_then(|v| v.as_object())

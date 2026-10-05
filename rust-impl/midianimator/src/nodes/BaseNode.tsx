@@ -77,7 +77,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
 
     return (
         <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors(nodeData?.category)}>
-            <NodeHeader label={nodeData == null ? "" : nodeData["name"]}>
+            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]}>
                 {error && !preview && <ErrorBadge message={error} size={16} />}
                 {headerExtra}
             </NodeHeader>

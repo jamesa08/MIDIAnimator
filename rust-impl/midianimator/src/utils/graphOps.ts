@@ -11,6 +11,7 @@ export type Op =
     | { op: "delete"; nodes?: string[]; edges?: string[] }
     | { op: "connect"; from_node: string; from_output: string; to_node: string; to_input: string }
     | { op: "set_inputs"; node: string; inputs: Record<string, any> }
+    | { op: "set_label"; node: string; label: string }
     | { op: "move"; positions: Record<string, XY> }
     | { op: "resize"; node: string; width: number; height: number; position: XY }
     | { op: "select"; nodes: string[]; edges: string[] }

@@ -44,7 +44,7 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
 
     return (
         <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors("interface")}>
-            <NodeHeader label={side === "inputs" ? "Group Input" : "Group Output"}>{error && !preview && <ErrorBadge message={error} size={16} />}</NodeHeader>
+            <NodeHeader label={(!preview && data?.label) || (side === "inputs" ? "Group Input" : "Group Output")}>{error && !preview && <ErrorBadge message={error} size={16} />}</NodeHeader>
             <NodeResizeControl minWidth={160} maxWidth={1000} variant={"line" as any} />
             <div className="node-inner flex flex-col">
                 {rows.map((socket) => (

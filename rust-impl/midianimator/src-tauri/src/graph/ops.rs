@@ -64,6 +64,11 @@ pub enum Op {
         node: String,
         inputs: Map<String, Value>,
     },
+    /// the name shown in a node's header instead of its type's, empty goes back to the type's
+    SetLabel {
+        node: String,
+        label: String,
+    },
     Move {
         positions: BTreeMap<String, Position>,
     },
@@ -143,6 +148,9 @@ impl Op {
             Op::SetInputs {
                 ..
             } => "set_inputs",
+            Op::SetLabel {
+                ..
+            } => "set_label",
             Op::Move {
                 ..
             } => "move",
@@ -257,6 +265,18 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
             node,
             inputs,
         } => edit::set_inputs(target(project, scope)?, &specs, node, inputs).map(|_| ()),
+        Op::SetLabel {
+            node,
+            label,
+        } => {
+            let node = target(project, scope)?.node_mut(node).ok_or_else(|| format!("no node '{}'", node))?;
+            if label.is_empty() {
+                node.data.remove("label");
+            } else {
+                node.data.insert("label".to_string(), json!(label));
+            }
+            Ok(())
+        }
         Op::Move {
             positions,
         } => {
@@ -420,7 +440,7 @@ pub fn node_names(project: &Graph, scope: Option<&str>, specs: &[NodeSpec], ids:
     // each name once, in the order they first come up, with how many there are
     let mut counts: Vec<(String, usize)> = Vec::new();
     for node in graph.nodes.iter().filter(|n| ids.contains(&n.id)) {
-        let name = specs.for_node(node).map_or(node.node_type.clone(), |spec| spec.name.clone());
+        let name = node.label().map_or_else(|| specs.for_node(node).map_or(node.node_type.clone(), |spec| spec.name.clone()), String::from);
         match counts.iter_mut().find(|(n, _)| *n == name) {
             Some((_, count)) => *count += 1,
             None => counts.push((name, 1)),
@@ -492,6 +512,11 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             node,
             ..
         } => name(after, node),
+        // the old name, the new one is in the header
+        Op::SetLabel {
+            node,
+            ..
+        } => name(before, node),
         Op::Move {
             positions,
         } => names(after, &positions.keys().cloned().collect::<Vec<_>>()),

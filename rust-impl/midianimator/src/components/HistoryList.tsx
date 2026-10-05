@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
     connect: "Connect",
     disconnect: "Disconnect",
     set_inputs: "Set Inputs",
+    set_label: "Set Label",
     move: "Move",
     resize: "Resize",
     select: "Select",
