@@ -1,5 +1,6 @@
 import "@xyflow/react/dist/base.css";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useStore } from "@xyflow/react";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
@@ -28,13 +29,23 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     const selectedObjectName: string = data.inputs?.object_name || objectNames[0] || "";
 
-    const animCurves = executedResults?.dyn_output
-        ? Object.keys(executedResults.dyn_output).map((curveName) => ({
-              id: curveName,
-              name: curveName.split("_").join(" ").toProperCase(),
-              data_type: "Array<Keyframe>",
-          }))
-        : [];
+    // the curves of the last run that got here. a failed run (or one that stopped before this node) keeps them, so the
+    // sockets and their connections stay and the node can still be edited
+    const lastCurves = useRef<string[]>([]);
+    if (executedResults?.dyn_output) lastCurves.current = Object.keys(executedResults.dyn_output);
+
+    // outputs something is connected to keep their socket too, e.g. a project opened with this node failing.
+    // stored edges are reversed, `target`/`targetHandle` is the node giving the value and its output
+    const connectedOutputs = useCallback((s: any) => s.edges.flatMap((e: any) => (e.target === id && e.targetHandle ? [e.targetHandle] : [])).join("\n"), [id]);
+    const connected = useStore(connectedOutputs)
+        .split("\n")
+        .filter((handle: string) => handle && handle !== "dyn_output");
+
+    const animCurves = [...new Set([...lastCurves.current, ...connected])].map((curveName) => ({
+        id: curveName,
+        name: curveName.split("_").join(" ").toProperCase(),
+        data_type: "Array<Keyframe>",
+    }));
 
     useEffect(() => {
         console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
