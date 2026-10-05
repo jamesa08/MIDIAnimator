@@ -26,7 +26,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PREVIOUS=$(gh api repos/${{ github.repository }}/commits/nightly --jq .sha 2>/dev/null || true)
+          # gh prints the error body to stdout when there's no nightly tag yet, so keep only a real sha
+          PREVIOUS=$(gh api repos/${{ github.repository }}/commits/nightly --jq .sha 2>/dev/null | grep -xE '[0-9a-f]{40}' || true)
           echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$PREVIOUS" != "${{ github.sha }}" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -93,10 +94,11 @@ jobs:
 
       # commits since the last nightly, or just this commit if the old one is gone
       - name: Write release notes
+        env:
+          PREVIOUS: ${{ needs.check.outputs.previous }}
         run: |
           echo "Nightly build of \`$HASH\` from $(date -u +%Y-%m-%d)." > notes.md
           echo "" >> notes.md
-          PREVIOUS="${{ needs.check.outputs.previous }}"
           if [ -n "$PREVIOUS" ] && git cat-file -e "$PREVIOUS^{commit}" 2>/dev/null; then
             git log --format='- %h %s' "$PREVIOUS..HEAD" >> notes.md
           else
