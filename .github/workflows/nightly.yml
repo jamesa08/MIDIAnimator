@@ -60,6 +60,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      # short commit hash goes in every release file name so downloads can be traced back to a commit
+      - name: Get commit hash
+        run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
       - name: Download app bundles
         uses: actions/download-artifact@v7
         with:
@@ -74,14 +78,22 @@ jobs:
           path: addon
           merge-multiple: true
 
+      # bundles get the hash before their extension, e.g. MotionKeys_0.5.0_universal-abc1234.dmg
+      - name: Name release files
+        run: |
+          mkdir release
+          for f in bundles/*/*; do
+            base=$(basename "$f")
+            mv "$f" "release/${base%.*}-$HASH.${base##*.}"
+          done
+
       # zip with midianimator_bridge/ at its root so blender can install it directly
       - name: Zip add-on
-        run: cd addon && zip -r ../MIDIAnimator-Bridge-nightly.zip midianimator_bridge
+        run: cd addon && zip -r ../release/MIDIAnimator-Bridge-nightly-$HASH.zip midianimator_bridge
 
       # commits since the last nightly, or just this commit if the old one is gone
       - name: Write release notes
         run: |
-          HASH=$(git rev-parse --short HEAD)
           echo "Nightly build of \`$HASH\` from $(date -u +%Y-%m-%d)." > notes.md
           echo "" >> notes.md
           PREVIOUS="${{ needs.check.outputs.previous }}"
@@ -103,4 +115,4 @@ jobs:
             --notes-file notes.md \
             --prerelease \
             --latest=false \
-            bundles/*/* MIDIAnimator-Bridge-nightly.zip
+            release/*
