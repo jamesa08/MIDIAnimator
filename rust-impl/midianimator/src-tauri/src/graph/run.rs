@@ -303,7 +303,13 @@ impl Plan {
                     },
                 };
                 // note: inputs that aren't an object (a broken save file) are ignored
-                let literals: Values = node.inputs().map(|inputs| inputs.iter().map(|(k, v)| (Arc::from(k.as_str()), ctx.memo.borrow_mut().literal(v))).collect()).unwrap_or_default();
+                let mut literals: Values = node.inputs().map(|inputs| inputs.iter().map(|(k, v)| (Arc::from(k.as_str()), ctx.memo.borrow_mut().literal(v))).collect()).unwrap_or_default();
+                // inputs that aren't set get their default, a connection still replaces it
+                for handle in spec.map_or(&[][..], |s| &s.handles.inputs[..]) {
+                    if let Some(default) = handle.default.as_ref().filter(|_| !literals.iter().any(|(k, _)| **k == *handle.id)) {
+                        literals.push((Arc::from(handle.id.as_str()), ctx.memo.borrow_mut().literal(default)));
+                    }
+                }
                 let connections = graph.edges.iter().filter(|e| e.to_node() == node.id).filter_map(|e| Some((Arc::from(e.to_input()), *index.get(e.from_node())?, Arc::from(e.from_output())))).collect();
                 let group_id = node.data.get("group_id").map(|v| v.to_string()).unwrap_or_default();
                 let set = node.inputs().map(|i| Value::Object(i.clone()).to_string()).unwrap_or_default();

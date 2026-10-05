@@ -132,6 +132,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         } else {
             // unset parameters (or anything unset in full detail) get their own line
             line.push_str("  (not set)");
+            if let Some(default) = &input.default {
+                line.push_str(&format!(" default {}", default));
+            }
         }
 
         // list the valid values for this input, if we know them

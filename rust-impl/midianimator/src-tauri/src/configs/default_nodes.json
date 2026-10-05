@@ -152,6 +152,7 @@
                     },
                     {
                         "id": "note_on_anchor_point",
+                        "default": 0,
                         "name": "Note On Anchor Point",
                         "data_type": "f64",
                         "description": "Time offset added to every note-on keyframe."
@@ -164,6 +165,7 @@
                     },
                     {
                         "id": "note_off_anchor_point",
+                        "default": 0,
                         "name": "Note Off Anchor Point",
                         "data_type": "f64",
                         "description": "Time offset added to every note-off keyframe."
@@ -182,12 +184,14 @@
                     },
                     {
                         "id": "velocity_intensity",
+                        "default": 0,
                         "name": "Velocity Intensity",
                         "data_type": "f64",
                         "description": "Scales keyframe values by note velocity; 0 ignores velocity."
                     },
                     {
                         "id": "animation_overlap",
+                        "default": "add",
                         "name": "Animation Overlap",
                         "data_type": "String",
                         "hidden": true,
@@ -195,6 +199,7 @@
                     },
                     {
                         "id": "overlap_blend",
+                        "default": 0.1,
                         "name": "Overlap Blend",
                         "data_type": "f64",
                         "hidden": true,

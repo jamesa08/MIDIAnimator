@@ -61,6 +61,7 @@ fn socket(id: &str, data_type: &str) -> HandleSpec {
         data_type: data_type.to_string(),
         description: String::new(),
         hidden: false,
+        default: None,
     }
 }
 

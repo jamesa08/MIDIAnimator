@@ -739,6 +739,7 @@ fn find_handle(handles: &[HandleSpec], id: &str) -> HandleSpec {
             data_type: "Any".to_string(),
             description: String::new(),
             hidden: false,
+            default: None,
         },
     }
 }
