@@ -137,6 +137,8 @@ function ensureFloatingWindow(label: string, options: ConstructorParameters<type
             useHttpsScheme: true,
             // clicks work without clicking the window first to focus it
             acceptFirstMouse: true,
+            // off macOS (src-tauri/src/ui/panels.rs floats them there) owned by the main window: kept above it, out of the taskbar
+            ...(navigator.userAgent.includes("Mac OS") ? {} : { parent: "main", skipTaskbar: true }),
             ...options,
         });
         await new Promise((resolve, reject) => {
