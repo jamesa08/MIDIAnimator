@@ -104,18 +104,29 @@ pub fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
-// opens a window that's revealed once its page has drawn, focuses it if it's already open
+// opens a window that's revealed once its page has drawn, focuses it if it's already open.
+// only macOS waits for the page: webview2 doesn't run animation frames for a hidden window, so its page would never report
+// ready. elsewhere it's shown right away, the white background keeps it from flashing
 pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title: &str, width: f64, height: f64) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(label) {
+        #[cfg(target_os = "macos")]
         return window.set_focus();
+        #[cfg(not(target_os = "macos"))]
+        {
+            reveal(&window);
+            return Ok(());
+        }
     }
 
     // registered before the page can load and report ready
+    #[cfg(target_os = "macos")]
     PENDING_REVEAL.lock().unwrap().push(label.to_string());
     let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(width, height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255)).build()?;
     prepare_hidden(&window);
     #[cfg(target_os = "macos")]
     smooth_zoom(&window);
+    #[cfg(not(target_os = "macos"))]
+    reveal(&window);
     Ok(())
 }
 
