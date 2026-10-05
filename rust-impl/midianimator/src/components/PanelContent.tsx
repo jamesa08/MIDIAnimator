@@ -3,12 +3,14 @@ import { useParams } from "react-router-dom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, sendToMain, windowMover } from "../utils/panels";
+import { useStateSync } from "../utils/graphOps";
 import PanelBody, { PanelNodeDrop } from "./PanelBody";
 
 // popped out panel window, drag the header to move it and drop it on its dock slot to dock it back
 const PanelContent: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const panelId = Number(id);
+    useStateSync();
 
     useEffect(() => {
         // loaded, turn this into an invisible palette ready to pop out

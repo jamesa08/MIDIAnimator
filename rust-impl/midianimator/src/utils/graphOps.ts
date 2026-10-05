@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 
@@ -49,6 +50,20 @@ export function takeState(state: any, next: any): any {
     if ((next.state_rev ?? 0) < (state.state_rev ?? 0)) return state;
     if (next.active_tab === state.active_tab && (next.graph_rev ?? 0) < (state.graph_rev ?? 0)) return { ...next, graph_rev: state.graph_rev, rf_instance: state.rf_instance };
     return next;
+}
+
+// keeps the state of a window other than the main one (a floating panel) up to date, App does it for the main window
+export function useStateSync() {
+    const { setBackEndState } = useStateContext();
+    useEffect(() => {
+        invoke("get_state").then((state) => setBackEndState((s: any) => takeState(s, state)));
+        const stateListener = listen("update_state", (event: any) => setBackEndState((s: any) => takeState(s, event.payload)));
+        const graphListener = listen("graph_changed", (event: any) => setBackEndState((s: any) => takeGraph(s, event.payload)));
+        return () => {
+            stateListener.then((f) => f());
+            graphListener.then((f) => f());
+        };
+    }, []);
 }
 
 // applies ops to the graph `scope` (a group id, null for the top level) of the tab, see graph_apply in src-tauri/src/state/graph.rs.

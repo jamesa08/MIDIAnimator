@@ -272,6 +272,12 @@ pub fn ready() -> StateView {
     state.view()
 }
 
+/// the state as it is, for windows other than the main one (floating panels) when they open
+#[tauri::command]
+pub fn get_state() -> StateView {
+    lock().view()
+}
+
 #[tauri::command]
 pub fn log(message: String) {
     println!("{}", message);
@@ -377,7 +383,7 @@ pub fn migrate_rf_instance(rf_instance: &mut HashMap<String, serde_json::Value>)
 /// show values
 #[tauri::command]
 pub async fn set_open_group(tab: String, path: String) {
-    {
+    let paused = {
         let mut state = lock();
         let Some(instance) = state.instance_mut(&tab) else {
             return;
@@ -386,9 +392,12 @@ pub async fn set_open_group(tab: String, path: String) {
             return;
         }
         instance.open_group = path;
-        if instance.execution_paused {
-            return;
-        }
+        instance.execution_paused
+    };
+    // a run sends the state, the panels follow the open group either way
+    if paused {
+        update_state();
+        return;
     }
     run_instance(tab, true).await;
 }
