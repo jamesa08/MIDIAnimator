@@ -587,16 +587,11 @@ fn prune_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<B
     inserted_keys.append(next_keys);
 }
 
-// helper to parse properties like "rotation[0]" into ("rotation", 0)
+// helper to parse properties like "rotation[0]" into ("rotation", 0). the index is the last `[n]`, so paths with keys
+// of their own work too: `pose.bones["Arm"].location[1]`, `["prop"][0]`
 pub fn parse_animation_property(prop: &str) -> (String, u32) {
-    if let Some(bracket) = prop.find('[') {
-        let data_path = prop[..bracket].to_string();
-        let index_str = prop[bracket + 1..].trim_end_matches(']');
-        let array_index = index_str.parse::<u32>().unwrap_or(0);
-        (data_path, array_index)
-    } else {
-        (prop.to_string(), 0)
-    }
+    let indexed = prop.strip_suffix(']').and_then(|p| p.rsplit_once('[')).and_then(|(data_path, index)| index.parse::<u32>().ok().map(|index| (data_path.to_string(), index)));
+    indexed.unwrap_or_else(|| (prop.to_string(), 0))
 }
 
 /// the (time, value) of a keyframe point, `None` if `co` doesn't have both

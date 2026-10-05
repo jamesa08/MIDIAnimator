@@ -97,36 +97,28 @@ A node can declare a `Dyn` output in `default_nodes.json`:
 
 The backend node function is then responsible for returning two things:
 
-1. **`dyn_output`**: a map of `{ "handle_name": FCurveData }` which the frontend reads to know what handles to render.
-2. **Flat top-level keys**: each handle's data exposed directly at the top level of the output (e.g. `"location_x": [Keyframe]`). These are what the graph executor uses to pass data to downstream nodes.
+1. **`dyn_output`**: a map of `{ "handle_id": "Handle Name" }` which the frontend and `graph_outline` read to know what handles to show and what to call them.
+2. **Flat top-level keys**: each handle's data exposed directly at the top level of the output (e.g. `"location[2]": FCurveData`). These are what the graph executor uses to pass data to downstream nodes.
 
 ```json
 {
     "dyn_output": {
-        "location_x": FCurveData,
-        "location_z": FCurveData
+        "location[2]": "Location Z",
+        "pose.bones[\"Arm\"].location[0]": "Arm › Location X"
     },
-    "location_x": [Keyframe],
-    "location_z": [Keyframe]
+    "location[2]": FCurveData,
+    "pose.bones[\"Arm\"].location[0]": FCurveData
 }
 ```
 
+Keyframes from Object only outputs the channels picked on the node (its hidden `channels` input, Blender paths with their index). It also returns every channel the object has in the hidden `available_channels` output, which its dropdowns list.
+
 ### Why Flat Top-Level Keys Are Required
 
-The graph executor resolves connections between nodes by looking up `results[node_id][targetHandle]`. This means when a downstream node is connected to `location_x`, the executor expects `location_x` to exist as a direct key in the upstream node's results: not nested inside `dyn_output`. Without the flat keys, the data will never reach downstream nodes.
+The graph executor resolves connections between nodes by looking up `results[node_id][targetHandle]`. This means when a downstream node is connected to `location[2]`, the executor expects `location[2]` to exist as a direct key in the upstream node's results: not nested inside `dyn_output`. Without the flat keys, the data will never reach downstream nodes.
 
 ### Frontend
 
-The frontend reads `dyn_output` from `executed_results` to build the handle list:
-
-```typescript
-const animCurves = executedResults?.dyn_output
-    ? Object.keys(executedResults.dyn_output).map((curveName) => ({
-          id: curveName,
-          name: curveName.split("_").join(" ").toProperCase(),
-          type: "Array<Keyframe>",
-      }))
-    : [];
-```
+The frontend builds the handle list from the picked channels and names them from `available_channels`, see `src/nodes/keyframes_from_object.tsx`. When a channel's dropdown changes, its connections move to the new channel.
 
 The `id` of each handle must exactly match the flat top-level key in the backend output, as this is what the executor uses to wire nodes together.

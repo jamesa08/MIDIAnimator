@@ -115,6 +115,13 @@
                         "data_type": "String",
                         "hidden": true,
                         "description": "Name of the object whose animation curves are read."
+                    },
+                    {
+                        "id": "channels",
+                        "name": "Channels",
+                        "data_type": "Array<String>",
+                        "hidden": true,
+                        "description": "The animated channels to output, as Blender paths with their index, e.g. location[2], pose.bones[\"Arm\"].rotation_euler[0], key_blocks[\"Smile\"].value[0] or [\"prop\"][0]."
                     }
                 ],
                 "outputs": [
@@ -123,7 +130,14 @@
                         "name": "Dynamic Output",
                         "data_type": "Dyn<Array<Keyframe>>",
                         "hidden": true,
-                        "description": "One output per animation curve on the object, e.g. location_z."
+                        "description": "One output per picked channel, its id is the channel, e.g. location[2]."
+                    },
+                    {
+                        "id": "available_channels",
+                        "name": "Available Channels",
+                        "data_type": "Array<Any>",
+                        "hidden": true,
+                        "description": "Every animated channel on the object, { id, group, name }, the values channels can hold."
                     }
                 ]
             }

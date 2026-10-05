@@ -229,17 +229,17 @@ fn connect_to_dynamic_output() {
     edit::disconnect(&mut f.graph, gen, "note_on_keyframes").unwrap();
 
     // without results the dynamic output is unknown
-    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), kfo, "location_z", gen, "note_on_keyframes").unwrap_err();
+    let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), kfo, "location[2]", gen, "note_on_keyframes").unwrap_err();
     assert!(err.contains("Dynamic outputs appear"), "{}", err);
 
-    // fake the executed results so the dynamic output `location_z` exists
+    // fake the executed results so the dynamic output `location[2]` exists
     let mut results = HashMap::new();
-    results.insert(kfo.to_string(), json!({"dyn_output": {"location_z": {"data_path": "location", "array_index": 2, "keyframe_points": []}}}));
+    results.insert(kfo.to_string(), json!({"dyn_output": {"location[2]": "Location Z"}}));
     // the hidden container output is refused and points at the dynamic outputs
     let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "dyn_output", gen, "note_on_keyframes").unwrap_err();
-    assert!(err.contains("must not be connected") && err.contains("location_z"), "{}", err);
+    assert!(err.contains("must not be connected") && err.contains("location[2]"), "{}", err);
     // now connecting the dynamic output works
-    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "location_z", gen, "note_on_keyframes").unwrap();
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "location[2]", gen, "note_on_keyframes").unwrap();
 }
 
 // checks a `Dyn<T>` input grows one numbered input per connection plus a free one
@@ -334,7 +334,7 @@ fn outline_shows_labels_values_connections_and_options() {
     let concise = outline(&f.ctx(), None, Detail::Concise).unwrap();
     println!("{}", concise);
     assert!(concise.contains("unset: note_on_anchor_point"));
-    assert!(concise.contains("out  location_z  (dynamic, not executed yet)  -> animation_generator-"));
+    assert!(concise.contains("out  location[2]  (dynamic, not executed yet)  -> animation_generator-"));
 
     // scene_link feeds everything except the MIDI file nodes
     let scoped = outline(&f.ctx(), Some("scene_link"), Detail::Concise).unwrap();
@@ -375,6 +375,35 @@ fn summaries() {
     // long strings get truncated to 60 characters
     let long = "x".repeat(100);
     assert_eq!(summarize("String", &json!(long)), format!("\"{}…\"", "x".repeat(60)));
+}
+
+// keyframes from object saved before picked channels gets the curves it had connected as channels, under their new ids
+#[test]
+fn old_keyframes_from_object_gets_its_connected_channels() {
+    let mut graph: Graph = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "keyframes_from_object-1", "type": "keyframes_from_object", "data": { "inputs": { "object_name": "ANIM_bounce" } } },
+            { "id": "animation_generator-1", "type": "animation_generator", "data": {} },
+            { "id": "animation_generator-2", "type": "animation_generator", "data": {} }
+        ],
+        "edges": [
+            { "id": "a", "source": "animation_generator-1", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location_z", "selected": true },
+            { "id": "b", "source": "animation_generator-2", "sourceHandle": "note_off_keyframes", "target": "keyframes_from_object-1", "targetHandle": "rotation_euler_0" },
+            { "id": "c", "source": "animation_generator-2", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location_z" }
+        ]
+    }))
+    .unwrap();
+    assert!(MIDIAnimator::graph::builtin::migrate(&mut graph));
+
+    let node = graph.node("keyframes_from_object-1").unwrap();
+    assert_eq!(node.input_value("channels").unwrap(), &json!(["location[2]", "rotation_euler[0]"]));
+    let outputs: Vec<&str> = graph.edges.iter().map(|e| e.from_output()).collect();
+    assert_eq!(outputs, vec!["location[2]", "rotation_euler[0]", "location[2]"]);
+    assert_eq!(graph.edges[0].id, "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]");
+    assert_eq!(graph.edges[0].extra["selected"], json!(true));
+
+    // a migrated node is left alone the next time
+    assert!(!MIDIAnimator::graph::builtin::migrate(&mut graph));
 }
 
 // a group id adds a group node, its sockets come from the group, inside the group input and output mirror them

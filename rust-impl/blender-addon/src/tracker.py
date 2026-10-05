@@ -24,7 +24,7 @@ def generate_uuid():
     return str(uuid.uuid4())
 
 def get_structure_signature():
-    """The scene layout: every collection's children and objects in order, and each object's name, parent, visibility and action.
+    """The scene layout: every collection's children and objects in order, and each object's name, parent, visibility and actions.
     Any change here is sent right away."""
     collections = []
 
@@ -37,10 +37,15 @@ def get_structure_signature():
         walk(scene.name, scene.collection)
 
     objects = tuple(
-        (obj.name, obj.parent.name if obj.parent else None, obj.visible_get(), obj.animation_data.action.name if obj.animation_data and obj.animation_data.action else None)
+        (obj.name, obj.parent.name if obj.parent else None, obj.visible_get(), action_name(obj), action_name(getattr(obj.data, "shape_keys", None)))
         for obj in bpy.data.objects
     )
     return (tuple(collections), objects)
+
+def action_name(id_data):
+    """The name of the action on an object or shape keys, None without one."""
+    anim_data = id_data.animation_data if id_data else None
+    return anim_data.action.name if anim_data and anim_data.action else None
 
 def get_values_signature():
     """Values that change continuously while dragging: transforms, and the keyframes of ANIM objects.
@@ -49,7 +54,7 @@ def get_values_signature():
     for obj in bpy.data.objects:
         values.append((obj.name, tuple(obj.location), tuple(obj.rotation_euler), tuple(obj.scale)))
         if obj.name.startswith("ANIM"):
-            for fcurve in FCurvesFromObject(obj):
+            for fcurve in FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj):
                 keys = tuple((tuple(key.co), tuple(key.handle_left), tuple(key.handle_right), key.interpolation) for key in fcurve.keyframe_points)
                 values.append((obj.name, fcurve.data_path, fcurve.array_index, keys))
     return tuple(values)
@@ -76,6 +81,19 @@ def FCurvesFromObject(obj):
         return list(obj.animation_data.action.fcurves)
     else:
         anim_data = obj.animation_data
+        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+        return list(channelbag.fcurves) if channelbag else []
+
+def ShapeKeyFCurvesFromObject(obj):
+    """Gets the FCurves of an object's shape keys, their data paths are like `key_blocks["Smile"].value`."""
+    shape_keys = getattr(obj.data, "shape_keys", None)
+    if shape_keys is None or shape_keys.animation_data is None: return []
+    if shape_keys.animation_data.action is None: return []
+
+    if bpy.app.version < (5, 0, 0):
+        return list(shape_keys.animation_data.action.fcurves)
+    else:
+        anim_data = shape_keys.animation_data
         channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
         return list(channelbag.fcurves) if channelbag else []
 
@@ -126,7 +144,7 @@ def get_all_objects_in_collection(collection, objects=None):
         }
         
         if obj.name.startswith("ANIM"):
-            fcurves = FCurvesFromObject(obj)
+            fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
             obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
         
         objects.append(obj_data)
@@ -162,7 +180,7 @@ def execute():
                 }
                 
                 if obj.name.startswith("ANIM"):
-                    fcurves = FCurvesFromObject(obj)
+                    fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
                     obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
                 
                 objects.append(obj_data)

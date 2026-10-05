@@ -152,7 +152,7 @@ pub fn is_param(spec: &NodeSpec, input_id: &str) -> bool {
 /// all outputs of a node: the declared ones plus dynamic ones found in its executed results
 ///
 /// a declared `Dyn<T>` output (keyframes_from_object's `dyn_output`) holds a map whose keys
-/// become extra outputs of type `T` once the node has executed (e.g. `location_z`).
+/// become extra outputs of type `T` once the node has executed (e.g. `location[2]`), named by their string value.
 pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<HandleSpec> {
     // start with the declared outputs
     let mut outputs = spec.handles.outputs.clone();
@@ -165,11 +165,11 @@ pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<Handle
         let Some(dynamic) = node_results.and_then(|r| r.get(&handle.id)).and_then(|v| v.as_object()) else {
             continue;
         };
-        // each key in the map becomes its own output, e.g. `location_z` -> "Location Z"
-        for key in dynamic.keys() {
+        // each key in the map becomes its own output, named by its value (`location[2]` -> "Location Z") or else its key
+        for (key, value) in dynamic {
             outputs.push(HandleSpec {
                 id: key.clone(),
-                name: key.split('_').map(capitalize).collect::<Vec<_>>().join(" "),
+                name: value.as_str().map_or_else(|| key.split('_').map(capitalize).collect::<Vec<_>>().join(" "), String::from),
                 data_type: inner.to_string(),
                 description: format!("Dynamic output of {}.", handle.id),
                 hidden: false,

@@ -34,6 +34,19 @@ def FCurvesFromObject(obj):
         channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
         return list(channelbag.fcurves) if channelbag else []
 
+def ShapeKeyFCurvesFromObject(obj):
+    """Gets the FCurves of an object's shape keys, their data paths are like `key_blocks["Smile"].value`."""
+    shape_keys = getattr(obj.data, "shape_keys", None)
+    if shape_keys is None or shape_keys.animation_data is None: return []
+    if shape_keys.animation_data.action is None: return []
+
+    if bpy.app.version < (5, 0, 0):
+        return list(shape_keys.animation_data.action.fcurves)
+    else:
+        anim_data = shape_keys.animation_data
+        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
+        return list(channelbag.fcurves) if channelbag else []
+
 def frames_to_sec(f, fps):
     return f / fps
 
@@ -88,7 +101,7 @@ def get_all_objects_in_collection(collection, objects=None):
         }
         
         if obj.name.startswith("ANIM"):
-            fcurves = FCurvesFromObject(obj)
+            fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
             obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
         
         objects.append(obj_data)

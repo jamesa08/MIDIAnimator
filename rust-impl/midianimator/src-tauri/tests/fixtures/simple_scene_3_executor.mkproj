@@ -362,7 +362,10 @@
         "data": {
           "inputs": {
             "object_group_name": "Cubes",
-            "object_name": "ANIM_bounce"
+            "object_name": "ANIM_bounce",
+            "channels": [
+              "location[2]"
+            ]
           }
         },
         "type": "keyframes_from_object",
@@ -436,8 +439,8 @@
         "source": "animation_generator-1",
         "sourceHandle": "note_on_keyframes",
         "target": "keyframes_from_object-1",
-        "targetHandle": "location_z",
-        "id": "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location_z"
+        "targetHandle": "location[2]",
+        "id": "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]"
       },
       {
         "source": "evaluate_instrument-1",

@@ -77,39 +77,51 @@ def clean_all_keyframes(data: dict, report: dict):
             report["missing_objects"].append(object_name)
             continue
 
-        if obj.animation_data:
-            if obj.animation_data.action:
-                action = obj.animation_data.action
-                obj.animation_data.action = None
+        # the object's own animation and its shape keys'
+        for owner in (obj, getattr(obj.data, "shape_keys", None)):
+            if owner is None or owner.animation_data is None:
+                continue
+            if owner.animation_data.action:
+                action = owner.animation_data.action
+                owner.animation_data.action = None
                 if action.users == 0:
                     bpy.data.actions.remove(action)
-            obj.animation_data_clear()
+            owner.animation_data_clear()
 
 
 def get_or_create_fcurve(obj: bpy.types.Object, data_path: str, array_index: int) -> bpy.types.FCurve:
     """Gets an existing FCurve or creates a new one for the given data_path/index.
+    Shape key paths (`key_blocks["Smile"].value`) go on the object's shape keys, everything else on the object.
     Always re-fetches obj from bpy.data to avoid stale references."""
 
     obj = bpy.data.objects[obj.name]
 
-    if obj.animation_data is None:
-        obj.animation_data_create()
+    owner = obj
+    action_name = f"{obj.name}Action"
+    if data_path.startswith("key_blocks["):
+        owner = getattr(obj.data, "shape_keys", None)
+        if owner is None:
+            raise ValueError(f"'{obj.name}' has no shape keys")
+        action_name = f"{obj.name}ShapeKeysAction"
+
+    if owner.animation_data is None:
+        owner.animation_data_create()
 
     if bpy.app.version < (5, 0, 0):
-        if obj.animation_data.action is None:
-            action = bpy.data.actions.new(name=f"{obj.name}Action")
-            obj.animation_data.action = action
-        action = obj.animation_data.action
+        if owner.animation_data.action is None:
+            action = bpy.data.actions.new(name=action_name)
+            owner.animation_data.action = action
+        action = owner.animation_data.action
         fc = action.fcurves.find(data_path, index=array_index)
         if fc is None:
             fc = action.fcurves.new(data_path, index=array_index)
     else:
-        anim_data = obj.animation_data
+        anim_data = owner.animation_data
         if anim_data.action is None:
-            action = bpy.data.actions.new(name=f"{obj.name}Action")
+            action = bpy.data.actions.new(name=action_name)
             anim_data.action = action
         # creates the slot, layer, strip and channelbag if missing
-        fc = anim_data.action.fcurve_ensure_for_datablock(obj, data_path, index=array_index)
+        fc = anim_data.action.fcurve_ensure_for_datablock(owner, data_path, index=array_index)
 
     return fc
 

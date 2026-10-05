@@ -728,18 +728,33 @@ img {
 }
 
 /* group input and output sockets */
-.interface-socket .interface-remove {
+.interface-socket .interface-remove,
+.channel-row .channel-remove {
     color: #999;
     padding: 0 3px;
     visibility: hidden;
 }
 
-.interface-socket:hover .interface-remove {
+.interface-socket:hover .interface-remove,
+.channel-row:hover .channel-remove {
     visibility: visible;
 }
 
-.interface-socket .interface-remove:hover {
+.interface-socket .interface-remove:hover,
+.channel-row .channel-remove:hover {
     color: #c33;
+}
+
+/* a keyframes from object channel: its dropdown fills the row up to the socket */
+.channel-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.channel-row select {
+    flex: 1;
+    min-width: 0;
 }
 
 .interface-socket .interface-rename {

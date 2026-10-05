@@ -291,9 +291,9 @@ fn connections_are_checked_against_a_groups_sockets() {
 #[test]
 fn a_dynamic_output_has_its_inner_type() {
     // keyframes from object's curves are Array<Keyframe>
-    let root = graph(vec![node("keyframes_from_object-1", json!({})), node("targets_for_note-1", json!({}))], &[("keyframes_from_object-1", "location_z", "targets_for_note-1", "note")]);
+    let root = graph(vec![node("keyframes_from_object-1", json!({})), node("targets_for_note-1", json!({}))], &[("keyframes_from_object-1", "location[2]", "targets_for_note-1", "note")]);
     let (record, _) = run_graph(&root, &BTreeMap::new(), true);
-    assert_eq!(bad_inputs(&record, "targets_for_note-1")["note"], "Note expects MIDINote, but Keyframes from Object › location_z gives Array<Keyframe>");
+    assert_eq!(bad_inputs(&record, "targets_for_note-1")["note"], "Note expects MIDINote, but Keyframes from Object › location[2] gives Array<Keyframe>");
 }
 
 #[test]

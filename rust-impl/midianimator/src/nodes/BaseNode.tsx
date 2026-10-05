@@ -23,10 +23,11 @@ const handleStyle = {
 /// @param hidden: map of handles to hide, good for when you want to hide a handle but want to write data to it (ui element)
 /// @param executor: function to execute when the node is executed. only should be used for nodes that use JS execution
 /// @param dynamicHandles: map of handles to add to the node. looks exactly like handles found in `default_nodes.json`. good for when you want to add handles to a node that are not in the node data, dynamically as a UI feature
+/// @param labels: map of handles to ui elements shown in place of their name, next to the socket
 /// @param data: reactflow data
 /// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
 /// @param children: may be removed later
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; data: any; headerExtra?: ReactNode; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -70,7 +71,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
                 const buildHandle = (
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
-                            <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>
+                            {labels?.[handle["id"]] ?? <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>}
                             {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
                             {preview ? (
                                 <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></div>

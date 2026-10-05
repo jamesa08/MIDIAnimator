@@ -1,13 +1,24 @@
 import "@xyflow/react/dist/base.css";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useStore } from "@xyflow/react";
+import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import BaseNode from "./BaseNode";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
-import { useSetInputs } from "../utils/graphOps";
+import { useGroupContext } from "../contexts/GroupContext";
+import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
+
+// an animated channel of the object, see Channel in src-tauri/src/graph/executors/animation.rs
+type Channel = { id: string; group: string; name: string };
+
+// object channels show just their name, the others their group too
+const OBJECT_GROUP = "Object";
+const channelLabel = (c: Channel) => (c.group === OBJECT_GROUP ? c.name : `${c.group} › ${c.name}`);
 
 function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
+    const { scopeId, editable } = useGroupContext();
+    const { apply } = useGraphOps(scopeId);
+    const updateNodeInternals = useUpdateNodeInternals();
     const [nodeData, setNodeData] = useState<any | null>(null);
     const { backEndState: state } = useStateContext();
 
@@ -29,23 +40,37 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     const selectedObjectName: string = data.inputs?.object_name || objectNames[0] || "";
 
-    // the curves of the last run that got here. a failed run (or one that stopped before this node) keeps them, so the
-    // sockets and their connections stay and the node can still be edited
-    const lastCurves = useRef<string[]>([]);
-    if (executedResults?.dyn_output) lastCurves.current = Object.keys(executedResults.dyn_output);
+    // the picked channels, one output each
+    const channels: string[] = Array.isArray(data.inputs?.channels) ? data.inputs.channels : [];
+
+    // the object's channels from the last run that got here. a failed run (or one that stopped before this node) keeps them,
+    // so the dropdowns keep their names and the node can still be edited
+    const lastAvailable = useRef<Channel[]>([]);
+    if (Array.isArray(executedResults?.available_channels)) lastAvailable.current = executedResults.available_channels;
+    const available = lastAvailable.current;
+
+    // a picked channel the object doesn't have (anymore) shows its id
+    const channelFor = (channel: string): Channel => available.find((c) => c.id === channel) ?? { id: channel, group: OBJECT_GROUP, name: channel };
 
     // outputs something is connected to keep their socket too, e.g. a project opened with this node failing.
     // stored edges are reversed, `target`/`targetHandle` is the node giving the value and its output
-    const connectedOutputs = useCallback((s: any) => s.edges.flatMap((e: any) => (e.target === id && e.targetHandle ? [e.targetHandle] : [])).join("\n"), [id]);
-    const connected = useStore(connectedOutputs)
+    const connectedOutputs = useCallback((s: any) => s.edges.flatMap((e: any) => (e.target === id && e.targetHandle ? [`${e.id}\t${e.targetHandle}\t${e.source}\t${e.sourceHandle}`] : [])).join("\n"), [id]);
+    const connections: { edge: string; output: string; toNode: string; toInput: string }[] = useStore(connectedOutputs)
         .split("\n")
-        .filter((handle: string) => handle && handle !== "dyn_output");
+        .filter(Boolean)
+        .map((line: string) => {
+            const [edge, output, toNode, toInput] = line.split("\t");
+            return { edge, output, toNode, toInput };
+        });
+    const unpicked = [...new Set(connections.map((c) => c.output))].filter((output) => output !== "dyn_output" && !channels.includes(output));
 
-    const animCurves = [...new Set([...lastCurves.current, ...connected])].map((curveName) => ({
-        id: curveName,
-        name: curveName.split("_").join(" ").toProperCase(),
-        data_type: "Array<Keyframe>",
-    }));
+    const outputs = [...channels.map((channel) => ({ id: channel, name: channelLabel(channelFor(channel)), data_type: "Array<Keyframe>" })), ...unpicked.map((output) => ({ id: output, name: output, data_type: "Array<Keyframe>" }))];
+
+    // sockets moved between rows without the node changing size, so react flow has to measure them again
+    const outputsKey = outputs.map((o) => o.id).join("\n");
+    useEffect(() => {
+        updateNodeInternals(id);
+    }, [id, outputsKey, updateNodeInternals]);
 
     useEffect(() => {
         console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
@@ -54,6 +79,83 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
             setInputs(id, { object_group_name: selectedGroupName, object_name: selectedObjectName }, { commitToHistory: false });
         }
     }, [selectedGroupName, selectedObjectName]);
+
+    // MARK: - Channels
+
+    // sets the picked channels, the connections of a channel that changed move with its row and a removed one's go
+    const pickChannels = (next: string[], moved: Record<string, string | null>) => {
+        if (!editable) return;
+        const ops: Op[] = [{ op: "set_inputs", node: id, inputs: { channels: next } }];
+        const changed = connections.filter((c) => c.output in moved);
+        if (changed.length > 0) ops.push({ op: "delete", edges: changed.map((c) => c.edge) });
+        for (const c of changed) {
+            const to = moved[c.output];
+            if (to) ops.push({ op: "connect", from_node: id, from_output: to, to_node: c.toNode, to_input: c.toInput });
+        }
+        apply(ops).catch((e) => console.error(`set channels on ${id}: ${e}`));
+    };
+
+    const addChannel = (channel: string) => {
+        pickChannels([...channels, channel], {});
+    };
+
+    const changeChannel = (index: number, channel: string) => {
+        const next = [...channels];
+        next[index] = channel;
+        pickChannels(next, { [channels[index]]: channel });
+    };
+
+    const removeChannel = (index: number) => {
+        pickChannels(
+            channels.filter((_, i) => i !== index),
+            { [channels[index]]: null }
+        );
+    };
+
+    // the object's channels as dropdown options, by group
+    const channelOptions = (options: Channel[]) =>
+        [...new Set(options.map((c) => c.group))].map((group) => (
+            <optgroup key={group} label={group}>
+                {options
+                    .filter((c) => c.group === group)
+                    .map((c) => (
+                        <option key={c.id} value={c.id}>
+                            {c.name}
+                        </option>
+                    ))}
+            </optgroup>
+        ));
+
+    // a row's dropdown: the object's channels, without the ones other rows picked
+    const channelSelect = (channel: string, index: number) => {
+        const options = available.filter((c) => c.id === channel || !channels.includes(c.id));
+        if (!options.some((c) => c.id === channel)) options.unshift(channelFor(channel));
+        return (
+            <div className="channel-row" style={{ width: "100%" }}>
+                <button className="channel-remove nodrag nopan" onClick={() => removeChannel(index)}>
+                    ×
+                </button>
+                <select className="nodrag nopan" value={channel} onChange={(e) => changeChannel(index, e.target.value)}>
+                    {channelOptions(options)}
+                </select>
+            </div>
+        );
+    };
+
+    // the channels no row picked yet. picking one in the empty dropdown at the end adds its row, like a free socket
+    const unpickedChannels = available.filter((c) => !channels.includes(c.id));
+    const emptySelect = editable && unpickedChannels.length > 0 && (
+        <div className="node-field channel-row">
+            {/* keeps the dropdown in line with the rows' */}
+            <button className="channel-remove" style={{ visibility: "hidden" }} tabIndex={-1}>
+                ×
+            </button>
+            <select className="nodrag nopan" value="" onChange={(e) => addChannel(e.target.value)}>
+                <option value="" disabled hidden></option>
+                {channelOptions(unpickedChannels)}
+            </select>
+        </div>
+    );
 
     const objectGroupNameComponent = (
         <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
@@ -83,22 +185,29 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         </select>
     );
 
-    const uiInject = {
+    // the empty dropdown goes under the last output, or where the outputs would be
+    const uiInject: any = {
         object_group_name: objectGroupNameComponent,
         object_name: objectNameComponent,
+        [outputs.length > 0 ? outputs[outputs.length - 1].id : "dyn_output"]: emptySelect,
     };
 
     const hiddenHandles = {
         object_group_name: true,
         object_name: true,
+        channels: true,
         dyn_output: true,
+        available_channels: true,
     };
 
     const dynamicHandles: any = {
-        outputs: animCurves,
+        outputs: outputs,
     };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} data={data} />;
+    // each picked channel's name is its dropdown
+    const labels = Object.fromEntries(channels.map((channel, i) => [channel, channelSelect(channel, i)]));
+
+    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} labels={labels} data={data} />;
 }
 
 export default keyframes_from_object;

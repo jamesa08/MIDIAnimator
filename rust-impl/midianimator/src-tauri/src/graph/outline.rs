@@ -4,10 +4,11 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::executors::animation::object_channels;
 use super::executors::io::node_error;
 use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, RfNode, Specs};
 use crate::midi::MIDINote;
-use crate::scene_generics::Scene;
+use crate::scene_generics::{Object, Scene};
 
 /// everything needed to describe the graph, borrowed from a snapshot of `AppState`
 pub struct OutlineCtx<'a> {
@@ -248,6 +249,16 @@ pub fn input_options(ctx: &OutlineCtx, node: &RfNode, input_id: &str) -> Option<
             let groups = object_groups(ctx, node);
             let group = groups.iter().find(|g| g.get("name").and_then(|n| n.as_str()) == Some(group_name));
             Some(names(group.and_then(|g| g.get("objects"))))
+        }
+        // channels are the animated channels of the object picked on the node
+        ("keyframes_from_object", "channels") => {
+            let group_name = node.input_value("object_group_name").and_then(|v| v.as_str()).unwrap_or("");
+            let object_name = node.input_value("object_name").and_then(|v| v.as_str()).unwrap_or("");
+            let groups = object_groups(ctx, node);
+            let objects = groups.iter().find(|g| g.get("name").and_then(|n| n.as_str()) == Some(group_name)).and_then(|g| g.get("objects")).and_then(|o| o.as_array());
+            let object = objects.and_then(|o| o.iter().find(|o| o.get("name").and_then(|n| n.as_str()) == Some(object_name)));
+            let object: Option<Object> = object.and_then(|o| serde_json::from_value(o.clone()).ok());
+            Some(object.map(|o| object_channels(&o).into_iter().map(|c| c.id).collect()).unwrap_or_default())
         }
         // no known options for this input
         _ => None,

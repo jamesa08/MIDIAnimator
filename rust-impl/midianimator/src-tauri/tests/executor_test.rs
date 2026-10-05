@@ -1,7 +1,8 @@
 use serde_json::json;
-use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, merge_object_maps, note_keyframes, note_targets, pad_nums, targets_for_note};
+use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, note_keyframes, note_targets, pad_nums, targets_for_note};
 use MIDIAnimator::graph::executors::io::Inputs;
 use MIDIAnimator::graph::executors::midi::{get_midi_file, get_midi_track_data};
+use MIDIAnimator::utils::animation::parse_animation_property;
 
 const TYPE_1: &str = "./tests/test_midi_type_1_rs_4_14_24.mid";
 
@@ -72,6 +73,46 @@ fn assign_notes_errors_on_missing_group() {
     // nothing picked yet is not an error
     let outputs = assign_notes_to_objects(&Inputs::default()).unwrap().to_json();
     assert_eq!(outputs["object_map"], json!({ "animations": {}, "objects": {} }));
+}
+
+/// an object group with one object animated on the given (data_path, array_index) curves
+fn animated_object(curves: &[(&str, u32)]) -> serde_json::Value {
+    let curves: Vec<_> = curves.iter().map(|(data_path, array_index)| json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": [], "range": [0.0, 1.0] })).collect();
+    let object = json!({ "name": "ANIM_rig", "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": curves });
+    json!([{ "name": "Rig", "objects": [object] }])
+}
+
+#[test]
+fn keyframes_from_object_lists_channels_by_group() {
+    let groups = animated_object(&[("location", 2), ("pose.bones[\"Arm.L\"].rotation_quaternion", 0), ("pose.bones[\"Arm.L\"][\"stretch\"]", 0), ("key_blocks[\"Smile\"].value", 0), ("[\"glow\"]", 0), ("color", 0), ("color", 3)]);
+    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig"))])).unwrap().to_json();
+    let available: Vec<(String, String)> = outputs["available_channels"].as_array().unwrap().iter().map(|c| (c["group"].as_str().unwrap().to_string(), c["name"].as_str().unwrap().to_string())).collect();
+    let expected = [("Object", "Location Z"), ("Arm.L", "Rotation Quaternion W"), ("Arm.L", "stretch"), ("Shape Keys", "Smile"), ("Custom Properties", "glow"), ("Object", "Color 0"), ("Object", "Color 3")];
+    assert_eq!(available, expected.map(|(g, n)| (g.to_string(), n.to_string())));
+    // nothing picked, no outputs
+    assert_eq!(outputs["dyn_output"], json!({}));
+}
+
+#[test]
+fn keyframes_from_object_outputs_picked_channels() {
+    let groups = animated_object(&[("location", 2), ("pose.bones[\"Arm\"].location", 0)]);
+    let channels = json!(["pose.bones[\"Arm\"].location[0]", "location[2]"]);
+    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups.clone()), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig")), ("channels", channels)])).unwrap().to_json();
+    assert_eq!(outputs["dyn_output"], json!({ "pose.bones[\"Arm\"].location[0]": "Arm › Location X", "location[2]": "Location Z" }));
+    assert_eq!(outputs["location[2]"]["array_index"], json!(2));
+    assert_eq!(outputs["pose.bones[\"Arm\"].location[0]"]["data_path"], json!("pose.bones[\"Arm\"].location"));
+
+    // a channel the object doesn't have is an error
+    let error = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig")), ("channels", json!(["scale[0]"]))])).unwrap_err();
+    assert!(error.contains("'scale[0]' has no keyframes on 'ANIM_rig'"), "{}", error);
+}
+
+#[test]
+fn animation_property_index_is_the_last_one() {
+    assert_eq!(parse_animation_property("location[2]"), ("location".to_string(), 2));
+    assert_eq!(parse_animation_property("pose.bones[\"Arm\"].location[1]"), ("pose.bones[\"Arm\"].location".to_string(), 1));
+    assert_eq!(parse_animation_property("[\"glow\"][0]"), ("[\"glow\"]".to_string(), 0));
+    assert_eq!(parse_animation_property("location"), ("location".to_string(), 0));
 }
 
 #[test]

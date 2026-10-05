@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::io::{Inputs, NodeResult, Outputs, Val};
 use crate::midi::MIDINote;
-use crate::scene_generics::{AnimCurve, ObjectGroup};
+use crate::scene_generics::{AnimCurve, Object, ObjectGroup};
 
 use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 
@@ -13,21 +13,25 @@ use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGene
 /// inputs:
 /// "object_groups": `Array<ObjectGroup>`,
 /// "object_group_name": `String`,
-/// "object_name": `String`
+/// "object_name": `String`,
+/// "channels": `Array<String>`
 ///
 /// outputs:
-/// "dyn_output": `Dyn<Array<Keyframe>>`
+/// "dyn_output": `Dyn<Array<Keyframe>>`,
+/// "available_channels": `Array<Any>`
 #[node_registry::node]
-pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, object_name: Option<&String>) -> NodeResult {
+pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, object_name: Option<&String>, channels: Option<&Vec<String>>) -> NodeResult {
     let mut outputs = Outputs::new();
     let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
     let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
     let object_name = object_name.map(String::as_str).unwrap_or("");
+    let channels: &[String] = channels.map(Vec::as_slice).unwrap_or(&[]);
 
     // nothing picked yet, no dynamic outputs
     let mut dyn_output = serde_json::Map::new();
     if object_groups.is_empty() || object_group_name.is_empty() || object_name.is_empty() {
         outputs.set("dyn_output", dyn_output);
+        outputs.set("available_channels", serde_json::Value::Array(vec![]));
         return Ok(outputs);
     }
 
@@ -36,38 +40,153 @@ pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_gr
     let object = object_group.objects.iter().find(|o| o.name == object_name).ok_or_else(|| format!("object '{}' does not exist in '{}'", object_name, object_group_name))?;
 
     /*
-    example:
+    example, with `location[2]` and a bone's `pose.bones["Arm"].location[0]` picked:
         {
             "dyn_output": {
-                "location_x": FCurveData,
-                "location_y": FCurveData,
-                "location_z": FCurveData
-            }
-            "location_x": FCurveData
-            "location_y": FCurveData,
-            "location_z": FCurveData
-
+                "location[2]": "Location Z",
+                "pose.bones[\"Arm\"].location[0]": "Arm › Location X"
+            },
+            "location[2]": FCurveData,
+            "pose.bones[\"Arm\"].location[0]": FCurveData,
+            "available_channels": [{ "id": "location[2]", "group": "Object", "name": "Location Z" }, ...]
         }
     */
 
-    // one output per anim curve, flat and inside dyn_output (see nodes_and_backend.md)
-    for anim_curve in &object.anim_curves {
-        let name = anim_curve_name(anim_curve);
-        dyn_output.insert(name.clone(), serde_json::to_value(anim_curve).unwrap_or_default());
-        outputs.set(&name, anim_curve.clone());
+    // every animated channel on the object, for the dropdowns
+    let available = object_channels(object);
+    outputs.set("available_channels", serde_json::to_value(&available).unwrap_or_default());
+
+    // one output per picked channel, flat and inside dyn_output (see nodes_and_backend.md)
+    for id in channels {
+        let channel = available.iter().find(|c| &c.id == id).ok_or_else(|| format!("'{}' has no keyframes on '{}'", id, object_name))?;
+        let anim_curve = object.anim_curves.iter().find(|c| channel_id(c) == *id).unwrap();
+        dyn_output.insert(id.clone(), serde_json::Value::String(channel.label()));
+        outputs.set(id, anim_curve.clone());
     }
 
     outputs.set("dyn_output", dyn_output);
     Ok(outputs)
 }
 
-/// the output id for an anim curve, `location_x` for vectors, `data_path_0` for anything else
-fn anim_curve_name(anim_curve: &AnimCurve) -> String {
-    let xyz = ["x", "y", "z"];
-    match xyz.get(anim_curve.array_index as usize) {
-        Some(axis) if ["location", "rotation", "scale"].contains(&anim_curve.data_path.as_str()) => format!("{}_{}", anim_curve.data_path, axis),
-        _ => format!("{}_{}", anim_curve.data_path, anim_curve.array_index),
+// MARK: - Channels
+
+/// an animated property of an object, one F-curve: its output id, the group it's listed under and its name in the group
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Channel {
+    pub id: String,
+    pub group: String,
+    pub name: String,
+}
+
+impl Channel {
+    /// the group and name together, e.g. `Arm › Location X`. object channels are just their name
+    pub fn label(&self) -> String {
+        if self.group == OBJECT_GROUP {
+            self.name.clone()
+        } else {
+            format!("{} › {}", self.group, self.name)
+        }
     }
+}
+
+const OBJECT_GROUP: &str = "Object";
+const SHAPE_KEYS_GROUP: &str = "Shape Keys";
+const CUSTOM_PROPERTIES_GROUP: &str = "Custom Properties";
+
+/// the id of an anim curve's channel, its Blender path with the index: `location[2]`, `pose.bones["Arm"].location[0]`
+pub fn channel_id(anim_curve: &AnimCurve) -> String {
+    format!("{}[{}]", anim_curve.data_path, anim_curve.array_index)
+}
+
+/// every animated channel of an object, in the order Blender has them
+pub fn object_channels(object: &Object) -> Vec<Channel> {
+    object.anim_curves.iter().map(|c| channel(c, &object.anim_curves)).collect()
+}
+
+/// a curve's channel. bones, shape keys and custom properties get groups of their own, the rest is the object's
+fn channel(anim_curve: &AnimCurve, all: &[AnimCurve]) -> Channel {
+    let path = anim_curve.data_path.as_str();
+    let (group, property) = if let Some((bone, rest)) = path.strip_prefix("pose.bones").and_then(quoted) {
+        (bone, rest.strip_prefix('.').unwrap_or(rest))
+    } else if let Some((key, rest)) = path.strip_prefix("key_blocks").and_then(quoted) {
+        // a shape key's value is the shape key itself
+        let rest = rest.strip_prefix('.').unwrap_or(rest);
+        return Channel {
+            id: channel_id(anim_curve),
+            group: SHAPE_KEYS_GROUP.to_string(),
+            name: if rest == "value" {
+                key
+            } else {
+                format!("{} {}", key, words(rest))
+            },
+        };
+    } else if let Some((property, "")) = quoted(path) {
+        return Channel {
+            id: channel_id(anim_curve),
+            group: CUSTOM_PROPERTIES_GROUP.to_string(),
+            name: with_index(property, anim_curve, all),
+        };
+    } else {
+        (OBJECT_GROUP.to_string(), path)
+    };
+
+    // a bone's custom property is `["name"]` after the bone
+    let name = match quoted(property) {
+        Some((custom, "")) => with_index(custom, anim_curve, all),
+        _ => match axes(property).and_then(|axes| axes.get(anim_curve.array_index as usize)) {
+            Some(axis) => format!("{} {}", words(property), axis),
+            None => with_index(words(property), anim_curve, all),
+        },
+    };
+    Channel {
+        id: channel_id(anim_curve),
+        group,
+        name,
+    }
+}
+
+/// the axis names of vector properties, `None` for anything else
+fn axes(property: &str) -> Option<&'static [&'static str]> {
+    match property {
+        "location" | "scale" | "rotation_euler" | "delta_location" | "delta_scale" | "delta_rotation_euler" => Some(&["X", "Y", "Z"]),
+        "rotation_quaternion" | "delta_rotation_quaternion" | "rotation_axis_angle" => Some(&["W", "X", "Y", "Z"]),
+        _ => None,
+    }
+}
+
+/// `rotation_euler` -> `Rotation`, `delta_location` -> `Delta Location`
+fn words(property: &str) -> String {
+    let property = property.strip_suffix("_euler").unwrap_or(property);
+    property.split('_').filter(|w| !w.is_empty()).map(capitalize).collect::<Vec<_>>().join(" ")
+}
+
+fn capitalize(word: &str) -> String {
+    let mut chars = word.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
+}
+
+/// the name with the curve's index when the property has more than one curve, `Color 2`
+fn with_index(name: String, anim_curve: &AnimCurve, all: &[AnimCurve]) -> String {
+    if all.iter().any(|c| c.data_path == anim_curve.data_path && c.array_index != anim_curve.array_index) {
+        format!("{} {}", name, anim_curve.array_index)
+    } else {
+        name
+    }
+}
+
+/// splits `["name"].rest` into the unescaped name and `.rest`, `None` if the path doesn't start with a quoted key
+fn quoted(path: &str) -> Option<(String, &str)> {
+    let inner = path.strip_prefix("[\"")?;
+    let mut name = String::new();
+    let mut chars = inner.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => name.push(chars.next()?.1),
+            '"' => return inner[i + 1..].strip_prefix(']').map(|rest| (name, rest)),
+            _ => name.push(c),
+        }
+    }
+    None
 }
 
 /// Node: animation_generator
