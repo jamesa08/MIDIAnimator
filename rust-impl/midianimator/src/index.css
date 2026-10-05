@@ -150,6 +150,14 @@ img {
        or modal's shortcuts */
     --keymap-app: #7650d0;
     --keymap-area: #17a07a;
+    /* the properties panel's grid (src/components/PropertiesPanel.tsx), like roblox studio's: white rows on a gray
+       gutter and section bars, light lines between cells, values that can't be changed dimmed */
+    --properties-background: #fff;
+    --properties-alternate: #f5f5f5;
+    --properties-section: #e8e8e8;
+    --properties-line: #dcdcdc;
+    --properties-frame: #b4b4b4;
+    --properties-dim: #a3a3a3;
 }
 
 /* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's
@@ -222,6 +230,7 @@ img {
     position: relative;
     margin: 2px 12px;
 }
+
 
 .node-header {
     color: #fff;
@@ -443,6 +452,99 @@ img {
 
 .tab-bar .tab-dot.offline {
     background-color: var(--chrome-add-tab);
+}
+
+/* the properties panel (src/components/PropertiesPanel.tsx): a property grid of collapsible sections with a gutter
+   down the left, name and value cells and lines between them. edge to edge across the panel */
+.properties {
+    min-height: 100%;
+    background-color: var(--properties-background);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+/* the whole panel is the grid's white, not just under the rows, and no room is kept for a scrollbar that isn't showing */
+.panel-scroll:has(> .properties) {
+    background-color: var(--properties-background);
+    scrollbar-gutter: auto;
+}
+
+.properties-section {
+    height: 22px;
+    display: flex;
+    align-items: center;
+    background-color: var(--properties-section);
+    border-bottom: 1px solid var(--properties-line);
+    font-weight: bold;
+}
+
+/* the chevron sits in the gutter */
+.properties-section svg {
+    width: 16px;
+    flex: none;
+}
+
+.properties-row {
+    height: 22px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) minmax(0, 1.15fr);
+    background-color: var(--properties-section);
+}
+
+.properties-row > div {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    background-color: var(--properties-background);
+    border-bottom: 1px solid var(--properties-line);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* every other row in a section is shaded, starting over in each section */
+.properties-rows > .properties-row:nth-child(even) > div {
+    background-color: var(--properties-alternate);
+}
+
+.properties-row > .properties-name {
+    padding: 0 6px;
+    border-right: 1px solid var(--properties-line);
+}
+
+.properties-row.read-only {
+    color: var(--properties-dim);
+}
+
+/* fields fill their cell and draw nothing of their own */
+.properties-row input,
+.properties-row select,
+.properties-row button {
+    width: 100%;
+    height: 100%;
+    padding: 0 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    outline: none;
+    border: none;
+    appearance: none;
+}
+
+.properties-row select {
+    padding-right: 16px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0.5 0.5l3.5 3.5 3.5-3.5' fill='none' stroke='%23888'/%3E%3C/svg%3E") no-repeat right 5px center;
+}
+
+.properties-check {
+    width: 13px;
+    height: 13px;
+    margin: 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--properties-frame);
 }
 
 /* docked and floating panels */

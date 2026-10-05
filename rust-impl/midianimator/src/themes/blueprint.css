@@ -38,6 +38,12 @@
     --chrome-traffic-light: #2a3f70;
     --chrome-line: var(--blueprint-line);
     --node-line: #8193b6;
+    --properties-background: var(--blueprint-panel);
+    --properties-alternate: #20325e;
+    --properties-section: var(--chrome-header);
+    --properties-line: var(--blueprint-line);
+    --properties-frame: var(--blueprint-line);
+    --properties-dim: #8193b6;
     --blueprint-node: #2d4b86;
     /* black number and string sockets would vanish on the blue nodes. a light blue-gray so their white ring
        still shows, like the dark theme */

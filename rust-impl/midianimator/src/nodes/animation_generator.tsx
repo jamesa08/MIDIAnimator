@@ -8,7 +8,7 @@ import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
-const overlapModes = [
+export const overlapModes = [
     { id: "add", name: "Add" },
     { id: "min", name: "Min" },
     { id: "max", name: "Max" },
