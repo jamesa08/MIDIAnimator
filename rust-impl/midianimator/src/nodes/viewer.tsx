@@ -106,16 +106,19 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
         setTimeout(() => setCopied(false), 1000);
     };
 
+    // how much of the value is shown, set from the properties panel. a whole number of at least 0, else the default
+    const option = (input: string) => {
+        const value = data.inputs?.[input] ?? nodeData?.handles.inputs.find((h: any) => h.id === input)?.default;
+        return typeof value === "number" ? Math.max(0, Math.floor(value)) : undefined;
+    };
+    const options = { maxDepth: option("max_depth"), maxKeysPerObject: option("max_keys"), maxArrayItems: option("max_items"), maxStringLength: option("max_string_length"), compactThreshold: option("compact_width") };
+    const optionsKey = JSON.stringify(options);
+
     useEffect(() => {
         var tempViewerData: any = "";
         if (state != undefined && state.executed_results != undefined && id != undefined) {
             if (id in state.executed_inputs && id in state.executed_results) {
-                tempViewerData = tempViewerData = customStringify(state.executed_inputs[id]["data"], {
-                    maxDepth: 4,
-                    compactThreshold: 100,
-                    maxKeysPerObject: 10,
-                    maxArrayItems: 15,
-                });
+                tempViewerData = customStringify(state.executed_inputs[id]["data"], options);
 
                 if (tempViewerData != viewerData) {
                     setViewerData(tempViewerData);
@@ -124,7 +127,7 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
                 setViewerData("");
             }
         }
-    }, [state.executed_results]);
+    }, [state.executed_results, optionsKey]);
 
     useEffect(() => {
         getNodeData("viewer").then(setNodeData);
@@ -147,7 +150,7 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
         data: viewerComponent,
     };
 
-    const hiddenHandles = {};
+    const hiddenHandles = { max_depth: true, max_keys: true, max_items: true, max_string_length: true, compact_width: true };
 
     return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
 }

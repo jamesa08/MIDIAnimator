@@ -282,6 +282,46 @@
                         "name": "Input",
                         "data_type": "Any",
                         "description": "Any value to display in the node."
+                    },
+                    {
+                        "id": "max_depth",
+                        "name": "Depth",
+                        "data_type": "f64",
+                        "description": "How many levels deep to show before collapsing to [Object] or [Array(n)].",
+                        "hidden": true,
+                        "default": 4
+                    },
+                    {
+                        "id": "max_keys",
+                        "name": "Keys Per Object",
+                        "data_type": "f64",
+                        "description": "How many keys of each object to show.",
+                        "hidden": true,
+                        "default": 10
+                    },
+                    {
+                        "id": "max_items",
+                        "name": "Items Per Array",
+                        "data_type": "f64",
+                        "description": "How many items of each array to show.",
+                        "hidden": true,
+                        "default": 15
+                    },
+                    {
+                        "id": "max_string_length",
+                        "name": "String Length",
+                        "data_type": "f64",
+                        "description": "How many characters of each string to show.",
+                        "hidden": true,
+                        "default": 300
+                    },
+                    {
+                        "id": "compact_width",
+                        "name": "Compact Width",
+                        "data_type": "f64",
+                        "description": "Values shorter than this many characters stay on one line.",
+                        "hidden": true,
+                        "default": 100
                     }
                 ],
                 "outputs": []
