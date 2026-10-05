@@ -146,6 +146,8 @@ img {
        a see-through line changes color over every shade it crosses */
     --chrome-line: #bfbfbf;
     --node-line: #000;
+    /* values typed in for a node's inputs, shown under their names */
+    --node-value: #6b6b6b;
     /* the shortcut editor's keyboard (src/windows/KeymapEditor.tsx), like premiere's: app shortcuts, and the chosen area's
        or modal's shortcuts */
     --keymap-app: #7650d0;
@@ -231,6 +233,12 @@ img {
     margin: 2px 12px;
 }
 
+/* a value typed in for an input, under its name */
+.node .node-value {
+    margin-top: -2px;
+    font-style: italic;
+    color: var(--node-value);
+}
 
 .node-header {
     color: #fff;

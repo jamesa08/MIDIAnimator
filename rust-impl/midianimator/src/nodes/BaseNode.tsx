@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { ReactNode, useCallback, useState, useEffect } from "react";
-import { Handle, NodeResizeControl, Position } from "@xyflow/react";
+import { Handle, NodeResizeControl, Position, useNodeId, useStore } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
 import { socketStyle } from "../utils/sockets";
@@ -34,6 +34,12 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
     let preview = data === "preview" || data?.preview === true;
     const error = useNodeError();
 
+    // the inputs something is connected to, joined so the node only draws again when they change.
+    // stored edges are reversed, `source`/`sourceHandle` is the node taking the value and its input
+    const nodeId = useNodeId();
+    const connectedInputs = useCallback((s) => s.edges.flatMap((e) => (e.source === nodeId ? [e.sourceHandle] : [])).join("\n"), [nodeId]);
+    const connected = useStore(connectedInputs).split("\n");
+
     if (nodeData != null) {
         const handleTypes = ["outputs", "inputs"];
         for (let handleType of handleTypes) {
@@ -56,6 +62,11 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
                     uiHidden = hidden[handle["id"]];
                 }
 
+                // a value typed in for an input without a widget (properties panel, MCP) shows under it, unless a
+                // connection's value is used instead or it's the input's default
+                let value = rfHandleType && !preview && !uiHidden && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
+                if (value === handle["default"]) value = undefined;
+
                 const buildHandle = (
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
@@ -67,6 +78,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, data, he
                                 <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></Handle>
                             )}
                         </div>
+                        {value != null && <div className="node-field node-value">{String(value)}</div>}
                         {uiInject}
                     </>
                 );

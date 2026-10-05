@@ -38,6 +38,7 @@
     --chrome-traffic-light: #2a3f70;
     --chrome-line: var(--blueprint-line);
     --node-line: #8193b6;
+    --node-value: #c9d5ec;
     --properties-background: var(--blueprint-panel);
     --properties-alternate: #20325e;
     --properties-section: var(--chrome-header);
