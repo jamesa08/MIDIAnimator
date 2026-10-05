@@ -341,8 +341,8 @@ fn outline_shows_labels_values_connections_and_options() {
     assert!(scoped.contains("\"Viewer\""));
     assert!(!scoped.contains("\"Get MIDI File\""));
 
-    // viewer's only input is connected, so nothing is unset
-    assert_eq!(unset_inputs(&f.ctx(), VIEWER), Vec::<String>::new());
+    // viewer's input is connected, only its display settings are unset (they use their defaults)
+    assert_eq!(unset_inputs(&f.ctx(), VIEWER), vec!["max_depth", "max_keys", "max_items", "max_string_length", "compact_width"]);
 }
 
 // checks the one-line summaries for each value type
