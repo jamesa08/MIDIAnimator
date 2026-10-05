@@ -48,7 +48,10 @@ function HistoryList() {
 
     // the current row stays in view
     const currentRef = useRef<HTMLDivElement>(null);
-    useEffect(() => currentRef.current?.scrollIntoView({ block: "nearest" }), [history]);
+    // braces matter, Chromium's scrollIntoView returns a promise that React would call as the cleanup
+    useEffect(() => {
+        currentRef.current?.scrollIntoView({ block: "nearest" });
+    }, [history]);
 
     // row `i` is the project with the first `i` steps done
     // cut and paste rows also name the nodes, MCP steps' details are for the MCP client
