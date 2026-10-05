@@ -1,0 +1,106 @@
+name: Nightly MotionKeys
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    # 07:00 utc, late night in the americas
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  # skip the build when main hasn't moved since the last nightly, manual runs always build
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      previous: ${{ steps.check.outputs.previous }}
+    steps:
+      - name: Compare with last nightly
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PREVIOUS=$(gh api repos/${{ github.repository }}/commits/nightly --jq .sha 2>/dev/null || true)
+          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$PREVIOUS" != "${{ github.sha }}" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    uses: ./.github/workflows/build.yml
+
+  addon:
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    uses: ./.github/workflows/package-addon.yml
+
+  release:
+    needs: [check, test, build, addon]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download app bundles
+        uses: actions/download-artifact@v7
+        with:
+          pattern: MotionKeys-*
+          path: bundles
+          merge-multiple: true
+
+      - name: Download add-on
+        uses: actions/download-artifact@v7
+        with:
+          pattern: MIDIAnimator-Bridge-*
+          path: addon
+          merge-multiple: true
+
+      # zip with midianimator_bridge/ at its root so blender can install it directly
+      - name: Zip add-on
+        run: cd addon && zip -r ../MIDIAnimator-Bridge-nightly.zip midianimator_bridge
+
+      # commits since the last nightly, or just this commit if the old one is gone
+      - name: Write release notes
+        run: |
+          HASH=$(git rev-parse --short HEAD)
+          echo "Nightly build of \`$HASH\` from $(date -u +%Y-%m-%d)." > notes.md
+          echo "" >> notes.md
+          PREVIOUS="${{ needs.check.outputs.previous }}"
+          if [ -n "$PREVIOUS" ] && git cat-file -e "$PREVIOUS^{commit}" 2>/dev/null; then
+            git log --format='- %h %s' "$PREVIOUS..HEAD" >> notes.md
+          else
+            git log -1 --format='- %h %s' >> notes.md
+          fi
+
+      # the nightly release and tag are replaced each time so the tag always points at the latest build
+      - name: Publish nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly \
+            --target ${{ github.sha }} \
+            --title "MotionKeys Nightly $(date -u +%Y-%m-%d)" \
+            --notes-file notes.md \
+            --prerelease \
+            --latest=false \
+            bundles/*/* MIDIAnimator-Bridge-nightly.zip
