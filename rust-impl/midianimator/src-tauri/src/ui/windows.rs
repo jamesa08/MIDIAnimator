@@ -104,19 +104,46 @@ pub fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
-// opens a window that's revealed once its page has drawn, focuses it if it's already open
+// opens a window that's revealed once its page has drawn, focuses it if it's already open.
+// only macOS waits for the page: webview2 doesn't run animation frames for a hidden window, so its page would never report
+// ready. elsewhere it's shown once built, the white background keeps it from flashing
 pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title: &str, width: f64, height: f64) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(label) {
+        #[cfg(target_os = "macos")]
         return window.set_focus();
+        #[cfg(not(target_os = "macos"))]
+        {
+            reveal(&window);
+            return Ok(());
+        }
     }
 
     // registered before the page can load and report ready
-    PENDING_REVEAL.lock().unwrap().push(label.to_string());
-    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(width, height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255)).build()?;
-    prepare_hidden(&window);
     #[cfg(target_os = "macos")]
-    smooth_zoom(&window);
-    Ok(())
+    {
+        PENDING_REVEAL.lock().unwrap().push(label.to_string());
+        let window = window_builder(app, label, url, title, width, height).build()?;
+        prepare_hidden(&window);
+        smooth_zoom(&window);
+        Ok(())
+    }
+
+    // webview2 deadlocks building a window on the main thread (menu events, run_app_command): the event loop stops
+    // handling every other window call, so it's built from a thread of its own.
+    // https://github.com/MicrosoftEdge/WebView2Feedback/issues/1600
+    #[cfg(not(target_os = "macos"))]
+    {
+        let (app, label, url, title) = (app.clone(), label.to_string(), url.to_string(), title.to_string());
+        std::thread::spawn(move || match window_builder(&app, &label, &url, &title, width, height).build() {
+            Ok(window) => reveal(&window),
+            Err(e) => eprintln!("Error creating window {}: {:?}", label, e),
+        });
+        Ok(())
+    }
+}
+
+fn window_builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: &str, title: &str, width: f64, height: f64) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(width, height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255))
 }
 
 // every page calls this after its first paint, reveals the window if it was waiting on it

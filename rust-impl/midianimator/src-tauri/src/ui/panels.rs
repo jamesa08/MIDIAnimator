@@ -161,6 +161,7 @@ pub fn floating_window_set_shown(app: tauri::AppHandle, label: String, shown: bo
     // other platforms just show and hide
     #[cfg(not(target_os = "macos"))]
     {
+        window.set_ignore_cursor_events(!clickable).map_err(|e| e.to_string())?;
         if let Some((x, y)) = position {
             window.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string())?;
         }
