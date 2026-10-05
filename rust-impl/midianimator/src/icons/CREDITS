@@ -1,0 +1,9 @@
+blender/
+    Icons from Blender 2.79 (release/datafiles/blender_icons32), by the Blender Foundation and contributors.
+    https://github.com/blender/blender/tree/v2.79b/release/datafiles
+    Licensed under the GNU General Public License.
+
+silk/
+    Silk icon set by Mark James (famfamfam.com), licensed under the Creative Commons Attribution 2.5 License.
+    SVG redraws by Simandara, licensed under the Creative Commons Attribution 4.0 International License.
+    https://github.com/Simandara/famfamfam-silk-svg

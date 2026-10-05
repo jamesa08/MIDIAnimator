@@ -809,3 +809,43 @@ img {
 .live-resize .content > .dock-column {
     contain: strict;
 }
+
+/* the scene tree (src/components/SceneTree.tsx): icon rows like Blender's outliner, indented under the row they're in */
+.scene-tree-row {
+    height: 20px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background-color: var(--properties-background);
+    white-space: nowrap;
+    cursor: default;
+}
+
+.properties-rows > .scene-tree-row:nth-child(even) {
+    background-color: var(--properties-alternate);
+}
+
+.scene-tree-chevron {
+    width: 16px;
+    flex: none;
+    display: flex;
+    justify-content: center;
+}
+
+.scene-tree-row .icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+}
+
+.scene-tree-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.scene-tree-value {
+    flex: none;
+    margin-left: auto;
+    padding: 0 6px;
+    color: var(--properties-dim);
+}

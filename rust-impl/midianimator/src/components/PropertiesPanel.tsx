@@ -7,6 +7,7 @@ import { useNodeSpecs } from "../utils/nodeEntries";
 import { ERROR_KEY } from "./nodegraph/ErrorBadge";
 import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
+import SceneTree from "./SceneTree";
 
 // MARK: - Parameters
 
@@ -172,6 +173,8 @@ function Properties() {
     const groups = usePanelGroups();
     const specs = useNodeSpecs();
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    // the scene tree's open rows, the scene itself starts open
+    const [expanded, setExpanded] = useState<Set<string>>(new Set(["scene"]));
 
     const project = state.rf_instance;
     const openGroup: string = state.open_group ?? "";
@@ -195,6 +198,12 @@ function Properties() {
         setCollapsed((prev) => {
             const next = new Set(prev);
             next.has(title) ? next.delete(title) : next.add(title);
+            return next;
+        });
+    const toggleRow = (key: string) =>
+        setExpanded((prev) => {
+            const next = new Set(prev);
+            next.has(key) ? next.delete(key) : next.add(key);
             return next;
         });
     const section = (title: string, children: ReactNode) => (
@@ -263,6 +272,8 @@ function Properties() {
         const custom = (id: string) => (PARAMS[type!] ?? []).find((param) => param.id === id);
         const inputs = (spec?.handles.inputs ?? []).filter((handle) => !handle.data_type.startsWith("Dyn<") && selected.every((node) => custom(handle.id)?.shown?.(node) ?? true));
         const label = shared(selected, (node) => node.data?.label ?? "");
+        // the scene Scene Link gives (graph/execute.rs)
+        const scene = state.scene_data?.["Scene"];
         const name = shared(selected, typeName);
 
         // what feeds an input: `Node › Output`, or null when nothing is connected to it.
@@ -346,6 +357,7 @@ function Properties() {
                     </>
                 )}
                 {inputs.length > 0 && section("Parameters", inputs.map(input))}
+                {single?.type === "scene_link" && scene && section("Scene", <SceneTree scene={scene} expanded={expanded} onToggle={toggleRow} />)}
                 {section(
                     "Layout",
                     <>
