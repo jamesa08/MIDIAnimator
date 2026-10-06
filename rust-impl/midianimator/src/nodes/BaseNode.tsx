@@ -26,7 +26,7 @@ const handleStyle = {
 /// @param labels: map of handles to ui elements shown in place of their name, next to the socket
 /// @param data: reactflow data
 /// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
-/// @param children: may be removed later
+/// @param children: shown under the handles, e.g. the curve preview on Animation Generator
 function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
@@ -99,6 +99,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                 {handleObjects.map((handle, index) => (
                     <React.Fragment key={index}>{handle}</React.Fragment>
                 ))}
+                {children}
             </div>
         </div>
     );

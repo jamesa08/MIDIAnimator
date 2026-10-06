@@ -2,6 +2,7 @@ import "@xyflow/react/dist/base.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import BaseNode from "./BaseNode";
+import CurvePreview from "../components/graph/CurvePreview";
 import { getNodeData } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
@@ -207,7 +208,12 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     // each picked channel's name is its dropdown
     const labels = Object.fromEntries(channels.map((channel, i) => [channel, channelSelect(channel, i)]));
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} labels={labels} data={data} />;
+    // the picked channels' curves, under the inputs
+    return (
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} labels={labels} data={data}>
+            <CurvePreview outputs={executedResults} />
+        </BaseNode>
+    );
 }
 
 export default keyframes_from_object;

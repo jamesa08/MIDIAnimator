@@ -6,6 +6,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { getNodeData } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
+import CurvePreview from "../components/graph/CurvePreview";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -119,7 +120,12 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         overlap_blend: true,
     };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
+    // the generator's curves from the last run, under the inputs
+    return (
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data}>
+            <CurvePreview outputs={state?.executed_results?.[id]} />
+        </BaseNode>
+    );
 }
 
 export default animation_generator;
