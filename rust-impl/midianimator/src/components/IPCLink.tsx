@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import SceneDiffModal from "./SceneDiffModal";
+import { useModal } from "../utils/keymap";
 
 declare global {
     interface String {
@@ -23,9 +24,43 @@ function IPCLink() {
     const [showDiffModal, setShowDiffModal] = useState(false);
     const [sceneDiff, setSceneDiff] = useState(null);
 
+    const linkRef = useRef<HTMLDivElement>(null);
+    const labelRef = useRef<HTMLSpanElement>(null);
+    const popoverRef = useRef<HTMLDivElement>(null);
+    // the popover's left edge and its notch's offset from it, the notch points at the status label
+    const [placement, setPlacement] = useState({ left: 0, top: 0, notch: 0 });
+
     function openMenu() {
         setMenuShown(!menuShown);
     }
+
+    // centered under the label, kept 8px inside the window
+    useLayoutEffect(() => {
+        if (!menuShown) return;
+        const place = () => {
+            const label = labelRef.current!.getBoundingClientRect();
+            const width = popoverRef.current?.offsetWidth ?? 0;
+            const center = label.left + label.width / 2;
+            const left = Math.max(8, Math.min(center - width / 2, window.innerWidth - 8 - width));
+            setPlacement({ left, top: label.bottom + 12, notch: center - left });
+        };
+        place();
+        window.addEventListener("resize", place);
+        return () => window.removeEventListener("resize", place);
+    }, [menuShown]);
+
+    // closes on a click anywhere else
+    useEffect(() => {
+        if (!menuShown) return;
+        const close = (event: PointerEvent) => {
+            const target = event.target as Node;
+            if (!popoverRef.current?.contains(target) && !linkRef.current?.contains(target)) setMenuShown(false);
+        };
+        window.addEventListener("pointerdown", close, true);
+        return () => window.removeEventListener("pointerdown", close, true);
+    }, [menuShown]);
+
+    useModal("dialog", { cancel: () => setMenuShown(false) }, menuShown, { passthrough: true });
 
     function disconnect() {
         console.log("disconnect button pushed");
@@ -69,32 +104,34 @@ function IPCLink() {
     const goLive = () => invoke("go_live", { id: state.active_tab }).catch((error) => console.error("Go live failed:", error));
     const activeLinked = (state.tabs ?? []).some((tab: any) => tab.id === state.active_tab && tab.linked);
 
+    const button = "h-7 w-full border border-black rounded-md text-sm hover:bg-zinc-100";
+
     function showWhenConnected() {
-        if (state.connected) {
-            return (
-                <>
+        return (
+            <>
+                <div className="text-sm leading-6 wrap-anywhere">
                     <p>{`${state.connected_application.toProperCase()} version ${state.connected_version}`}</p>
                     <p>{`${state.connected_file_name}`}</p>
                     <p>{`Port: ${state.port}`}</p>
-                    {state.execution_paused && (
-                        <>
-                            <p className="text-yellow-600 font-bold mt-2">⚠️ Execution paused - scene data needs validation</p>
-                            <button className="bg-yellow-500 font-semibold py-2 px-4 border border-black rounded mt-2" onClick={handleValidate}>
-                                Validate Scene Data
-                            </button>
-                        </>
-                    )}
-                    {!activeLinked && (
-                        <button className="bg-transparent font-semibold py-2 px-4 border border-black rounded" onClick={goLive}>
-                            Go Live
+                </div>
+                {state.execution_paused && (
+                    <>
+                        <p className="text-xs text-yellow-600 mt-1">⚠️ Execution paused - scene data needs validation</p>
+                        <button className={`${button} mt-2`} onClick={handleValidate}>
+                            Validate Scene Data
                         </button>
-                    )}
-                    <button className="bg-transparent font-semibold py-2 px-4 border border-black rounded" onClick={disconnect}>
-                        Disconnect
+                    </>
+                )}
+                {!activeLinked && (
+                    <button className={`${button} mt-2`} onClick={goLive}>
+                        Go Live
                     </button>
-                </>
-            );
-        }
+                )}
+                <button className={`${button} mt-2`} onClick={disconnect}>
+                    Disconnect
+                </button>
+            </>
+        );
     }
 
     // Determine status color and text
@@ -110,22 +147,42 @@ function IPCLink() {
 
     const status = getStatus();
 
+    // a callout under the status label, its notch is a rotated square drawn over the top border
     const floatingPanel = (
-        <div className={`flex items-center flex-col ipc-content fixed top-[36px] right-1 max-w-[320px] z-[1100] wrap-anywhere bg-white border-black border-[1px] ${menuShown ? "" : "hidden"}`}>
-            <p>{state.connected ? "" : "Disconnected. Please connect on the 3D application to start."}</p>
-            {showWhenConnected()}
+        <div ref={popoverRef} style={{ left: placement.left, top: placement.top }} className="fixed w-64 z-[1100] bg-white border border-black font-[Arial,sans-serif] select-none">
+            <div style={{ left: placement.notch }} className="absolute -top-[6px] size-[11px] -translate-x-1/2 rotate-45 bg-white border-l border-t border-black" />
+            <div className="relative px-3 py-3">
+                {state.connected ? (
+                    showWhenConnected()
+                ) : (
+                    <p className="text-sm text-center py-4">
+                        Disconnected.
+                        <br />
+                        Please connect on Blender to start.
+                    </p>
+                )}
+            </div>
         </div>
     );
 
     return (
         <>
-            <div data-tauri-drag-region onClick={openMenu} className="ipc-link flex items-center gap-2 pl-3 pr-5 ml-auto">
+            <div ref={linkRef} data-tauri-drag-region onClick={openMenu} className="ipc-link flex items-center gap-2 pl-3 pr-5 ml-auto">
                 <div className={`${state.connected_application} size-6 ${state.connected ? "" : "hidden"}`} />
                 <div className={`mac-traffic-light ${status.color}`}></div>
-                <span className="helvetica font-bold text-[8px] translate-y-px">{status.text}</span>
-                {/* on the body so it sits above the toolbar and panels, the tab strip is its own stacking context */}
-                {createPortal(floatingPanel, document.body)}
+                <span ref={labelRef} className="helvetica font-bold text-[8px] translate-y-px">
+                    {status.text}
+                </span>
+                {state.connected && (
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="size-2 -ml-1 translate-y-px">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 9l7 7 7-7" />
+                    </svg>
+                )}
             </div>
+
+            {/* on the body so it sits above the toolbar and panels, the tab strip is its own stacking context. outside the
+                link so clicks inside it don't toggle the menu */}
+            {menuShown && createPortal(floatingPanel, document.body)}
 
             {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={() => setShowDiffModal(false)} />}
         </>
