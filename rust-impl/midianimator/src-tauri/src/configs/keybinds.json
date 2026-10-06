@@ -17,6 +17,9 @@
             { "id": "copy", "name": "Copy", "keys": ["CmdOrCtrl+C"], "menu": true, "fixed": true },
             { "id": "paste", "name": "Paste", "keys": ["CmdOrCtrl+V"], "menu": true, "fixed": true },
             { "id": "select_all", "name": "Select All", "keys": ["CmdOrCtrl+A"], "menu": true, "fixed": true },
+            { "id": "zoom_in", "name": "Zoom In", "keys": ["CmdOrCtrl+="], "menu": true },
+            { "id": "zoom_out", "name": "Zoom Out", "keys": ["CmdOrCtrl+-"], "menu": true },
+            { "id": "actual_size", "name": "Actual Size", "keys": ["CmdOrCtrl+0"], "menu": true },
             { "id": "history", "name": "History", "keys": [], "menu": true },
             { "id": "graph", "name": "Graph", "keys": [], "menu": true }
         ]

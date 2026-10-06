@@ -4,7 +4,7 @@
 use lazy_static::lazy_static;
 use serde_json::Value;
 use std::sync::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 static DEFAULT_SETTINGS: &str = include_str!("configs/settings.json");
 
@@ -15,7 +15,7 @@ lazy_static! {
     static ref USER_SETTINGS: Mutex<Value> = Mutex::new(Value::Object(Default::default()));
 }
 
-fn settings_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn settings_path<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
     app.path().app_config_dir().ok().map(|dir| dir.join("settings.json"))
 }
 
@@ -74,18 +74,28 @@ pub fn get_settings() -> Value {
 // sets a setting by dotted path, saves it and tells every window
 #[tauri::command]
 pub fn set_setting(app: tauri::AppHandle, path: String, value: Value) -> Result<(), String> {
+    save_setting(&app, &path, value)?;
+    // the zoom picked in the settings window
+    if path == "appearance.zoom" {
+        crate::ui::windows::zoom_windows(&app);
+    }
+    Ok(())
+}
+
+// set_setting for the backend's own settings (the zoom)
+pub fn save_setting<R: Runtime>(app: &AppHandle<R>, path: &str, value: Value) -> Result<(), String> {
     let user_settings = {
         let mut user_settings = USER_SETTINGS.lock().unwrap();
-        set_path(&mut user_settings, &path, value.clone());
+        set_path(&mut user_settings, path, value.clone());
         user_settings.clone()
     };
     let settings = {
         let mut settings = SETTINGS.lock().unwrap();
-        set_path(&mut settings, &path, value);
+        set_path(&mut settings, path, value);
         settings.clone()
     };
 
-    let file = settings_path(&app).ok_or("no app config dir")?;
+    let file = settings_path(app).ok_or("no app config dir")?;
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }

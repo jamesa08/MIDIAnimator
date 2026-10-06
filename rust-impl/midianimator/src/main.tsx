@@ -25,10 +25,14 @@ function WindowReady() {
     return null;
 }
 
-// loads the appearance.theme setting's css (utils/theme.ts), and again whenever it changes
+// loads the appearance.theme setting's css (utils/theme.ts) and the page zoom for what keeps its size on screen
+// (index.css --zoom), and again whenever they change
 function ThemeSync() {
     React.useEffect(() => {
-        const apply = (settings: any) => applyTheme(settings?.appearance?.theme ?? "light");
+        const apply = (settings: any) => {
+            applyTheme(settings?.appearance?.theme ?? "light");
+            document.documentElement.style.setProperty("--zoom", String(settings?.appearance?.zoom ?? 1));
+        };
         invoke("get_settings").then(apply);
         const unlisten = listen("settings_changed", (event: any) => apply(event.payload));
         return () => {

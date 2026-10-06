@@ -25,6 +25,12 @@ async fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_macos_fps::init())
         .invoke_handler(MIDIAnimator::auto_commands::get_cmds())
+        // every page opens at the saved zoom (View menu)
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Started {
+                MIDIAnimator::ui::windows::apply_zoom(webview);
+            }
+        })
         // floating panel windows never close, quit when the main window does
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
@@ -63,12 +69,23 @@ async fn main() {
             MIDIAnimator::ui::windows::prepare_hidden(&window);
             #[cfg(target_os = "macos")]
             MIDIAnimator::ui::windows::smooth_zoom(&window);
+            #[cfg(target_os = "macos")]
+            {
+                let (x, middle) = MIDIAnimator::ui::windows::MAIN_TRAFFIC_LIGHTS;
+                MIDIAnimator::ui::windows::place_traffic_lights(&window, x, middle);
+            }
             // page keeps up with the window edges during live resize
             #[cfg(target_os = "macos")]
             MIDIAnimator::ui::windows::sync_live_resize(&window);
             *WINDOW.lock().unwrap() = Some(window);
 
             MIDIAnimator::settings::load_settings(app.handle());
+            // pages that started loading before the settings did
+            for window in app.webview_windows().values() {
+                MIDIAnimator::ui::windows::apply_zoom(window.as_ref());
+                #[cfg(target_os = "macos")]
+                MIDIAnimator::ui::windows::update_traffic_lights(window);
+            }
 
             // floating panels drop behind other apps while this one is inactive
             #[cfg(target_os = "macos")]

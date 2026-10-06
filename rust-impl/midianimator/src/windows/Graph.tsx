@@ -30,8 +30,9 @@ function Check({ checked, onToggle }: { checked: boolean; onToggle: () => void }
     );
 }
 
-// on macOS the traffic lights sit on the toolbar's left (src-tauri/src/ui/windows.rs open_window), it starts after them
-const TRAFFIC_LIGHTS_WIDTH = navigator.userAgent.includes("Mac") ? 78 : 6;
+// on macOS the traffic lights sit on the toolbar's left (src-tauri/src/ui/windows.rs open_window), it starts after them.
+// they don't grow with the page zoom (index.css --zoom)
+const TRAFFIC_LIGHTS_WIDTH = navigator.userAgent.includes("Mac") ? "calc(78px / var(--zoom))" : 6;
 
 // a toolbar button, like the main window's (Tool.tsx). `active` for a toggle that's on
 function ToolButton({ active, onClick, children }: { active?: boolean; onClick: () => void; children: ReactNode }) {

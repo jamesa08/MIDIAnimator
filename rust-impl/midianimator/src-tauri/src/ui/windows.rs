@@ -107,8 +107,8 @@ pub fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
 /// the height of a window's own toolbar (src/windows/Graph.tsx), the traffic lights are centered on it
 #[cfg(target_os = "macos")]
 const TOOLBAR_HEIGHT: f64 = 36.0;
-/// how far below the y tao is given the traffic lights' middle ends up (tao grows their title bar to the buttons'
-/// height + y and they keep their place from its bottom). measured from screenshots at y = 11 and 20
+/// how far below the y the title bar is grown by the traffic lights' middle ends up (their title bar is grown to the
+/// buttons' height + y and they keep their place from its bottom). measured from screenshots at y = 11 and 20
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_MIDDLE: f64 = 2.25;
 /// how far in from the left they sit
@@ -147,6 +147,9 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title
     {
         PENDING_REVEAL.lock().unwrap().push(label.to_string());
         let window = window_builder(app, label, url, title, options).build()?;
+        if options.toolbar {
+            place_traffic_lights(&window, TRAFFIC_LIGHT_X, TOOLBAR_HEIGHT / 2.0);
+        }
         prepare_hidden(&window);
         smooth_zoom(&window);
         Ok(())
@@ -177,7 +180,7 @@ fn window_builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: &str,
     }
     #[cfg(target_os = "macos")]
     if options.toolbar {
-        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(TRAFFIC_LIGHT_X, TOOLBAR_HEIGHT / 2.0 - TRAFFIC_LIGHT_MIDDLE));
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
     }
     builder
 }
@@ -190,6 +193,190 @@ pub fn window_ready(window: WebviewWindow) {
         pending.remove(index);
         drop(pending);
         reveal(&window);
+    }
+}
+
+/// the page zooms zoom in and out step through, like a browser's. the settings window offers the same (ZOOMS in
+/// src/windows/Settings.tsx)
+const ZOOM_STEPS: [f64; 11] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
+/// the saved page zoom (appearance.zoom)
+fn zoom() -> f64 {
+    crate::settings::get_setting("appearance.zoom").as_f64().unwrap_or(1.0)
+}
+
+// gives a page the saved zoom, the splash keeps its own size
+pub fn apply_zoom<R: Runtime>(webview: &tauri::Webview<R>) {
+    if webview.label() != "splash" {
+        webview.set_zoom(zoom()).ok();
+    }
+}
+
+// steps every window's zoom in (1) or out (-1), 0 goes back to actual size. saved so new windows and the next launch get it
+pub fn step_zoom<R: Runtime>(app: &AppHandle<R>, step: i32) {
+    let current = zoom();
+    let next = match step {
+        0 => 1.0,
+        s if s > 0 => ZOOM_STEPS.iter().copied().find(|z| *z > current + 0.001).unwrap_or(current),
+        _ => ZOOM_STEPS.iter().rev().copied().find(|z| *z < current - 0.001).unwrap_or(current),
+    };
+    if let Err(e) = crate::settings::save_setting(app, "appearance.zoom", serde_json::json!(next)) {
+        eprintln!("Error saving zoom: {}", e);
+    }
+    zoom_windows(app);
+}
+
+// gives every window the saved zoom
+pub fn zoom_windows<R: Runtime>(app: &AppHandle<R>) {
+    for window in app.webview_windows().values() {
+        apply_zoom(window.as_ref());
+        #[cfg(target_os = "macos")]
+        update_traffic_lights(window);
+    }
+}
+
+// MARK: - Traffic lights
+
+// the traffic lights sit on the middle of a bar the page draws (the main window's tab strip, a window's toolbar), which
+// grows with the page zoom while the buttons stay the same size. tauri only places them once, when the window is built
+// (tao keeps that spot and puts them back on it), so windows that zoom place them here instead, with the same steps
+// tao takes (inset_traffic_lights in tao's platform_impl/macos/view.rs), at the bar's middle for the zoom.
+// appkit puts them back in their default spot when the title bar lays out, tao's content view drawing, a title change
+// and leaving full screen are where it puts them back, so the same three are hooked here
+
+/// the main window's traffic lights: their x and the middle of the tab strip at actual size (logical pixels)
+#[cfg(target_os = "macos")]
+pub const MAIN_TRAFFIC_LIGHTS: (f64, f64) = (19.0, 17.5);
+
+/// windows that place their traffic lights here: window pointer, their x and the bar's middle at actual size
+#[cfg(target_os = "macos")]
+static TRAFFIC_LIGHTS: Mutex<Vec<(usize, f64, f64)>> = Mutex::new(Vec::new());
+// the hooked methods' own implementations, run before the lights are placed again
+#[cfg(target_os = "macos")]
+static VIEW_DRAW_RECT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+#[cfg(target_os = "macos")]
+static WINDOW_SET_TITLE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+#[cfg(target_os = "macos")]
+static DELEGATE_DID_EXIT_FULL_SCREEN: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+// places a window's traffic lights from now on: `x` in from the left, centered on a bar whose middle is `middle` down
+// at actual size
+#[cfg(target_os = "macos")]
+pub fn place_traffic_lights<R: Runtime>(window: &WebviewWindow<R>, x: f64, middle: f64) {
+    window
+        .with_webview(move |webview| unsafe {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+
+            let ns_window = webview.ns_window() as *mut AnyObject;
+            {
+                let mut windows = TRAFFIC_LIGHTS.lock().unwrap();
+                windows.retain(|(key, _, _)| *key != ns_window as usize);
+                windows.push((ns_window as usize, x, middle));
+            }
+            let view: *mut AnyObject = msg_send![ns_window, contentView];
+            let delegate: *mut AnyObject = msg_send![ns_window, delegate];
+            hook(view, c"drawRect:", &VIEW_DRAW_RECT, view_draw_rect as extern "C" fn(_, _, _) as usize, &format!("v@:{}", <objc2_foundation::NSRect as objc2::Encode>::ENCODING));
+            hook(ns_window, c"setTitle:", &WINDOW_SET_TITLE, window_set_title as extern "C" fn(_, _, _) as usize, "v@:@");
+            hook(delegate, c"windowDidExitFullScreen:", &DELEGATE_DID_EXIT_FULL_SCREEN, delegate_did_exit_full_screen as extern "C" fn(_, _, _) as usize, "v@:@");
+            inset_traffic_lights(ns_window);
+        })
+        .ok();
+}
+
+// places a window's traffic lights for the zoom now, they move with it
+#[cfg(target_os = "macos")]
+pub fn update_traffic_lights<R: Runtime>(window: &WebviewWindow<R>) {
+    window.with_webview(|webview| unsafe { inset_traffic_lights(webview.ns_window() as *mut objc2::runtime::AnyObject) }).ok();
+}
+
+// swaps `object`'s class's method for `imp`, keeping its own (or the one it inherits) in `original`. once per method,
+// every window shares tao's classes
+#[cfg(target_os = "macos")]
+unsafe fn hook(object: *mut objc2::runtime::AnyObject, name: &std::ffi::CStr, original: &std::sync::OnceLock<usize>, imp: usize, types: &str) {
+    if object.is_null() || original.get().is_some() {
+        return;
+    }
+    let class = (*object).class();
+    let Some(own) = class.instance_method(objc2::runtime::Sel::register(name.to_str().unwrap())) else {
+        return;
+    };
+    original.set(own.implementation() as usize).ok();
+    let class = class as *const objc2::runtime::AnyClass as *mut objc2::ffi::objc_class;
+    let types = std::ffi::CString::new(types).unwrap();
+    objc2::ffi::class_replaceMethod(class, objc2::ffi::sel_registerName(name.as_ptr()), Some(std::mem::transmute::<usize, unsafe extern "C" fn()>(imp)), types.as_ptr());
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn view_draw_rect(this: *mut objc2::runtime::AnyObject, sel: objc2::runtime::Sel, rect: objc2_foundation::NSRect) {
+    unsafe {
+        if let Some(original) = VIEW_DRAW_RECT.get() {
+            let original: extern "C" fn(*mut objc2::runtime::AnyObject, objc2::runtime::Sel, objc2_foundation::NSRect) = std::mem::transmute(*original);
+            original(this, sel, rect);
+        }
+        let window: *mut objc2::runtime::AnyObject = objc2::msg_send![this, window];
+        inset_traffic_lights(window);
+    }
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn window_set_title(this: *mut objc2::runtime::AnyObject, sel: objc2::runtime::Sel, title: *mut objc2::runtime::AnyObject) {
+    unsafe {
+        if let Some(original) = WINDOW_SET_TITLE.get() {
+            let original: extern "C" fn(*mut objc2::runtime::AnyObject, objc2::runtime::Sel, *mut objc2::runtime::AnyObject) = std::mem::transmute(*original);
+            original(this, sel, title);
+        }
+        inset_traffic_lights(this);
+    }
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn delegate_did_exit_full_screen(this: *mut objc2::runtime::AnyObject, sel: objc2::runtime::Sel, notification: *mut objc2::runtime::AnyObject) {
+    unsafe {
+        if let Some(original) = DELEGATE_DID_EXIT_FULL_SCREEN.get() {
+            let original: extern "C" fn(*mut objc2::runtime::AnyObject, objc2::runtime::Sel, *mut objc2::runtime::AnyObject) = std::mem::transmute(*original);
+            original(this, sel, notification);
+        }
+        let window: *mut objc2::runtime::AnyObject = objc2::msg_send![notification, object];
+        inset_traffic_lights(window);
+    }
+}
+
+// moves a window's traffic lights onto its bar's middle for the zoom, nothing for a window that doesn't place its own
+#[cfg(target_os = "macos")]
+unsafe fn inset_traffic_lights(ns_window: *mut objc2::runtime::AnyObject) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSPoint, NSRect};
+
+    let Some((x, middle)) = TRAFFIC_LIGHTS.lock().unwrap().iter().find(|(key, _, _)| *key == ns_window as usize).map(|(_, x, middle)| (*x, *middle)) else {
+        return;
+    };
+    let y = middle * zoom() - TRAFFIC_LIGHT_MIDDLE;
+
+    // close, minimize, zoom
+    let buttons: Vec<*mut AnyObject> = (0..3usize).map(|kind| msg_send![ns_window, standardWindowButton: kind]).collect();
+    if buttons.iter().any(|button| button.is_null()) {
+        return;
+    }
+    // the title bar grows to the buttons' height + y, they keep their place from its bottom
+    let close: NSRect = msg_send![buttons[0], frame];
+    let minimize: NSRect = msg_send![buttons[1], frame];
+    let superview: *mut AnyObject = msg_send![buttons[0], superview];
+    let title_bar: *mut AnyObject = msg_send![superview, superview];
+    if title_bar.is_null() {
+        return;
+    }
+    let window_frame: NSRect = msg_send![ns_window, frame];
+    let mut title_bar_frame: NSRect = msg_send![title_bar, frame];
+    title_bar_frame.size.height = close.size.height + y;
+    title_bar_frame.origin.y = window_frame.size.height - title_bar_frame.size.height;
+    let _: () = msg_send![title_bar, setFrame: title_bar_frame];
+
+    let spacing = minimize.origin.x - close.origin.x;
+    for (i, button) in buttons.into_iter().enumerate() {
+        let frame: NSRect = msg_send![button, frame];
+        let _: () = msg_send![button, setFrameOrigin: NSPoint::new(x + i as f64 * spacing, frame.origin.y)];
     }
 }
 

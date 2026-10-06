@@ -2,12 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* the page zoom (View menu), set from the appearance.zoom setting (main.tsx) */
+:root {
+    --zoom: 1;
+}
+
 /* FIXME little hacky right now, will fix this later */
 /* centered on the tab strip, 20px in from the window's edge like a macOS toolbar window. the connection status on
    the right is mirrored, 20px in with the same 8px gaps.
-   the native lights are moved over these by trafficLightPosition in tauri.conf.json */
+   the native lights are moved over these (place_traffic_lights in src-tauri/src/ui/windows.rs). they don't grow with the
+   page zoom, so these keep their size and spacing on screen while the strip around them grows */
 .mac-traffic-lights-container {
-    padding-left: 20px;
+    padding-left: calc(20px / var(--zoom));
     padding-right: 0;
     /* centered above the 1px the strip overlaps the card by, then 1px higher */
     padding-bottom: 3px;
@@ -15,7 +21,12 @@
     display: flex;
     flex-direction: row;
     justify-content: left;
-    gap: 8px;
+    gap: calc(8px / var(--zoom));
+}
+
+.mac-traffic-lights-container .mac-traffic-light {
+    width: calc(12px / var(--zoom));
+    height: calc(12px / var(--zoom));
 }
 
 .mac-traffic-light {

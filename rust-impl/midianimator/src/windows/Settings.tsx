@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { THEMES } from "../utils/theme";
 import KeymapEditor from "./KeymapEditor";
 
+// the page zooms, the same steps as the view menu's zoom in and out (ZOOM_STEPS in src-tauri/src/ui/windows.rs)
+const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+
 // one table row, label on the left and the control on the right. the description shows on hover
 function Row({ id, label, description, children }: { id: string; label: string; description: string; children: React.ReactNode }) {
     return (
@@ -110,6 +113,7 @@ function Settings() {
                         <table className="w-full">
                             <tbody>
                                 {section === "appearance" && <Choice id="appearance-theme" label="Theme" description="How the node graph looks." value={settings.appearance?.theme ?? "light"} options={THEMES.map((theme) => [theme, theme[0].toUpperCase() + theme.slice(1)])} onChange={(theme) => update("appearance.theme", theme)} />}
+                                {section === "appearance" && <Choice id="appearance-zoom" label="UI Scale" description="" value={String(settings.appearance?.zoom ?? 1)} options={ZOOMS.map((zoom) => [String(zoom), `${Math.round(zoom * 100)}%`])} onChange={(zoom) => update("appearance.zoom", Number(zoom))} />}
                                 {section === "panels" && <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
                             </tbody>

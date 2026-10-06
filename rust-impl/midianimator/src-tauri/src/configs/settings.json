@@ -1,6 +1,7 @@
 {
     "appearance": {
-        "theme": "light"
+        "theme": "light",
+        "zoom": 1
     },
     "ipc": {
         "port": 6577

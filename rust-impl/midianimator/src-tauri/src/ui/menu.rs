@@ -52,7 +52,12 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let redo = item(app, "redo", "Redo")?;
     let edit_submenu = SubmenuBuilder::new(app, "Edit").item(&undo).item(&redo).separator().cut().copy().paste().select_all().build()?;
 
-    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&window_submenu).build()?;
+    let zoom_in = item(app, "zoom_in", "Zoom In")?;
+    let zoom_out = item(app, "zoom_out", "Zoom Out")?;
+    let actual_size = item(app, "actual_size", "Actual Size")?;
+    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).build()?;
+
+    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&view_submenu).item(&window_submenu).build()?;
 
     Ok(menu)
 }
@@ -97,6 +102,15 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         }
         "graph" => {
             event::open_graph(app);
+        }
+        "zoom_in" => {
+            crate::ui::windows::step_zoom(app, 1);
+        }
+        "zoom_out" => {
+            crate::ui::windows::step_zoom(app, -1);
+        }
+        "actual_size" => {
+            crate::ui::windows::step_zoom(app, 0);
         }
         "undo" => {
             tauri::async_runtime::spawn(crate::state::history::history_undo());
