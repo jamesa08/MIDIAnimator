@@ -100,19 +100,22 @@ pub fn channel_id(anim_curve: &AnimCurve) -> String {
 
 /// every animated channel of an object, in the order Blender has them
 pub fn object_channels(object: &Object) -> Vec<Channel> {
-    object.anim_curves.iter().map(|c| channel(c, &object.anim_curves)).collect()
+    let all: Vec<(&str, u32)> = object.anim_curves.iter().map(|c| (c.data_path.as_str(), c.array_index)).collect();
+    object.anim_curves.iter().map(|c| curve_channel(&c.data_path, c.array_index, &all)).collect()
 }
 
-/// a curve's channel. bones, shape keys and custom properties get groups of their own, the rest is the object's
-fn channel(anim_curve: &AnimCurve, all: &[AnimCurve]) -> Channel {
-    let path = anim_curve.data_path.as_str();
+/// the channel of the curve at a Blender path and index, `all` is every curve's path and index on the same object.
+/// bones, shape keys and custom properties get groups of their own, the rest is the object's
+pub fn curve_channel(path: &str, array_index: u32, all: &[(&str, u32)]) -> Channel {
+    let id = format!("{}[{}]", path, array_index);
+    let indexed = |name: String| with_index(name, path, array_index, all);
     let (group, property) = if let Some((bone, rest)) = path.strip_prefix("pose.bones").and_then(quoted) {
         (bone, rest.strip_prefix('.').unwrap_or(rest))
     } else if let Some((key, rest)) = path.strip_prefix("key_blocks").and_then(quoted) {
         // a shape key's value is the shape key itself
         let rest = rest.strip_prefix('.').unwrap_or(rest);
         return Channel {
-            id: channel_id(anim_curve),
+            id,
             group: SHAPE_KEYS_GROUP.to_string(),
             name: if rest == "value" {
                 key
@@ -122,9 +125,9 @@ fn channel(anim_curve: &AnimCurve, all: &[AnimCurve]) -> Channel {
         };
     } else if let Some((property, "")) = quoted(path) {
         return Channel {
-            id: channel_id(anim_curve),
+            id,
             group: CUSTOM_PROPERTIES_GROUP.to_string(),
-            name: with_index(property, anim_curve, all),
+            name: indexed(property),
         };
     } else {
         (OBJECT_GROUP.to_string(), path)
@@ -132,17 +135,26 @@ fn channel(anim_curve: &AnimCurve, all: &[AnimCurve]) -> Channel {
 
     // a bone's custom property is `["name"]` after the bone
     let name = match quoted(property) {
-        Some((custom, "")) => with_index(custom, anim_curve, all),
-        _ => match axes(property).and_then(|axes| axes.get(anim_curve.array_index as usize)) {
+        Some((custom, "")) => indexed(custom),
+        _ => match axes(property).and_then(|axes| axes.get(array_index as usize)) {
             Some(axis) => format!("{} {}", words(property), axis),
-            None => with_index(words(property), anim_curve, all),
+            None => indexed(words(property)),
         },
     };
     Channel {
-        id: channel_id(anim_curve),
+        id,
         group,
         name,
     }
+}
+
+/// the axis (`X`, `Y`, `Z`, `W`) the curve at a Blender path and index animates, `None` if it isn't a vector's
+pub fn curve_axis(path: &str, array_index: u32) -> Option<&'static str> {
+    let property = match path.strip_prefix("pose.bones").and_then(quoted) {
+        Some((_, rest)) => rest.strip_prefix('.').unwrap_or(rest),
+        None => path,
+    };
+    axes(property)?.get(array_index as usize).copied()
 }
 
 /// the axis names of vector properties, `None` for anything else
@@ -166,9 +178,9 @@ fn capitalize(word: &str) -> String {
 }
 
 /// the name with the curve's index when the property has more than one curve, `Color 2`
-fn with_index(name: String, anim_curve: &AnimCurve, all: &[AnimCurve]) -> String {
-    if all.iter().any(|c| c.data_path == anim_curve.data_path && c.array_index != anim_curve.array_index) {
-        format!("{} {}", name, anim_curve.array_index)
+fn with_index(name: String, path: &str, array_index: u32, all: &[(&str, u32)]) -> String {
+    if all.iter().any(|&(p, i)| p == path && i != array_index) {
+        format!("{} {}", name, array_index)
     } else {
         name
     }

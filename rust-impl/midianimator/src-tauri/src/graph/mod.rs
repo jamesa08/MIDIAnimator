@@ -1,5 +1,6 @@
 pub mod builtin;
 pub mod clipboard;
+pub mod curves;
 pub mod edit;
 pub mod execute;
 pub mod executors;
