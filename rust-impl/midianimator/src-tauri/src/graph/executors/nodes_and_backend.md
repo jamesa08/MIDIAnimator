@@ -61,11 +61,7 @@ The file name must be the node id: `NodeTypes.tsx` picks up every file in `src/n
 
 ```tsx
 function scene_writer({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const [nodeData, setNodeData] = useState<any | null>(null);
-
-    useEffect(() => {
-        getNodeData("scene_writer").then(setNodeData);
-    }, []);
+    const nodeData = useNodeSpec("scene_writer");
 
     return <BaseNode nodeData={nodeData} inject={{}} hidden={{}} data={data} />;
 }

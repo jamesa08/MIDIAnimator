@@ -7,18 +7,10 @@ import { BaseDirectory, readTextFile } from '@tauri-apps/plugin-fs';
 // detail: { nodeType, clientX, clientY, offsetX, offsetY }, offset is where the node was grabbed in node (unscaled) pixels
 export const NODE_DROP_EVENT = "motionkeys:node-drop";
 
-export async function getNodeData(nodeId: string) {
-    const specs = await loadNodeSpecs();
-    if (specs == null) {
-        console.log("error finding data for node ", nodeId);
-        return {"id": "", "name": "error", handles: {}};
-    }
-    return specs.find((node: any) => node["id"] === nodeId);
-}
-
-// every node spec in default_nodes.json, read once
+// every node spec in default_nodes.json, read once. `loadedNodeSpecs` is set once read, for reading them synchronously
 let nodeSpecs: Promise<any[]> | null = null;
+export let loadedNodeSpecs: any[] | null = null;
 export function loadNodeSpecs(): Promise<any[]> {
-    nodeSpecs ??= readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource }).then((data) => JSON.parse(data)["nodes"]);
+    nodeSpecs ??= readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource }).then((data) => (loadedNodeSpecs = JSON.parse(data)["nodes"]));
     return nodeSpecs;
 }

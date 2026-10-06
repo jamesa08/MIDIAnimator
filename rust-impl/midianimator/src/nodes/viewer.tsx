@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useReactFlow } from "@xyflow/react";
 
 type StringifyOptions = {
@@ -96,7 +96,7 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("viewer");
     const [viewerData, setViewerData] = useState<any | null>(null);
     const [copied, setCopied] = useState(false);
 
@@ -128,10 +128,6 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
             }
         }
     }, [state.executed_results, optionsKey]);
-
-    useEffect(() => {
-        getNodeData("viewer").then(setNodeData);
-    }, []);
 
     const viewerComponent = (
         <>

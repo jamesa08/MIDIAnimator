@@ -1,9 +1,9 @@
 import "@xyflow/react/dist/base.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import BaseNode from "./BaseNode";
 import CurvePreview from "../components/graph/CurvePreview";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
@@ -20,12 +20,8 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     const { scopeId, editable } = useGroupContext();
     const { apply } = useGraphOps(scopeId);
     const updateNodeInternals = useUpdateNodeInternals();
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("keyframes_from_object");
     const { backEndState: state } = useStateContext();
-
-    useEffect(() => {
-        getNodeData("keyframes_from_object").then(setNodeData);
-    }, []);
 
     // Derive everything from state and data directly
     const executedInputs = state?.executed_inputs?.[id];

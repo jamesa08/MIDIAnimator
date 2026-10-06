@@ -3,7 +3,7 @@ import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
@@ -24,14 +24,10 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("animation_generator");
     const [name, setName] = useState(data.inputs?.name || ""); 
     const [property, setProperty] = useState(data.inputs?.animation_property || "");
     const [blend, setBlend] = useState(data.inputs?.overlap_blend ?? "");
-
-    useEffect(() => {
-        getNodeData("animation_generator").then(setNodeData);
-    }, []);
 
     useEffect(() => {
         setName(data.inputs?.name || "");

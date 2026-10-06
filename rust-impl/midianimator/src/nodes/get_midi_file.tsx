@@ -3,7 +3,7 @@ import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -11,7 +11,7 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("get_midi_file");
     const [file, setFile] = useState("");
     const fileName = file.split("/").pop();
 
@@ -35,10 +35,6 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
             // });
         }
     }, [state.executed_results]);
-
-    useEffect(() => {
-        getNodeData("get_midi_file").then(setNodeData);
-    }, []);
 
     useEffect(() => {
         if (data.inputs?.file_path) {

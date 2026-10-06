@@ -1,17 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useEdges, useUpdateNodeInternals } from "@xyflow/react";
 
 function merge_object_maps({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("merge_object_maps");
     const edges = useEdges();
     const updateNodeInternals = useUpdateNodeInternals();
-
-    useEffect(() => {
-        getNodeData("merge_object_maps").then(setNodeData);
-    }, []);
 
     // one input per connected map plus a free one, same as node_inputs in model.rs
     // edges are stored inverted, source is this node's input

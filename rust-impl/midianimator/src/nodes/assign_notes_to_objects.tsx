@@ -2,19 +2,15 @@ import { useEffect, useState, useCallback } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 
 function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("assign_notes_to_objects");
     const [name, setName] = useState(data.inputs?.object_group_name || "");
-
-    useEffect(() => {
-        getNodeData("assign_notes_to_objects").then(setNodeData);
-    }, []);
 
     useEffect(() => {
         setName(data.inputs?.object_group_name || "");

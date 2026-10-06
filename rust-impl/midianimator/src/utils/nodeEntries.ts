@@ -4,7 +4,7 @@ import { useContext, useEffect, useState } from "react";
 import nodeTypes from "../nodes/NodeTypes";
 import { CATEGORY_ORDER } from "../styles";
 import { StateContext } from "../contexts/StateContext";
-import { loadNodeSpecs } from "./node";
+import { loadedNodeSpecs, loadNodeSpecs } from "./node";
 import { FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT, GroupDef, Handle, NEW_SOCKET } from "./groups";
 import { compatible } from "./sockets";
 
@@ -21,14 +21,20 @@ function label(nodeType: string): string {
     return LABELS[nodeType] ?? nodeType.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-// the node specs, from the state when this window has it
+// the node specs, from the state when this window has it.
+// read synchronously so a node is drawn filled in on its first frame
 export function useNodeSpecs(): any[] {
     const fromState = useContext(StateContext)?.backEndState?.default_nodes?.nodes;
-    const [loaded, setLoaded] = useState<any[]>([]);
+    const [loaded, setLoaded] = useState<any[] | null>(loadedNodeSpecs);
     useEffect(() => {
-        if (!fromState) loadNodeSpecs().then(setLoaded);
-    }, [fromState]);
-    return fromState ?? loaded;
+        if (!fromState && !loaded) loadNodeSpecs().then(setLoaded);
+    }, [fromState, loaded]);
+    return fromState ?? loaded ?? [];
+}
+
+// one node type's spec, null until the specs are read
+export function useNodeSpec(nodeType: string): any | null {
+    return useNodeSpecs().find((spec) => spec.id === nodeType) ?? null;
 }
 
 // `specs` gives each entry its name (the node's header) and category, entries are sorted by category.

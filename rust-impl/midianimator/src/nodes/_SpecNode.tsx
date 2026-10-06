@@ -1,20 +1,10 @@
-import { useContext, useEffect, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { getNodeData } from "../utils/node";
-import { StateContext } from "../contexts/StateContext";
+import { useNodeSpec } from "../utils/nodeEntries";
 
-// a node that only shows its spec's sockets, for node types with nothing to set or show.
-// the spec comes from the state when this window has it, so the node is drawn filled in on its first frame
+// a node that only shows its spec's sockets, for node types with nothing to set or show
 function SpecNode({ nodeType, data }: { nodeType: string; data: any }) {
-    const fromState = useContext(StateContext)?.backEndState?.default_nodes?.nodes?.find((node: any) => node.id === nodeType);
-    const [loaded, setLoaded] = useState<any | null>(null);
-
-    useEffect(() => {
-        if (!fromState) getNodeData(nodeType).then(setLoaded);
-    }, [nodeType, fromState]);
-
-    return <BaseNode nodeData={fromState ?? loaded} data={data} />;
+    return <BaseNode nodeData={useNodeSpec(nodeType)} data={data} />;
 }
 
 export default SpecNode;

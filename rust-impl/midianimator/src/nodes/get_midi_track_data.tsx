@@ -1,19 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { getNodeData } from "../utils/node";
+import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useSetInputs } from "../utils/graphOps";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
-    const [nodeData, setNodeData] = useState<any | null>(null);
+    const nodeData = useNodeSpec("get_midi_track_data");
     const { backEndState: state } = useStateContext();
 
     // load the node's spec (name, handles) once
-    useEffect(() => {
-        getNodeData("get_midi_track_data").then(setNodeData);
-    }, []);
 
     // get everything from the state and node data directly, so values set by the backend (e.g. over MCP) are kept
     // a mistyped connection can hand us a non-array, so don't trust the shape
