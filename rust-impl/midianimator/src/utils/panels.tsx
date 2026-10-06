@@ -32,9 +32,12 @@ export function panelSide(frontEndState: any, id: number): Side {
     return frontEndState.panelSides?.[id] ?? PANELS[id]?.side ?? "right";
 }
 
+// a side's width until it's dragged, the left (where the nodes panel docks) starts wide enough for its previews
+const DEFAULT_DOCK_WIDTHS: Record<Side, number> = { left: 306, right: PANEL_WIDTH };
+
 // the width of a side's docked panels (without the scrollbar), at least PANEL_WIDTH
 export function dockWidth(frontEndState: any, side: Side): number {
-    return Math.max(PANEL_WIDTH, frontEndState.dockWidths?.[side] ?? PANEL_WIDTH);
+    return Math.max(PANEL_WIDTH, frontEndState.dockWidths?.[side] ?? DEFAULT_DOCK_WIDTHS[side]);
 }
 
 // tauri events sent to the main window while a panel is floating, coordinates are screen pixels

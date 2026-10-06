@@ -66,6 +66,17 @@ test("resizing the docked panels", async ({ page }) => {
     await settle(page);
 });
 
+test("nodes panel list view", async ({ page }) => {
+    await openWindow(page, withLayout(ALL_DOCKED), "/#/");
+    await expect(page.locator(".nodes-grid .node.preview").first()).toBeVisible();
+    await page.getByRole("button", { name: "List" }).click();
+    await expect(page.locator(".nodes-list-row").first()).toBeVisible();
+    await expect(page.locator(".nodes-grid")).toHaveCount(0);
+    await page.getByRole("button", { name: "Grid" }).click();
+    await expect(page.locator(".nodes-grid .node.preview").first()).toBeVisible();
+    await settle(page);
+});
+
 test("selecting each node", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     const nodes = page.locator(".react-flow__node");

@@ -6,7 +6,8 @@
         "port": 6577
     },
     "panels": {
-        "hide_when_inactive": false
+        "hide_when_inactive": false,
+        "nodes_view": "grid"
     },
     "graph": {
         "time_units": "seconds",

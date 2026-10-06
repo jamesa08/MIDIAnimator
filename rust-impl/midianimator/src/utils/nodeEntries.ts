@@ -31,13 +31,13 @@ export function useNodeSpecs(): any[] {
     return fromState ?? loaded;
 }
 
-// `specs` gives each entry its category, entries are sorted by it.
+// `specs` gives each entry its name (the node's header) and category, entries are sorted by category.
 // `inGroup` adds the group input and output, `exclude` leaves out groups that would end up containing themselves
 export function nodeEntries(groups: Record<string, GroupDef>, specs: any[], inGroup = false, exclude: Set<string> = new Set()): NodeEntry[] {
-    const category = (nodeType: string) => specs.find((spec) => spec.id === nodeType)?.category ?? "";
+    const spec = (nodeType: string) => specs.find((spec) => spec.id === nodeType);
     const entries: NodeEntry[] = Object.keys(nodeTypes)
         .filter((nodeType) => !NOT_LISTED.has(nodeType))
-        .map((nodeType) => ({ key: nodeType, label: label(nodeType), nodeType, category: category(nodeType), data: {} }));
+        .map((nodeType) => ({ key: nodeType, label: spec(nodeType)?.name ?? label(nodeType), nodeType, category: spec(nodeType)?.category ?? "", data: {} }));
     if (inGroup) {
         entries.push({ key: GROUP_INPUT, label: "Group Input", nodeType: GROUP_INPUT, category: "group", data: {} }, { key: GROUP_OUTPUT, label: "Group Output", nodeType: GROUP_OUTPUT, category: "group", data: {} });
     }

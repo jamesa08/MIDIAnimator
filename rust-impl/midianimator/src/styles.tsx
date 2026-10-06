@@ -66,6 +66,9 @@ export function nodeColors(category: string | undefined): Record<string, string>
 // order categories are listed in (add menu, nodes panel)
 export const CATEGORY_ORDER = ["midi", "scene", "animation", "viewer", "zone", "group"];
 
+// a category's name in the nodes panel
+export const CATEGORY_LABELS: Record<string, string> = { midi: "MIDI", scene: "Scene", animation: "Animation", viewer: "Viewer", zone: "Zone", group: "Groups" };
+
 export const SOCKET_SHAPES = {
     CIRCLE: {},
     DIAMOND: {

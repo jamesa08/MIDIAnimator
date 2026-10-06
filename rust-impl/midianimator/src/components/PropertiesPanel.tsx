@@ -120,16 +120,23 @@ function MidiFileField({ value, onCommit, readOnly }: { value: string | undefine
 
 // MARK: - Layout
 
+// a section's bar, clicking it collapses or expands the section (also the nodes panel's categories)
+export function SectionHeader({ title, collapsed, onToggle }: { title: string; collapsed: boolean; onToggle: () => void }) {
+    return (
+        <div className="properties-section" onClick={onToggle}>
+            <svg height="6" viewBox="0 0 10 6" style={{ transform: collapsed ? "rotate(-90deg)" : undefined }}>
+                <path d="M1 0.5l4 4 4-4" fill="none" stroke="currentColor" />
+            </svg>
+            <span>{title}</span>
+        </div>
+    );
+}
+
 // a collapsible group of rows
 function Section({ title, collapsed, onToggle, children }: { title: string; collapsed: boolean; onToggle: () => void; children: ReactNode }) {
     return (
         <>
-            <div className="properties-section" onClick={onToggle}>
-                <svg height="6" viewBox="0 0 10 6" style={{ transform: collapsed ? "rotate(-90deg)" : undefined }}>
-                    <path d="M1 0.5l4 4 4-4" fill="none" stroke="currentColor" />
-                </svg>
-                <span>{title}</span>
-            </div>
+            <SectionHeader title={title} collapsed={collapsed} onToggle={onToggle} />
             {!collapsed && <div className="properties-rows">{children}</div>}
         </>
     );

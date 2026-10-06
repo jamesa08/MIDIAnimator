@@ -84,23 +84,118 @@ img {
     color: black;
 }
 
+/* the nodes panel's masonry (PanelBody.tsx): each preview is an inline block on a line of its own, so a column can end
+   after any one of them */
 .nodes-grid {
-    column-count: 2;
-    column-gap: 8px;
+    orphans: 1;
+    widows: 1;
 }
 
-.node-container {
-    break-inside: avoid;
-    margin-bottom: 8px;
+/* a preview's header text is bigger than on the canvas so its name stays readable zoomed out */
+.node.preview .node-header {
+    font-size: 16px;
 }
 
+/* hovering a preview in the grid grays it out under its name (PanelBody.tsx sets data-label) */
+.nodes-grid .node-frame {
+    position: relative;
+}
+
+.nodes-grid .node-frame:hover::after {
+    content: attr(data-label);
+    position: absolute;
+    inset: 0;
+    padding: 0 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    border-radius: 4px;
+    background: rgba(20, 20, 20, 0.62);
+    color: #fff;
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: bold;
+    pointer-events: none;
+}
+
+/* a single column (narrower than two 140px columns, the 8px gap and 8px padding each side) centers the previews */
+.nodes-panel {
+    container-type: inline-size;
+}
+
+@container (width < 304px) {
+    .nodes-grid .node-frame {
+        margin-inline: auto;
+    }
+}
+
+/* the nodes panel's grid and list buttons (PanelBody.tsx), the view that isn't showing is dimmed */
+.nodes-view-button {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.35;
+}
+
+.nodes-view-button.active {
+    opacity: 1;
+}
+
+/* the nodes panel's list view (PanelBody.tsx): a row per node like the properties panel's, its category's color beside
+   its name */
+.nodes-list-row {
+    position: relative;
+    height: 22px;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    background-color: var(--properties-section);
+    cursor: grab;
+}
+
+.nodes-list-name {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    background-color: var(--properties-background);
+    border-bottom: 1px solid var(--properties-line);
+    white-space: nowrap;
+}
+
+/* every other row in a section is shaded, starting over in each section */
+.nodes-list > .nodes-list-row:nth-child(even) > .nodes-list-name {
+    background-color: var(--properties-alternate);
+}
+
+.nodes-list-swatch {
+    width: 10px;
+    height: 10px;
+    flex: none;
+    background-color: var(--node-header);
+    border: 1px solid var(--node-border);
+}
+
+/* the nodes panel's category bars, in the properties panel's font */
+.nodes-panel .properties-section {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+/* a preview is zoomed out, zoom (unlike a transform) shrinks the space it takes up too. it's as wide as it is on the
+   canvas, squeezed to its container when that's narrower. at 0.62 a node's min width (200px) is 124px, the widest
+   (keyframes from object, its dropdowns 224px) 139px, the nodes panel's columns are 140px so none is squeezed
+   (PanelBody.tsx) */
 .node.preview {
+    zoom: 0.62;
+    width: fit-content;
+    max-width: 100%;
     /* enable dragging preview components */
     cursor: grab;
     position: relative;
-    transform: scale(0.5);
-    transform-origin: top left;
-    width: 200%;
     display: block;
 }
 
@@ -241,6 +336,14 @@ img {
 .node .node-field {
     position: relative;
     margin: 2px 12px;
+}
+
+/* a node's text boxes and dropdowns fill it between the margins. as a percentage they don't hold the node open, it
+   can be squeezed narrower than their text (nodes panel) */
+.node input.node-field,
+.node select.node-field {
+    box-sizing: border-box;
+    width: calc(100% - 24px);
 }
 
 /* a value typed in for an input, under its name */

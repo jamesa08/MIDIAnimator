@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, sendToMain, windowMover } from "../utils/panels";
 import { useStateSync } from "../utils/graphOps";
-import PanelBody, { PanelNodeDrop } from "./PanelBody";
+import PanelBody, { PanelHeaderButtons, PanelNodeDrop } from "./PanelBody";
 
 // popped out panel window, drag the header to move it and drop it on its dock slot to dock it back
 const PanelContent: React.FC = () => {
@@ -61,6 +61,7 @@ const PanelContent: React.FC = () => {
         <div data-live-resize="window" className="panel-window w-screen h-screen flex flex-col overflow-hidden select-none bg-white">
             <div className="panel-header h-6 flex-none border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startMove}>
                 <span className="mr-auto">{PANELS[panelId]?.name}</span>
+                <PanelHeaderButtons id={panelId} />
                 <button onClick={() => sendToMain(PANEL_DOCK_EVENT, { id: panelId })}>Dock</button>
             </div>
             <div className="panel-scroll flex-auto">
