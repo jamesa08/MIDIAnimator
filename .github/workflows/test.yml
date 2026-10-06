@@ -46,6 +46,13 @@ jobs:
           npm ci
           npm run build
 
+      # also writes smoke/backend.json (tests/smoke_backend_test.rs) for the smoke test
       - name: Run rust tests
         working-directory: rust-impl/midianimator/src-tauri
         run: cargo test
+
+      # every window in chromium, the engine of windows' webview2
+      - name: Run frontend smoke test
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test -c smoke
