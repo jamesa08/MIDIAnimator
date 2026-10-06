@@ -13,6 +13,9 @@ pub struct Vector3 {
 pub struct Scene {
     pub name: String,
     pub object_groups: Vec<ObjectGroup>,
+    /// frames per second, none in scene data saved before it was sent
+    #[serde(default)]
+    pub fps: Option<f64>,
 }
 
 // MARK: - ObjectGroup

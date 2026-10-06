@@ -126,6 +126,7 @@ pub async fn get_scene_data() -> HashMap<String, scene_generics::Scene> {
                     scene_generics::Scene {
                         name: scene_name.to_string(),
                         object_groups,
+                        fps: scene_data["fps"].as_f64(),
                     },
                 );
             }

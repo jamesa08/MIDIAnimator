@@ -50,25 +50,30 @@ def ShapeKeyFCurvesFromObject(obj):
 def frames_to_sec(f, fps):
     return f / fps
 
+def scene_fps(scene):
+    """The scene's frame rate with its base (29.97 is 30 / 1.001), the same one the scene writer converts with."""
+    return scene.render.fps / scene.render.fps_base
+
 def get_fcurve_data(fcurve):
     """Converts an FCurve into a dictionary representation.
 
     :param bpy.types.FCurve fcurve: the Blender FCurve
     :return dict: dictionary representing the FCurve
     """
-    fps = bpy.context.scene.render.fps
+    fps = scene_fps(bpy.context.scene)
+    # times in seconds: the keys, their handles and the elastic period
     keyframe_points = [
         {
             "amplitude": key.amplitude,
             "back": key.back,
             "easing": key.easing, 
-            "handle_left": list(key.handle_left),
+            "handle_left": [frames_to_sec(key.handle_left[0], fps), key.handle_left[1]],
             "handle_left_type": key.handle_left_type,
-            "handle_right": list(key.handle_right),
+            "handle_right": [frames_to_sec(key.handle_right[0], fps), key.handle_right[1]],
             "handle_right_type": key.handle_right_type,
             "interpolation": key.interpolation,
             "co": [frames_to_sec(key.co[0], fps), key.co[1]],
-            "period": key.period
+            "period": frames_to_sec(key.period, fps)
         }
         for key in fcurve.keyframe_points
     ]
@@ -118,6 +123,7 @@ def execute():
         scene_key = f"{scene.name}"
         scene_data[scene_key] = {}
         scene_data[scene_key]["object_group"] = {}
+        scene_data[scene_key]["fps"] = scene_fps(scene)
 
         for collection in scene.collection.children:
             collection_key = f"{collection.name}"
