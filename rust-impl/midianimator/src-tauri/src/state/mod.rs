@@ -195,6 +195,7 @@ impl AppState {
             connected_application: self.connected_application.clone(),
             connected_version: self.connected_version.clone(),
             connected_file_name: self.connected_file_name.clone(),
+            port: crate::ipc::bound_port(),
             state_rev: self.state_rev,
             tabs: self
                 .instances
@@ -229,6 +230,8 @@ pub struct StateView {
     pub connected_application: String,
     pub connected_version: String,
     pub connected_file_name: String,
+    /// the port Blender connects to
+    pub port: u16,
     pub state_rev: u64,
     pub tabs: Vec<TabInfo>,
     pub active_tab: String,

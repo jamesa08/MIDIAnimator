@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -29,6 +30,14 @@ struct Server {
 
 static DEFAULT_PORT: u16 = 6577;
 
+// the port the server listens on, read from the ipc.port setting once at startup (a changed setting waits for a restart)
+static BOUND_PORT: AtomicU16 = AtomicU16::new(0);
+
+/// the port Blender connects to, 0 before the server starts
+pub fn bound_port() -> u16 {
+    BOUND_PORT.load(Ordering::Relaxed)
+}
+
 // port from the ipc.port setting, falls back to the default when missing or invalid
 fn port() -> u16 {
     get_setting("ipc.port").as_u64().and_then(|port| u16::try_from(port).ok()).filter(|port| *port >= 1024).unwrap_or(DEFAULT_PORT)
@@ -42,6 +51,7 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
     // create a TCP listener on the configured port
     let port = port();
     let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
+    BOUND_PORT.store(port, Ordering::Relaxed);
     println!("MIDIAnimator IPC server started. Listening on port {:?}", port);
 
     // create a server instance
