@@ -8,13 +8,12 @@ import { BaseDirectory, readTextFile } from '@tauri-apps/plugin-fs';
 export const NODE_DROP_EVENT = "motionkeys:node-drop";
 
 export async function getNodeData(nodeId: string) {
-    let data: any = await readTextFile("src/configs/default_nodes.json", { baseDir: BaseDirectory.Resource });
-    if (data == null) {
+    const specs = await loadNodeSpecs();
+    if (specs == null) {
         console.log("error finding data for node ", nodeId);
         return {"id": "", "name": "error", handles: {}};
     }
-    data = JSON.parse(data);
-    return data["nodes"].find((node: any) => node["id"] === nodeId);
+    return specs.find((node: any) => node["id"] === nodeId);
 }
 
 // every node spec in default_nodes.json, read once
