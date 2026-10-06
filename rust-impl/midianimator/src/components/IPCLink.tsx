@@ -62,9 +62,7 @@ function IPCLink() {
 
     useModal("dialog", { cancel: () => setMenuShown(false) }, menuShown, { passthrough: true });
 
-    function disconnect() {
-        console.log("disconnect button pushed");
-    }
+    const disconnect = () => invoke("disconnect").catch((error) => console.error("Disconnect failed:", error));
 
     const handleValidate = async () => {
         try {

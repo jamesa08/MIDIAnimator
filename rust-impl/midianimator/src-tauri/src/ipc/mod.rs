@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -113,6 +113,15 @@ pub fn start_server() {
     SERVER.lock().unwrap();
 }
 
+/// closes the connection to Blender, each client's handle_client thread then sees it closed and clears the state
+#[tauri::command]
+pub fn disconnect() {
+    let server = SERVER.lock().unwrap();
+    for client in server.clients.lock().unwrap().iter() {
+        client.shutdown(Shutdown::Both).ok();
+    }
+}
+
 pub async fn request_client_info() {
     let script = r"import bpy
 def execute():
@@ -182,7 +191,8 @@ pub fn apply_scene_update(message: &str) -> Result<Option<String>, String> {
 // handle a client connection
 fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
-    let writer = stream;
+    // taken now, a socket that's been shut down has no peer address
+    let peer = stream.peer_addr().ok();
 
     // keep reading messages from the client until the connection is closed
     let mut data = Vec::new();
@@ -249,7 +259,8 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
 
     let server = server.lock().unwrap();
     let mut clients = server.clients.lock().unwrap();
-    clients.retain(|c| !c.peer_addr().unwrap().eq(&writer.peer_addr().unwrap()));
+    // shut down sockets (disconnect) go too
+    clients.retain(|c| c.peer_addr().map_or(false, |addr| Some(addr) != peer));
 }
 
 pub async fn send_message(message: String) -> Option<String> {
@@ -271,7 +282,8 @@ pub async fn send_message_with_timeout(message: String, timeout: Duration) -> Op
     // send the message to all clients
     let mut clients = server.clients.lock().unwrap();
     for client in clients.iter_mut() {
-        write_in_chunks(client, json_msg.as_bytes()).unwrap();
+        // a closed client is removed by its handle_client thread
+        write_in_chunks(client, json_msg.as_bytes()).ok();
     }
     drop(clients);
 
@@ -305,7 +317,8 @@ pub fn send_message_without_response(message: Message) {
     let server = SERVER.lock().unwrap();
     let mut clients = server.clients.lock().unwrap();
     for client in clients.iter_mut() {
-        write_in_chunks(client, json_msg.as_bytes()).unwrap();
+        // a closed client is removed by its handle_client thread
+        write_in_chunks(client, json_msg.as_bytes()).ok();
     }
 
     drop(clients); // drop lock to avoid deadlock
