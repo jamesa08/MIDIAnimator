@@ -3,7 +3,7 @@ import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -13,11 +13,16 @@ import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
 import { NODE_DROP_EVENT } from "./utils/node";
 import { takeGraph, takeState } from "./utils/graphOps";
+import { pushModal } from "./utils/keymap";
 import { floatingPanels, useOpenFile, useSaveTab, withFloatingFrames } from "./utils/tabs";
-import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, scrollbarWidth, showPanelWindow, withPoppedOut, PANEL_WIDTH } from "./utils/panels";
+import { PANELS, PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, PANEL_NODE_DROP_EVENT, PANEL_TOGGLE_EVENT, Side, clientToScreen, dockSideAt, dockWidth, ensureDragGhostWindow, hidePanelWindow, panelSide, reshowPanelWindow, screenToClient, scrollbarWidth, showPanelWindow, withPoppedOut, PANEL_WIDTH } from "./utils/panels";
 
 // height of a panel's window the first time it opens floating from the window menu, it's as wide as a docked panel
 const FLOATING_HEIGHT = 360;
+// how much of the content a side's docked panels can take up
+const DOCK_MAX_FRACTION = 0.4;
+// how far past the narrowest width a dock column's edge is dragged before the side hides
+const DOCK_HIDE_DETENT = 80;
 // sent to the main window by the file menu (src-tauri/src/ui/menu.rs), payload "open", "save" or "save_as"
 const FILE_EVENT = "menu-file";
 
@@ -222,8 +227,68 @@ function App() {
     // docked panels float over the canvas in a column on each side, the canvas' own controls move in past them
     const ids = Object.keys(PANELS).map(Number);
     const dockedOn = (side: Side) => !frontEndState.sidesHidden.includes(side) && ids.some((id) => panelSide(frontEndState, id) === side && frontEndState.panelsShown.includes(id) && !frontEndState.panelsPoppedOut.includes(id));
-    const docked = "calc(232px + var(--scrollbar-width, 0px))";
-    const contentStyle = { "--panel-left": dockedOn("left") ? docked : "0px", "--panel-right": dockedOn("right") ? docked : "0px" } as CSSProperties;
+    const docked = (side: Side) => (dockedOn(side) ? `calc(var(--dock-${side}) + 8px + var(--scrollbar-width, 0px))` : "0px");
+    const contentStyle = { "--dock-left": `${dockWidth(frontEndState, "left")}px`, "--dock-right": `${dockWidth(frontEndState, "right")}px`, "--panel-left": docked("left"), "--panel-right": docked("right") } as CSSProperties;
+
+    // dragging a dock column's inner edge resizes that side. the width is set straight on the content while dragging and
+    // kept in the layout once it's let go, cancelling (escape) puts it back. dragging on past the narrowest width hides the
+    // side like the toolbar's collapse buttons, it keeps the width it had for when it's shown again
+    const contentRef = useRef<HTMLDivElement>(null);
+    const startDockResize = (side: Side, event: ReactPointerEvent<HTMLDivElement>) => {
+        const content = contentRef.current;
+        const column = event.currentTarget.parentElement;
+        if (event.button !== 0 || !content || !column) return;
+
+        const startX = event.clientX;
+        const startWidth = dockWidth(frontEndState, side);
+        const startPanel = content.style.getPropertyValue(`--panel-${side}`);
+        const maxWidth = Math.max(PANEL_WIDTH, content.clientWidth * DOCK_MAX_FRACTION);
+        let width = startWidth;
+        let hidden = false;
+        const setWidth = (w: number) => content.style.setProperty(`--dock-${side}`, `${w}px`);
+        const setHidden = (hide: boolean) => {
+            hidden = hide;
+            column.style.display = hide ? "none" : "";
+            content.style.setProperty(`--panel-${side}`, hide ? "0px" : startPanel);
+        };
+        const endModal = pushModal("drag", {
+            cancel: () => {
+                cleanup();
+                setHidden(false);
+                setWidth(startWidth);
+            },
+        });
+
+        const handleMove = (e: PointerEvent) => {
+            const dx = side === "left" ? e.clientX - startX : startX - e.clientX;
+            if (hidden !== startWidth + dx < PANEL_WIDTH - DOCK_HIDE_DETENT) setHidden(!hidden);
+            if (hidden) return;
+            width = Math.round(Math.min(maxWidth, Math.max(PANEL_WIDTH, startWidth + dx)));
+            setWidth(width);
+        };
+
+        const cleanup = () => {
+            endModal();
+            document.body.style.cursor = "";
+            window.removeEventListener("pointermove", handleMove);
+            window.removeEventListener("pointerup", handleUp);
+        };
+
+        const handleUp = () => {
+            cleanup();
+            if (hidden) {
+                setWidth(startWidth);
+                setFrontEndState((prev: any) => ({ ...prev, sidesHidden: [...prev.sidesHidden.filter((s: Side) => s !== side), side] }));
+                return;
+            }
+            setFrontEndState((prev: any) => ({ ...prev, dockWidths: { ...prev.dockWidths, [side]: width } }));
+        };
+
+        event.preventDefault();
+        document.body.style.cursor = "ew-resize";
+        window.addEventListener("pointermove", handleMove);
+        window.addEventListener("pointerup", handleUp);
+    };
     // a side's panels in the order they were docked
     const panelsOn = (side: Side) => {
         const order = (id: number) => (frontEndState.panelsShown.includes(id) ? frontEndState.panelsShown.indexOf(id) : ids.length + id);
@@ -239,7 +304,7 @@ function App() {
                     <ToolBar />
                 </div>
             </div>
-            <div className="content relative flex flex-auto" style={contentStyle}>
+            <div ref={contentRef} className="content relative flex flex-auto" style={contentStyle}>
                 <div className="node-graph card flex-grow" data-keymap-area="node_editor">
                     <div data-live-resize="vignette" className="canvas-vignette" />
                     <NodeGraph />
@@ -249,9 +314,10 @@ function App() {
                         {panelsOn(side).map((id) => (
                             <Panel key={id} id={String(id)} name={PANELS[id].name} />
                         ))}
+                        <div className="dock-resizer" onPointerDown={(e) => startDockResize(side, e)} />
                     </div>
                 ))}
-                {dockHover !== null && <div className={`dock-indicator dock-width card absolute inset-y-3 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
+                {dockHover !== null && <div className={`dock-indicator dock-width dock-${dockHover} card absolute inset-y-3 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
             </div>
             <div className="foot flex-initial">
                 <StatusBar event="Ready." />

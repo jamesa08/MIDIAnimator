@@ -627,9 +627,32 @@ img {
     pointer-events: none;
 }
 
-/* a docked panel's width: its contents (w-56) plus room for a scrollbar, main.tsx measures it (0 with overlay scrollbars) */
-.dock-width {
-    width: calc(14rem + var(--scrollbar-width, 0px));
+/* a docked panel's width: its side's width (App.tsx) plus room for a scrollbar, main.tsx measures it (0 with overlay
+   scrollbars) */
+.dock-width.dock-left {
+    width: calc(var(--dock-left, 14rem) + var(--scrollbar-width, 0px));
+}
+
+.dock-width.dock-right {
+    width: calc(var(--dock-right, 14rem) + var(--scrollbar-width, 0px));
+}
+
+/* the dock column's inner edge, dragged to resize the side (App.tsx) */
+.dock-column > .dock-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+    pointer-events: auto;
+}
+
+.dock-column.dock-left > .dock-resizer {
+    right: -4px;
+}
+
+.dock-column.dock-right > .dock-resizer {
+    left: -4px;
 }
 
 /* a panel's contents scroll, the scrollbar's room is kept even when it isn't showing so the contents don't jump */

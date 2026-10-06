@@ -42,6 +42,30 @@ test("main window with every panel docked", async ({ page }) => {
     await settle(page);
 });
 
+test("resizing the docked panels", async ({ page }) => {
+    await openWindow(page, withLayout({ ...ALL_DOCKED, panelSides: { 2: "left" } }), "/#/");
+    for (const [side, dx] of [["left", 100], ["right", -100]] as const) {
+        const column = page.locator(`.dock-column.dock-${side}`);
+        await expect(column).toBeVisible();
+        const before = (await column.boundingBox())!.width;
+        const handle = (await column.locator(".dock-resizer").boundingBox())!;
+        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(handle.x + handle.width / 2 + dx, handle.y + handle.height / 2, { steps: 5 });
+        await page.mouse.up();
+        await expect.poll(async () => (await column.boundingBox())!.width).toBe(before + 100);
+    }
+    // dragged past the narrowest width, the side hides
+    const left = page.locator(".dock-column.dock-left");
+    const handle = (await left.locator(".dock-resizer").boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x - 400, handle.y + handle.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect(left).toBeHidden();
+    await settle(page);
+});
+
 test("selecting each node", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     const nodes = page.locator(".react-flow__node");

@@ -32,6 +32,11 @@ export function panelSide(frontEndState: any, id: number): Side {
     return frontEndState.panelSides?.[id] ?? PANELS[id]?.side ?? "right";
 }
 
+// the width of a side's docked panels (without the scrollbar), at least PANEL_WIDTH
+export function dockWidth(frontEndState: any, side: Side): number {
+    return Math.max(PANEL_WIDTH, frontEndState.dockWidths?.[side] ?? PANEL_WIDTH);
+}
+
 // tauri events sent to the main window while a panel is floating, coordinates are screen pixels
 // { id, screenX, screenY }
 export const PANEL_DRAG_EVENT = "panel-drag";
@@ -43,8 +48,9 @@ export const PANEL_TOGGLE_EVENT = "panel-toggle";
 // same as NODE_DROP_EVENT's detail, with screenX/screenY instead of clientX/clientY
 export const PANEL_NODE_DROP_EVENT = "panel-node-drop";
 
-// docked panel inset and width (w-56) plus how far past it a floating panel still docks
-const DOCK_ZONE_WIDTH = 12 + 224 + 60;
+// docked panel inset, and how far past the docked width a floating panel still docks
+const DOCK_INSET = 12;
+const DOCK_ZONE_PAST = 60;
 
 export const panelLabel = (id: number) => `panel-${id}`;
 
@@ -76,10 +82,14 @@ export async function clientToScreen(clientX: number, clientY: number) {
 
 // true when a client point in the main window is over a side's dock slot
 export function inDockZone(side: Side, clientX: number, clientY: number) {
-    const content = document.querySelector(".content")?.getBoundingClientRect();
-    if (!content || clientY < content.top || clientY > content.bottom) return false;
-    if (side === "right") return clientX >= content.right - DOCK_ZONE_WIDTH && clientX <= content.right;
-    return clientX >= content.left && clientX <= content.left + DOCK_ZONE_WIDTH;
+    const element = document.querySelector(".content");
+    const content = element?.getBoundingClientRect();
+    if (!element || !content || clientY < content.top || clientY > content.bottom) return false;
+    // the side's docked width, App.tsx sets it on the content
+    const width = parseFloat(getComputedStyle(element).getPropertyValue(`--dock-${side}`)) || PANEL_WIDTH;
+    const zone = DOCK_INSET + width + DOCK_ZONE_PAST;
+    if (side === "right") return clientX >= content.right - zone && clientX <= content.right;
+    return clientX >= content.left && clientX <= content.left + zone;
 }
 
 // the dock slot a client point in the main window is over, if any

@@ -6,9 +6,10 @@ export const StateContext = createContext<StateContext | null>(null);
 const defaultBackendState = { ready: false };
 // a tab's window layout. panelsShown: open panels, docked or floating, in the order they were docked. panelsPoppedOut:
 // panels that float (a closed one floats again when it's opened). panelSides: the side each panel docks on. sidesHidden:
-// sides collapsed from the toolbar. floating: where each floating panel's window was, screen pixels. the history panel
+// sides collapsed from the toolbar. dockWidths: each side's docked panel width (without the scrollbar), dragged from the
+// column's inner edge. floating: where each floating panel's window was, screen pixels. the history panel
 // starts closed and floating
-export const defaultLayout = { panelsShown: [0, 1], panelsPoppedOut: [2] as number[], panelSides: {} as Record<number, "left" | "right">, sidesHidden: [] as ("left" | "right")[], floating: {} as Record<number, { x: number; y: number; width: number; height: number }> };
+export const defaultLayout = { panelsShown: [0, 1], panelsPoppedOut: [2] as number[], panelSides: {} as Record<number, "left" | "right">, sidesHidden: [] as ("left" | "right")[], dockWidths: {} as Partial<Record<"left" | "right", number>>, floating: {} as Record<number, { x: number; y: number; width: number; height: number }> };
 
 type StateContextProviderProps = {
     children: React.ReactNode;
