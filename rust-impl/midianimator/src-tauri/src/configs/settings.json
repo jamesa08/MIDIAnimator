@@ -7,5 +7,9 @@
     },
     "panels": {
         "hide_when_inactive": false
+    },
+    "graph": {
+        "time_units": "seconds",
+        "show_handles": true
     }
 }

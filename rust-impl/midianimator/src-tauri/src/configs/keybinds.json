@@ -17,7 +17,8 @@
             { "id": "copy", "name": "Copy", "keys": ["CmdOrCtrl+C"], "menu": true, "fixed": true },
             { "id": "paste", "name": "Paste", "keys": ["CmdOrCtrl+V"], "menu": true, "fixed": true },
             { "id": "select_all", "name": "Select All", "keys": ["CmdOrCtrl+A"], "menu": true, "fixed": true },
-            { "id": "history", "name": "History", "keys": [], "menu": true }
+            { "id": "history", "name": "History", "keys": [], "menu": true },
+            { "id": "graph", "name": "Graph", "keys": [], "menu": true }
         ]
     },
     {
@@ -35,6 +36,19 @@
             { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
             { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },
             { "id": "box_select", "name": "Box Select", "keys": ["B"], "hold": true },
+            { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
+        ]
+    },
+    {
+        "id": "graph_editor",
+        "name": "Graph Editor",
+        "kind": "area",
+        "commands": [
+            { "id": "frame_all", "name": "Frame All", "keys": ["Home"] },
+            { "id": "zoom_in", "name": "Zoom In", "keys": ["NumAdd", "="] },
+            { "id": "zoom_out", "name": "Zoom Out", "keys": ["NumSubtract", "-"] },
+            { "id": "show_seconds", "name": "Show Seconds", "keys": ["Ctrl+T"] },
+            { "id": "show_handles", "name": "Show Handles", "keys": ["Ctrl+H"] },
             { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
         ]
     },

@@ -160,6 +160,16 @@ img {
     --properties-line: #dcdcdc;
     --properties-frame: #b4b4b4;
     --properties-dim: #a3a3a3;
+    /* the graph window's curve view (src/components/graph/CurveCanvas.tsx), drawn in the properties panel's colors */
+    --graph-background: var(--properties-background);
+    --graph-strip: var(--properties-alternate);
+    --graph-grid: var(--properties-line);
+    --graph-zero: var(--properties-frame);
+    --graph-text: var(--node-value);
+    --graph-scrollbar: var(--properties-frame);
+    --graph-scrollbar-grip: var(--node-value);
+    /* key handles, Blender's auto clamped handle color */
+    --graph-handle: #b0739a;
 }
 
 /* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's

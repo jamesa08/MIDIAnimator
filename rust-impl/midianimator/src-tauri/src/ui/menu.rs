@@ -43,7 +43,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let save_as = item(app, "save_as", "Save As...")?;
     let file_submenu = SubmenuBuilder::new(app, "File").item(&new_tab).item(&open).separator().item(&save).item(&save_as).build()?;
     let history = item(app, "history", "History")?;
-    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).separator().item(&close).build()?;
+    let graph = item(app, "graph", "Graph")?;
+    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).item(&graph).separator().item(&close).build()?;
 
     // undo/redo are ours, the focused window decides between a text field's own undo and the graph's.
     // cut/copy/paste/select all are the native ones so text fields keep working
@@ -93,6 +94,9 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         }
         "history" => {
             app.emit_to("main", PANEL_TOGGLE_EVENT, HISTORY_PANEL).ok();
+        }
+        "graph" => {
+            event::open_graph(app);
         }
         "undo" => {
             tauri::async_runtime::spawn(crate::state::history::history_undo());

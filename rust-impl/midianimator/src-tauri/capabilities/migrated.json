@@ -6,6 +6,7 @@
     "main",
     "splash",
     "Settings",
+    "Graph",
     "panel-*",
     "drag-ghost"
   ],

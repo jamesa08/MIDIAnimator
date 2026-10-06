@@ -104,10 +104,34 @@ pub fn reveal<R: Runtime>(window: &WebviewWindow<R>) {
     }
 }
 
+/// the height of a window's own toolbar (src/windows/Graph.tsx), the traffic lights are centered on it
+#[cfg(target_os = "macos")]
+const TOOLBAR_HEIGHT: f64 = 36.0;
+/// how far below the y tao is given the traffic lights' middle ends up (tao grows their title bar to the buttons'
+/// height + y and they keep their place from its bottom). measured from screenshots at y = 11 and 20
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_MIDDLE: f64 = 2.25;
+/// how far in from the left they sit
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_X: f64 = 14.0;
+
+/// how a window opens: its size (logical pixels) and how small it can be dragged
+#[derive(Clone, Copy, Debug)]
+pub struct WindowOptions {
+    pub width: f64,
+    pub height: f64,
+    pub min_size: Option<(f64, f64)>,
+    /// keeps running while the app is in the background
+    pub live: bool,
+    /// the page draws its own toolbar, on macOS the title bar goes and the traffic lights sit centered on the toolbar's
+    /// TOOLBAR_HEIGHT (like the main window's)
+    pub toolbar: bool,
+}
+
 // opens a window that's revealed once its page has drawn, focuses it if it's already open.
 // only macOS waits for the page: webview2 doesn't run animation frames for a hidden window, so its page would never report
 // ready. elsewhere it's shown once built, the white background keeps it from flashing
-pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title: &str, width: f64, height: f64) -> tauri::Result<()> {
+pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title: &str, options: WindowOptions) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(label) {
         #[cfg(target_os = "macos")]
         return window.set_focus();
@@ -122,7 +146,7 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title
     #[cfg(target_os = "macos")]
     {
         PENDING_REVEAL.lock().unwrap().push(label.to_string());
-        let window = window_builder(app, label, url, title, width, height).build()?;
+        let window = window_builder(app, label, url, title, options).build()?;
         prepare_hidden(&window);
         smooth_zoom(&window);
         Ok(())
@@ -134,7 +158,7 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title
     #[cfg(not(target_os = "macos"))]
     {
         let (app, label, url, title) = (app.clone(), label.to_string(), url.to_string(), title.to_string());
-        std::thread::spawn(move || match window_builder(&app, &label, &url, &title, width, height).build() {
+        std::thread::spawn(move || match window_builder(&app, &label, &url, &title, options).build() {
             Ok(window) => reveal(&window),
             Err(e) => eprintln!("Error creating window {}: {:?}", label, e),
         });
@@ -142,8 +166,20 @@ pub fn open_window<R: Runtime>(app: &AppHandle<R>, label: &str, url: &str, title
     }
 }
 
-fn window_builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: &str, title: &str, width: f64, height: f64) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(width, height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255))
+fn window_builder<'a, R: Runtime>(app: &'a AppHandle<R>, label: &str, url: &str, title: &str, options: WindowOptions) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into())).title(title).inner_size(options.width, options.height).center().visible(false).accept_first_mouse(true).background_color(tauri::window::Color(255, 255, 255, 255));
+    if let Some((width, height)) = options.min_size {
+        builder = builder.min_inner_size(width, height);
+    }
+    // a live window keeps up with the graph while the app is in the background, like the floating panels
+    if options.live {
+        builder = builder.background_throttling(tauri::utils::config::BackgroundThrottlingPolicy::Disabled);
+    }
+    #[cfg(target_os = "macos")]
+    if options.toolbar {
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true).traffic_light_position(tauri::LogicalPosition::new(TRAFFIC_LIGHT_X, TOOLBAR_HEIGHT / 2.0 - TRAFFIC_LIGHT_MIDDLE));
+    }
+    builder
 }
 
 // every page calls this after its first paint, reveals the window if it was waiting on it

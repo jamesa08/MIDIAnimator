@@ -6,6 +6,7 @@ import reportWebVitals from "./reportWebVitals";
 import "./index.css";
 import PanelContent from "./components/PanelContent";
 import Settings from "./windows/Settings";
+import Graph from "./windows/Graph";
 import DragGhost from "./windows/DragGhost";
 import StateContextProvider from "./contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
@@ -54,6 +55,7 @@ if (rootElement) {
                         <Route path="/" element={<App />} />
                         <Route path="/panel/:id" element={<PanelContent />} />
                         <Route path="/settings" element={<Settings />} />
+                        <Route path="/graph" element={<Graph />} />
                         <Route path="/drag-ghost" element={<DragGhost />} />
                     </Routes>
                 </Router>
