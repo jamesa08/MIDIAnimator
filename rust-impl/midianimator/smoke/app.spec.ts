@@ -147,6 +147,19 @@ test("properties panel shows outputs from the last run", async ({ page }) => {
     await settle(page);
 });
 
+test("note numbers field keeps what's typed", async ({ page }) => {
+    await openWindow(page, withLayout(ALL_DOCKED), "/#/");
+    // the node's second text box, under Note Numbers (Object Group Name's is first)
+    const field = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator('input[type="text"]').nth(1);
+    await field.fill("[60 61, x]");
+    await field.evaluate((input: HTMLInputElement) => input.blur());
+
+    // set as it was typed, the node reads it when it runs
+    const sets = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(sets).toContainEqual({ op: "set_inputs", node: "assign_notes_to_objects-1", inputs: { note_numbers: "[60 61, x]" } });
+    await settle(page);
+});
+
 test("drag ghost window", async ({ page }) => {
     await openWindow(page, backend, "/#/drag-ghost", "drag-ghost");
     await settle(page);

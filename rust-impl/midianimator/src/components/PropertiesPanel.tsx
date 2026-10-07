@@ -7,6 +7,7 @@ import { useNodeSpecs } from "../utils/nodeEntries";
 import { ERROR_KEY } from "./nodegraph/ErrorBadge";
 import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
+import { noteNumbersText } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
 
 // MARK: - Parameters
@@ -17,7 +18,7 @@ type Option = { value: string; label: string };
 
 // an input with an editor of its own instead of the one its type gets, like the widget on the node. `shown` hides it
 // like the node does
-type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" });
+type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" });
 
 // the names of a list of named things, a mistyped connection can hand over anything
 const names = (items: any): Option[] => (Array.isArray(items) ? items.map((item) => item?.name).filter((name) => typeof name === "string") : []).map((name) => ({ value: name, label: name }));
@@ -37,7 +38,7 @@ const PARAMS: Record<string, Param[]> = {
 };
 
 // input types that can be typed in, the others only come from a connection
-const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number" };
+const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number", "Array<u8>": "number_list" };
 
 // output types plain enough to show as text, alone or in a list
 const PLAIN = ["String", "f64", "u8"];
@@ -323,7 +324,8 @@ function Properties() {
 
             // an input that isn't set shows the value it runs with, its default
             const values = selected.map((node) => node.data?.inputs?.[param.id] ?? handle.default);
-            const mixed = values.some((v) => v !== values[0]);
+            // lists are compared by what's in them
+            const mixed = values.some((v) => JSON.stringify(v) !== JSON.stringify(values[0]));
             const value = mixed ? undefined : values[0];
             // an emptied text input is unset like a number, so it's left to the node's default
             const set = (v: any) => edit((node) => ({ op: "set_inputs", node: node.id, inputs: { [param.id]: v === "" ? null : v } }));
@@ -334,6 +336,10 @@ function Properties() {
                     break;
                 case "number":
                     field = <NumberField value={value} empty readOnly={!editable} onCommit={set} />;
+                    break;
+                case "number_list":
+                    // kept as typed, the node reads the numbers out of it when it runs
+                    field = <TextField value={noteNumbersText(value)} readOnly={!editable} onCommit={set} />;
                     break;
                 case "select":
                     field = <SelectField value={value} options={param.options({ node: selected[0], executed: executedInputs[selected[0].id] })} readOnly={!editable} onChange={set} />;
