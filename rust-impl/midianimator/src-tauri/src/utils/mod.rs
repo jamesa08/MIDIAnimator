@@ -1,5 +1,6 @@
 // utils/mod.rs
 pub mod animation;
+pub mod diagnostics;
 pub mod fcurve;
 pub mod gm_instrument_map;
 pub mod log;

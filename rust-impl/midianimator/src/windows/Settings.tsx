@@ -116,6 +116,13 @@ function Settings() {
                                 {section === "appearance" && <Choice id="appearance-zoom" label="UI Scale" description="" value={String(settings.appearance?.zoom ?? 1)} options={ZOOMS.map((zoom) => [String(zoom), `${Math.round(zoom * 100)}%`])} onChange={(zoom) => update("appearance.zoom", Number(zoom))} />}
                                 {section === "panels" && <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
+                                {section === "connection" && (
+                                    <Row id="save-diagnostics" label="" description="">
+                                        <button id="save-diagnostics" className="px-2 h-6 border border-black text-sm hover:bg-zinc-100" onClick={() => invoke("save_diagnostics").catch(console.error)}>
+                                            Save Diagnostics…
+                                        </button>
+                                    </Row>
+                                )}
                             </tbody>
                         </table>
                     </section>
