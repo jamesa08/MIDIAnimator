@@ -2,7 +2,7 @@
 // cargo test --test ipc_test
 use serde_json::json;
 use std::sync::Mutex;
-use MIDIAnimator::ipc::{apply_scene_update, take_messages, Message};
+use MIDIAnimator::ipc::{apply_scene_update, take_messages, valid_port, Message};
 use MIDIAnimator::state::{AppState, STATE};
 
 // the tests share the global state, so they run one at a time
@@ -148,4 +148,16 @@ fn scene_update_rejects_bad_scene() {
     *STATE.lock().unwrap() = linked_state();
     assert!(apply_scene_update(r#"{"Scene": {"object_groups": 5}}"#).is_err());
     assert!(STATE.lock().unwrap().active().scene_data.is_empty());
+}
+
+#[test]
+fn port_setting_must_be_a_whole_number_in_range() {
+    assert_eq!(valid_port(&json!(6577)), Some(6577));
+    assert_eq!(valid_port(&json!(65535)), Some(65535));
+    // a quoted port, out of range, fractional or missing falls back to the default
+    assert_eq!(valid_port(&json!("6537")), None);
+    assert_eq!(valid_port(&json!(80)), None);
+    assert_eq!(valid_port(&json!(70000)), None);
+    assert_eq!(valid_port(&json!(6577.5)), None);
+    assert_eq!(valid_port(&json!(null)), None);
 }

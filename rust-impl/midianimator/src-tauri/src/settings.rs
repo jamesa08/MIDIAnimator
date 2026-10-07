@@ -46,6 +46,11 @@ pub fn load_settings(app: &tauri::AppHandle) {
         }
         Err(e) => eprintln!("ignoring invalid settings file {:?}: {}", path, e),
     }
+
+    // a saved port that isn't valid goes back to the default, so the file matches the port the server uses
+    if crate::ipc::valid_port(&get_setting("ipc.port")).is_none() {
+        save_setting(app, "ipc.port", Value::from(crate::ipc::DEFAULT_PORT)).ok();
+    }
 }
 
 // reads a setting by dotted path, e.g. "panels.hide_when_inactive". null when it doesn't exist

@@ -28,7 +28,7 @@ struct Server {
     message_map: Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>,
 }
 
-static DEFAULT_PORT: u16 = 6577;
+pub static DEFAULT_PORT: u16 = 6577;
 
 // the port the server listens on, read from the ipc.port setting once at startup (a changed setting waits for a restart)
 static BOUND_PORT: AtomicU16 = AtomicU16::new(0);
@@ -38,9 +38,14 @@ pub fn bound_port() -> u16 {
     BOUND_PORT.load(Ordering::Relaxed)
 }
 
+/// a port setting that's a whole number from 1024 to 65535, anything else (a quoted "6577" too) is None
+pub fn valid_port(value: &serde_json::Value) -> Option<u16> {
+    value.as_u64().and_then(|port| u16::try_from(port).ok()).filter(|port| *port >= 1024)
+}
+
 // port from the ipc.port setting, falls back to the default when missing or invalid
 fn port() -> u16 {
-    get_setting("ipc.port").as_u64().and_then(|port| u16::try_from(port).ok()).filter(|port| *port >= 1024).unwrap_or(DEFAULT_PORT)
+    valid_port(&get_setting("ipc.port")).unwrap_or(DEFAULT_PORT)
 }
 
 // create a server instance
