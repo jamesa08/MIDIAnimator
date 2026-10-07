@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::io::{Inputs, NodeResult, Outputs, Val};
 use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, Object, ObjectGroup};
+use crate::utils::note_to_name;
 
 use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 
@@ -329,6 +331,115 @@ pub fn all_used_notes_from_array(notes: &[MIDINote]) -> Vec<u8> {
     used_notes
 }
 
+/// the entries of the note list on Assign Notes to Objects as given: a list from a connection, or text typed in
+/// ("60, 61 62", with or without surrounding brackets like "[60, 61]"). empty when there's nothing
+pub fn note_list_entries(value: Option<&Value>) -> Vec<String> {
+    match value {
+        None | Some(Value::Null) => Vec::new(),
+        Some(Value::String(text)) => text.trim().trim_start_matches('[').trim_end_matches(']').split(|c: char| c == ',' || c.is_whitespace()).filter(|s| !s.is_empty()).map(String::from).collect(),
+        Some(Value::Array(items)) => items.iter().map(|v| v.as_str().map(String::from).unwrap_or_else(|| v.to_string())).collect(),
+        Some(other) => vec![other.to_string()],
+    }
+}
+
+/// a note list entry as a note number 0-127
+fn note_number(entry: &str) -> Option<u8> {
+    entry.parse::<u8>().ok().filter(|n| *n <= 127)
+}
+
+/// the note in an object's name after its last underscore, a number or a name like the old add-on: Cube_60 and Cube_C3
+/// are both 60 (C3 = 60, sharps like Cube_F#3). None when there isn't one
+pub fn note_in_name(name: &str) -> Option<u8> {
+    let (_, suffix) = name.rsplit_once('_')?;
+    if let Some(note) = note_number(suffix) {
+        return Some(note);
+    }
+
+    // a note name: letter, optional sharp, octave from -2
+    let mut chars = suffix.chars();
+    let base = match chars.next()?.to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => return None,
+    };
+    let rest = chars.as_str();
+    let (sharp, octave) = match rest.strip_prefix('#') {
+        Some(octave) => (1, octave),
+        None => (0, rest),
+    };
+    let note = base + sharp + (octave.parse::<i32>().ok()? + 2) * 12;
+    (0..=127).contains(&note).then_some(note as u8)
+}
+
+/// compares names with the numbers in them as numbers, so Cube_2 comes before Cube_10. names that only differ in
+/// leading zeros (Cube_02, Cube_2) fall back to plain text order so the order never depends on the scene's
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (whole_a, whole_b) = (a, b);
+    let (mut a, mut b) = (a, b);
+    loop {
+        match (a.chars().next(), b.chars().next()) {
+            (None, None) => return whole_a.cmp(whole_b),
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            // a run of digits on both sides compares by value: fewer digits (leading zeros left off) is smaller
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let a_end = a.find(|c: char| !c.is_ascii_digit()).unwrap_or(a.len());
+                let b_end = b.find(|c: char| !c.is_ascii_digit()).unwrap_or(b.len());
+                let (a_num, b_num) = (a[..a_end].trim_start_matches('0'), b[..b_end].trim_start_matches('0'));
+                let order = a_num.len().cmp(&b_num.len()).then_with(|| a_num.cmp(b_num));
+                if order != Ordering::Equal {
+                    return order;
+                }
+                a = &a[a_end..];
+                b = &b[b_end..];
+            }
+            (Some(x), Some(y)) => {
+                if x != y {
+                    return x.cmp(&y);
+                }
+                a = &a[x.len_utf8()..];
+                b = &b[y.len_utf8()..];
+            }
+        }
+    }
+}
+
+/// why a note list can't be used, then what it gives each object the way the old add-on's Assign Notes to Objects
+/// dialog showed it ("Object: Cube_60 => Note: 60/C3"), with what's wrong in place of a note
+fn note_list_error(objects: &[&Object], group_name: &str, entries: &[String]) -> String {
+    let mut lines = Vec::new();
+    if entries.len() != objects.len() {
+        lines.push(format!("got {} note numbers for {} objects in '{}', give one per object", entries.len(), objects.len(), group_name));
+    }
+    let bad: Vec<String> = entries.iter().filter(|e| note_number(e).is_none()).map(|e| format!("'{}'", e)).collect();
+    match bad.len() {
+        0 => {}
+        1 => lines.push(format!("{} isn't a note number (0-127)", bad[0])),
+        _ => lines.push(format!("{} aren't note numbers (0-127)", bad.join(", "))),
+    }
+    lines.push(String::new());
+
+    // one line per object or entry, whichever there are more of
+    for i in 0..objects.len().max(entries.len()) {
+        let object = objects.get(i).map_or("none", |o| o.name.as_str());
+        let note = match entries.get(i) {
+            None => "missing".to_string(),
+            Some(entry) => match note_number(entry) {
+                Some(n) => format!("{}/{}", n, note_to_name(n as i32)),
+                None => format!("'{}'?", entry),
+            },
+        };
+        lines.push(format!("Object: {} => Note: {}", object, note));
+    }
+    lines.join("\n")
+}
+
 /// Node: assign_notes_to_objects
 /// read assign_midi_notes_to_objects.md for more information
 ///
@@ -336,6 +447,7 @@ pub fn all_used_notes_from_array(notes: &[MIDINote]) -> Vec<u8> {
 /// "object_groups": `Array<ObjectGroup>`,
 /// "object_group_name": `String`,
 /// "midi_notes": `Array<MIDINote>`,
+/// "note_numbers": `Array<u8>` (or text typed in, see `note_list_entries`),
 /// "generator": `AnimationGenerator`
 ///
 /// outputs:
@@ -351,6 +463,10 @@ Methods 1-4 use the `Assign Notes to Object` node while method 5 uses the `Visua
 ## 1. Object Name with Embedded Note Number
 
 In this method, the note number is directly embedded in the object's name, separated by an underscore.
+
+It's tried first (after a note list, method 4). The part after the last underscore can also be a note name like the old
+add-on took (Cube_C3 => Note 60). Objects without one in the same group share the MIDI notes no named object plays, as
+in methods 2 and 3. In every method objects are taken in name order, numbers compared as numbers (Cube_2 before Cube_10).
 
 - **Format**: ObjectName_NoteNumber
 - **Example**:
@@ -427,7 +543,9 @@ Cube.002 => Note 62
 Cube.003 => Note 63
 ```
 
-**Note:** This input is hidden by default and needs to be enabled in the node properties.
+**Note:** Connect the list to the Note Numbers input (e.g. from Get MIDI Track Data's Unique Note Numbers), or type it in
+the node's properties. Leave it empty to use methods 2 and 3 instead. A list that doesn't match the object count is an
+error on the node.
 
 ## 5. Visual Mapping Method
 
@@ -453,8 +571,9 @@ While this method requires more initial setup, it provides the greatest degree o
 
 */
 #[node_registry::node]
-pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, generator: Option<&AnimationGenerator>) -> NodeResult {
+pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, note_numbers: Option<&Value>, generator: Option<&AnimationGenerator>) -> NodeResult {
     let midi_notes: &[MIDINote] = midi_notes.map(Vec::as_slice).unwrap_or(&[]);
+    let note_entries = note_list_entries(note_numbers);
     let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
     let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
 
@@ -490,20 +609,44 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
         object_map.animations.insert(generator.name.clone(), generator.clone());
     }
 
-    // get all used notes from midi notes
-    let used_notes = all_used_notes_from_array(midi_notes);
+    // objects pair with notes in name order (Cube_2 before Cube_10), not the order the scene lists them in
+    let mut objects: Vec<&Object> = object_group.objects.iter().collect();
+    objects.sort_by(|a, b| natural_cmp(&a.name, &b.name));
 
-    // case 2 when the object count is the same as the note count, otherwise case 3
-    let notes = if object_group.objects.len() == used_notes.len() {
-        println!("case 2: direct assignment from MIDI track");
-        used_notes
+    // case 4 when a note list is given, it needs one note number per object
+    let pairs: Vec<(&Object, u8)> = if !note_entries.is_empty() {
+        println!("case 4: user-provided note list");
+        let numbers: Option<Vec<u8>> = note_entries.iter().map(|e| note_number(e)).collect();
+        match numbers {
+            Some(numbers) if numbers.len() == objects.len() => objects.iter().copied().zip(numbers).collect(),
+            _ => return Err(note_list_error(&objects, object_group_name, &note_entries)),
+        }
     } else {
-        println!("case 3: flexible assignment with padding");
-        pad_nums(used_notes, object_group.objects.len())
+        // case 1 for objects with a note in their name (Cube_60, Cube_C3)
+        let (named, unnamed): (Vec<_>, Vec<_>) = objects.iter().map(|object| (*object, note_in_name(&object.name))).partition(|(_, note)| note.is_some());
+        let mut pairs: Vec<(&Object, u8)> = named.into_iter().filter_map(|(object, note)| Some((object, note?))).collect();
+        if !pairs.is_empty() {
+            println!("case 1: note numbers from object names");
+        }
+
+        // the other objects share the MIDI's notes that no named object plays
+        let unnamed: Vec<&Object> = unnamed.into_iter().map(|(object, _)| object).collect();
+        let used_notes: Vec<u8> = all_used_notes_from_array(midi_notes).into_iter().filter(|n| !pairs.iter().any(|(_, named)| named == n)).collect();
+
+        // case 2 when the object count is the same as the note count, otherwise case 3
+        let notes = if unnamed.len() == used_notes.len() {
+            println!("case 2: direct assignment from MIDI track");
+            used_notes
+        } else {
+            println!("case 3: flexible assignment with padding");
+            pad_nums(used_notes, unnamed.len())
+        };
+        pairs.extend(unnamed.into_iter().zip(notes));
+        pairs
     };
 
-    // pair objects with notes in order, extra objects (not enough notes) are left out
-    for (object, note_number) in object_group.objects.iter().zip(notes) {
+    // extra objects (not enough notes) are left out
+    for (object, note_number) in pairs {
         let entry = object_map.objects.entry(object.name.clone()).or_default();
         if let Some(anim_name) = &anim_name {
             entry.entry(anim_name.clone()).or_default().push(note_number);

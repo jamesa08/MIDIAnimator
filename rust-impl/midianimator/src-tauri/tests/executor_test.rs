@@ -1,5 +1,6 @@
 use serde_json::json;
-use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, note_keyframes, note_targets, pad_nums, targets_for_note};
+use std::collections::BTreeMap;
+use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, targets_for_note};
 use MIDIAnimator::graph::executors::io::Inputs;
 use MIDIAnimator::graph::executors::midi::{get_midi_file, get_midi_track_data};
 use MIDIAnimator::utils::animation::parse_animation_property;
@@ -78,6 +79,111 @@ fn assign_notes_errors_on_missing_group() {
     // nothing picked yet is not an error
     let outputs = assign_notes_to_objects(&Inputs::default()).unwrap().to_json();
     assert_eq!(outputs["object_map"], json!({ "animations": {}, "objects": {} }));
+}
+
+/// an object group named Cubes of plain objects with these names, in this order
+fn group(names: &[&str]) -> serde_json::Value {
+    let objects: Vec<_> = names.iter().map(|name| json!({ "name": name, "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": [] })).collect();
+    json!([{ "name": "Cubes", "objects": objects }])
+}
+
+/// an object group of `count` plain objects named Cube.000, Cube.001, ...
+fn cubes(count: usize) -> serde_json::Value {
+    let names: Vec<String> = (0..count).map(|i| format!("Cube.{:03}", i)).collect();
+    group(&names.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// Assign Notes to Objects on a group with these object names, given MIDI notes with these numbers. each object's
+/// notes, objects left out aren't in it
+fn assign_by_name(names: &[&str], played: &[u8]) -> BTreeMap<String, serde_json::Value> {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    let notes: Vec<_> = played.iter().map(|n| json!({ "channel": 0, "note_number": n, "velocity": 100, "time_on": 0.0, "time_off": 1.0 })).collect();
+    let outputs = assign_notes_to_objects(&Inputs::from([("object_groups", group(names)), ("object_group_name", json!("Cubes")), ("midi_notes", json!(notes)), ("generator", generator)])).unwrap().to_json();
+    assigned(&outputs).into_iter().collect()
+}
+
+/// expected notes per object
+fn notes_of(pairs: &[(&str, u8)]) -> BTreeMap<String, serde_json::Value> {
+    pairs.iter().map(|(name, n)| (name.to_string(), json!([n]))).collect()
+}
+
+#[test]
+fn assign_notes_uses_note_in_name() {
+    // named objects take their note, whatever order the scene lists them in or the MIDI plays
+    let names = ["Cube_74", "Cube_73", "ANIM_bounce", "Cube_72"];
+    assert_eq!(assign_by_name(&names, &[72, 73, 74, 78]), notes_of(&[("Cube_72", 72), ("Cube_73", 73), ("Cube_74", 74), ("ANIM_bounce", 78)]));
+    // with no MIDI notes left, the object without one gets nothing
+    assert_eq!(assign_by_name(&names, &[72, 73, 74]), notes_of(&[("Cube_72", 72), ("Cube_73", 73), ("Cube_74", 74)]));
+    // note names like the old add-on, 60 = C3
+    assert_eq!(assign_by_name(&["Key_C3", "Key_c#3", "Key_A-1", "Key_D3.001"], &[90]), notes_of(&[("Key_C3", 60), ("Key_c#3", 61), ("Key_A-1", 21), ("Key_D3.001", 90)]));
+}
+
+#[test]
+fn note_in_name_reads_the_last_underscore() {
+    let cases = [("Cube_60", Some(60)), ("Big_Cube_7", Some(7)), ("Cube_0", Some(0)), ("Cube_127", Some(127)), ("Cube_C-2", Some(0)), ("Cube_G8", Some(127)), ("Cube_b2", Some(59))];
+    for (name, note) in cases {
+        assert_eq!(note_in_name(name), note, "{}", name);
+    }
+    // nothing that isn't a whole note 0-127 after the last underscore
+    for name in ["Cube", "Cube_", "Cube60", "Cube_128", "Cube_G#8", "Cube_H3", "Cube_C", "Cube_6.5", "Cube_60.001", "ANIM_bounce", "Cube_60_x"] {
+        assert_eq!(note_in_name(name), None, "{}", name);
+    }
+}
+
+#[test]
+fn natural_cmp_orders_numbers_by_value() {
+    let mut names = vec!["Cube_10", "Cube_2", "Cube_1", "Cube_02", "Cube_b", "Cube_a", "Cube"];
+    names.sort_by(|a, b| natural_cmp(a, b));
+    // leading zeros don't make a number bigger, Cube_02 and Cube_2 only differ in them so text order decides
+    assert_eq!(names, ["Cube", "Cube_1", "Cube_02", "Cube_2", "Cube_10", "Cube_a", "Cube_b"]);
+}
+
+#[test]
+fn assign_notes_pairs_in_name_order() {
+    // without names, notes go to objects sorted by name with numbers as numbers
+    assert_eq!(assign_by_name(&["Cube.10", "Cube.2", "Cube.1"], &[62, 60, 61]), notes_of(&[("Cube.1", 60), ("Cube.2", 61), ("Cube.10", 62)]));
+}
+
+/// each object's note numbers for the generator named `anim`
+fn assigned(outputs: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
+    outputs["object_map"]["objects"].as_object().unwrap().iter().map(|(name, anims)| (name.clone(), anims["anim"].clone())).collect()
+}
+
+#[test]
+fn assign_notes_uses_note_list() {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    let notes = json!([{ "channel": 0, "note_number": 40, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
+    let inputs = |numbers: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("note_numbers", numbers), ("generator", generator.clone())]);
+
+    // the list is used in object order, as given, connected or typed in
+    let expected = [("Cube.000".to_string(), json!([62])), ("Cube.001".to_string(), json!([60])), ("Cube.002".to_string(), json!([61]))];
+    for numbers in [json!([62, 60, 61]), json!("62, 60 61"), json!(" 62,60,,61 "), json!("[62, 60, 61]"), json!(" [62,60,61")] {
+        let outputs = assign_notes_to_objects(&inputs(numbers)).unwrap().to_json();
+        assert_eq!(assigned(&outputs), expected);
+    }
+
+    // anything typed that isn't a note number is an error that names it
+    for (numbers, bad) in [(json!("60, 6o, 62"), "'6o'"), (json!("60 61 128"), "'128'"), (json!("[60, 6[1, 62]"), "'6[1'"), (json!([60, 300, 61]), "'300'")] {
+        let error = assign_notes_to_objects(&inputs(numbers)).unwrap_err();
+        assert!(error.contains(&format!("{} isn't a note number", bad)), "{}", error);
+        assert!(error.contains(&format!("=> Note: {}?", bad)), "{}", error);
+    }
+    let error = assign_notes_to_objects(&inputs(json!("x 61 y"))).unwrap_err();
+    assert!(error.starts_with("'x', 'y' aren't note numbers (0-127)"), "{}", error);
+
+    // a list that doesn't match the object count is an error that shows what each object would get
+    let error = assign_notes_to_objects(&inputs(json!([60, 61]))).unwrap_err();
+    assert!(error.contains("got 2 note numbers for 3 objects in 'Cubes'"), "{}", error);
+    assert!(error.contains("Object: Cube.000 => Note: 60/C3\nObject: Cube.001 => Note: 61/C#3\nObject: Cube.002 => Note: missing"), "{}", error);
+    let error = assign_notes_to_objects(&inputs(json!("60 61 62 63"))).unwrap_err();
+    assert!(error.ends_with("Object: none => Note: 63/D#3"), "{}", error);
+
+    // an empty list or blank text falls back to the notes, padded to the object count
+    for numbers in [json!([]), json!("  ")] {
+        let outputs = assign_notes_to_objects(&inputs(numbers)).unwrap().to_json();
+        assert_eq!(assigned(&outputs).len(), 3);
+        assert!(assigned(&outputs).iter().any(|(_, n)| n == &json!([40])));
+    }
 }
 
 /// an object group with one object animated on the given (data_path, array_index) curves

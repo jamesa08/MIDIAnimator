@@ -268,7 +268,13 @@
                         "id": "midi_notes",
                         "name": "Notes",
                         "data_type": "Array<MIDINote>",
-                        "description": "Notes to distribute; each unique pitch is assigned to one object in order."
+                        "description": "Notes to distribute; objects named with a note (Cube_60, Cube_C3) take that note, the others get the remaining unique pitches in name order."
+                    },
+                    {
+                        "id": "note_numbers",
+                        "name": "Note Numbers",
+                        "data_type": "Array<u8>",
+                        "description": "One note number per object, in object name order; overrides Notes for the assignment. A connected list, or text typed in like \"60, 61, 62\" (commas or spaces). Must match the object count. Empty uses Notes."
                     },
                     {
                         "id": "generator",
