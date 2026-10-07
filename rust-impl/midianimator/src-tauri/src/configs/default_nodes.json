@@ -82,6 +82,12 @@
                         "name": "Aftertouch",
                         "data_type": "Array<MIDIEvent>",
                         "description": "Aftertouch events of the selected track."
+                    },
+                    {
+                        "id": "unique_note_numbers",
+                        "name": "Unique Note Numbers",
+                        "data_type": "Array<u8>",
+                        "description": "Every note number used in the selected track, sorted low to high with no repeats."
                     }
                 ]
             }

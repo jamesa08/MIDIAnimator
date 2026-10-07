@@ -73,7 +73,8 @@ pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
 /// "notes": `Array<MIDINote>`,
 /// "control_change": `HashMap<u8, Array<MIDIEvent>>`,
 /// "pitchwheel": `Array<MIDIEvent>`,
-/// "aftertouch": `Array<MIDIEvent>`
+/// "aftertouch": `Array<MIDIEvent>`,
+/// "unique_note_numbers": `Array<u8>`
 #[node_registry::node]
 pub fn get_midi_track_data(tracks: Option<&Vec<MIDITrack>>, track_name: Option<&String>) -> NodeResult {
     let tracks: &[MIDITrack] = tracks.map(Vec::as_slice).unwrap_or(&[]);
@@ -90,6 +91,7 @@ pub fn get_midi_track_data(tracks: Option<&Vec<MIDITrack>>, track_name: Option<&
     }
 
     let mut outputs = Outputs::new();
+    outputs.set("unique_note_numbers", track.all_used_notes());
     outputs.set("notes", track.notes);
     outputs.set("control_change", track.control_change);
     outputs.set("pitchwheel", track.pitchwheel);

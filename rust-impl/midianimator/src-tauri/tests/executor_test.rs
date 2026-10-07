@@ -43,6 +43,7 @@ fn get_midi_track_data_empty_outputs_without_inputs() {
     assert_eq!(outputs["control_change"], json!({}));
     assert_eq!(outputs["pitchwheel"], json!([]));
     assert_eq!(outputs["aftertouch"], json!([]));
+    assert_eq!(outputs["unique_note_numbers"], json!([]));
 }
 
 #[test]
@@ -51,6 +52,10 @@ fn get_midi_track_data_finds_track() {
     let name = tracks[0]["name"].clone();
     let outputs = get_midi_track_data(&Inputs::from([("tracks", tracks.clone()), ("track_name", name)])).unwrap().to_json();
     assert_eq!(outputs["notes"], tracks[0]["notes"]);
+    let mut numbers: Vec<u64> = tracks[0]["notes"].as_array().unwrap().iter().map(|n| n["note_number"].as_u64().unwrap()).collect();
+    numbers.sort();
+    numbers.dedup();
+    assert_eq!(outputs["unique_note_numbers"], json!(numbers));
 
     // unknown track name is an error that lists the tracks
     let error = get_midi_track_data(&Inputs::from([("tracks", tracks.clone()), ("track_name", json!("nope"))])).unwrap_err();
