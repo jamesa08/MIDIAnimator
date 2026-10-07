@@ -36,11 +36,11 @@ class Server(metaclass=ServerMeta):
             # Start a separate thread to receive messages from the server
             threading.Thread(target=self.receive_messages, daemon=True).start()
             self.connected = True
-            return True
-        except: 
-            print("Could not connect to server")
+        except Exception as e:
+            # raised so the connect operator can show why
+            print(f"Could not connect to server at {self.host}:{self.port}: {e!r}")
             self.close()
-            return False
+            raise
 
     def close(self):
         if self.socket:

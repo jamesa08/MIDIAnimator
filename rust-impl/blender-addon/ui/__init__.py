@@ -12,9 +12,11 @@ class SCENE_OT_connect_to_server(bpy.types.Operator):
     def execute(self, context):
         client = Server()
         client.port = context.scene.midianimator_port
-        res = client.open()
-        if not res:
-            self.report({"ERROR"}, "Could not connect to server. Make sure MIDIAnimator is running.")
+        try:
+            client.open()
+        except Exception as e:
+            self.report({"ERROR"}, f"Could not connect to server. Make sure MIDIAnimator is running. ({type(e).__name__}: {e})")
+            return {"CANCELLED"}
         return {"FINISHED"}
     
 class SCENE_OT_disconnect_from_server(bpy.types.Operator):
