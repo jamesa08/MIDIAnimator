@@ -287,12 +287,11 @@ pub fn pad_nums(mut nums: Vec<u8>, pad_amount: usize) -> Vec<u8> {
 
         if gap > 0 {
             let to_add = (pad_amount - result.len()).min(gap as usize);
-            let step = gap as f32 / (to_add as f32 + 1.0);
+            // spread evenly with integer math: to_add <= gap keeps the offsets at least 1 apart, after current and
+            // before next_num, so they never collide (float rounding did when to_add == gap)
             for j in 1..=to_add {
-                let padded_num = (current as f32 + j as f32 * step).round() as u8;
-                if !result.contains(&padded_num) {
-                    result.push(padded_num);
-                }
+                let offset = (j * (gap as usize + 1)) / (to_add + 1);
+                result.push(current + offset as u8);
             }
         }
         i += 1;

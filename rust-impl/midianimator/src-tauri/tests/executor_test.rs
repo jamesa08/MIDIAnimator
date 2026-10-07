@@ -158,6 +158,47 @@ fn pad_nums_stays_in_midi_range() {
     assert_eq!(pad_nums(vec![60], 200).len(), 128);
 }
 
+#[test]
+fn pad_nums_fills_gap_exactly() {
+    // as many notes to add as the gap has room for fills it, nothing goes outside the played range
+    assert_eq!(pad_nums(vec![60, 63], 4), vec![60, 61, 62, 63]);
+    assert_eq!(pad_nums(vec![60, 64], 5), vec![60, 61, 62, 63, 64]);
+    assert_eq!(pad_nums(vec![60, 62, 67], 8), vec![60, 61, 62, 63, 64, 65, 66, 67]);
+}
+
+#[test]
+fn pad_nums_spaces_evenly() {
+    assert_eq!(pad_nums(vec![60, 72], 5), vec![60, 63, 66, 69, 72]);
+    assert_eq!(pad_nums(vec![60, 61, 62, 70], 7), vec![60, 61, 62, 64, 66, 68, 70]);
+}
+
+#[test]
+fn pad_nums_keeps_input_notes() {
+    // every note played gets an object, no note twice, as many notes as objects
+    for (notes, count) in [(vec![60, 62, 67], 8), (vec![60, 64, 72], 9), (vec![60, 63], 6), (vec![125, 127], 5)] {
+        let out = pad_nums(notes.clone(), count);
+        assert!(notes.iter().all(|n| out.contains(n)), "{:?} to {}: {:?}", notes, count, out);
+        assert_eq!(out.len(), count, "{:?} to {}: {:?}", notes, count, out);
+        let mut unique = out.clone();
+        unique.dedup();
+        assert_eq!(unique, out, "{:?} to {}: duplicates", notes, count);
+    }
+}
+
+#[test]
+fn pad_nums_keeps_every_pair() {
+    // every pair of notes padded to 2-20 objects keeps both notes, fills every object, and has no duplicates
+    for low in 0..=127u8 {
+        for high in low + 1..=127 {
+            for count in 2..=20 {
+                let out = pad_nums(vec![low, high], count);
+                let fits = out.contains(&low) && out.contains(&high) && out.len() == count && out.windows(2).all(|w| w[0] < w[1]);
+                assert!(fits, "[{}, {}] to {}: {:?}", low, high, count, out);
+            }
+        }
+    }
+}
+
 // a linear keyframe point at (time, value)
 fn key(time: f64, value: f64) -> serde_json::Value {
     json!({
