@@ -147,6 +147,15 @@ test("properties panel shows outputs from the last run", async ({ page }) => {
     await settle(page);
 });
 
+test("properties panel shows the notes each object got", async ({ page }) => {
+    await openWindow(page, withSelected("assign_notes_to_objects-1"), "/#/");
+    // the fixture's object map, note names like the old add-on (60 = C3)
+    await expect(propertiesRow(page, "ANIM_bounce")).toContainText("59/B2");
+    await expect(propertiesRow(page, "Cube.001")).toContainText("60/C3");
+    await expect(propertiesRow(page, "Cube.005")).toContainText("64/E3");
+    await settle(page);
+});
+
 test("note numbers field keeps what's typed", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     // the node's second text box, under Note Numbers (Object Group Name's is first)

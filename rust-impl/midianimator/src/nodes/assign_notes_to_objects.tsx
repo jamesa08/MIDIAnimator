@@ -10,6 +10,10 @@ import { useSetInputs } from "../utils/graphOps";
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
 export const noteNumbersText = (value: any): string => (typeof value === "string" ? value : Array.isArray(value) ? value.join(", ") : "");
 
+// MIDI note number to name like the old add-on, 60 = C3 (note_to_name in src-tauri/src/utils/mod.rs)
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+export const noteToName = (note: number): string => `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 2}`;
+
 function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();

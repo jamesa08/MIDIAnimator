@@ -7,7 +7,7 @@ import { useNodeSpecs } from "../utils/nodeEntries";
 import { ERROR_KEY } from "./nodegraph/ErrorBadge";
 import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
-import { noteNumbersText } from "../nodes/assign_notes_to_objects";
+import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
 
 // MARK: - Parameters
@@ -358,6 +358,16 @@ function Properties() {
         // a single node's outputs that read as text, with what they gave on the last run
         const outputs = single && spec ? spec.handles.outputs.filter((handle) => !handle.hidden && plain(handle.data_type)) : [];
 
+        // the notes Assign Notes to Objects gave each object on the last run, from every animation, like the old add-on's
+        // dialog (Object: Cube_60 => Note: 60/C3). a mistyped connection can hand over anything
+        const objectMap = single?.type === "assign_notes_to_objects" ? executedResults[single.id]?.object_map?.objects : undefined;
+        const objectNotes =
+            objectMap && typeof objectMap === "object"
+                ? Object.entries(objectMap)
+                      .map(([object, animations]: [string, any]) => [object, [...new Set(Object.values(animations ?? {}).flat())].filter((n): n is number => typeof n === "number")] as const)
+                      .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                : null;
+
         // where a node is, rounded like the canvas shows it
         const x = shared(selected, (node) => Math.round(node.position.x));
         const y = shared(selected, (node) => Math.round(node.position.y));
@@ -391,6 +401,16 @@ function Properties() {
                         outputs.map((handle) => (
                             <Row key={handle.id} name={handle.name} readOnly>
                                 <ScrollValue>{plainText(executedResults[single.id]?.[handle.id])}</ScrollValue>
+                            </Row>
+                        ))
+                    )}
+                {objectNotes &&
+                    objectNotes.length > 0 &&
+                    section(
+                        "ObjectMap",
+                        objectNotes.map(([object, notes]) => (
+                            <Row key={object} name={object} readOnly>
+                                <ScrollValue>{notes.map((n) => `${n}/${noteToName(n)}`).join(", ")}</ScrollValue>
                             </Row>
                         ))
                     )}
