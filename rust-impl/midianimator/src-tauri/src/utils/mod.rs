@@ -2,6 +2,7 @@
 pub mod animation;
 pub mod fcurve;
 pub mod gm_instrument_map;
+pub mod log;
 pub mod ui;
 
 use regex::Regex;

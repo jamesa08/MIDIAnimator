@@ -8,6 +8,7 @@ use MIDIAnimator::ipc::start_server;
 use MIDIAnimator::mcp::start_mcp_server;
 use MIDIAnimator::state::{update_state, STATE, WINDOW};
 use MIDIAnimator::ui::menu;
+use MIDIAnimator::utils::log;
 
 use tauri::{generate_context, Manager};
 
@@ -38,6 +39,9 @@ async fn main() {
             }
         })
         .setup(|app| {
+            // log file first, so everything after it is recorded
+            log::init(app.handle());
+
             // build and set menu, with the user's keyboard shortcuts
             MIDIAnimator::ui::keybinds::load_keymap(app.handle());
             let menu = menu::build_menu(app.handle())?;
@@ -97,8 +101,11 @@ async fn main() {
             let default_nodes: HashMap<String, serde_json::Value> = serde_json::from_str(&data).unwrap();
             STATE.lock().unwrap().default_nodes = default_nodes;
 
+            // update_state waits for the front end to call ready, the bridge only starts after that
             tauri::async_runtime::spawn(async move {
+                log::log("waiting for the front end to be ready");
                 update_state();
+                log::log("front end ready, starting the Blender bridge");
                 start_server();
             });
 

@@ -15,6 +15,7 @@ use crate::graph::execute::run_instance;
 use crate::scene_generics;
 use crate::settings::get_setting;
 use crate::state::{relink, update_state, STATE};
+use crate::utils::log::log;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct Message {
@@ -53,18 +54,24 @@ fn port() -> u16 {
 // and will be shared across all threads
 // this is necessary because the server needs to be accessed across threads, and in other functions
 static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
-    // create a TCP listener on the configured port
-    let port = port();
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap();
-    BOUND_PORT.store(port, Ordering::Relaxed);
-    println!("MIDIAnimator IPC server started. Listening on port {:?}", port);
-
     // create a server instance
     let server = Server {
         clients: Arc::new(Mutex::new(Vec::new())),
         message_map: Arc::new(Mutex::new(HashMap::new())),
     };
     let server = Arc::new(Mutex::new(server));
+
+    // create a TCP listener on the configured port, if it can't bind the server stays without clients (port stays 0)
+    let port = port();
+    let listener = match TcpListener::bind(format!("127.0.0.1:{port}")) {
+        Ok(listener) => listener,
+        Err(e) => {
+            log(format!("Blender bridge could not listen on 127.0.0.1:{port}: {e}"));
+            return server;
+        }
+    };
+    BOUND_PORT.store(port, Ordering::Relaxed);
+    log(format!("Blender bridge listening on 127.0.0.1:{port}"));
 
     // clone the server instance to be used in the thread
     let server_clone = Arc::clone(&server);
@@ -74,7 +81,7 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    println!("New client connected {:?}", stream.peer_addr().unwrap());
+                    log(format!("Blender connected from {}", stream.peer_addr().map_or("unknown".to_string(), |addr| addr.to_string())));
 
                     // we are connected to the client
                     let mut state = STATE.lock().unwrap();
@@ -105,7 +112,7 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     });
                 }
                 Err(e) => {
-                    println!("Error: {}", e);
+                    log(format!("Blender bridge failed to accept a connection: {e}"));
                 }
             }
         }
@@ -134,14 +141,22 @@ def execute():
     file_name = bpy.data.filepath.split('/')[-1]
     return {'version': version, 'file_name': file_name}";
 
-    let result = match send_message(script.to_string()).await {
-        Some(result) => result.replace("'", "\""),
-        None => "".to_string(),
+    let Some(result) = send_message(script.to_string()).await else {
+        log("Blender didn't answer the client info request");
+        return;
     };
 
-    let map_object: HashMap<String, String> = serde_json::from_str(result.as_str()).unwrap();
-    let version = map_object.get("version").unwrap().to_string();
-    let file_name = map_object.get("file_name").unwrap().to_string();
+    // a quote in the file name makes python's dict repr invalid JSON
+    let map_object: HashMap<String, String> = match serde_json::from_str(&result.replace("'", "\"")) {
+        Ok(map_object) => map_object,
+        Err(e) => {
+            log(format!("couldn't read Blender's client info ({e}): {result}"));
+            return;
+        }
+    };
+    let version = map_object.get("version").cloned().unwrap_or_default();
+    let file_name = map_object.get("file_name").cloned().unwrap_or_default();
+    log(format!("Blender {version} linked, file {file_name:?}"));
 
     let mut state = STATE.lock().unwrap();
     state.connected_application = "blender".to_string();
@@ -241,7 +256,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
                 }
             }
             Err(e) => {
-                println!("Error in handle_client(): {}", e);
+                log(format!("Blender connection error: {e}"));
                 data.clear();
                 break;
             }
@@ -253,7 +268,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
 
     // if disconnected, remove the client from the server
     // clear all previous info, the linked tab stays linked (offline) until Blender is back
-    println!("client disconnected");
+    log(format!("Blender disconnected from {}", peer.map_or("unknown".to_string(), |addr| addr.to_string())));
     let mut state = STATE.lock().unwrap();
     state.connected = false;
     state.connected_application = "".to_string();

@@ -7,6 +7,8 @@ mod tools;
 
 use rmcp::transport::streamable_http_server::{session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService};
 
+use crate::utils::log::log;
+
 // TODO: make configurable from the settings window
 pub const MCP_PORT: u16 = 6578;
 
@@ -23,14 +25,14 @@ pub async fn start_mcp_server() {
     let listener = match tokio::net::TcpListener::bind(("127.0.0.1", MCP_PORT)).await {
         Ok(listener) => listener,
         Err(e) => {
-            eprintln!("MCP server could not bind 127.0.0.1:{}: {}", MCP_PORT, e);
+            log(format!("MCP server could not bind 127.0.0.1:{}: {}", MCP_PORT, e));
             return;
         }
     };
 
     // serve until the app exits
-    println!("MCP server listening on http://127.0.0.1:{}/mcp", MCP_PORT);
+    log(format!("MCP server listening on http://127.0.0.1:{}/mcp", MCP_PORT));
     if let Err(e) = axum::serve(listener, router).await {
-        eprintln!("MCP server stopped: {}", e);
+        log(format!("MCP server stopped: {}", e));
     }
 }
