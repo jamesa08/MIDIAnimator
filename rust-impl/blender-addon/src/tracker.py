@@ -1,4 +1,4 @@
-# Scene change tracker for MIDIAnimator Bridge
+# Scene change tracker for MotionKeys Bridge
 # Detects important scene changes and sends updates via the Server singleton
 
 import bpy

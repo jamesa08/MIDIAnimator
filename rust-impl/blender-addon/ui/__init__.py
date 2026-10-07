@@ -4,7 +4,7 @@ from .. src.core import Server
 class SCENE_OT_connect_to_server(bpy.types.Operator):
     bl_idname = "scene.connect_to_server"
     bl_label = "Connect to Server"
-    bl_description = "Connect to the MIDIAnimator server at the set port"
+    bl_description = "Connect to the MotionKeys server at the set port"
 
     def ping(self):
         pass
@@ -15,14 +15,14 @@ class SCENE_OT_connect_to_server(bpy.types.Operator):
         try:
             client.open()
         except Exception as e:
-            self.report({"ERROR"}, f"Could not connect to server. Make sure MIDIAnimator is running. ({type(e).__name__}: {e})")
+            self.report({"ERROR"}, f"Could not connect to server. Make sure MotionKeys is running. ({type(e).__name__}: {e})")
             return {"CANCELLED"}
         return {"FINISHED"}
     
 class SCENE_OT_disconnect_from_server(bpy.types.Operator):
     bl_idname = "scene.disconnect_from_server"
     bl_label = "Disconnect from Server"
-    bl_description = "Disconnect from the MIDIAnimator server"
+    bl_description = "Disconnect from the MotionKeys server"
 
     def execute(self, context):
         client = Server()
@@ -32,10 +32,10 @@ class SCENE_OT_disconnect_from_server(bpy.types.Operator):
 class MIDIAniamtorPanel:
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "MIDIAnimator Link"
+    bl_category = "MotionKeys Link"
 
 class VIEW3D_PT_server_link(MIDIAniamtorPanel, bpy.types.Panel):
-    bl_label = "MIDIAnimator Link"
+    bl_label = "MotionKeys Link"
 
     @classmethod
     def poll(cls, context):
@@ -49,7 +49,7 @@ class VIEW3D_PT_server_link(MIDIAniamtorPanel, bpy.types.Panel):
         layout.use_property_split = True
         
         col = layout.column()
-        # port must match the one set in MIDIAnimator's settings
+        # port must match the one set in MotionKeys' settings
         row = col.row()
         row.enabled = not client.connected
         row.prop(context.scene, "midianimator_port", text="Port")

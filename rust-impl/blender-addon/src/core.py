@@ -127,10 +127,10 @@ class Server(metaclass=ServerMeta):
                     if res:
                         self.send_message(res, raw_message["uuid"])
                 except Exception as e:
-                    self.send_message(f"MIDIAnimator IPC execution error: {str(e)}", raw_message["uuid"])
-                    print("MIDIAnimator IPC execution error:", str(e))
+                    self.send_message(f"MotionKeys IPC execution error: {str(e)}", raw_message["uuid"])
+                    print("MotionKeys IPC execution error:", str(e))
 
             except Exception as e:
-                print("MIDIAnimator IPC reciving error:", str(e))
+                print("MotionKeys IPC receiving error:", str(e))
                 self.close()
                 break

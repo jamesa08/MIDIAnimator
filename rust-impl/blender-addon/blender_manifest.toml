@@ -1,0 +1,23 @@
+schema_version = "1.0.0"
+
+# extension manifest for Blender 4.2+, older versions read bl_info in __init__.py instead
+id = "motionkeys_bridge"
+version = "0.5.0"
+# CI adds the short commit hash to the name, e.g. "MotionKeys Bridge (abc1234)"
+name = "MotionKeys Bridge"
+tagline = "Bridge between MotionKeys and Blender"
+maintainer = "James Alt"
+type = "add-on"
+
+website = "https://github.com/jamesa08/MIDIAnimator"
+tags = ["Animation"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+# the bridge only connects to MotionKeys on this computer (127.0.0.1)
+[permissions]
+network = "Connects to the MotionKeys app running on this computer"
