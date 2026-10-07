@@ -65,17 +65,18 @@ jobs:
       - name: Get commit hash
         run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
+      # MotionKeys-<ref>-* so the MotionKeys-Bridge-* add-on artifact isn't mixed into the bundles
       - name: Download app bundles
         uses: actions/download-artifact@v7
         with:
-          pattern: MotionKeys-*
+          pattern: MotionKeys-${{ github.ref_name }}-*
           path: bundles
           merge-multiple: true
 
       - name: Download add-on
         uses: actions/download-artifact@v7
         with:
-          pattern: MIDIAnimator-Bridge-*
+          pattern: MotionKeys-Bridge-*
           path: addon
           merge-multiple: true
 
@@ -88,9 +89,9 @@ jobs:
             mv "$f" "release/${base%.*}-$HASH.${base##*.}"
           done
 
-      # zip with midianimator_bridge/ at its root so blender can install it directly
+      # zip with motionkeys_bridge/ at its root so blender can install it directly
       - name: Zip add-on
-        run: cd addon && zip -r ../release/MIDIAnimator-Bridge-nightly-$HASH.zip midianimator_bridge
+        run: cd addon && zip -r ../release/MotionKeys-Bridge-nightly-$HASH.zip motionkeys_bridge
 
       # commits since the last nightly, or just this commit if the old one is gone
       - name: Write release notes

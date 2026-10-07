@@ -21,18 +21,27 @@ jobs:
         shell: bash
         run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
-      # the add-on folder is renamed to a valid python module name, blender installs the zip as that module
+      # the add-on folder is renamed to the extension id, a valid python module name blender installs the zip as
       - name: Stage add-on
         run: |
-          mkdir -p artifacts/midianimator_bridge
-          cp -a rust-impl/blender-addon/. artifacts/midianimator_bridge/
+          mkdir -p artifacts/motionkeys_bridge
+          cp -a rust-impl/blender-addon/. artifacts/motionkeys_bridge/
           find artifacts -name "__pycache__" -type d -prune -exec rm -rf {} +
           find artifacts -name ".DS_Store" -delete
 
-      # the artifact download is a zip with midianimator_bridge/ at its root, installable directly in blender
+      # the hash goes in the name blender shows (manifest for 4.2+, bl_info for older), fails if either isn't found
+      - name: Stamp commit hash
+        run: |
+          cd artifacts/motionkeys_bridge
+          sed -i "s/^name = \"MotionKeys Bridge\"$/name = \"MotionKeys Bridge ($HASH)\"/" blender_manifest.toml
+          sed -i "s/\"name\": \"MotionKeys Bridge\",$/\"name\": \"MotionKeys Bridge ($HASH)\",/" __init__.py
+          grep -q "^name = \"MotionKeys Bridge ($HASH)\"$" blender_manifest.toml
+          grep -q "\"name\": \"MotionKeys Bridge ($HASH)\"," __init__.py
+
+      # the artifact download is a zip with motionkeys_bridge/ at its root, installable directly in blender
       - name: Upload add-on
         uses: actions/upload-artifact@v6
         with:
-          name: MIDIAnimator-Bridge-${{ github.ref_name }}-${{ env.HASH }}
+          name: MotionKeys-Bridge-${{ github.ref_name }}-${{ env.HASH }}
           path: artifacts/
           if-no-files-found: error
