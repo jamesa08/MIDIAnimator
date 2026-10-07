@@ -39,6 +39,12 @@ const PARAMS: Record<string, Param[]> = {
 // input types that can be typed in, the others only come from a connection
 const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number" };
 
+// output types plain enough to show as text, alone or in a list
+const PLAIN = ["String", "f64", "u8"];
+const plain = (dataType: string) => PLAIN.includes(dataType.startsWith("Array<") ? dataType.slice(6, -1) : dataType);
+// a list shows comma separated, nothing until the node has run
+const plainText = (value: any): string => (Array.isArray(value) ? value.join(", ") : value === undefined || value === null ? "" : String(value));
+
 // MARK: - Fields
 
 // the value every node has, undefined when they differ (shown empty)
@@ -158,6 +164,11 @@ function Value({ children }: { children: ReactNode }) {
     return <span className="px-1.5 truncate">{children}</span>;
 }
 
+// a value that's only shown, scrolls sideways when it's too long
+function ScrollValue({ children }: { children: ReactNode }) {
+    return <span className="properties-scroll px-1.5">{children}</span>;
+}
+
 // a box that's ticked or not, only shown
 function Check({ checked }: { checked: boolean }) {
     return (
@@ -200,6 +211,7 @@ function Properties() {
     const lookup = specLookup(Object.fromEntries(specs.map((spec: any) => [spec.id, spec])), groups);
     const selected: any[] = (level.graph.nodes ?? []).filter((node: any) => node.selected);
     const executedInputs = scopedValues(state.executed_inputs, path);
+    const executedResults = scopedValues(state.executed_results, path);
 
     const toggle = (title: string) =>
         setCollapsed((prev) => {
@@ -337,6 +349,9 @@ function Properties() {
             );
         };
 
+        // a single node's outputs that read as text, with what they gave on the last run
+        const outputs = single && spec ? spec.handles.outputs.filter((handle) => !handle.hidden && plain(handle.data_type)) : [];
+
         // where a node is, rounded like the canvas shows it
         const x = shared(selected, (node) => Math.round(node.position.x));
         const y = shared(selected, (node) => Math.round(node.position.y));
@@ -364,6 +379,15 @@ function Properties() {
                     </>
                 )}
                 {inputs.length > 0 && section("Parameters", inputs.map(input))}
+                {outputs.length > 0 &&
+                    section(
+                        "Outputs",
+                        outputs.map((handle) => (
+                            <Row key={handle.id} name={handle.name} readOnly>
+                                <ScrollValue>{plainText(executedResults[single.id]?.[handle.id])}</ScrollValue>
+                            </Row>
+                        ))
+                    )}
                 {single?.type === "scene_link" && scene && section("Scene", <SceneTree scene={scene} expanded={expanded} onToggle={toggleRow} />)}
                 {section(
                     "Layout",

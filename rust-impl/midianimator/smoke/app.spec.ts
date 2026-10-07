@@ -131,6 +131,22 @@ test("graph window with every node selected", async ({ page }) => {
     await settle(page);
 });
 
+// the fixture with only `id` selected and every panel docked
+function withSelected(id: string) {
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((node: any) => ({ ...node, selected: node.id === id }));
+    return { ...backend, get_state: { ...state, layout: ALL_DOCKED, rf_instance: { ...state.rf_instance, nodes } } };
+}
+
+// a row of the properties panel by its name, and its value
+const propertiesRow = (page: Page, name: string) => page.locator(".properties-row").filter({ has: page.locator(".properties-name", { hasText: new RegExp(`^${name.replace(/\./g, "\\.")}$`) }) });
+
+test("properties panel shows outputs from the last run", async ({ page }) => {
+    await openWindow(page, withSelected("get_midi_track_data-1"), "/#/");
+    await expect(propertiesRow(page, "Unique Note Numbers")).toContainText("60, 61, 62");
+    await settle(page);
+});
+
 test("drag ghost window", async ({ page }) => {
     await openWindow(page, backend, "/#/drag-ghost", "drag-ghost");
     await settle(page);

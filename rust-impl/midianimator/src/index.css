@@ -648,6 +648,17 @@ img {
     color: var(--properties-dim);
 }
 
+/* a long value scrolls sideways, without a scrollbar taking room from the row */
+.properties-scroll {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.properties-scroll::-webkit-scrollbar {
+    display: none;
+}
+
 /* fields fill their cell and draw nothing of their own */
 .properties-row input,
 .properties-row select,
