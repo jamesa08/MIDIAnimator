@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useStore } from "@xyflow/react";
+import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
@@ -19,21 +19,25 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     const setInputs = useSetInputs();
     const { openGroup } = useGroupContext();
     const preview = data === "preview" || data?.preview === true;
-    const { backEndState: state, setBackEndState: setState } = useStateContext();
+    const { backEndState: state } = useStateContext();
 
     const nodeData = useNodeSpec("assign_notes_to_objects");
-    const [name, setName] = useState(data.inputs?.object_group_name || "");
 
+    // the object groups the node ran with, like Keyframes from Object. a mistyped connection can hand over anything
+    const objectGroups: any[] = Array.isArray(state?.executed_inputs?.[id]?.object_groups) ? state.executed_inputs[id].object_groups : [];
+    const objectGroupNames: string[] = objectGroups.map((g: any) => g?.name);
+    const selectedGroupName: string = data.inputs?.object_group_name || objectGroupNames[0] || "";
+
+    // the first group is picked until one is, filled in automatically, not an undo step
     useEffect(() => {
-        setName(data.inputs?.object_group_name || "");
-    }, [data.inputs?.object_group_name]);
-
-    const handleUpdate = useCallback(() => {
-        setInputs(id, { object_group_name: name });
-    }, [id, name, setInputs]);
+        if (!preview && selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) {
+            setInputs(id, { object_group_name: selectedGroupName }, { commitToHistory: false });
+        }
+    }, [selectedGroupName]);
 
     // the note list, typed in unless a connection gives it. stored edges are reversed, `source` is the node taking the value
     const notesConnected = useStore((s) => s.edges.some((e) => e.source === id && e.sourceHandle === "note_numbers"));
+    const mapMode = data.inputs?.mode === "map";
     const [notesText, setNotesText] = useState(noteNumbersText(data.inputs?.note_numbers));
 
     useEffect(() => {
@@ -48,14 +52,31 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     }, [id, notesText, data.inputs?.note_numbers, setInputs]);
 
     const objectGroupNameComponent = (
+        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
+            {objectGroupNames.length > 0 ? (
+                objectGroupNames.map((name, i) => (
+                    <option key={i} value={name}>
+                        {name}
+                    </option>
+                ))
+            ) : (
+                <option value="">No ObjectGroup names found</option>
+            )}
+        </select>
+    );
+
+    // rules work out each object's notes, map takes them from the note map (Tab, or the button in the header)
+    const modeComponent = (
         <>
-            <div>
-                <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" placeholder="Object Group Name" value={name} onChange={(e) => setName(e.target.value)} onBlur={handleUpdate} />
-            </div>
+            <div className="node-field">Mode</div>
+            <select className="node-field nodrag nopan" value={data.inputs?.mode ?? "rules"} onChange={(e) => setInputs(id, { mode: e.target.value })}>
+                <option value="rules">Rules</option>
+                <option value="map">Map</option>
+            </select>
         </>
     );
 
-    const noteNumbersComponent = !notesConnected && (
+    const noteNumbersComponent = !notesConnected && !mapMode && (
         <div>
             <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" value={notesText} onChange={(e) => setNotesText(e.target.value)} onBlur={handleNotesUpdate} />
         </div>
@@ -75,11 +96,21 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     const uiInject = {
         object_group_name: objectGroupNameComponent,
+        mode: modeComponent,
         note_numbers: noteNumbersComponent,
     };
 
-    // set in the note map (Tab, or the button in the header) and the properties panel
+    // map mode doesn't use the note list, it's hidden unless something is connected to it (its edge needs the socket)
+    const hideNoteNumbers = mapMode && !notesConnected;
+    const updateNodeInternals = useUpdateNodeInternals();
+    useEffect(() => {
+        if (!preview) updateNodeInternals(id);
+    }, [id, hideNoteNumbers, preview, updateNodeInternals]);
+
+    // the group and the mode are dropdowns, the note map is drawn with Tab (or the button in the header)
     const hiddenHandles = {
+        note_numbers: hideNoteNumbers,
+        object_group_name: true,
         mode: true,
         note_map: true,
         map_layout: true,

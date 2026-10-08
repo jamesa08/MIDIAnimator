@@ -262,6 +262,7 @@
                         "id": "object_group_name",
                         "name": "Object Group Name",
                         "data_type": "String",
+                        "hidden": true,
                         "description": "Name of the object group whose objects receive notes."
                     },
                     {

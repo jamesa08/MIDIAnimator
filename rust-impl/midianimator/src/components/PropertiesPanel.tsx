@@ -32,6 +32,7 @@ const PARAMS: Record<string, Param[]> = {
         { id: "object_name", kind: "select", options: ({ node, executed }) => names((Array.isArray(executed?.object_groups) ? executed.object_groups : []).find((g: any) => g?.name === node.data?.inputs?.object_group_name)?.objects) },
     ],
     assign_notes_to_objects: [
+        { id: "object_group_name", kind: "select", options: ({ executed }) => names(executed?.object_groups) },
         {
             id: "mode",
             kind: "select",

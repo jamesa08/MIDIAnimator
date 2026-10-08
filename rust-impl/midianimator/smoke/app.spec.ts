@@ -158,8 +158,8 @@ test("properties panel shows the notes each object got", async ({ page }) => {
 
 test("note numbers field keeps what's typed", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
-    // the node's second text box, under Note Numbers (Object Group Name's is first)
-    const field = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator('input[type="text"]').nth(1);
+    // the node's only text box, under Note Numbers (Object Group Name and Mode are dropdowns)
+    const field = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator('input[type="text"]');
     await field.fill("[60 61, x]");
     await field.evaluate((input: HTMLInputElement) => input.blur());
 
@@ -260,6 +260,21 @@ test("note map box select takes the wires it crosses", async ({ page }) => {
     const sets = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
     const removed = sets.find((op: any) => op.op === "set_inputs" && op.inputs.note_map);
     expect(removed.inputs.note_map.objects).toEqual({ "Cube.003": [62], "Cube.004": [63], "Cube.005": [64] });
+    await settle(page);
+});
+
+test("map mode hides the note numbers", async ({ page }) => {
+    // the fixture with Assign Notes to Objects in map mode
+    const state = structuredClone(backend.get_state);
+    const assign = state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
+    assign.data.inputs = { ...assign.data.inputs, mode: "map" };
+    await openWindow(page, { ...backend, get_state: state }, "/#/");
+
+    const node = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" });
+    await expect(node.locator("select").nth(1)).toHaveValue("map");
+    await expect(node.getByText("Notes", { exact: true })).toBeVisible();
+    await expect(node.getByText("Note Numbers", { exact: true })).toBeHidden();
+    await expect(node.locator('input[type="text"]')).toHaveCount(0);
     await settle(page);
 });
 
