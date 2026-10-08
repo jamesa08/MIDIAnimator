@@ -6,7 +6,7 @@ import NodeHeader from "./NodeHeader";
 import { socketStyle } from "../utils/sockets";
 import { nodeColors } from "../styles";
 import { memo } from "react";
-import ErrorBadge, { useNodeError } from "../components/nodegraph/ErrorBadge";
+import ErrorBadge, { SuccessBadge, useNodeError, useWriteStatus } from "../components/nodegraph/ErrorBadge";
 
 const handleStyle = {
     width: "14px",
@@ -33,7 +33,9 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
 
     // previews (nodes panel, drag ghost) get "preview", or an object with preview set when they need data (group nodes)
     let preview = data === "preview" || data?.preview === true;
-    const error = useNodeError();
+    // a node's own error from the last run, else the error of the last write to Blender it made (or a group inside it made)
+    const write = useWriteStatus();
+    const error = useNodeError() ?? write.error;
 
     // the inputs something is connected to, joined so the node only draws again when they change.
     // stored edges are reversed, `source`/`sourceHandle` is the node taking the value and its input
@@ -92,6 +94,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
         <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors(nodeData?.category)}>
             <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]}>
                 {error && !preview && <ErrorBadge message={error} size={16} />}
+                {!error && write.written && !preview && <SuccessBadge size={16} />}
                 {headerExtra}
             </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
