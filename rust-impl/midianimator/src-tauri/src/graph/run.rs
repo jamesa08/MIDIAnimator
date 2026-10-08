@@ -58,6 +58,16 @@ pub struct RunCtx<'a> {
     memo: RefCell<Memo>,
     conversions: Conversions,
     plans: RefCell<HashMap<String, Rc<Plan>>>,
+    /// what the nodes writing to Blender did, kept even inside a group that isn't open so the group node can show it
+    writes: RefCell<Vec<(String, Write)>>,
+}
+
+/// what a node writing to Blender (not realtime) did in a run
+enum Write {
+    /// a realtime run skipped it
+    Skipped,
+    /// it ran, with its error if it failed
+    Ran(Option<String>),
 }
 
 impl<'a> RunCtx<'a> {
@@ -71,6 +81,7 @@ impl<'a> RunCtx<'a> {
             memo: RefCell::new(Memo::default()),
             conversions: Conversions::default(),
             plans: RefCell::new(HashMap::new()),
+            writes: RefCell::new(Vec::new()),
         }
     }
 
@@ -194,6 +205,8 @@ struct Entry {
 pub struct Record {
     pub results: HashMap<String, Value>,
     pub inputs: HashMap<String, Value>,
+    /// nodes writing to Blender a realtime run skipped (also inside a group that isn't open), they have no results of their own
+    pub skipped: Vec<String>,
 }
 
 /// runs the root graph, returns the record and the first error (the rest of the graph still ran)
@@ -218,6 +231,15 @@ pub fn run(ctx: &RunCtx, graph: &Graph) -> (Record, Option<String>) {
             }
             None => None,
         };
+    }
+    // writes inside a group that isn't open weren't recorded above
+    for (path, write) in ctx.writes.take() {
+        match write {
+            Write::Skipped => record.skipped.push(path),
+            Write::Ran(error) => {
+                record.results.entry(path).or_insert_with(|| error.map_or_else(|| json!({}), |message| json!({ ERROR_KEY: message })));
+            }
+        }
     }
     (record, error)
 }
@@ -623,6 +645,7 @@ impl<'a, 'c> Runner<'a, 'c> {
         };
         // not run in a realtime run, only what it got is shown
         if self.ctx.realtime && !node.realtime {
+            self.ctx.writes.borrow_mut().push((self.path(index), Write::Skipped));
             if let Some(record) = record {
                 record.push(Entry {
                     path: self.path(index),
@@ -645,6 +668,9 @@ impl<'a, 'c> Runner<'a, 'c> {
                 Ran::Waiting => return Ok(self.wait(index, inputs, frame, record)),
             },
         };
+        if !node.realtime {
+            self.ctx.writes.borrow_mut().push((self.path(index), Write::Ran(outcome.as_ref().err().cloned())));
+        }
         self.finish(index, outcome, inputs, bad_inputs, frame, record)
     }
 

@@ -161,3 +161,20 @@ fn port_setting_must_be_a_whole_number_in_range() {
     assert_eq!(valid_port(&json!(6577.5)), None);
     assert_eq!(valid_port(&json!(null)), None);
 }
+
+#[test]
+fn connecting_clears_only_the_not_connected_errors() {
+    let mut state = AppState::default();
+    let results = &mut state.instance_mut("tab-1").unwrap().executed_results;
+    results.insert("scene_writer-1".to_string(), json!({ "motionkeys_error": "Blender isn't connected" }));
+    results.insert("group-1".to_string(), json!({ "motionkeys_error": "failed inside the group at group-1/scene_writer-1: Blender isn't connected" }));
+    results.insert("scene_writer-2".to_string(), json!({ "motionkeys_error": "Blender couldn't write the keyframes: Traceback ..." }));
+    results.insert("scene_writer-3".to_string(), json!({}));
+
+    state.clear_not_connected();
+
+    let mut left: Vec<_> = state.instance("tab-1").unwrap().executed_results.keys().cloned().collect();
+    left.sort();
+    // a real write error and a write that went through stay
+    assert_eq!(left, vec!["scene_writer-2", "scene_writer-3"]);
+}

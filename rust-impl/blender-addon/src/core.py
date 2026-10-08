@@ -9,6 +9,7 @@ import json
 import threading
 import types
 import re
+import traceback
 import bpy
 
 class ServerMeta(type):
@@ -127,7 +128,8 @@ class Server(metaclass=ServerMeta):
                     if res:
                         self.send_message(res, raw_message["uuid"])
                 except Exception as e:
-                    self.send_message(f"MotionKeys IPC execution error: {str(e)}", raw_message["uuid"])
+                    # the full traceback goes back, MotionKeys shows it on the node that asked
+                    self.send_message(f"MotionKeys IPC execution error: {traceback.format_exc()}", raw_message["uuid"])
                     print("MotionKeys IPC execution error:", str(e))
 
             except Exception as e:

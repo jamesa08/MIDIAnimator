@@ -469,3 +469,37 @@ fn bench_evaluate_instrument_group() {
         println!("{:>6} notes: direct {:>8.2} ms, group {:>8.2} ms, group rerun {:>7.2} ms", note_count, direct_ms, group_ms, rerun_ms);
     }
 }
+
+#[test]
+fn a_realtime_run_skips_the_scene_writer_and_says_so() {
+    let root = graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": {} } }))], &[]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), true);
+    assert!(error.is_none());
+    // skipped: no result of its own, the app keeps what its last write gave
+    assert_eq!(record.skipped, vec!["scene_writer-1".to_string()]);
+    assert!(!record.results.contains_key("scene_writer-1"));
+}
+
+#[test]
+fn the_scene_writer_fails_when_blender_isnt_connected() {
+    let root = graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": {} } }))], &[]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), false);
+    assert!(record.skipped.is_empty());
+    assert_eq!(node_error(&record.results["scene_writer-1"]), Some("Blender isn't connected"));
+    assert!(error.unwrap().contains("Blender isn't connected"));
+}
+
+#[test]
+fn a_scene_writer_inside_a_closed_group_is_still_recorded() {
+    let inside = graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": {} } }))], &[]);
+    let groups = BTreeMap::from([("writes".to_string(), group(inside))]);
+    let root = graph(vec![node("group-1", json!({ "group_id": "writes" }))], &[]);
+
+    // realtime: skipped, so the app keeps the last write's result for the group node to show
+    let (record, _) = run_graph(&root, &groups, true);
+    assert_eq!(record.skipped, vec!["group-1/scene_writer-1".to_string()]);
+
+    // a write: the writer's error is there even though nothing inside the group is open
+    let (record, _) = run_graph(&root, &groups, false);
+    assert_eq!(node_error(&record.results["group-1/scene_writer-1"]), Some("Blender isn't connected"));
+}

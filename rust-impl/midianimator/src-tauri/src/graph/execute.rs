@@ -38,7 +38,8 @@ pub async fn run_instance(id: String, realtime: bool) {
         let Some(instance) = state.instance(&id) else {
             return;
         };
-        if !realtime && !state.is_live(&id) {
+        // only the live tab writes. with Blender not connected it still runs, so its scene writers show that
+        if !realtime && state.connected && !state.is_live(&id) {
             println!("not writing to Blender, {} isn't live", id);
             return;
         }
@@ -82,7 +83,14 @@ pub async fn run_instance(id: String, realtime: bool) {
             forget_memo(&id);
             return;
         };
-        instance.executed_results = record.results;
+        // a realtime run skips the nodes that write to Blender, they keep what their last write gave (its error or its success)
+        let mut results = record.results;
+        for path in record.skipped {
+            if let Some(last) = instance.executed_results.get(&path) {
+                results.insert(path, last.clone());
+            }
+        }
+        instance.executed_results = results;
         instance.executed_inputs = record.inputs;
         shown
     };

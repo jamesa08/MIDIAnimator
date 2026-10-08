@@ -159,6 +159,15 @@ impl AppState {
         &mut self.instances[index]
     }
 
+    /// Blender connected: errors that only said it wasn't (a scene writer's, or the group's around one, which ends with
+    /// the writer's) are dropped from every tab, whether or not a run follows
+    pub fn clear_not_connected(&mut self) {
+        use crate::graph::executors::{io::node_error, scene::NOT_CONNECTED};
+        for instance in &mut self.instances {
+            instance.executed_results.retain(|_, result| !node_error(result).is_some_and(|error| error.ends_with(NOT_CONNECTED)));
+        }
+    }
+
     /// true if the tab is linked to Blender and Blender is connected
     pub fn is_live(&self, id: &str) -> bool {
         self.connected && self.connected_instance_id.as_deref() == Some(id)

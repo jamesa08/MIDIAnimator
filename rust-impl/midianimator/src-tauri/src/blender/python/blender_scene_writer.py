@@ -2,6 +2,7 @@ from typing import Set, List
 import bpy
 import json
 import threading
+import traceback
 from bpy_extras import anim_utils
 from contextlib import suppress
 
@@ -181,8 +182,9 @@ def _execute_on_main_thread():
         data = json.loads(JSON_DATA)
         clean_all_keyframes(data, _report)
         write_keyframes(data, _report)
-    except Exception as e:
-        _report["errors"].append(f"write failed: {e}")
+    except Exception:
+        # the traceback shows on the scene writer node in MotionKeys
+        _report["errors"].append(f"write failed: {traceback.format_exc()}")
     finally:
         _done.set()
     return None

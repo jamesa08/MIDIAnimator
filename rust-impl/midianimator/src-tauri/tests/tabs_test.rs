@@ -241,8 +241,22 @@ fn a_run_lands_on_its_tab() {
         assert!(state.instance("tab-2").unwrap().executed_results.is_empty());
     }
 
-    // only the live tab writes to Blender
-    STATE.lock().unwrap().instance_mut("tab-1").unwrap().executed_results.clear();
+    // with Blender connected, only the live tab writes to Blender
+    {
+        let mut state = STATE.lock().unwrap();
+        state.connected = true;
+        state.connected_instance_id = Some("tab-2".to_string());
+        state.instance_mut("tab-1").unwrap().executed_results.clear();
+    }
     block(run_instance("tab-1".to_string(), false));
     assert!(STATE.lock().unwrap().instance("tab-1").unwrap().executed_results.is_empty());
+
+    // with Blender not connected it runs, so its scene writers can show that
+    {
+        let mut state = STATE.lock().unwrap();
+        state.connected = false;
+        state.connected_instance_id = None;
+    }
+    block(run_instance("tab-1".to_string(), false));
+    assert!(!STATE.lock().unwrap().instance("tab-1").unwrap().executed_results.is_empty());
 }

@@ -105,6 +105,8 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
                     // we are connected to the client
                     let mut state = STATE.lock().unwrap();
                     state.connected = true;
+                    // scene writers that failed only because Blender wasn't connected aren't red anymore
+                    state.clear_not_connected();
                     // also need to call get_client_info here to get the connected application info
                     drop(state);
                     update_state();
