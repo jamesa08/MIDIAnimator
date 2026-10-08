@@ -4,6 +4,10 @@ import json
 import threading
 import traceback
 from bpy_extras import anim_utils
+
+# action slots came in Blender 4.4. from then on the old action.fcurves API only reaches a legacy slot the object isn't
+# assigned to, so keys written through it never animate, and reading it can miss the slot the object uses
+SLOTTED_ACTIONS = bpy.app.version >= (4, 4, 0)
 from contextlib import suppress
 
 JSON_DATA = r""""""
@@ -16,7 +20,7 @@ def FCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
     if obj.animation_data is None: return []
     if obj.animation_data.action is None: return []
 
-    if bpy.app.version < (5, 0, 0):
+    if not SLOTTED_ACTIONS:
         return list(obj.animation_data.action.fcurves)
     else:
         anim_data = obj.animation_data
@@ -30,7 +34,7 @@ def shapeKeyFCurvesFromObject(obj: bpy.types.Object) -> List[bpy.types.FCurve]:
         if obj.data.shape_keys is None: return []
         if obj.data.shape_keys.animation_data.action is None: return []
 
-        if bpy.app.version < (5, 0, 0):
+        if not SLOTTED_ACTIONS:
             return list(obj.data.shape_keys.animation_data.action.fcurves)
         else:
             anim_data = obj.data.shape_keys.animation_data
@@ -43,7 +47,7 @@ def cleanKeyframes(obj: bpy.types.Object, channels: Set = {"all_channels"}):
     """Kept for external use. Not called internally — see clean_all_keyframes."""
     fCurves = FCurvesFromObject(obj)
 
-    if bpy.app.version < (5, 0, 0):
+    if not SLOTTED_ACTIONS:
         for fCurve in fCurves:
             if {fCurve.data_path, "all_channels"}.intersection(channels):
                 obj.animation_data.action.fcurves.remove(fCurve)
@@ -108,7 +112,7 @@ def get_or_create_fcurve(obj: bpy.types.Object, data_path: str, array_index: int
     if owner.animation_data is None:
         owner.animation_data_create()
 
-    if bpy.app.version < (5, 0, 0):
+    if not SLOTTED_ACTIONS:
         if owner.animation_data.action is None:
             action = bpy.data.actions.new(name=action_name)
             owner.animation_data.action = action
@@ -123,6 +127,9 @@ def get_or_create_fcurve(obj: bpy.types.Object, data_path: str, array_index: int
             anim_data.action = action
         # creates the slot, layer, strip and channelbag if missing
         fc = anim_data.action.fcurve_ensure_for_datablock(owner, data_path, index=array_index)
+        # keys in a slot the object doesn't use never play, that has to be an error instead of a silent success
+        if anim_data.action_slot is None:
+            raise RuntimeError(f"'{owner.name}' has no action slot assigned, its keys wouldn't play")
 
     return fc
 

@@ -2,6 +2,10 @@ import json
 import bpy
 from bpy_extras import anim_utils
 
+# action slots came in Blender 4.4. from then on the old action.fcurves API only reaches a legacy slot the object isn't
+# assigned to, so keys written through it never animate, and reading it can miss the slot the object uses
+SLOTTED_ACTIONS = bpy.app.version >= (4, 4, 0)
+
 def shape_keys_from_object(obj):
     """gets shape keys from object
 
@@ -27,7 +31,7 @@ def FCurvesFromObject(obj):
     if obj.animation_data is None: return []
     if obj.animation_data.action is None: return []
     
-    if bpy.app.version < (5, 0, 0):
+    if not SLOTTED_ACTIONS:
         return list(obj.animation_data.action.fcurves)
     else:
         anim_data = obj.animation_data
@@ -40,7 +44,7 @@ def ShapeKeyFCurvesFromObject(obj):
     if shape_keys is None or shape_keys.animation_data is None: return []
     if shape_keys.animation_data.action is None: return []
 
-    if bpy.app.version < (5, 0, 0):
+    if not SLOTTED_ACTIONS:
         return list(shape_keys.animation_data.action.fcurves)
     else:
         anim_data = shape_keys.animation_data
