@@ -31,6 +31,19 @@ const PARAMS: Record<string, Param[]> = {
         { id: "object_group_name", kind: "select", options: ({ executed }) => names(executed?.object_groups) },
         { id: "object_name", kind: "select", options: ({ node, executed }) => names((Array.isArray(executed?.object_groups) ? executed.object_groups : []).find((g: any) => g?.name === node.data?.inputs?.object_group_name)?.objects) },
     ],
+    assign_notes_to_objects: [
+        {
+            id: "mode",
+            kind: "select",
+            options: () => [
+                { value: "rules", label: "Rules" },
+                { value: "map", label: "Map" },
+            ],
+        },
+        // drawn in the note map (Tab on the node)
+        { id: "note_map", kind: "text", shown: () => false },
+        { id: "map_layout", kind: "text", shown: () => false },
+    ],
     animation_generator: [
         { id: "animation_overlap", kind: "select", options: () => overlapModes.map((mode) => ({ value: mode.id, label: mode.name })) },
         { id: "overlap_blend", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "crossfade" },

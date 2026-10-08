@@ -16,6 +16,8 @@ export const GROUP_INPUT = "group_input";
 export const GROUP_OUTPUT = "group_output";
 export const FOR_EACH_INPUT = "for_each_input";
 export const FOR_EACH_OUTPUT = "for_each_output";
+// Tab on it opens its note map (NoteMapView.tsx) instead of a group
+export const NOTE_MAP_NODE = "assign_notes_to_objects";
 
 // separates the group node ids in a path, `evaluate_instrument-1/node_group-2`
 export const PATH_SEP = "/";

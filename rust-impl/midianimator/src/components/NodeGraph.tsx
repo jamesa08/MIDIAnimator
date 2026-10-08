@@ -5,10 +5,12 @@ import { ReactFlowProvider } from "@xyflow/react";
 
 import { useStateContext } from "../contexts/StateContext";
 import { GroupContext, ScopedState } from "../contexts/GroupContext";
-import { GroupDef, Level, PATH_SEP, Project, allGroups, loadBuiltinGroups, resolvePath } from "../utils/groups";
-import { TabContext, useGraphOps } from "../utils/graphOps";
+import { GroupDef, Level, NOTE_MAP_NODE, PATH_SEP, Project, allGroups, loadBuiltinGroups, resolvePath, scopedValues } from "../utils/groups";
+import { ApplyOptions, TabContext, useGraphOps } from "../utils/graphOps";
 import NodeGraphEditor, { ProjectAccess } from "./nodegraph/NodeGraphEditor";
 import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
+import NoteMapView from "./nodegraph/NoteMapView";
+import { noteMapData } from "../utils/noteMap";
 
 const noop = () => {};
 
@@ -26,14 +28,17 @@ type GraphViewProps = {
     project: ProjectAccess;
     // false while it's getting ready behind the view on screen: drawn but see-through, and it takes no input
     shown: boolean;
+    // a node's note map is open over it, it doesn't take keys
+    covered: boolean;
     // frame the graph to fit instead of opening where it was last looked at (a loaded project's tab)
     fitOnOpen: boolean;
     setPath: (path: string[]) => void;
+    openMap: (nodeId: string) => void;
     onReady: (key: string) => void;
 };
 
 // one open graph: its editor, and while it's a group the graph it's in behind it, frozen and faded out
-function GraphView({ levels, groups, project, shown, fitOnOpen, setPath, onReady }: GraphViewProps) {
+function GraphView({ levels, groups, project, shown, covered, fitOnOpen, setPath, openMap, onReady }: GraphViewProps) {
     const openPath = levels.slice(1).map((l) => l.nodeId!);
     const key = openPath.join(PATH_SEP);
     const active = levels[levels.length - 1];
@@ -43,12 +48,14 @@ function GraphView({ levels, groups, project, shown, fitOnOpen, setPath, onReady
     const openGroup = useCallback(
         (nodeId: string) => {
             const node = active.graph.nodes?.find((n: any) => n.id === nodeId);
+            // Assign Notes to Objects opens its note map
+            if (node?.type === NOTE_MAP_NODE) return openMap(nodeId);
             if (!node?.data?.group_id || !groups[node.data.group_id]) return;
             // a group can't be opened inside itself
             if (levels.some((l) => l.groupId === node.data.group_id)) return;
             setPath([...openPath, nodeId]);
         },
-        [active, groups, levels, key, setPath]
+        [active, groups, levels, key, setPath, openMap]
     );
 
     const exitGroup = useCallback(
@@ -85,7 +92,7 @@ function GraphView({ levels, groups, project, shown, fitOnOpen, setPath, onReady
                 <GroupContext.Provider value={groupContext}>
                     <ScopedState path={key}>
                         <ReactFlowProvider>
-                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} openGroup={openGroup} exitGroup={exitGroup} onReady={ready} shown={shown} fitOnOpen={fitOnOpen} />
+                            <NodeGraphEditor level={active} path={openPath} pathGroups={pathGroups} editable={editable} project={project} openGroup={openGroup} exitGroup={exitGroup} onReady={ready} shown={shown && !covered} fitOnOpen={fitOnOpen} />
                         </ReactFlowProvider>
                     </ScopedState>
                 </GroupContext.Provider>
@@ -194,34 +201,64 @@ function TabGraph({ tab }: { tab: string }) {
         groupOps.apply([{ op: "revert_group" }]).catch((e) => console.error(`revert_group: ${e}`));
     }, [active.groupId, groups, groupOps]);
 
+    // the Assign Notes to Objects node whose note map is open over the graph on screen, it closes when that graph or
+    // the node goes away
+    const [mapNode, setMapNode] = useState<{ path: string; id: string } | null>(null);
+    const openMap = useCallback((nodeId: string) => setMapNode({ path: pathKeyRef.current, id: nodeId }), []);
+    const closeMap = useCallback(() => setMapNode(null), []);
+    const mapped = mapNode && mapNode.path === shownPathKey && pathKey === shownPathKey ? active.graph.nodes?.find((n: any) => n.id === mapNode.id && n.type === NOTE_MAP_NODE) : undefined;
+    const setMapInputs = useCallback(
+        (inputs: Record<string, any>, options?: ApplyOptions) => {
+            if (!mapNode) return Promise.resolve();
+            return groupOps.apply([{ op: "set_inputs", node: mapNode.id, inputs }], options).catch((e) => console.error(`set_inputs on ${mapNode.id}: ${e}`));
+        },
+        [mapNode, groupOps]
+    );
+    const endMapTxn = useCallback((txn: string) => groupOps.end(txn), [groupOps]);
+    const cancelMapTxn = useCallback((txn: string) => groupOps.cancel(txn), [groupOps]);
+    const exitMapToRoot = useCallback(() => {
+        closeMap();
+        setPath([]);
+    }, [closeMap]);
+    // what the node ran with and gave last, the map's objects and notes
+    const info = useMemo(() => (mapped ? noteMapData(scopedValues(state.executed_inputs, shownPathKey)?.[mapped.id], scopedValues(state.executed_results, shownPathKey)?.[mapped.id], mapped.data?.inputs?.object_group_name) : null), [mapped, state.executed_inputs, state.executed_results, shownPathKey]);
+
     // the graph on screen, and the one asked for drawing on top of it (see-through) until it's ready
     const views = shownPathKey === pathKey ? [shownLevels] : [shownLevels, levels];
 
+    // the breadcrumbs from the root down to the graph on screen, and the note map open over it
+    const crumbs = [...shownLevels.slice(1).map((level, i) => ({ name: level.def?.name ?? level.groupId, open: () => setPath(shownPath.slice(0, i + 1)) })), ...(mapped ? [{ name: mapped.data?.label || "Assign Notes to Objects", open: () => {} }] : [])];
+    const toPath = (open: () => void) => () => {
+        closeMap();
+        open();
+    };
+
     return (
-        <div className="node-graph-stack">
+        <div className={`node-graph-stack${mapped ? " note-map-open" : ""}`}>
             {views.map((viewLevels) => {
                 const key = viewLevels
                     .slice(1)
                     .map((l) => l.nodeId!)
                     .join(PATH_SEP);
-                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} fitOnOpen={key === "" && fitRef.current} setPath={setPath} onReady={onReady} />;
+                return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} covered={!!mapped && key === shownPathKey} fitOnOpen={key === "" && fitRef.current} setPath={setPath} openMap={openMap} onReady={onReady} />;
             })}
-            {shownPath.length > 0 && (
+            {mapped && info && <NoteMapView key={mapped.id} node={mapped} info={info} editable={active.groupId === null || isLocal} setInputs={setMapInputs} endTxn={endMapTxn} cancelTxn={cancelMapTxn} onExit={closeMap} onExitToRoot={exitMapToRoot} />}
+            {crumbs.length > 0 && (
                 <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
-                    <button className="px-1 italic hover:underline" onClick={() => setPath([])}>
+                    <button className="px-1 italic hover:underline" onClick={toPath(() => setPath([]))}>
                         Root
                     </button>
-                    {shownLevels.slice(1).map((level, i) => (
-                        <span key={level.nodeId} className="flex items-center">
+                    {crumbs.map((crumb, i) => (
+                        <span key={i} className="flex items-center">
                             <span className="text-zinc-400">/</span>
-                            <button className={`px-1 hover:underline ${i === shownLevels.length - 2 ? "font-bold" : ""}`} onClick={() => setPath(shownPath.slice(0, i + 1))}>
-                                {level.def?.name ?? level.groupId}
+                            <button className={`px-1 hover:underline ${i === crumbs.length - 1 ? "font-bold" : ""}`} onClick={toPath(crumb.open)}>
+                                {crumb.name}
                             </button>
                         </span>
                     ))}
                 </div>
             )}
-            {isBuiltin && (
+            {isBuiltin && !mapped && (
                 <div className="graph-overlay absolute top-9 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
                     {isLocal ? (
                         <button className="px-3 h-6 border border-black bg-white hover:bg-zinc-100" onClick={revertToBuiltin}>

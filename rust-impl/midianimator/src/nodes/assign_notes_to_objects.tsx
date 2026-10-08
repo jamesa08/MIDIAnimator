@@ -5,6 +5,7 @@ import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
+import { useGroupContext } from "../contexts/GroupContext";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
@@ -16,6 +17,8 @@ export const noteToName = (note: number): string => `${NOTE_NAMES[note % 12]}${M
 
 function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
+    const { openGroup } = useGroupContext();
+    const preview = data === "preview" || data?.preview === true;
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const nodeData = useNodeSpec("assign_notes_to_objects");
@@ -58,14 +61,31 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
         </div>
     );
 
+    const openButton = preview ? null : (
+        <button
+            className="group-open nodrag nopan"
+            onClick={(event) => {
+                event.stopPropagation();
+                openGroup(id);
+            }}
+        >
+            ⧉
+        </button>
+    );
+
     const uiInject = {
         object_group_name: objectGroupNameComponent,
         note_numbers: noteNumbersComponent,
     };
 
-    const hiddenHandles = {};
+    // set in the note map (Tab, or the button in the header) and the properties panel
+    const hiddenHandles = {
+        mode: true,
+        note_map: true,
+        map_layout: true,
+    };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
+    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton} />;
 }
 
 export default assign_notes_to_objects;

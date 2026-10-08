@@ -169,6 +169,100 @@ test("note numbers field keeps what's typed", async ({ page }) => {
     await settle(page);
 });
 
+test("note map opens over the graph and closes", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+
+    // the fixture's 6 objects in the Cubes group, and its notes 60-62 padded out with notes the MIDI doesn't play
+    const map = page.locator(".note-map-layer");
+    await expect(map).toBeVisible();
+    await expect(map.locator(".react-flow__node", { hasText: "Cube.001" })).toBeVisible();
+    await expect(map.locator('.react-flow__node[data-id^="o:"]')).toHaveCount(6);
+    await expect(map.locator('.react-flow__node[data-id="n:59"] .note-map-added')).toBeVisible();
+    await expect(map.locator('.react-flow__node[data-id="n:60"] .note-map-added')).toHaveCount(0);
+
+    // shift+a takes a note number or name, enter adds it under the cursor and switches the node to map mode
+    const addedNotes = async () => {
+        const ops = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+        return ops.filter((op: any) => op.op === "set_inputs" && op.inputs.note_map);
+    };
+    const box = page.locator(".note-add-box input");
+    await page.mouse.move(640, 600);
+    for (const [typed, note] of [["70", 70], ["c#4", 73]] as const) {
+        await page.keyboard.press("Shift+A");
+        await expect(box).toBeFocused();
+        await page.keyboard.type(typed);
+        await page.keyboard.press("Enter");
+        await expect(box).toHaveCount(0);
+        const added = (await addedNotes()).at(-1);
+        expect(added.inputs.mode).toBe("map");
+        expect(added.inputs.note_map.notes).toContain(note);
+        expect(added.inputs.map_layout[`n:${note}`]).toBeTruthy();
+        // the fake backend doesn't add it, escape cancels the grab
+        await page.keyboard.press("Escape");
+    }
+
+    // a click outside the box closes it without adding anything
+    const count = (await addedNotes()).length;
+    await page.keyboard.press("Shift+A");
+    await expect(box).toBeVisible();
+    await page.mouse.click(700, 650);
+    await expect(box).toHaveCount(0);
+    expect((await addedNotes()).length).toBe(count);
+    await page.keyboard.press("Tab");
+    await expect(map).toHaveCount(0);
+    await settle(page);
+});
+
+test("note map keeps its nodes when a run sends new results", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    const map = page.locator(".note-map-layer");
+    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+
+    // realtime runs one after another send the results again as new objects, the same or changed. react flow hides a
+    // node rebuilt without its measured size until it measures it again, quick rebuilds left them all hidden
+    await page.evaluate(async (state) => {
+        for (let i = 1; i <= 40; i++) {
+            const next = structuredClone(state);
+            const entry = next.executed_results["assign_notes_to_objects-1"].object_map.objects["Cube.005"];
+            if (i % 4 === 0) for (const k of Object.keys(entry)) entry[k] = [70];
+            (window as any).__smokeEmit("update_state", { ...next, state_rev: (state.state_rev ?? 0) + i });
+            await new Promise((r) => setTimeout(r, i % 3 === 0 ? 0 : 16));
+        }
+    }, backend.get_state);
+    await page.waitForTimeout(300);
+    for (const node of await map.locator(".react-flow__node").all()) await expect(node).toBeVisible();
+    await settle(page);
+});
+
+test("note map box select takes the wires it crosses", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    const map = page.locator(".note-map-layer");
+    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+
+    // a box from empty space above the wires down across the first three, between the notes and the objects
+    const note = (await map.locator('.react-flow__node[data-id="n:61"]').boundingBox())!;
+    const object = (await map.locator('.react-flow__node[data-id="o:Cube.002"]').boundingBox())!;
+    const x = (note.x + note.width + object.x) / 2;
+    const top = (await map.locator('.react-flow__node[data-id="n:59"]').boundingBox())!.y - 60;
+    await page.mouse.move(x - 30, top);
+    await page.mouse.down();
+    const socket = (await map.locator('.react-flow__node[data-id="n:61"] .react-flow__handle').boundingBox())!;
+    await page.mouse.move(x + 30, socket.y + socket.height / 2 + 5, { steps: 8 });
+    await page.mouse.up();
+    await expect(map.locator(".react-flow__edge.selected")).toHaveCount(3);
+    await expect(map.locator(".react-flow__node.selected")).toHaveCount(0);
+
+    // x removes those wires only, switching the node to map mode
+    await page.keyboard.press("x");
+    const sets = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    const removed = sets.find((op: any) => op.op === "set_inputs" && op.inputs.note_map);
+    expect(removed.inputs.note_map.objects).toEqual({ "Cube.003": [62], "Cube.004": [63], "Cube.005": [64] });
+    await settle(page);
+});
+
 test("drag ghost window", async ({ page }) => {
     await openWindow(page, backend, "/#/drag-ghost", "drag-ghost");
     await settle(page);

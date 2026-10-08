@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
-import { GROUP, GroupDef, Level, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
+import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
 import { blockUntilRelease, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
@@ -372,9 +372,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     useKeymap(
         "node_editor",
         {
-            // tab opens the selected group, or goes back out when no group is selected
+            // tab opens the selected group (or a note map), or goes back out when no group is selected
             edit_group: () => {
-                const selectedGroups = getNodes().filter((n) => n.selected && n.type === GROUP);
+                const selectedGroups = getNodes().filter((n) => n.selected && (n.type === GROUP || n.type === NOTE_MAP_NODE));
                 if (selectedGroups.length === 1) openGroup(selectedGroups[0].id);
                 else exitGroup(false);
             },

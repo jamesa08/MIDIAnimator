@@ -889,6 +889,48 @@ img {
     --xy-background-color: transparent;
 }
 
+/* the note map of Assign Notes to Objects (NoteMapView.tsx) over the graph it's in, which is blurred and faded out
+   like the graph behind an open group */
+.node-graph-stack.note-map-open > .graph-layer {
+    filter: blur(1.5px);
+}
+
+.note-map-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: var(--canvas-dim);
+}
+
+/* a note or object: just a header, drawn and selected like the graph's nodes */
+.note-map-node.node {
+    min-width: 0;
+    width: 120px;
+}
+
+.note-map-node .node-header {
+    display: flex;
+    gap: 6px;
+    padding: 2px 8px;
+    border-bottom: none;
+    border-radius: 5px;
+}
+
+/* room for the socket on the left of an object */
+.note-map-node:has(.react-flow__handle-left) .node-header {
+    padding-left: 12px;
+}
+
+.note-map-number {
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* notes the MIDI doesn't play, paler and in italics so the ones it plays stand out */
+.note-map-added .node-header {
+    font-style: italic;
+    background: color-mix(in srgb, var(--node-header) 55%, var(--canvas-center));
+}
+
 .react-flow__node.open-group-node .node {
     outline: 2px solid #000;
     outline-offset: 2px;
