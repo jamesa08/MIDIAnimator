@@ -37,6 +37,11 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     const selectedObjectName: string = data.inputs?.object_name || objectNames[0] || "";
 
+    // a picked name the scene doesn't have (anymore) stays listed, so the dropdown shows it and picking a real one changes it
+    const withSelected = (names: string[], selected: string) => (!selected || names.includes(selected) ? names : [selected, ...names]);
+    const groupOptions = withSelected(objectGroupNames, selectedGroupName);
+    const objectOptions = withSelected(objectNames, selectedObjectName);
+
     // the picked channels, one output each
     const channels: string[] = Array.isArray(data.inputs?.channels) ? data.inputs.channels : [];
 
@@ -154,10 +159,16 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         </div>
     );
 
+    // the old group's object isn't in the new one, so the object goes back to the new group's first
+    const changeGroup = (groupName: string) => {
+        const firstObject = objectGroups.find((g: any) => g?.name === groupName)?.objects?.[0]?.name ?? "";
+        setInputs(id, { object_group_name: groupName, object_name: firstObject });
+    };
+
     const objectGroupNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
-            {objectGroupNames.length > 0 ? (
-                objectGroupNames.map((name, i) => (
+        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => changeGroup(e.target.value)}>
+            {groupOptions.length > 0 ? (
+                groupOptions.map((name, i) => (
                     <option key={i} value={name}>
                         {name}
                     </option>
@@ -170,8 +181,8 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     const objectNameComponent = (
         <select className="node-field nodrag nopan" value={selectedObjectName} onChange={(e) => setInputs(id, { object_name: e.target.value })}>
-            {objectNames.length > 0 ? (
-                objectNames.map((name, i) => (
+            {objectOptions.length > 0 ? (
+                objectOptions.map((name, i) => (
                     <option key={i} value={name}>
                         {name}
                     </option>
