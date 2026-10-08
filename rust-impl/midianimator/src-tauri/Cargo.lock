@@ -14,6 +14,7 @@ dependencies = [
  "chrono",
  "clipboard-rs",
  "lazy_static",
+ "libc",
  "midly",
  "node_registry",
  "objc2 0.5.2",

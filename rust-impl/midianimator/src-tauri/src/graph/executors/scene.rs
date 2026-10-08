@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use super::io::{NodeResult, Outputs};
 use crate::blender::scene_data::write_scene_data;
 use crate::state::STATE;
+use crate::utils::log::log;
 use crate::scene_generics::{ObjectGroup, Scene};
 use crate::utils::animation::BlendKeyframe;
 
@@ -61,6 +62,18 @@ pub fn scene_link() -> NodeResult {
 /// errors Blender gave for single objects. a node that ran without an error wrote everything
 #[node_registry::node]
 pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
+    // every write and how it went is in the log file, with Blender's error when it failed
+    log(format!("writing keyframes for {} object(s) to Blender", keyframes.len()));
+    let outcome = write(keyframes);
+    match &outcome {
+        Ok(_) => log("wrote keyframes to Blender"),
+        Err(error) => log(format!("writing keyframes to Blender failed: {error}")),
+    }
+    outcome
+}
+
+// the scene writer's write, what Blender says ends up on the node
+fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
     // the Blender side reads JSON
     let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
 
@@ -69,7 +82,7 @@ pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResu
         return Err(NOT_CONNECTED.to_string());
     }
 
-    // the write finishes before the node does, so what Blender says shows on this node
+    // the write finishes before the node does
     let report = block_on(write_scene_data(keyframes)).map_err(|e| e.to_string())?;
 
     let mut problems = Vec::new();

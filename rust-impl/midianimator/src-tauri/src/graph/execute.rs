@@ -7,6 +7,7 @@ use crate::graph::model::{node_specs, Graph};
 use crate::graph::run::{run, Memo, RunCtx};
 use crate::node_registry::get_node_registry;
 use crate::state::{lock, update_state};
+use crate::utils::log::log;
 
 pub use crate::graph::run::panic_message;
 
@@ -40,7 +41,7 @@ pub async fn run_instance(id: String, realtime: bool) {
         };
         // only the live tab writes. with Blender not connected it still runs, so its scene writers show that
         if !realtime && state.connected && !state.is_live(&id) {
-            println!("not writing to Blender, {} isn't live", id);
+            log(format!("not writing to Blender, {} isn't the live tab", id));
             return;
         }
         if state.connected {
@@ -53,7 +54,7 @@ pub async fn run_instance(id: String, realtime: bool) {
     let graph = match Graph::from_rf(&rf_instance) {
         Ok(graph) => graph,
         Err(e) => {
-            eprintln!("ERROR: not executing, {}", e);
+            log(format!("not running {}, its graph can't be read: {}", id, e));
             return;
         }
     };
@@ -72,7 +73,7 @@ pub async fn run_instance(id: String, realtime: bool) {
     memo_lock.insert(id.clone(), ctx.into_memo());
     drop(memo_lock);
 
-    println!("took {} ms to execute {}", now.elapsed().as_nanos() as f32 / 1_000_000.0, id);
+    log(format!("took {} ms to execute {} ({})", now.elapsed().as_nanos() as f32 / 1_000_000.0, id, if realtime { "realtime" } else { "write" }));
 
     let shown = {
         let mut state = lock();
