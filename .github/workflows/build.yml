@@ -7,28 +7,40 @@ on:
   push:
     tags: ["*"]
   workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options: [all, macos-universal, windows-x64, linux-x64]
+        default: all
   workflow_call:
 
 jobs:
+  # manual runs can build a single platform, everything else builds all of them
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.filter.outputs.include }}
+    steps:
+      - name: Pick platforms
+        id: filter
+        env:
+          PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          # one universal binary for apple silicon and intel
+          # oldest supported ubuntu, so the linux bundles run on older glibc too
+          ALL='[
+            {"platform": "macos-latest", "name": "macos-universal", "args": "--target universal-apple-darwin", "bundle": "target/universal-apple-darwin/release/bundle"},
+            {"platform": "windows-latest", "name": "windows-x64", "args": "", "bundle": "target/release/bundle"},
+            {"platform": "ubuntu-22.04", "name": "linux-x64", "args": "", "bundle": "target/release/bundle"}
+          ]'
+          echo "include=$(echo "$ALL" | jq -c --arg p "$PLATFORM" 'map(select($p == "all" or .name == $p))')" >> $GITHUB_OUTPUT
+
   build:
+    needs: matrix
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # one universal binary for apple silicon and intel
-          - platform: macos-latest
-            name: macos-universal
-            args: --target universal-apple-darwin
-            bundle: target/universal-apple-darwin/release/bundle
-          - platform: windows-latest
-            name: windows-x64
-            args: ""
-            bundle: target/release/bundle
-          # oldest supported ubuntu, so the linux bundles run on older glibc too
-          - platform: ubuntu-22.04
-            name: linux-x64
-            args: ""
-            bundle: target/release/bundle
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
 
     runs-on: ${{ matrix.platform }}
     defaults:
