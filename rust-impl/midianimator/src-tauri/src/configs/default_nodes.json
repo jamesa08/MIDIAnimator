@@ -265,6 +265,14 @@
                         "description": "Name of the object group whose objects receive notes."
                     },
                     {
+                        "id": "mode",
+                        "name": "Mode",
+                        "data_type": "String",
+                        "hidden": true,
+                        "default": "rules",
+                        "description": "\"rules\" works out each object's notes from Notes or Note Numbers (methods 1-4), \"map\" takes them from Note Map."
+                    },
+                    {
                         "id": "midi_notes",
                         "name": "Notes",
                         "data_type": "Array<MIDINote>",
@@ -281,6 +289,20 @@
                         "name": "Animation Generator",
                         "data_type": "AnimationGenerator",
                         "description": "Animation generator applied to every object in the group."
+                    },
+                    {
+                        "id": "note_map",
+                        "name": "Note Map",
+                        "data_type": "Any",
+                        "hidden": true,
+                        "description": "Each object's notes in map mode, drawn by pressing Tab on the node: { \"objects\": { \"Cube\": [60, 62] }, \"notes\": [65] }. \"notes\" are added notes nothing is connected to yet."
+                    },
+                    {
+                        "id": "map_layout",
+                        "name": "Map Layout",
+                        "data_type": "Any",
+                        "hidden": true,
+                        "description": "Where notes and objects were moved to in the note map, by id (\"n:60\", \"o:Cube\"): [x, y]. Only the app reads it."
                     }
                 ],
                 "outputs": [

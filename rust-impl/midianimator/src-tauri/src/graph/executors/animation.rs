@@ -571,11 +571,11 @@ While this method requires more initial setup, it provides the greatest degree o
 
 */
 #[node_registry::node]
-pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, note_numbers: Option<&Value>, generator: Option<&AnimationGenerator>) -> NodeResult {
+pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, note_numbers: Option<&Value>, generator: Option<&AnimationGenerator>, mode: Option<&String>, note_map: Option<&Value>) -> NodeResult {
     let midi_notes: &[MIDINote] = midi_notes.map(Vec::as_slice).unwrap_or(&[]);
-    let note_entries = note_list_entries(note_numbers);
     let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
     let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
+    let map_mode = mode.map(String::as_str) == Some("map");
 
     /*  ObjectMap example:
        {
@@ -613,48 +613,86 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     let mut objects: Vec<&Object> = object_group.objects.iter().collect();
     objects.sort_by(|a, b| natural_cmp(&a.name, &b.name));
 
-    // case 4 when a note list is given, it needs one note number per object
-    let pairs: Vec<(&Object, u8)> = if !note_entries.is_empty() {
-        println!("case 4: user-provided note list");
-        let numbers: Option<Vec<u8>> = note_entries.iter().map(|e| note_number(e)).collect();
-        match numbers {
-            Some(numbers) if numbers.len() == objects.len() => objects.iter().copied().zip(numbers).collect(),
-            _ => return Err(note_list_error(&objects, object_group_name, &note_entries)),
-        }
+    // map mode takes each object's notes from the note map drawn in the app, rules mode works them out (methods 1-4)
+    let pairs: Vec<(&Object, u8)> = if map_mode {
+        let saved = parse_note_map(note_map)?;
+        objects.iter().flat_map(|object| saved.objects.get(&object.name).into_iter().flatten().map(move |note| (*object, *note))).collect()
     } else {
-        // case 1 for objects with a note in their name (Cube_60, Cube_C3)
-        let (named, unnamed): (Vec<_>, Vec<_>) = objects.iter().map(|object| (*object, note_in_name(&object.name))).partition(|(_, note)| note.is_some());
-        let mut pairs: Vec<(&Object, u8)> = named.into_iter().filter_map(|(object, note)| Some((object, note?))).collect();
-        if !pairs.is_empty() {
-            println!("case 1: note numbers from object names");
-        }
-
-        // the other objects share the MIDI's notes that no named object plays
-        let unnamed: Vec<&Object> = unnamed.into_iter().map(|(object, _)| object).collect();
-        let used_notes: Vec<u8> = all_used_notes_from_array(midi_notes).into_iter().filter(|n| !pairs.iter().any(|(_, named)| named == n)).collect();
-
-        // case 2 when the object count is the same as the note count, otherwise case 3
-        let notes = if unnamed.len() == used_notes.len() {
-            println!("case 2: direct assignment from MIDI track");
-            used_notes
-        } else {
-            println!("case 3: flexible assignment with padding");
-            pad_nums(used_notes, unnamed.len())
-        };
-        pairs.extend(unnamed.into_iter().zip(notes));
-        pairs
+        rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?
     };
 
     // extra objects (not enough notes) are left out
-    for (object, note_number) in pairs {
+    for (object, note_number) in &pairs {
         let entry = object_map.objects.entry(object.name.clone()).or_default();
         if let Some(anim_name) = &anim_name {
-            entry.entry(anim_name.clone()).or_default().push(note_number);
+            let notes = entry.entry(anim_name.clone()).or_default();
+            if !notes.contains(note_number) {
+                notes.push(*note_number);
+            }
         }
     }
 
     outputs.set("object_map", object_map);
     Ok(outputs)
+}
+
+/// the objects' notes by the rules (methods 1-4 above), in name order. `objects` are sorted by name, `used_notes` are
+/// the MIDI's unique notes
+pub fn rule_pairs<'a>(objects: &[&'a Object], object_group_name: &str, used_notes: &[u8], note_entries: &[String]) -> Result<Vec<(&'a Object, u8)>, String> {
+    // case 4 when a note list is given, it needs one note number per object
+    if !note_entries.is_empty() {
+        println!("case 4: user-provided note list");
+        let numbers: Option<Vec<u8>> = note_entries.iter().map(|e| note_number(e)).collect();
+        return match numbers {
+            Some(numbers) if numbers.len() == objects.len() => Ok(objects.iter().copied().zip(numbers).collect()),
+            _ => Err(note_list_error(objects, object_group_name, note_entries)),
+        };
+    }
+
+    // case 1 for objects with a note in their name (Cube_60, Cube_C3)
+    let (named, unnamed): (Vec<_>, Vec<_>) = objects.iter().map(|object| (*object, note_in_name(&object.name))).partition(|(_, note)| note.is_some());
+    let mut pairs: Vec<(&Object, u8)> = named.into_iter().filter_map(|(object, note)| Some((object, note?))).collect();
+    if !pairs.is_empty() {
+        println!("case 1: note numbers from object names");
+    }
+
+    // the other objects share the MIDI's notes that no named object plays
+    let unnamed: Vec<&Object> = unnamed.into_iter().map(|(object, _)| object).collect();
+    let used_notes: Vec<u8> = used_notes.iter().copied().filter(|n| !pairs.iter().any(|(_, named)| named == n)).collect();
+
+    // case 2 when the object count is the same as the note count, otherwise case 3
+    let notes = if unnamed.len() == used_notes.len() {
+        println!("case 2: direct assignment from MIDI track");
+        used_notes
+    } else {
+        println!("case 3: flexible assignment with padding");
+        pad_nums(used_notes, unnamed.len())
+    };
+    pairs.extend(unnamed.into_iter().zip(notes));
+    Ok(pairs)
+}
+
+/// the note map drawn in the app (src/components/nodegraph/NoteMapView.tsx): each object's notes, and notes added that
+/// nothing is connected to yet
+#[derive(Deserialize, Default, Debug)]
+pub struct NoteMap {
+    #[serde(default)]
+    pub objects: BTreeMap<String, Vec<u8>>,
+    #[serde(default)]
+    pub notes: Vec<u8>,
+}
+
+fn parse_note_map(value: Option<&Value>) -> Result<NoteMap, String> {
+    match value {
+        None | Some(Value::Null) => Ok(NoteMap::default()),
+        Some(value) => serde_json::from_value(value.clone()).map_err(|e| format!("the note map can't be read: {}", e)),
+    }
+}
+
+/// pads note numbers out to `amount` like the rules do (pad_nums), for the note map's Pad Range tool
+#[tauri::command]
+pub fn pad_note_numbers(notes: Vec<u8>, amount: usize) -> Vec<u8> {
+    pad_nums(notes, amount)
 }
 
 /// Node: merge_object_maps

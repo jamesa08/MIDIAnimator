@@ -150,6 +150,28 @@ fn assigned(outputs: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
 }
 
 #[test]
+fn assign_notes_map_mode() {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    let notes = json!([{ "channel": 0, "note_number": 40, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
+    let inputs = |mode: &str, map: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("generator", generator.clone()), ("mode", json!(mode)), ("note_map", map)]);
+
+    // each object takes its notes from the map, several notes on one object, objects left out of it (or gone from the
+    // scene) get nothing, and a note the MIDI doesn't play is fine
+    let map = json!({ "objects": { "Cube.000": [40, 41], "Cube.002": [40], "Gone": [50] }, "notes": [70] });
+    let outputs = assign_notes_to_objects(&inputs("map", map.clone())).unwrap().to_json();
+    assert_eq!(assigned(&outputs), [("Cube.000".to_string(), json!([40, 41])), ("Cube.002".to_string(), json!([40]))]);
+
+    // rules mode ignores the map, padded out here
+    let outputs = assign_notes_to_objects(&inputs("rules", map)).unwrap().to_json();
+    assert_eq!(assigned(&outputs), [("Cube.000".to_string(), json!([39])), ("Cube.001".to_string(), json!([40])), ("Cube.002".to_string(), json!([41]))]);
+
+    // no map yet is an empty map, one that isn't a map is an error
+    let outputs = assign_notes_to_objects(&inputs("map", json!(null))).unwrap().to_json();
+    assert!(assigned(&outputs).is_empty());
+    assert!(assign_notes_to_objects(&inputs("map", json!({ "objects": [1] }))).unwrap_err().starts_with("the note map can't be read"));
+}
+
+#[test]
 fn assign_notes_uses_note_list() {
     let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
     let notes = json!([{ "channel": 0, "note_number": 40, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
