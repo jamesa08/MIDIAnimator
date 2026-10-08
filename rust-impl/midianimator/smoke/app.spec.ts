@@ -263,11 +263,11 @@ test("note map box select takes the wires it crosses", async ({ page }) => {
     await settle(page);
 });
 
-test("map mode hides the note numbers", async ({ page }) => {
+test("map mode hides the note numbers and previews the map", async ({ page }) => {
     // the fixture with Assign Notes to Objects in map mode
     const state = structuredClone(backend.get_state);
     const assign = state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
-    assign.data.inputs = { ...assign.data.inputs, mode: "map" };
+    assign.data.inputs = { ...assign.data.inputs, mode: "map", note_map: { objects: { "Cube.001": [60, 61], "Cube.003": [61], "Cube.005": [62, 70] }, notes: [70] } };
     await openWindow(page, { ...backend, get_state: state }, "/#/");
 
     const node = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" });
@@ -275,6 +275,12 @@ test("map mode hides the note numbers", async ({ page }) => {
     await expect(node.getByText("Notes", { exact: true })).toBeVisible();
     await expect(node.getByText("Note Numbers", { exact: true })).toBeHidden();
     await expect(node.locator('input[type="text"]')).toHaveCount(0);
+
+    // the preview shows the map: a line per note an object gets, the MIDI's 3 notes and the added one, every object
+    const preview = node.locator(".node-field svg");
+    await expect(preview.locator("path")).toHaveCount(5);
+    await expect(preview.locator(`rect[fill="#B8962E"]`)).toHaveCount(4);
+    await expect(preview.locator(`rect[fill="#3E9E72"]`)).toHaveCount(6);
     await settle(page);
 });
 
