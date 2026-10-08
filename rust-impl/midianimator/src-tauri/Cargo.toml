@@ -62,3 +62,6 @@ custom-protocol = [ "tauri/custom-protocol" ]
 
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/bin/ld64.lld"]
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"

@@ -21,7 +21,20 @@ struct Payload {
 async fn main() {
     let context = generate_context!();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // one copy at a time, opening another (even a translocated copy from a different folder) shows this one and quits,
+    // so two copies never fight over the Blender bridge port. release only, dev builds share the identifier
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        log::log("another copy was opened, showing this one instead");
+        let window = app.get_webview_window("splash").or_else(|| app.get_webview_window("main"));
+        if let Some(window) = window {
+            window.unminimize().ok();
+            window.set_focus().ok();
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_macos_fps::init())
