@@ -49,6 +49,33 @@ fn port() -> u16 {
     valid_port(&get_setting("ipc.port")).unwrap_or(DEFAULT_PORT)
 }
 
+// a port something else holds (like a copy of MotionKeys that's still quitting) is tried again every few seconds, up to a minute
+const BIND_RETRY_DELAY: Duration = Duration::from_secs(3);
+const BIND_ATTEMPTS: u32 = 20;
+
+/// binds 127.0.0.1:`port`, trying again while it's taken. None once it gives up, the port then stays 0
+fn bind_listener(port: u16) -> Option<TcpListener> {
+    for attempt in 1..=BIND_ATTEMPTS {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => {
+                BOUND_PORT.store(port, Ordering::Relaxed);
+                log(format!("Blender bridge listening on 127.0.0.1:{port}"));
+                // the connection popover shows the port
+                update_state();
+                return Some(listener);
+            }
+            Err(e) if attempt == BIND_ATTEMPTS => log(format!("Blender bridge gave up on 127.0.0.1:{port} after {BIND_ATTEMPTS} attempts: {e}")),
+            Err(e) => {
+                if attempt == 1 {
+                    log(format!("Blender bridge could not listen on 127.0.0.1:{port}: {e}, trying again every {}s", BIND_RETRY_DELAY.as_secs()));
+                }
+                thread::sleep(BIND_RETRY_DELAY);
+            }
+        }
+    }
+    None
+}
+
 // create a server instance
 // this is a lazy static variable, so it will only be created once
 // and will be shared across all threads
@@ -61,22 +88,14 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
     };
     let server = Arc::new(Mutex::new(server));
 
-    // create a TCP listener on the configured port, if it can't bind the server stays without clients (port stays 0)
-    let port = port();
-    let listener = match TcpListener::bind(format!("127.0.0.1:{port}")) {
-        Ok(listener) => listener,
-        Err(e) => {
-            log(format!("Blender bridge could not listen on 127.0.0.1:{port}: {e}"));
-            return server;
-        }
-    };
-    BOUND_PORT.store(port, Ordering::Relaxed);
-    log(format!("Blender bridge listening on 127.0.0.1:{port}"));
-
     // clone the server instance to be used in the thread
     let server_clone = Arc::clone(&server);
 
+    // listens on the configured port, binding (and retrying) happens here so it never holds up the app
     thread::spawn(move || {
+        let Some(listener) = bind_listener(port()) else {
+            return;
+        };
         let rt = Runtime::new().unwrap();
         for stream in listener.incoming() {
             match stream {
