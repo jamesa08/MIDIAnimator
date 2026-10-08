@@ -1,5 +1,5 @@
-import { CSSProperties } from "react";
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, useStore } from "@xyflow/react";
+import { CSSProperties, useEffect } from "react";
+import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -20,6 +20,37 @@ const CLICK_DISTANCE = 3;
 function CanvasPaper() {
     const [x, y, zoom] = useStore((s) => s.transform);
     return <div className="canvas-paper" style={{ "--viewport-x": `${x}px`, "--viewport-y": `${y}px`, "--viewport-zoom": zoom } as CSSProperties} />;
+}
+
+// shift multi select for a graph (the editor, a note map), tracked here instead of multiSelectionKeyCode.
+// react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
+// add menu search left multi select stuck on (clicking another node added to the selection).
+// reading shiftKey off every key/mouse event means it can't get stuck
+export function useShiftMultiSelection() {
+    const store = useStoreApi();
+    useEffect(() => {
+        const setMultiSelection = (active: boolean) => {
+            if (store.getState().multiSelectionActive !== active) {
+                store.setState({ multiSelectionActive: active });
+            }
+        };
+        const handleEvent = (event: KeyboardEvent | MouseEvent) => setMultiSelection(event.shiftKey);
+        const handleBlur = () => setMultiSelection(false);
+
+        // capture phase so it's set before react flow handles the click
+        window.addEventListener("keydown", handleEvent, true);
+        window.addEventListener("keyup", handleEvent, true);
+        window.addEventListener("pointerdown", handleEvent, true);
+        window.addEventListener("mousedown", handleEvent, true);
+        window.addEventListener("blur", handleBlur);
+        return () => {
+            window.removeEventListener("keydown", handleEvent, true);
+            window.removeEventListener("keyup", handleEvent, true);
+            window.removeEventListener("pointerdown", handleEvent, true);
+            window.removeEventListener("mousedown", handleEvent, true);
+            window.removeEventListener("blur", handleBlur);
+        };
+    }, [store]);
 }
 
 // how every node graph looks, with no state of its own. the editor passes its nodes and handlers, the frozen parent

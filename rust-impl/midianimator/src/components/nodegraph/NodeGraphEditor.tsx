@@ -9,7 +9,7 @@ import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
 import { blockUntilRelease, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
-import NodeGraphCanvas from "./NodeGraphCanvas";
+import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
@@ -446,33 +446,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => window.removeEventListener("mousedown", handleClick);
     }, [menuOpen, closeMenu]);
 
-    // shift multi select, tracked here instead of multiSelectionKeyCode.
-    // react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
-    // add menu search left multi select stuck on (clicking another node added to the selection).
-    // reading shiftKey off every key/mouse event means it can't get stuck
-    useEffect(() => {
-        const setMultiSelection = (active: boolean) => {
-            if (store.getState().multiSelectionActive !== active) {
-                store.setState({ multiSelectionActive: active });
-            }
-        };
-        const handleEvent = (event: KeyboardEvent | MouseEvent) => setMultiSelection(event.shiftKey);
-        const handleBlur = () => setMultiSelection(false);
-
-        // capture phase so it's set before react flow handles the click
-        window.addEventListener("keydown", handleEvent, true);
-        window.addEventListener("keyup", handleEvent, true);
-        window.addEventListener("pointerdown", handleEvent, true);
-        window.addEventListener("mousedown", handleEvent, true);
-        window.addEventListener("blur", handleBlur);
-        return () => {
-            window.removeEventListener("keydown", handleEvent, true);
-            window.removeEventListener("keyup", handleEvent, true);
-            window.removeEventListener("pointerdown", handleEvent, true);
-            window.removeEventListener("mousedown", handleEvent, true);
-            window.removeEventListener("blur", handleBlur);
-        };
-    }, [store]);
+    useShiftMultiSelection();
 
     // fit the view when a loaded project's tab is first shown, or when a group without a saved view is opened.
     // not the fitView prop, that one stays armed on an empty graph and zooms onto the first node added
