@@ -268,6 +268,8 @@ struct PlanNode {
     realtime: bool,
     /// connections whose type doesn't fit the input they go into, the node fails without running
     bad_inputs: BadInputs,
+    /// inputs that take any number of connections, they get them as one list
+    multi: Vec<Arc<str>>,
 }
 
 struct ZonePlan {
@@ -339,6 +341,7 @@ impl Plan {
                     (Kind::Broken(_), _) | (_, None) => BadInputs::new(),
                     (_, Some(to)) => graph.edges.iter().filter(|e| e.to_node() == node.id).filter_map(|e| Some((Arc::from(e.to_input()), connection_error(sockets[*index.get(e.from_node())?].as_deref()?, e.from_output(), to, e.to_input())?))).collect(),
                 };
+                let multi = sockets[i].as_deref().map(|s| s.handles.inputs.iter().filter(|h| h.multi).map(|h| Arc::from(h.id.as_str())).collect()).unwrap_or_default();
                 PlanNode {
                     id: node.id.clone(),
                     kind,
@@ -347,6 +350,7 @@ impl Plan {
                     signature: format!("{}|{}|{}", node_type, group_id, set),
                     realtime: spec.map_or(true, |s| s.realtime),
                     bad_inputs,
+                    multi,
                 }
             })
             .collect();
@@ -587,21 +591,37 @@ impl<'a, 'c> Runner<'a, 'c> {
         first_error
     }
 
-    /// the inputs of a node: the values set on it, replaced by its connections.
+    /// the inputs of a node: the values set on it, replaced by its connections. a multi input gets all of its
+    /// connections as one list, in the order they were made.
     /// `None` if something it's connected to didn't run or failed, then it doesn't run either
     fn gather(&self, index: usize, frame: &Frame) -> Option<Values> {
         let node = &self.plan.nodes[index];
         let mut values = node.literals.clone();
+        let mut lists: Vec<(Arc<str>, Vec<Val>)> = Vec::new();
         for (input, from, output) in &node.connections {
             // only the failed node shows the error
             let Slot::Done(outputs) = frame.get(*from)? else {
                 return None;
             };
             let value = outputs.get(output).cloned().unwrap_or_else(|| Val::json(Value::Null));
-            match values.iter_mut().find(|(k, _)| k == input) {
-                Some(slot) => slot.1 = value,
-                None => values.push((input.clone(), value)),
+
+            // a multi input collects its connections, a list connected to it is flattened in and nothing adds nothing
+            if node.multi.contains(input) {
+                let at = lists.iter().position(|(k, _)| k == input).unwrap_or_else(|| {
+                    lists.push((input.clone(), Vec::new()));
+                    lists.len() - 1
+                });
+                match value.items() {
+                    Some(items) => lists[at].1.extend(items),
+                    None if value.is_null() => {}
+                    None => lists[at].1.push(value),
+                }
+                continue;
             }
+            set_value(&mut values, input, value);
+        }
+        for (input, items) in lists {
+            set_value(&mut values, &input, Val::list(items));
         }
         Some(values)
     }
@@ -907,6 +927,14 @@ impl<'a, 'c> Runner<'a, 'c> {
         let outputs = Ok(outputs);
         zone_record.push(output_entry(&outputs, first_result));
         (outputs, zone_record)
+    }
+}
+
+/// sets an input's value, replacing the one set on the node
+fn set_value(values: &mut Values, input: &Arc<str>, value: Val) {
+    match values.iter_mut().find(|(k, _)| k == input) {
+        Some(slot) => slot.1 = value,
+        None => values.push((input.clone(), value)),
     }
 }
 

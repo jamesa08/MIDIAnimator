@@ -102,7 +102,7 @@ pub struct ConnectParams {
     pub from_output: String,
     /// Consuming node (id or unique prefix)
     pub to_node: String,
-    /// Input handle id on the consuming node; an existing connection into it is replaced
+    /// Input handle id on the consuming node; an existing connection into it is replaced, except on a multi input, which keeps every connection
     pub to_input: String,
     /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
     pub group: Option<String>,
@@ -130,6 +130,10 @@ pub struct DisconnectParams {
     pub to_node: String,
     /// Input handle id whose connection is removed
     pub to_input: String,
+    /// For a multi input: the producing node (id or unique prefix) whose connection is removed; omit to remove every connection into the input
+    pub from_node: Option<String>,
+    /// For a multi input: the output on from_node whose connection is removed; omit for all of them
+    pub from_output: Option<String>,
     /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
     pub group: Option<String>,
 }
@@ -590,7 +594,13 @@ impl MotionKeysMcp {
                     } else {
                         "in "
                     };
-                    lines.push(format!("  {}  {} \"{}\": {} — {}", kind, input.id, input.name, input.data_type, input.description));
+                    // a multi input keeps every connection
+                    let multi = if input.multi {
+                        " [multi: takes any number of connections]"
+                    } else {
+                        ""
+                    };
+                    lines.push(format!("  {}  {} \"{}\": {}{} — {}", kind, input.id, input.name, input.data_type, multi, input.description));
                 }
                 // one line per output, hidden ones are marked so they don't get connected
                 for output in &spec.handles.outputs {
@@ -691,15 +701,15 @@ impl MotionKeysMcp {
     }
 
     // graph_connect
-    #[tool(description = "Connect an output to an input (data flows from_node.from_output -> to_node.to_input). Checks types and cycles; replaces any existing connection into that input. Hidden handles ('par' inputs and outputs marked hidden) must never be connected and are refused.", annotations(read_only_hint = false, destructive_hint = false))]
+    #[tool(description = "Connect an output to an input (data flows from_node.from_output -> to_node.to_input). Checks types and cycles; replaces any existing connection into that input, except on a multi input, which takes any number of connections and gets them as one list. Hidden handles ('par' inputs and outputs marked hidden) must never be connected and are refused.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_connect(&self, Parameters(params): Parameters<ConnectParams>) -> Result<CallToolResult, McpError> {
         self.apply_edit("connect", params.group.as_deref(), |graph, specs, results| edit::connect(graph, specs, results, &params.from_node, &params.from_output, &params.to_node, &params.to_input)).await
     }
 
     // graph_disconnect
-    #[tool(description = "Remove the connection into one input.", annotations(read_only_hint = false, destructive_hint = false))]
+    #[tool(description = "Remove the connection into one input; for a multi input, the ones from from_node (and from_output), or all of them.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_disconnect(&self, Parameters(params): Parameters<DisconnectParams>) -> Result<CallToolResult, McpError> {
-        self.apply_edit("disconnect", params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
+        self.apply_edit("disconnect", params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input, params.from_node.as_deref(), params.from_output.as_deref())).await
     }
 
     // graph_set_tag

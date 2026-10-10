@@ -226,7 +226,7 @@ fn connect_to_dynamic_output() {
     let kfo = "keyframes_from_object-1";
     let gen = "animation_generator-1";
     // free up the input first
-    edit::disconnect(&mut f.graph, gen, "note_on_keyframes").unwrap();
+    edit::disconnect(&mut f.graph, gen, "note_on_keyframes", None, None).unwrap();
 
     // without results the dynamic output is unknown
     let err = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &HashMap::new(), kfo, "location[2]", gen, "note_on_keyframes").unwrap_err();
@@ -268,7 +268,7 @@ fn connect_to_dynamic_inputs() {
     assert!(!block.contains("Dyn<"), "{}", block);
 
     // disconnecting leaves a gap, the free input stays after the last connected one
-    edit::disconnect(&mut f.graph, merge, "object_maps_0").unwrap();
+    edit::disconnect(&mut f.graph, merge, "object_maps_0", None, None).unwrap();
     assert_eq!(unset_inputs(&f.ctx(), merge), vec!["object_maps_2"]);
 }
 
@@ -277,9 +277,9 @@ fn connect_to_dynamic_inputs() {
 fn disconnect_set_inputs_and_remove() {
     let mut f = Fixture::new();
     // disconnecting an input that isn't connected is an error
-    assert!(edit::disconnect(&mut f.graph, "get_midi_file", "file_path").unwrap_err().contains("not connected"));
+    assert!(edit::disconnect(&mut f.graph, "get_midi_file", "file_path", None, None).unwrap_err().contains("not connected"));
     // disconnect the viewer, the message names the node it was connected to
-    let result = edit::disconnect(&mut f.graph, "viewer", "data").unwrap();
+    let result = edit::disconnect(&mut f.graph, "viewer", "data", None, None).unwrap();
     assert!(result.message.contains(EVALUATE));
     assert!(f.graph.edge_into(VIEWER, "data").is_none());
 

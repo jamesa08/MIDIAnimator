@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use super::executors::animation::object_channels;
 use super::executors::io::node_error;
-use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, RfNode, Specs};
+use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, RfEdge, RfNode, Specs};
 use super::ops::Side;
 use super::tags;
 use crate::midi::MIDINote;
@@ -112,15 +112,21 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         } else {
             "in "
         };
-        let mut line = format!("  {}  {}  ({}: {})", kind, input.name, input.id, input.data_type);
+        let multi = if input.multi {
+            ", multi"
+        } else {
+            ""
+        };
+        let mut line = format!("  {}  {}  ({}: {}{})", kind, input.name, input.id, input.data_type, multi);
 
-        // an input either comes from a connection, a value set on the node, or isn't set
-        let edge = ctx.graph.edge_into(id, &input.id);
+        // an input either comes from connections (a multi input can have more than one), a value set on the node, or isn't set
+        let edges: Vec<&RfEdge> = ctx.graph.edges.iter().filter(|e| e.to_node() == id && e.to_input() == input.id).collect();
         let value = node.input_value(&input.id);
         let tag = tags::tag(node, Side::Inputs, &input.id);
         // connected, show where it comes from (and the value that came in, in full detail)
-        if let Some(edge) = edge {
-            line.push_str(&format!("  <- {} › {}", edge.from_node(), output_name(ctx, edge.from_node(), edge.from_output())));
+        if !edges.is_empty() {
+            let from: Vec<String> = edges.iter().map(|edge| format!("{} › {}", edge.from_node(), output_name(ctx, edge.from_node(), edge.from_output()))).collect();
+            line.push_str(&format!("  <- {}", from.join(", ")));
             if let Some(tag) = &tag {
                 line.push_str(&format!("  (tag {:?})", tag));
             }

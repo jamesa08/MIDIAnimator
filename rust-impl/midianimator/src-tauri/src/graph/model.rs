@@ -29,6 +29,10 @@ pub struct HandleSpec {
     /// hidden handles have no position on the canvas, so they must never be connected
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hidden: bool,
+    /// an input that takes any number of connections (Blender's multi input), the node gets them as one list in the
+    /// order they were connected. a list connected to it is flattened into the others
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multi: bool,
     /// an input's value when nothing is set on the node or connected to it
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
@@ -173,6 +177,7 @@ pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<Handle
                 data_type: inner.to_string(),
                 description: format!("Dynamic output of {}.", handle.id),
                 hidden: false,
+                multi: false,
                 default: None,
             });
         }
@@ -202,6 +207,7 @@ pub fn node_inputs(spec: &NodeSpec, graph: &Graph, node_id: &str) -> Vec<HandleS
                 data_type: inner.to_string(),
                 description: format!("Dynamic input of {}.", handle.id),
                 hidden: false,
+                multi: false,
                 default: None,
             });
         }

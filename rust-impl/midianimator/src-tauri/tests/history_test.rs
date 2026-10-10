@@ -119,7 +119,7 @@ fn random_edit(rng: &mut Rng, specs: &[NodeSpec], project: &Project) -> Option<(
         }
         3 => {
             let edge = rng.pick(&target.edges)?.clone();
-            edit::disconnect(&mut target, edge.to_node(), edge.to_input()).ok()?;
+            edit::disconnect(&mut target, edge.to_node(), edge.to_input(), None, None).ok()?;
             "disconnect"
         }
         4 => {

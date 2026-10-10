@@ -181,9 +181,16 @@ impl Val {
         matches!(&*self.0, Repr::Json(Value::Null))
     }
 
-    /// true if both are the same value (not just equal)
+    /// true if both are the same value (not just equal). a list is made again every run for a multi input, two
+    /// lists are the same when their items are
     pub fn same(&self, other: &Val) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
+        if Arc::ptr_eq(&self.0, &other.0) {
+            return true;
+        }
+        match (&*self.0, &*other.0) {
+            (Repr::List(a), Repr::List(b)) => a.len() == b.len() && a.iter().zip(b).all(|(a, b)| a.same(b)),
+            _ => false,
+        }
     }
 
     /// identifies the value while it's alive, for caches keyed by value

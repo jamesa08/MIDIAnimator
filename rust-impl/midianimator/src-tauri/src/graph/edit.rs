@@ -155,7 +155,8 @@ pub fn add_node(graph: &mut Graph, specs: &Specs, node_type: &str, inputs: Optio
 
 /// connects `from_output` on `from_node` to `to_input` on `to_node` (in data-flow terms)
 ///
-/// note: an input can only have one edge, connecting to an input that is already connected replaces the old edge
+/// note: an input can only have one edge, connecting to an input that is already connected replaces the old edge. a multi
+/// input keeps every edge
 pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value>, from_node: &str, from_output: &str, to_node: &str, to_input: &str) -> Result<EditResult, String> {
     // resolve the node ids (prefixes are allowed) and get their specs
     let from_id = graph.resolve(from_node)?;
@@ -226,9 +227,9 @@ pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value
         return Err(format!("type mismatch: {} is {} but {} expects {}", handle_label(&from_id, &output.name), output.data_type, handle_label(&to_id, &input.name), input.data_type));
     }
 
-    // only one edge per input, replace whatever feeds it now
+    // only one edge per input, replace whatever feeds it now. a multi input only has to check for the same edge
     let mut message = String::new();
-    if let Some(index) = graph.edges.iter().position(|e| e.to_node() == to_id && e.to_input() == to_input) {
+    if let Some(index) = graph.edges.iter().position(|e| e.to_node() == to_id && e.to_input() == to_input && (!input.multi || (e.from_node() == from_id && e.from_output() == from_output))) {
         let old = graph.edges.remove(index);
         // it's the same edge, put it back and return early as there's nothing to do
         if old.from_node() == from_id && old.from_output() == from_output {
@@ -255,11 +256,18 @@ pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value
     })
 }
 
-/// removes the edge feeding `to_input` on `to_node`
-pub fn disconnect(graph: &mut Graph, to_node: &str, to_input: &str) -> Result<EditResult, String> {
+/// removes the edges feeding `to_input` on `to_node`. for a multi input only the ones from `from_node` (and its
+/// `from_output`) if they're given
+pub fn disconnect(graph: &mut Graph, to_node: &str, to_input: &str, from_node: Option<&str>, from_output: Option<&str>) -> Result<EditResult, String> {
     let to_id = graph.resolve(to_node)?;
-    // find the edge, if there isn't one list the inputs that are connected
-    let Some(index) = graph.edges.iter().position(|e| e.to_node() == to_id && e.to_input() == to_input) else {
+    let from_id = from_node.map(|n| graph.resolve(n)).transpose()?;
+    let feeds = |e: &RfEdge| e.to_node() == to_id && e.to_input() == to_input && from_id.as_ref().is_none_or(|f| e.from_node() == f) && from_output.is_none_or(|o| e.from_output() == o);
+    // find the edges, if there aren't any list the inputs that are connected
+    if !graph.edges.iter().any(feeds) {
+        if (from_id.is_some() || from_output.is_some()) && graph.edge_into(&to_id, to_input).is_some() {
+            let from: Vec<String> = graph.edges.iter().filter(|e| e.to_node() == to_id && e.to_input() == to_input).map(|e| format!("{} › {}", e.from_node(), e.from_output())).collect();
+            return Err(format!("input '{}' of '{}' has no such connection; it's connected from: {}", to_input, to_id, from.join(", ")));
+        }
         let connected: Vec<&str> = graph.edges.iter().filter(|e| e.to_node() == to_id).map(|e| e.to_input()).collect();
         return Err(format!(
             "input '{}' of '{}' is not connected; connected inputs: {}",
@@ -271,13 +279,17 @@ pub fn disconnect(graph: &mut Graph, to_node: &str, to_input: &str) -> Result<Ed
                 connected.join(", ")
             }
         ));
-    };
-    // remove the edge, a tag on the input goes too or it would connect it again
-    let old = graph.edges.remove(index);
+    }
+    // remove the edges, a tag on the input goes too or it would connect it again
+    let (old, kept): (Vec<RfEdge>, Vec<RfEdge>) = std::mem::take(&mut graph.edges).into_iter().partition(|e| feeds(e));
+    graph.edges = kept;
     tags::clear_input(graph, &to_id, to_input);
+    let from: Vec<String> = old.iter().map(|e| handle_label(e.from_node(), e.from_output())).collect();
+    let mut touched: Vec<String> = old.iter().map(|e| e.from_node().to_string()).collect();
+    touched.push(to_id.clone());
     Ok(EditResult {
-        message: format!("disconnected {} -> {} › {}", handle_label(old.from_node(), old.from_output()), to_id, to_input),
-        touched: vec![old.from_node().to_string(), to_id],
+        message: format!("disconnected {} -> {} › {}", from.join(", "), to_id, to_input),
+        touched,
     })
 }
 

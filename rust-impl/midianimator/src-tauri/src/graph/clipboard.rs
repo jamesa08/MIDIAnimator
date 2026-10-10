@@ -284,12 +284,13 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
             };
         }
     }
-    // the connections between pasted nodes, one per input and never a cycle
+    // the connections between pasted nodes, never twice and never a cycle. more than one into an input was a multi input
     for edge in &copied.edges {
         let (Some(from), Some(to)) = (ids.get(edge.from_node()), ids.get(edge.to_node())) else {
             continue;
         };
-        if from == to || graph.edge_into(to, edge.to_input()).is_some() || graph.reaches(to, from) {
+        let twice = graph.edges.iter().any(|e| e.to_node() == to && e.to_input() == edge.to_input() && e.from_node() == from && e.from_output() == edge.from_output());
+        if from == to || twice || graph.reaches(to, from) {
             continue;
         }
         graph.edges.push(RfEdge::new(from, edge.from_output(), to, edge.to_input()));

@@ -803,12 +803,13 @@ fn connect(project: &mut Graph, scope: Option<&str>, specs: &Specs, from_node: &
     // a wire takes the place of the input's tag
     let graph = target(project, scope)?;
     tags::clear_input(graph, to_node, &to_input);
-    link(graph, from_node, &from_output, to_node, &to_input)
+    let multi = graph.node(to_node).is_some_and(|node| input_handle(specs, node, &to_input).multi);
+    link(graph, from_node, &from_output, to_node, &to_input, multi)
 }
 
-/// connects an output to an input, replacing what fed the input. only checks what would break the graph (missing
-/// nodes, cycles), a connection between types that don't match is allowed and shown as a bad connection
-fn link(graph: &mut Graph, from_node: &str, from_output: &str, to_node: &str, to_input: &str) -> Result<(), String> {
+/// connects an output to an input, replacing what fed the input unless it's a multi input. only checks what would
+/// break the graph (missing nodes, cycles), a connection between types that don't match is allowed and shown as a bad connection
+fn link(graph: &mut Graph, from_node: &str, from_output: &str, to_node: &str, to_input: &str, multi: bool) -> Result<(), String> {
     if graph.node(from_node).is_none() || graph.node(to_node).is_none() {
         return Err("one end of the connection is missing".to_string());
     }
@@ -818,7 +819,14 @@ fn link(graph: &mut Graph, from_node: &str, from_output: &str, to_node: &str, to
     if graph.reaches(to_node, from_node) {
         return Err(format!("connecting {} -> {} would create a cycle", from_node, to_node));
     }
-    graph.edges.retain(|e| !(e.to_node() == to_node && e.to_input() == to_input));
+    // a multi input keeps its other connections, connecting the same output again changes nothing
+    if multi {
+        if graph.edges.iter().any(|e| e.to_node() == to_node && e.to_input() == to_input && e.from_node() == from_node && e.from_output() == from_output) {
+            return Ok(());
+        }
+    } else {
+        graph.edges.retain(|e| !(e.to_node() == to_node && e.to_input() == to_input));
+    }
     graph.edges.push(RfEdge::new(from_node, from_output, to_node, to_input));
     Ok(())
 }
@@ -840,6 +848,7 @@ fn find_handle(handles: &[HandleSpec], id: &str) -> HandleSpec {
             data_type: "Any".to_string(),
             description: String::new(),
             hidden: false,
+            multi: false,
             default: None,
         },
     }
