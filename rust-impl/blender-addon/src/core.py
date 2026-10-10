@@ -5,6 +5,7 @@
 
 
 import socket
+import select
 import json
 import threading
 import types
@@ -27,6 +28,9 @@ class Server(metaclass=ServerMeta):
         self.port = 6577
         self.socket = None
         self.connected = False
+        # the tracker sends from the main thread and script results go out from the receiving thread, a message is
+        # sent whole before another one starts or their bytes mix
+        self.send_lock = threading.Lock()
 
     def open(self):
         try: 
@@ -57,9 +61,15 @@ class Server(metaclass=ServerMeta):
         print(message_json)
         data = message_json.encode()
         
-        chunk_size = 4096  # 4 KiB
-        for i in range(0, len(data), chunk_size):
-            self.socket.sendall(data[i:i+chunk_size])
+        # the socket doesn't block (receive_messages), so a full send buffer raises partway through a message instead of
+        # waiting. MotionKeys reads it out bit by bit, a message of keyframes is megabytes, so wait until it can take more
+        view = memoryview(data)
+        with self.send_lock:
+            while view:
+                try:
+                    view = view[self.socket.send(view):]
+                except BlockingIOError:
+                    select.select([], [self.socket], [], 1.0)
 
 
     def receive_messages(self):
