@@ -1,5 +1,5 @@
-import { CSSProperties, useEffect } from "react";
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, useStore, useStoreApi } from "@xyflow/react";
+import { CSSProperties, useEffect, useRef } from "react";
+import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, Node, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -20,6 +20,45 @@ const CLICK_DISTANCE = 3;
 function CanvasPaper() {
     const [x, y, zoom] = useStore((s) => s.transform);
     return <div className="canvas-paper" style={{ "--viewport-x": `${x}px`, "--viewport-y": `${y}px`, "--viewport-zoom": zoom } as CSSProperties} />;
+}
+
+// whether an edge's path passes through a box (flow coordinates), sampled along the path as it's drawn
+function edgeCrosses(root: Element | null | undefined, id: string, box: { x0: number; y0: number; x1: number; y1: number }): boolean {
+    const path = root?.querySelector<SVGPathElement>(`.react-flow__edge[data-id="${CSS.escape(id)}"] .react-flow__edge-path`);
+    if (!path) return false;
+    // nowhere near the box, no need to walk it
+    const bounds = path.getBBox();
+    if (bounds.x > box.x1 || bounds.x + bounds.width < box.x0 || bounds.y > box.y1 || bounds.y + bounds.height < box.y0) return false;
+    const length = path.getTotalLength();
+    for (let at = 0; at <= length; at += 4) {
+        const p = path.getPointAtLength(at);
+        if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) return true;
+    }
+    return false;
+}
+
+// box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's). each
+// change goes through the graph's onEdgesChange like react flow's own
+function BoxSelectEdges({ nodes, edges }: { nodes?: Node[]; edges?: Edge[] }) {
+    const store = useStoreApi();
+    const selectionRect = useStore((s) => s.userSelectionRect);
+    const latest = useRef({ nodes, edges });
+    latest.current = { nodes, edges };
+    useEffect(() => {
+        const { userSelectionActive, transform, domNode, triggerEdgeChanges } = store.getState();
+        // not yet dragged, a press on the graph sets an empty box
+        if (!selectionRect || !userSelectionActive) return;
+        const [tx, ty, zoom] = transform;
+        const box = { x0: (selectionRect.x - tx) / zoom, y0: (selectionRect.y - ty) / zoom, x1: (selectionRect.x + selectionRect.width - tx) / zoom, y1: (selectionRect.y + selectionRect.height - ty) / zoom };
+        const inside = new Set((latest.current.nodes ?? []).filter((n) => n.selected).map((n) => n.id));
+        const changes: EdgeSelectionChange[] = [];
+        for (const edge of latest.current.edges ?? []) {
+            const selected = inside.has(edge.source) || inside.has(edge.target) || edgeCrosses(domNode, edge.id, box);
+            if (selected !== !!edge.selected) changes.push({ id: edge.id, type: "select", selected });
+        }
+        if (changes.length > 0) triggerEdgeChanges(changes);
+    }, [selectionRect, store]);
+    return null;
 }
 
 // shift multi select for a graph (the editor, a note map), tracked here instead of multiSelectionKeyCode.
@@ -84,6 +123,7 @@ function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps 
         >
             <ZoneFrames />
             <CanvasPaper />
+            {!frozen && <BoxSelectEdges nodes={props.nodes} edges={props.edges} />}
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

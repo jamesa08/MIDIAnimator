@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStore, useStoreApi } from "@xyflow/react";
+import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow } from "@xyflow/react";
 import { blockUntilRelease, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { ApplyOptions } from "../../utils/graphOps";
 import { socketStyle } from "../../utils/sockets";
@@ -82,18 +82,6 @@ function MapWire({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targe
             <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ stroke: SOCKET_COLORS.midi }} />
         </>
     );
-}
-
-// whether a wire's path passes through a box (flow coordinates), sampled along the path as it's drawn
-function wireCrosses(root: Element | null | undefined, id: string, box: { x0: number; y0: number; x1: number; y1: number }): boolean {
-    const path = root?.querySelector<SVGPathElement>(`.react-flow__edge[data-id="${CSS.escape(id)}"] .react-flow__edge-path`);
-    if (!path) return false;
-    const length = path.getTotalLength();
-    for (let at = 0; at <= length; at += 4) {
-        const p = path.getPointAtLength(at);
-        if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) return true;
-    }
-    return false;
 }
 
 const nodeTypes = { map_note: NoteNode, map_object: ObjectNode };
@@ -288,23 +276,6 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         [map, commit]
     );
     const isValidConnection = useCallback((c: Edge | Connection) => isObject(c.source) && isNote(c.target), []);
-
-    // box select takes the wires the box crosses too, not only the ones on the notes and objects inside it (react flow's)
-    const store = useStoreApi();
-    const selectionRect = useStore((s) => s.userSelectionRect);
-    useEffect(() => {
-        if (!selectionRect) return;
-        const { transform, domNode } = store.getState();
-        const [tx, ty, zoom] = transform;
-        const box = { x0: (selectionRect.x - tx) / zoom, y0: (selectionRect.y - ty) / zoom, x1: (selectionRect.x + selectionRect.width - tx) / zoom, y1: (selectionRect.y + selectionRect.height - ty) / zoom };
-        const inside = new Set(nodesRef.current.filter((n) => n.selected).map((n) => n.id));
-        setWires((current) =>
-            current.map((w) => {
-                const selected = inside.has(w.source) || inside.has(w.target) || wireCrosses(domNode, w.id, box);
-                return selected === !!w.selected ? w : { ...w, selected };
-            })
-        );
-    }, [selectionRect, store]);
 
     // MARK: - Tools
 

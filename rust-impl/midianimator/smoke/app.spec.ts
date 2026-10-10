@@ -236,6 +236,66 @@ test("note map keeps its nodes when a run sends new results", async ({ page }) =
     await settle(page);
 });
 
+// the middle of an edge's path on screen
+async function edgeMiddle(edge: ReturnType<Page["locator"]>) {
+    return edge.locator("path.react-flow__edge-path").evaluate((path: SVGPathElement) => {
+        const point = path.getPointAtLength(path.getTotalLength() / 2);
+        const ctm = path.getScreenCTM()!;
+        return { x: point.x * ctm.a + ctm.e, y: point.y * ctm.d + ctm.f };
+    });
+}
+
+test("clicking an edge selects it in every graph", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const edge = page.locator('.react-flow__edge[data-id*="get_midi_track_data-1notes"]').first();
+    await expect(edge).toBeVisible();
+    await settle(page);
+    const middle = await edgeMiddle(edge);
+    await page.mouse.click(middle.x, middle.y);
+    await expect(edge).toHaveClass(/selected/);
+    await expect(edge.locator(".edge-ring")).toHaveCount(2);
+    const selects = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(selects.at(-1)).toMatchObject({ op: "select", nodes: [], edges: [await edge.getAttribute("data-id")] });
+
+    // and in the note map
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    await expect(page.locator(".note-map-layer .react-flow__node")).toHaveCount(12);
+    const wire = page.locator(".note-map-layer .react-flow__edge").nth(2);
+    const wireMiddle = await edgeMiddle(wire);
+    await page.mouse.click(wireMiddle.x, wireMiddle.y);
+    await expect(wire).toHaveClass(/selected/);
+    await expect(wire.locator(".edge-ring")).toHaveCount(2);
+    await settle(page);
+});
+
+test("box select takes the edges it crosses", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const edge = page.locator('.react-flow__edge[data-id="xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]"]');
+    await expect(edge).toBeVisible();
+    await settle(page);
+
+    // a small box from empty space across the middle of the wire, no node or other wire in it
+    const middle = await edgeMiddle(edge);
+    const start = { x: middle.x - 20, y: middle.y - 20 };
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"), start)).toBe(true);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(middle.x + 20, middle.y + 20, { steps: 8 });
+    await page.mouse.up();
+    await expect(edge).toHaveClass(/selected/);
+    await expect(page.locator(".react-flow__edge.selected")).toHaveCount(1);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+
+    // and goes to the backend like any selection
+    await expect
+        .poll(async () => {
+            const ops = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+            return ops.filter((op: any) => op.op === "select").at(-1);
+        })
+        .toMatchObject({ op: "select", nodes: [], edges: ["xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]"] });
+    await settle(page);
+});
+
 test("note map box select takes the wires it crosses", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
