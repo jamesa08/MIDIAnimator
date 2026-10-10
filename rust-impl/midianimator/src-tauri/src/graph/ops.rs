@@ -674,6 +674,7 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
 
         node.id = graph.next_node_id(id_prefix(&node));
         node.inputs_mut();
+        edit::fill_default_name(graph, &mut node);
         ids.push(node.id.clone());
         let pair = node.node_type == FOR_EACH_INPUT && zone_of(&node).is_none();
         let input_id = node.id.clone();

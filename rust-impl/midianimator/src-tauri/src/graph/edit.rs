@@ -75,6 +75,16 @@ fn merge_inputs(node: &mut RfNode, inputs: &Map<String, Value>) {
     }
 }
 
+/// gives a new animation generator without a name the first free "Animation N", so it works as soon as it's added
+pub fn fill_default_name(graph: &Graph, node: &mut RfNode) {
+    if node.node_type != "animation_generator" || node.input_value("name").and_then(Value::as_str).is_some_and(|name| !name.is_empty()) {
+        return;
+    }
+    let taken: Vec<&str> = graph.nodes.iter().filter(|n| n.node_type == "animation_generator").filter_map(|n| n.input_value("name")?.as_str()).collect();
+    let name = (1..).map(|i| format!("Animation {}", i)).find(|name| !taken.contains(&name.as_str())).unwrap();
+    node.inputs_mut().insert("name".to_string(), Value::String(name));
+}
+
 /// adds a new node of `node_type` and returns its new id in `touched`
 ///
 /// the position comes from `position` if given, otherwise it's placed to the right of `after`,
@@ -134,6 +144,7 @@ pub fn add_node(graph: &mut Graph, specs: &Specs, node_type: &str, inputs: Optio
     if let Some(inputs) = inputs {
         merge_inputs(&mut node, inputs);
     }
+    fill_default_name(graph, &mut node);
     graph.nodes.push(node);
 
     Ok(EditResult {

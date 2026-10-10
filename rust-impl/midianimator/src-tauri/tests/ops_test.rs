@@ -82,6 +82,23 @@ fn add_nodes_pairs_zones() {
     assert!(run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "nope", "position": { "x": 0, "y": 0 } }] }])).is_err());
 }
 
+// a new animation generator gets the first free generic name, a given name is kept
+#[test]
+fn add_nodes_names_animation_generators() {
+    let mut graph = fixture();
+    let generator = json!({ "type": "animation_generator", "position": { "x": 0, "y": 0 } });
+    let named = json!({ "type": "animation_generator", "data": { "inputs": { "name": "kick" } }, "position": { "x": 0, "y": 0 } });
+    let added = run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [generator, generator, named] }])).unwrap();
+
+    let names: Vec<&Value> = added.iter().map(|a| graph.node(&a.id).unwrap().input_value("name").unwrap()).collect();
+    assert_eq!(names, [&json!("Animation 1"), &json!("Animation 2"), &json!("kick")]);
+
+    // a freed name is used again
+    graph.node_mut(&added[0].id).unwrap().inputs_mut().insert("name".to_string(), json!("snare"));
+    let added = run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [generator] }])).unwrap();
+    assert_eq!(graph.node(&added[0].id).unwrap().input_value("name"), Some(&json!("Animation 1")));
+}
+
 // deleting half a zone deletes all of it, with every connection to the deleted nodes
 #[test]
 fn delete_takes_zones_and_edges() {
