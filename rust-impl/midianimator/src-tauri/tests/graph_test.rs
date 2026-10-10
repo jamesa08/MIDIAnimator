@@ -437,6 +437,62 @@ fn old_keyframes_from_object_gets_its_connected_channels() {
     assert!(!MIDIAnimator::graph::builtin::migrate(&mut graph));
 }
 
+// a generator's old animation property becomes a set channel node in front of each curve that isn't on it already
+#[test]
+fn old_animation_property_becomes_set_channel_nodes() {
+    let mut graph: Graph = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "keyframes_from_object-1", "type": "keyframes_from_object", "data": { "inputs": { "channels": ["location[2]", "rotation_euler[1]"] } } },
+            { "id": "animation_generator-1", "type": "animation_generator", "position": { "x": 500.0, "y": 100.0 }, "data": { "inputs": { "animation_property": "rotation_euler[1]" } } },
+            { "id": "animation_generator-2", "type": "animation_generator", "data": { "inputs": { "animation_property": "" } } },
+            { "id": "animation_generator-3", "type": "animation_generator", "data": { "inputs": { "animation_property": "rotation_euler[1]" } } }
+        ],
+        "edges": [
+            { "id": "a", "source": "animation_generator-1", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location[2]" },
+            { "id": "b", "source": "animation_generator-1", "sourceHandle": "note_off_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location[2]" },
+            { "id": "c", "source": "animation_generator-2", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location[2]" },
+            { "id": "d", "source": "animation_generator-3", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "rotation_euler[1]" }
+        ]
+    }))
+    .unwrap();
+    assert!(MIDIAnimator::graph::builtin::migrate(&mut graph));
+
+    // no generator keeps the property
+    assert!(graph.nodes.iter().all(|n| n.input_value("animation_property").is_none()));
+    // generator 1 plays both curves through a set channel each, left of it
+    let links: Vec<(&str, &str, &str, &str)> = graph.edges.iter().map(|e| (e.from_node(), e.from_output(), e.to_node(), e.to_input())).collect();
+    assert_eq!(links, vec![("keyframes_from_object-1", "location[2]", "set_channel-1", "keyframes"), ("keyframes_from_object-1", "location[2]", "set_channel-2", "keyframes"), ("keyframes_from_object-1", "location[2]", "animation_generator-2", "note_on_keyframes"), ("keyframes_from_object-1", "rotation_euler[1]", "animation_generator-3", "note_on_keyframes"), ("set_channel-1", "keyframes", "animation_generator-1", "note_on_keyframes"), ("set_channel-2", "keyframes", "animation_generator-1", "note_off_keyframes"),]);
+    for (id, y) in [("set_channel-1", 100.0), ("set_channel-2", 190.0)] {
+        let node = graph.node(id).unwrap();
+        assert_eq!(node.input_value("channel").unwrap(), &json!("rotation_euler[1]"));
+        assert_eq!((node.position.x, node.position.y), (240.0, y));
+    }
+
+    // a migrated graph is left alone the next time
+    assert!(!MIDIAnimator::graph::builtin::migrate(&mut graph));
+}
+
+// a connected animation property feeds the set channel nodes' channel
+#[test]
+fn old_connected_animation_property_feeds_set_channel() {
+    let mut graph: Graph = serde_json::from_value(json!({
+        "nodes": [
+            { "id": "keyframes_from_object-1", "type": "keyframes_from_object", "data": { "inputs": { "channels": ["location[2]"] } } },
+            { "id": "group_input-1", "type": "group_input", "data": {} },
+            { "id": "animation_generator-1", "type": "animation_generator", "data": {} }
+        ],
+        "edges": [
+            { "id": "a", "source": "animation_generator-1", "sourceHandle": "note_on_keyframes", "target": "keyframes_from_object-1", "targetHandle": "location[2]" },
+            { "id": "b", "source": "animation_generator-1", "sourceHandle": "animation_property", "target": "group_input-1", "targetHandle": "property" }
+        ]
+    }))
+    .unwrap();
+    assert!(MIDIAnimator::graph::builtin::migrate(&mut graph));
+    let links: Vec<(&str, &str, &str, &str)> = graph.edges.iter().map(|e| (e.from_node(), e.from_output(), e.to_node(), e.to_input())).collect();
+    assert_eq!(links, vec![("keyframes_from_object-1", "location[2]", "set_channel-1", "keyframes"), ("set_channel-1", "keyframes", "animation_generator-1", "note_on_keyframes"), ("group_input-1", "property", "set_channel-1", "channel")]);
+    assert!(graph.node("set_channel-1").unwrap().input_value("channel").is_none());
+}
+
 // a group id adds a group node, its sockets come from the group, inside the group input and output mirror them
 #[test]
 fn group_nodes_get_their_groups_sockets() {
