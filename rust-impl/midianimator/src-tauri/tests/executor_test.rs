@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, targets_for_note};
 use MIDIAnimator::graph::executors::io::Inputs;
 use MIDIAnimator::graph::executors::midi::{get_midi_file, get_midi_track_data};
-use MIDIAnimator::utils::animation::parse_animation_property;
+use MIDIAnimator::utils::animation::parse_channel;
 
 const TYPE_1: &str = "./tests/test_midi_type_1_rs_4_14_24.mid";
 
@@ -241,11 +241,11 @@ fn keyframes_from_object_outputs_picked_channels() {
 }
 
 #[test]
-fn animation_property_index_is_the_last_one() {
-    assert_eq!(parse_animation_property("location[2]"), ("location".to_string(), 2));
-    assert_eq!(parse_animation_property("pose.bones[\"Arm\"].location[1]"), ("pose.bones[\"Arm\"].location".to_string(), 1));
-    assert_eq!(parse_animation_property("[\"glow\"][0]"), ("[\"glow\"]".to_string(), 0));
-    assert_eq!(parse_animation_property("location"), ("location".to_string(), 0));
+fn channel_index_is_the_last_one() {
+    assert_eq!(parse_channel("location[2]"), ("location".to_string(), 2));
+    assert_eq!(parse_channel("pose.bones[\"Arm\"].location[1]"), ("pose.bones[\"Arm\"].location".to_string(), 1));
+    assert_eq!(parse_channel("[\"glow\"][0]"), ("[\"glow\"]".to_string(), 0));
+    assert_eq!(parse_channel("location"), ("location".to_string(), 0));
 }
 
 #[test]
@@ -254,7 +254,32 @@ fn animation_generator_defaults_without_inputs() {
     let generator = &outputs["generator"];
     assert_eq!(generator["note_on_keyframes"], json!([]));
     assert_eq!(generator["animation_overlap"], json!("add"));
-    assert_eq!(generator["animation_property"], json!("[0]"));
+    assert!(generator.get("animation_property").is_none());
+}
+
+#[test]
+fn animation_generator_keeps_every_curve_on_its_channel() {
+    let on = json!([curve("location[2]", vec![key(0.0, 0.0), key(1.0, 1.0)]), curve("rotation_euler[1]", vec![key(0.0, 0.0), key(1.0, 3.0)])]);
+    let off = json!([curve("location[2]", vec![key(0.0, 1.0), key(0.5, 0.0)])]);
+    let outputs = animation_generator(&Inputs::from([("note_on_keyframes", on), ("note_off_keyframes", off)])).unwrap().to_json();
+    let generator = outputs["generator"].clone();
+    let channels: Vec<_> = generator["note_on_keyframes"].as_array().unwrap().iter().map(|c| (c["data_path"].clone(), c["array_index"].clone())).collect();
+    assert_eq!(channels, vec![(json!("location"), json!(2)), (json!("rotation_euler"), json!(1))]);
+
+    // a note plays each channel on its own curve, note on and off keys on one channel go on the same curve
+    let note = json!({ "channel": 0, "note_number": 60, "velocity": 127, "time_on": 1.0, "time_off": 2.0 });
+    let object_map = json!({ "animations": { "hit": generator }, "objects": { "Cube": { "hit": [60] } } });
+    let target = json!({ "object": "Cube", "animation": "hit" });
+    let keys = note_keyframes(&Inputs::from([("object_map", object_map), ("target", target), ("note", note)])).unwrap().to_json()["keys"].clone();
+    let curves: Vec<_> = keys.as_array().unwrap().iter().map(|k| (k["data_path"].as_str().unwrap().to_string(), k["array_index"].as_u64().unwrap(), k["keyframes"].as_array().unwrap().iter().map(|key| (key["time"].as_f64().unwrap(), key["value"].as_f64().unwrap())).collect::<Vec<_>>())).collect();
+    assert_eq!(curves, vec![("location".to_string(), 2, vec![(1.0, 0.0), (2.0, 1.0), (2.0, 1.0), (2.5, 0.0)]), ("rotation_euler".to_string(), 1, vec![(1.0, 0.0), (2.0, 3.0)])]);
+}
+
+#[test]
+fn animation_generator_errors_on_two_curves_on_one_channel() {
+    let on = json!([curve("location[2]", vec![key(0.0, 0.0)]), curve("location[2]", vec![key(1.0, 1.0)])]);
+    let error = animation_generator(&Inputs::from([("note_on_keyframes", on)])).unwrap_err();
+    assert!(error.contains("two note on curves are on location[2]"), "{}", error);
 }
 
 #[test]
@@ -337,11 +362,17 @@ fn key(time: f64, value: f64) -> serde_json::Value {
     })
 }
 
+// a curve on a channel like `location[2]`, as keyframes from object gives it
+fn curve(channel: &str, keys: Vec<serde_json::Value>) -> serde_json::Value {
+    let (data_path, array_index) = parse_channel(channel);
+    json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": keys, "range": [0.0, 1.0] })
+}
+
 fn generator(property: &str, peak: f64) -> serde_json::Value {
     json!({
-        "name": property, "note_on_keyframes": [key(0.0, 0.0), key(1.0, peak)], "note_on_anchor_point": 0.0,
+        "name": property, "note_on_keyframes": [curve(property, vec![key(0.0, 0.0), key(1.0, peak)])], "note_on_anchor_point": 0.0,
         "note_off_keyframes": [], "note_off_anchor_point": 0.0, "time_mapper": "", "amplitude_mapper": "",
-        "velocity_intensity": 0.0, "animation_overlap": "add", "overlap_blend": 0.1, "animation_property": property
+        "velocity_intensity": 0.0, "animation_overlap": "add", "overlap_blend": 0.1
     })
 }
 

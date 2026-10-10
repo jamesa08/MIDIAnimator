@@ -108,15 +108,21 @@ fn key(time: f64, value: f64) -> Value {
     })
 }
 
+// a curve on a channel like `location[2]`, as keyframes from object gives it
+fn curve(channel: &str, keys: Vec<Value>) -> Value {
+    let (data_path, array_index) = MIDIAnimator::utils::animation::parse_channel(channel);
+    json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": keys, "range": [0.0, 1.0] })
+}
+
 fn generator(name: &str, property: &str, overlap: &str, peak: f64) -> Value {
     json!({
         "name": name,
-        "note_on_keyframes": [key(-0.05, 0.0), key(0.0, peak), key(0.1, peak * 0.8), key(0.25, 0.0)],
+        "note_on_keyframes": [curve(property, vec![key(-0.05, 0.0), key(0.0, peak), key(0.1, peak * 0.8), key(0.25, 0.0)])],
         "note_on_anchor_point": 0.0,
-        "note_off_keyframes": [key(0.0, 0.0), key(0.15, -peak * 0.2), key(0.3, 0.0)],
+        "note_off_keyframes": [curve(property, vec![key(0.0, 0.0), key(0.15, -peak * 0.2), key(0.3, 0.0)])],
         "note_off_anchor_point": 0.0,
         "time_mapper": "", "amplitude_mapper": "",
-        "velocity_intensity": 1.0, "animation_overlap": overlap, "overlap_blend": 0.1, "animation_property": property
+        "velocity_intensity": 1.0, "animation_overlap": overlap, "overlap_blend": 0.1
     })
 }
 

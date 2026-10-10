@@ -133,12 +133,20 @@ fn a_generators_unset_curve_isnt_listed() {
     use MIDIAnimator::graph::curves::node_curves;
     use MIDIAnimator::utils::animation::AnimationGenerator;
     let case = serde_json::json!({"amplitude": 0.8, "back": 1.7, "period": 0.17});
+    let curve = MIDIAnimator::scene_generics::AnimCurve {
+        array_index: 2,
+        auto_smoothing: "NONE".to_string(),
+        data_path: "location".to_string(),
+        extrapolation: "CONSTANT".to_string(),
+        keyframe_points: vec![point(0.0, 0.0, "BEZIER", "AUTO", &case), point(1.0, 2.0, "BEZIER", "AUTO", &case)],
+        range: vec![0.0, 1.0],
+    };
     let generator = AnimationGenerator {
         name: "hit".to_string(),
-        note_on_keyframes: vec![point(0.0, 0.0, "BEZIER", "AUTO", &case), point(1.0, 2.0, "BEZIER", "AUTO", &case)],
+        note_on_keyframes: vec![curve],
         ..Default::default()
     };
     let outputs = serde_json::json!({ "generator": generator });
     let channels = node_curves(Some(&outputs), None);
-    assert_eq!(channels.iter().map(|c| (c.group.as_str(), c.name.as_str())).collect::<Vec<_>>(), vec![("hit", "Note On")]);
+    assert_eq!(channels.iter().map(|c| (c.group.as_str(), c.name.as_str(), c.axis)).collect::<Vec<_>>(), vec![("hit", "Note On › Location Z", Some("Z"))]);
 }

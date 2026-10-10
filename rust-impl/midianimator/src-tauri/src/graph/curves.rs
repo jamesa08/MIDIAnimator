@@ -117,15 +117,19 @@ fn curves_in(value: &Value, handle: &str, label: Option<&str>, out: &mut Vec<Cur
         }
     } else if has("note_on_keyframes") {
         if let Some(generator) = parse::<AnimationGenerator>(value) {
-            for (id, name, points) in [("note_on", "Note On", &generator.note_on_keyframes), ("note_off", "Note Off", &generator.note_off_keyframes)] {
-                out.push(CurveChannel {
-                    id: format!("{}/{}", handle, id),
-                    group: generator.name.clone(),
-                    name: name.to_string(),
-                    axis: None,
-                    extend: true,
-                    pieces: vec![FCurve::from_points(points).drawing()],
-                });
+            // each curve under its side, named after its channel
+            for (id, name, curves) in [("note_on", "Note On", &generator.note_on_keyframes), ("note_off", "Note Off", &generator.note_off_keyframes)] {
+                let all: Vec<(&str, u32)> = curves.iter().map(|c| (c.data_path.as_str(), c.array_index)).collect();
+                for curve in curves {
+                    out.push(CurveChannel {
+                        id: format!("{}/{}/{}[{}]", handle, id, curve.data_path, curve.array_index),
+                        group: generator.name.clone(),
+                        name: format!("{} › {}", name, curve_channel(&curve.data_path, curve.array_index, &all).label()),
+                        axis: curve_axis(&curve.data_path, curve.array_index),
+                        extend: true,
+                        pieces: vec![FCurve::from_points(&curve.keyframe_points).drawing()],
+                    });
+                }
             }
         }
     } else if has("keyframes") && has("object") {
@@ -133,12 +137,18 @@ fn curves_in(value: &Value, handle: &str, label: Option<&str>, out: &mut Vec<Cur
             note_curves(handle, vec![keys], out);
         }
     } else if let Some(items) = value.as_array() {
-        // a loop's results: each note's keys
-        let first = items.first();
+        // a loop's results: each note's keys, a list per note
+        let first = items.iter().find(|item| item.as_array().is_none_or(|keys| !keys.is_empty()));
+        let first = first.map(|item| item.as_array().and_then(|keys| keys.first()).unwrap_or(item));
         if first.is_some_and(|item| item.get("keyframes").is_some() && item.get("object").is_some()) {
-            if let Some(keys) = parse::<Vec<CurveKeys>>(value) {
-                note_curves(handle, keys, out);
+            let mut keys = Vec::new();
+            for item in items {
+                match item.as_array() {
+                    Some(_) => keys.extend(parse::<Vec<CurveKeys>>(item).unwrap_or_default()),
+                    None => keys.extend(parse::<CurveKeys>(item)),
+                }
             }
+            note_curves(handle, keys, out);
         } else if first.is_some_and(|item| item.get("time").is_some() && item.get("data_path").is_some()) {
             if let Some(keys) = parse::<Vec<BlendKeyframe>>(value) {
                 written_curves(handle, "", &keys, out);

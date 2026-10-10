@@ -44,7 +44,6 @@ struct MKAnimationGenerator {
     note_off_anchor_point: f64,
     velocity_intensity: f64,
     animation_overlap: String,
-    animation_property: String,
 }
 
 struct MKObjectMap {

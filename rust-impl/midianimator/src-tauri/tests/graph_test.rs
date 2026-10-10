@@ -242,6 +242,37 @@ fn connect_to_dynamic_output() {
     edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "location[2]", gen, "note_on_keyframes").unwrap();
 }
 
+// a multi input keeps every connection, and disconnecting can pick one
+#[test]
+fn a_multi_input_keeps_every_connection() {
+    let mut f = Fixture::new();
+    let (kfo, gen) = ("keyframes_from_object-1", "animation_generator-1");
+    let mut results = HashMap::new();
+    results.insert(kfo.to_string(), json!({"dyn_output": {"location[2]": "Location Z", "rotation_euler[1]": "Rotation Y"}}));
+    let from = |graph: &Graph| graph.edges.iter().filter(|e| e.to_node() == gen && e.to_input() == "note_on_keyframes").map(|e| e.from_output().to_string()).collect::<Vec<_>>();
+    assert_eq!(from(&f.graph), ["location[2]"]);
+
+    // a second curve joins the first, connecting the first again changes nothing
+    edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "rotation_euler[1]", gen, "note_on_keyframes").unwrap();
+    assert_eq!(from(&f.graph), ["location[2]", "rotation_euler[1]"]);
+    let result = edit::connect(&mut f.graph, &lookup(&f.specs, &f.groups), &results, kfo, "location[2]", gen, "note_on_keyframes").unwrap();
+    assert!(result.message.contains("already connected"), "{}", result.message);
+    assert_eq!(from(&f.graph), ["location[2]", "rotation_euler[1]"]);
+
+    // the outline lists both
+    f.results = results.clone();
+    let outline = node_block(&f.ctx(), gen, Detail::Concise);
+    assert!(outline.contains("(note_on_keyframes: Array<Keyframe>, multi)  <- keyframes_from_object-1 › Location Z, keyframes_from_object-1 › Rotation Y"), "{}", outline);
+
+    // disconnect one by its output, one that isn't there lists the ones that are, then the rest
+    edit::disconnect(&mut f.graph, gen, "note_on_keyframes", Some(kfo), Some("location[2]")).unwrap();
+    assert_eq!(from(&f.graph), ["rotation_euler[1]"]);
+    let err = edit::disconnect(&mut f.graph, gen, "note_on_keyframes", None, Some("scale[0]")).unwrap_err();
+    assert!(err.contains("connected from: keyframes_from_object-1 › rotation_euler[1]"), "{}", err);
+    edit::disconnect(&mut f.graph, gen, "note_on_keyframes", None, None).unwrap();
+    assert!(from(&f.graph).is_empty());
+}
+
 // checks a `Dyn<T>` input grows one numbered input per connection plus a free one
 #[test]
 fn connect_to_dynamic_inputs() {
@@ -327,7 +358,7 @@ fn outline_shows_labels_values_connections_and_options() {
 
     // full outline has descriptions and options from the scene data
     let full = outline(&f.ctx(), None, Detail::Full).unwrap();
-    assert!(full.contains("# Blender data path like location[2]"));
+    assert!(full.contains("# Animation curves played at each note-on"));
     assert!(full.contains("options: Cubes"));
     assert!(full.contains("options: Cube.001, Cube.002"));
     // concise outline lists unset inputs compactly and shows dynamic outputs that haven't executed yet

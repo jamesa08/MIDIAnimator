@@ -38,7 +38,7 @@ pub struct Object {
 }
 
 // MARK: - AnimCurve
-#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 pub struct AnimCurve {
     pub array_index: u32,
     pub auto_smoothing: String,

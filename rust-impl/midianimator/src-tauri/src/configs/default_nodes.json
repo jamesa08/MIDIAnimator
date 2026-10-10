@@ -168,7 +168,8 @@
                         "id": "note_on_keyframes",
                         "name": "Note On Keyframes",
                         "data_type": "Array<Keyframe>",
-                        "description": "Animation curve played at each note-on, timed relative to the note start."
+                        "multi": true,
+                        "description": "Animation curves played at each note-on, timed relative to the note start. Each curve plays on its own channel (its Blender path and index), at most one curve per channel."
                     },
                     {
                         "id": "note_on_anchor_point",
@@ -181,7 +182,8 @@
                         "id": "note_off_keyframes",
                         "name": "Note Off Keyframes",
                         "data_type": "Array<Keyframe>",
-                        "description": "Animation curve played at each note-off, timed relative to the note end."
+                        "multi": true,
+                        "description": "Animation curves played at each note-off, timed relative to the note end. Each curve plays on its own channel, a note-on curve on the same channel plays on the same Blender curve."
                     },
                     {
                         "id": "note_off_anchor_point",
@@ -224,12 +226,6 @@
                         "data_type": "f64",
                         "hidden": true,
                         "description": "Crossfade only: seconds to ease from the animation still playing into the note. Unset = 0.1."
-                    },
-                    {
-                        "id": "animation_property",
-                        "name": "Animation Property",
-                        "data_type": "String",
-                        "description": "Blender data path like location[2]. Empty = inherit from note-on keyframes."
                     }
                 ],
                 "outputs": [

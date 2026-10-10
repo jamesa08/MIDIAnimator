@@ -26,16 +26,11 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
 
     const nodeData = useNodeSpec("animation_generator");
     const [name, setName] = useState(data.inputs?.name || ""); 
-    const [property, setProperty] = useState(data.inputs?.animation_property || "");
     const [blend, setBlend] = useState(data.inputs?.overlap_blend ?? "");
 
     useEffect(() => {
         setName(data.inputs?.name || "");
     }, [data.inputs?.name]);
-
-    useEffect(() => {
-        setProperty(data.inputs?.animation_property || "");
-    }, [data.inputs?.animation_property]);
 
     useEffect(() => {
         setBlend(data.inputs?.overlap_blend ?? "");
@@ -44,11 +39,6 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     const handleUpdate = useCallback(() => {
         setInputs(id, { name });
     }, [id, name, setInputs]);
-
-    // empty inherits the property from the note on keyframes
-    const handlePropertyUpdate = useCallback(() => {
-        setInputs(id, { animation_property: property });
-    }, [id, property, setInputs]);
 
     // empty unsets it so the backend default is used, anything that isn't a number is ignored
     const handleBlendUpdate = useCallback(() => {
@@ -67,12 +57,6 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
                 <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} onBlur={handleUpdate} />
             </div>
         </>
-    );
-
-    const propertyComponent = (
-        <div>
-            <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" placeholder="Inherit (e.g. location[2])" value={property} onChange={(e) => setProperty(e.target.value)} onBlur={handlePropertyUpdate} />
-        </div>
     );
 
     // unset is the default, add
@@ -108,7 +92,6 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         name: nameComponent,
         animation_overlap: overlapComponent,
         overlap_blend: blendComponent,
-        animation_property: propertyComponent,
     };
 
     const hiddenHandles = {

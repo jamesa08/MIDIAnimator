@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use serde::{Deserialize, Serialize};
 
 use crate::midi::MIDINote;
-use crate::scene_generics::KeyframePoint;
+use crate::scene_generics::{AnimCurve, KeyframePoint};
 
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
@@ -37,13 +37,13 @@ impl BlendKeyframe {
     }
 }
 
-/// the output of the animation_generator node
+/// the output of the animation_generator node. every curve plays on its own channel (its data path and index)
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AnimationGenerator {
     pub name: String,
-    pub note_on_keyframes: Vec<KeyframePoint>,
+    pub note_on_keyframes: Vec<AnimCurve>,
     pub note_on_anchor_point: f64,
-    pub note_off_keyframes: Vec<KeyframePoint>,
+    pub note_off_keyframes: Vec<AnimCurve>,
     pub note_off_anchor_point: f64,
     // mappers are passed through but not used yet
     pub time_mapper: String,
@@ -53,7 +53,6 @@ pub struct AnimationGenerator {
     /// crossfade only: seconds to ease from the old animation into the note
     #[serde(default = "default_overlap_blend")]
     pub overlap_blend: f64,
-    pub animation_property: String,
 }
 
 fn default_overlap_blend() -> f64 {
@@ -234,27 +233,34 @@ impl ObjectMap {
     }
 }
 
-/// the keyframes a note plays on an object, offset to the note's time and scaled by its velocity. `None` if the generator has no keys
-pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote) -> Option<CurveKeys> {
-    // parse data_path and array_index from animation_property e.g. "location[0]"
-    let (data_path, array_index) = parse_animation_property(&gen.animation_property);
-
-    // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
-    let mut keyframes = note_keyframes(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index);
-    keyframes.extend(note_keyframes(&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point, note.velocity, gen.velocity_intensity, &data_path, array_index));
-    keyframes.sort_by(|a, b| a.time.total_cmp(&b.time));
-
-    if keyframes.is_empty() {
-        return None;
+/// the keyframes a note plays on an object, offset to the note's time and scaled by its velocity. one per channel the
+/// generator's curves are on, in channel order, channels with no keys are left out
+pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote) -> Vec<CurveKeys> {
+    // note on and note off curves on the same channel play on the same curve
+    let mut channels: BTreeMap<(&str, u32), Vec<BlendKeyframe>> = BTreeMap::new();
+    for (curves, offset) in [(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point), (&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point)] {
+        for curve in curves {
+            // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
+            let keys = note_keyframes(&curve.keyframe_points, offset, note.velocity, gen.velocity_intensity, &curve.data_path, curve.array_index);
+            channels.entry((curve.data_path.as_str(), curve.array_index)).or_default().extend(keys);
+        }
     }
-    Some(CurveKeys {
-        object: object.to_string(),
-        data_path,
-        array_index,
-        animation_overlap: gen.animation_overlap.clone(),
-        overlap_blend: gen.overlap_blend,
-        keyframes,
-    })
+
+    channels
+        .into_iter()
+        .filter(|(_, keyframes)| !keyframes.is_empty())
+        .map(|((data_path, array_index), mut keyframes)| {
+            keyframes.sort_by(|a, b| a.time.total_cmp(&b.time));
+            CurveKeys {
+                object: object.to_string(),
+                data_path: data_path.to_string(),
+                array_index,
+                animation_overlap: gen.animation_overlap.clone(),
+                overlap_blend: gen.overlap_blend,
+                keyframes,
+            }
+        })
+        .collect()
 }
 
 /// offsets a generator's keyframes to a note's time and scales them by its velocity
@@ -587,11 +593,11 @@ fn prune_keyframes(inserted_keys: &mut Vec<BlendKeyframe>, next_keys: &mut Vec<B
     inserted_keys.append(next_keys);
 }
 
-// helper to parse properties like "rotation[0]" into ("rotation", 0). the index is the last `[n]`, so paths with keys
+// helper to parse channels like "rotation[0]" into ("rotation", 0). the index is the last `[n]`, so paths with keys
 // of their own work too: `pose.bones["Arm"].location[1]`, `["prop"][0]`
-pub fn parse_animation_property(prop: &str) -> (String, u32) {
-    let indexed = prop.strip_suffix(']').and_then(|p| p.rsplit_once('[')).and_then(|(data_path, index)| index.parse::<u32>().ok().map(|index| (data_path.to_string(), index)));
-    indexed.unwrap_or_else(|| (prop.to_string(), 0))
+pub fn parse_channel(channel: &str) -> (String, u32) {
+    let indexed = channel.strip_suffix(']').and_then(|p| p.rsplit_once('[')).and_then(|(data_path, index)| index.parse::<u32>().ok().map(|index| (data_path.to_string(), index)));
+    indexed.unwrap_or_else(|| (channel.to_string(), 0))
 }
 
 /// the (time, value) of a keyframe point, `None` if `co` doesn't have both

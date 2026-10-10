@@ -208,28 +208,34 @@ fn quoted(path: &str) -> Option<(String, &str)> {
 ///
 /// inputs:
 /// "name": `String`,
-/// "note_on_keyframes": `FCurveData`,
+/// "note_on_keyframes": `Array<FCurveData>`, multi, each curve plays on its own channel,
 /// "note_on_anchor_point": `f64`,
-/// "note_off_keyframes": `FCurveData`,
+/// "note_off_keyframes": `Array<FCurveData>`, multi,
 /// "note_off_anchor_point": `f64`,
 /// "time_mapper": `String`,
 /// "amplitude_mapper": `String`,
 /// "velocity_intensity": `f64`,
 /// "animation_overlap": `String`,
-/// "overlap_blend": `f64`,
-/// "animation_property": `String`
+/// "overlap_blend": `f64`
 ///
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[node_registry::node]
-pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&AnimCurve>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&AnimCurve>, note_off_anchor_point: Option<f64>, time_mapper: Option<String>, amplitude_mapper: Option<String>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>, animation_property: Option<String>) -> NodeResult {
+pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<String>, amplitude_mapper: Option<String>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>) -> NodeResult {
     // the keyframe curves are optional, an unconnected one is just no keyframes
+    let note_on_keyframes = note_on_keyframes.cloned().unwrap_or_default();
+    let note_off_keyframes = note_off_keyframes.cloned().unwrap_or_default();
 
-    // inherit the property from the note on curve if none is given, e.g. "location[0]"
-    let mut animation_property = animation_property.unwrap_or_default();
-    if animation_property.is_empty() {
-        let (data_path, array_index) = note_on_keyframes.map_or(("", 0), |c| (c.data_path.as_str(), c.array_index));
-        animation_property = format!("{}[{}]", data_path, array_index);
+    // two curves on one channel would play over each other, the curve says which channel it's on
+    for (curves, side) in [(&note_on_keyframes, "note on"), (&note_off_keyframes, "note off")] {
+        let mut seen: Vec<String> = Vec::new();
+        for curve in curves {
+            let id = channel_id(curve);
+            if seen.contains(&id) {
+                return Err(format!("two {} curves are on {}, use Set Channel to move one", side, id));
+            }
+            seen.push(id);
+        }
     }
 
     // unset is the default, "add"
@@ -249,16 +255,15 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Anim
 
     let generator = AnimationGenerator {
         name: name.unwrap_or_default(),
-        note_on_keyframes: note_on_keyframes.map(|c| c.keyframe_points.clone()).unwrap_or_default(),
+        note_on_keyframes,
         note_on_anchor_point: note_on_anchor_point.unwrap_or_default(),
-        note_off_keyframes: note_off_keyframes.map(|c| c.keyframe_points.clone()).unwrap_or_default(),
+        note_off_keyframes,
         note_off_anchor_point: note_off_anchor_point.unwrap_or_default(),
         time_mapper: time_mapper.unwrap_or_default(),
         amplitude_mapper: amplitude_mapper.unwrap_or_default(),
         velocity_intensity: velocity_intensity.unwrap_or_default(),
         animation_overlap,
         overlap_blend,
-        animation_property,
     };
 
     let mut outputs = Outputs::new();
@@ -752,7 +757,7 @@ pub fn targets_for_note(targets: &BTreeMap<u8, Vec<NoteTarget>>, note: &MIDINote
 /// "note": `MIDINote`
 ///
 /// outputs:
-/// "keys": `CurveKeys`, null when the generator has no keyframes
+/// "keys": `Array<CurveKeys>`, one per channel the generator plays on, empty when it has no keyframes
 #[node_registry::node]
 pub fn note_keyframes(object_map: &ObjectMap, target: &NoteTarget, note: &MIDINote) -> NodeResult {
     let generator = object_map.generator(&target.animation, &target.object)?;
@@ -781,10 +786,10 @@ pub fn combine_keyframes(object_map: Option<&ObjectMap>, inputs: &Inputs) -> Nod
     Ok(outputs)
 }
 
-/// collects `CurveKeys` out of nested lists in order, nulls (notes with no keys) are skipped
+/// collects `CurveKeys` out of nested lists in order, nulls are skipped
 fn flatten_curve_keys(value: &Val, out: &mut Vec<CurveKeys>) -> Result<(), String> {
-    if let Some(keys) = value.downcast_ref::<Option<CurveKeys>>() {
-        out.extend(keys.clone());
+    if let Some(keys) = value.downcast_ref::<Vec<CurveKeys>>() {
+        out.extend(keys.iter().cloned());
     } else if let Some(keys) = value.downcast_ref::<CurveKeys>() {
         out.push(keys.clone());
     } else if value.is_null() {

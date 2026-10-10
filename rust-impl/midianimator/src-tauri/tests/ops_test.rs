@@ -208,14 +208,22 @@ fn built_in_groups() {
     assert!(graph.groups.is_empty());
 }
 
-// connecting replaces what fed the input, and refuses cycles
+// connecting replaces what fed the input, a multi input keeps it, and cycles are refused
 #[test]
 fn connect_replaces_and_refuses_cycles() {
     let mut graph = fixture();
-    // the generator's note on keyframes come from the object's location, feed it from the track data instead (types don't match, allowed)
-    run(&mut graph, None, json!([{ "op": "connect", "from_node": "get_midi_track_data-1", "from_output": "notes", "to_node": "animation_generator-1", "to_input": "note_on_keyframes" }])).unwrap();
-    let into: Vec<String> = graph.edges.iter().filter(|e| e.to_node() == "animation_generator-1" && e.to_input() == "note_on_keyframes").map(|e| e.from_node().to_string()).collect();
-    assert_eq!(into, ["get_midi_track_data-1"]);
+    let into = |graph: &Graph, node: &str, input: &str| -> Vec<String> { graph.edges.iter().filter(|e| e.to_node() == node && e.to_input() == input).map(|e| e.from_node().to_string()).collect() };
+    // the generator's note on keyframes come from the object's location, the track data joins it (types don't match, allowed)
+    let connect = json!([{ "op": "connect", "from_node": "get_midi_track_data-1", "from_output": "notes", "to_node": "animation_generator-1", "to_input": "note_on_keyframes" }]);
+    run(&mut graph, None, connect.clone()).unwrap();
+    assert_eq!(into(&graph, "animation_generator-1", "note_on_keyframes"), ["keyframes_from_object-1", "get_midi_track_data-1"]);
+    // the same connection again isn't added twice
+    run(&mut graph, None, connect).unwrap();
+    assert_eq!(into(&graph, "animation_generator-1", "note_on_keyframes").len(), 2);
+
+    // the assign node's notes come from the track data, feed them from the generator instead
+    run(&mut graph, None, json!([{ "op": "connect", "from_node": "animation_generator-1", "from_output": "generator", "to_node": "assign_notes_to_objects-1", "to_input": "midi_notes" }])).unwrap();
+    assert_eq!(into(&graph, "assign_notes_to_objects-1", "midi_notes"), ["animation_generator-1"]);
 
     run(&mut graph, None, json!([{ "op": "connect", "from_node": "evaluate_instrument-1", "from_output": "keyframes", "to_node": "viewer-1", "to_input": "data" }])).unwrap();
     assert!(run(&mut graph, None, json!([{ "op": "connect", "from_node": "viewer-1", "from_output": "x", "to_node": "evaluate_instrument-1", "to_input": "object_map" }])).unwrap_err().contains("cycle"));
