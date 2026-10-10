@@ -4,6 +4,9 @@ import { useStateContext } from "../contexts/StateContext";
 import { Keymap, MOUSE_BUTTONS, formatCombo, splitCombo, useKeymapData } from "../utils/keymap";
 import { Hint, showStatus, useStatusHints, useStatusMessage } from "../utils/status";
 
+// how long a message shows before it collapses
+const MESSAGE_MS = 5000;
+
 const plural = (count: number, word: string) => `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
 
 // what the last write to Blender did, see LastWrite in src-tauri/src/state/mod.rs
@@ -45,10 +48,28 @@ function HintKey({ hint, platform }: { hint: Hint; platform: Keymap["platform"] 
     );
 }
 
-function StatusBar({ event }: { event: string }) {
+function StatusBar() {
     const state = useStateContext().backEndState;
     const message = useStatusMessage();
     const hints = useStatusHints();
+
+    // a message shows at once, then after a while collapses into the right end. its width is set first so it has one to
+    // shrink from
+    const messageRef = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState<number | null>(null);
+    useEffect(() => {
+        if (!message) return;
+        setWidth(null);
+        let frame = 0;
+        const timer = setTimeout(() => {
+            setWidth(messageRef.current?.offsetWidth ?? 0);
+            frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setWidth(0))));
+        }, MESSAGE_MS);
+        return () => {
+            clearTimeout(timer);
+            cancelAnimationFrame(frame);
+        };
+    }, [message?.seq]);
     const platform = useKeymapData()?.platform ?? "mac";
 
     // each write's result stays until the next message
@@ -76,7 +97,7 @@ function StatusBar({ event }: { event: string }) {
         });
     }, []);
 
-    // the keys on the left, the last message and the version on the right. each message fades in
+    // the keys on the left, the last message at the right end pushing the version over until it collapses, like blender's
     return (
         <div className="status-bar card select-none">
             <div className="panel-header text-[11px] leading-none flex items-center gap-3 px-3 pb-0.5 h-4">
@@ -88,12 +109,14 @@ function StatusBar({ event }: { event: string }) {
                         </span>
                     ))}
                 </div>
-                <div key={message?.seq} className={`flex-none whitespace-nowrap${message ? " status-fade-in" : ""}`}>
-                    {message?.text ?? event}
-                </div>
                 <div className="flex-none whitespace-nowrap">
                     MotionKeys {version} {hash}
                 </div>
+                {message && (
+                    <div key={message.seq} ref={messageRef} className={`status-message flex-none${width === 0 ? " status-message-out" : ""}`} style={width === null ? undefined : { width }}>
+                        <span>{message.text}</span>
+                    </div>
+                )}
             </div>
         </div>
     );

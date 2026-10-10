@@ -320,7 +320,7 @@ function App() {
                 {dockHover !== null && <div className={`dock-indicator dock-width dock-${dockHover} card absolute inset-y-3 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
             </div>
             <div className="foot flex-initial">
-                <StatusBar event="Ready." />
+                <StatusBar />
             </div>
             {closePrompt && <UnsavedChangesModal onSave={() => answerClose("save")} onDiscard={() => answerClose("discard")} onCancel={() => answerClose("cancel")} />}
         </div>

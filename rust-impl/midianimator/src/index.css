@@ -541,15 +541,22 @@ img {
     margin-bottom: -1px;
 }
 
-/* a new message in the status bar, after a write */
-.status-fade-in {
-    animation: status-fade-in 0.35s ease-out;
+/* the status bar's message collapses into the right end with its text cut short like blender's, the version slides along */
+.status-message {
+    display: flex;
+    overflow: hidden;
 }
 
-@keyframes status-fade-in {
-    from {
-        opacity: 0;
-    }
+.status-message span {
+    min-width: 0;
+    padding-left: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-message-out {
+    transition: width 0.1s linear;
 }
 
 /* a key in the status bar's hints. the bar lifts its text 1px to center arial's caps, the box goes back down and lifts its
