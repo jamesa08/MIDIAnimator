@@ -43,6 +43,21 @@ export function socketStyle(dataType: string | undefined): Record<string, any> {
     return dataType ? { background: SOCKET_COLORS[socketCategory(dataType)] } : {};
 }
 
+// MARK: - Multi Inputs
+
+// a multi input (Blender's) takes any number of links. its socket is a pill with a slot per link, never less than two so
+// it always looks like one, and each link ends at its own slot in the order they were made
+const SOCKET_SIZE = 14;
+export const MULTI_SLOT = 10;
+
+// the size of a multi input's socket with `links` links
+export function multiSocketStyle(links: number): Record<string, any> {
+    return { height: `${SOCKET_SIZE + (Math.max(links, 2) - 1) * MULTI_SLOT}px`, borderRadius: `${SOCKET_SIZE / 2}px` };
+}
+
+// how far from the socket's middle the link at `index` of `links` ends
+export const multiSlotOffset = (index: number, links: number) => (index - (links - 1) / 2) * MULTI_SLOT;
+
 // whether an output of type `outType` can feed an input of type `inType`. keep in sync with compatible in src-tauri/src/graph/model.rs
 export function compatible(outType: string, inType: string): boolean {
     const array = (type: string) => (type.startsWith("Array<") && type.endsWith(">") ? type.slice(6, -1).trim() : null);

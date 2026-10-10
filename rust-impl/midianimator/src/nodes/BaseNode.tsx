@@ -1,9 +1,9 @@
 // @ts-nocheck
 import React, { ReactNode, useCallback, useState, useEffect } from "react";
-import { NodeResizeControl, Position, useNodeId, useStore } from "@xyflow/react";
+import { NodeResizeControl, Position, useNodeId, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
-import { socketStyle } from "../utils/sockets";
+import { multiSocketStyle, socketStyle } from "../utils/sockets";
 import { nodeColors } from "../styles";
 import { memo } from "react";
 import ErrorBadge, { SuccessBadge, useNodeError, useWriteStatus } from "../components/nodegraph/ErrorBadge";
@@ -45,6 +45,16 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     const connectedInputs = useCallback((s) => s.edges.flatMap((e) => (e.source === nodeId ? [e.sourceHandle] : [])).join("\n"), [nodeId]);
     const connected = useStore(connectedInputs).split("\n");
 
+    // a multi input's socket grows with its links, react flow has to measure it again to put their ends in place
+    const multiInputs = (nodeData?.handles?.inputs ?? [])
+        .filter((h) => h.multi)
+        .map((h) => `${h.id}:${connected.filter((c) => c === h.id).length}`)
+        .join(",");
+    const updateNodeInternals = useUpdateNodeInternals();
+    useEffect(() => {
+        if (multiInputs && nodeId && !preview) updateNodeInternals(nodeId);
+    }, [multiInputs, nodeId, preview, updateNodeInternals]);
+
     if (nodeData != null) {
         const handleTypes = ["outputs", "inputs"];
         for (let handleType of handleTypes) {
@@ -72,16 +82,19 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                 let value = rfHandleType && !preview && !uiHidden && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
                 if (value === handle["default"]) value = undefined;
                 const tag = preview ? undefined : data?.[rfHandleType ? "input_tags" : "output_tags"]?.[handle["id"]];
+                // a multi input's socket is a pill as tall as its links need, its row makes room for it
+                const multi = rfHandleType && handle["multi"] ? multiSocketStyle(preview ? 0 : connected.filter((c) => c === handle["id"]).length) : null;
+                const rowStyle = multi ? { minHeight: multi.height, alignItems: "center" } : {};
 
                 const buildHandle = (
                     <>
-                        <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit" }}>
+                        <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit", ...rowStyle }}>
                             {labels?.[handle["id"]] ?? <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>}
                             {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
                             {preview ? (
-                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></div>
+                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }}></div>
                             ) : (
-                                <SocketHandle id={handle["id"]} side={handleType} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }} />
+                                <SocketHandle id={handle["id"]} side={handleType} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }} />
                             )}
                             {tag && <SocketTag side={handleType} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
                         </div>

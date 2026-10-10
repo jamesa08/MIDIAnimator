@@ -6,7 +6,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-export type Handle = { id: string; name: string; data_type: string; description?: string; hidden?: boolean; default?: any };
+export type Handle = { id: string; name: string; data_type: string; description?: string; hidden?: boolean; multi?: boolean; default?: any };
 export type Graph = { nodes: any[]; edges: any[]; viewport?: any; [key: string]: any };
 export type GroupDef = Graph & { name: string; description?: string; category?: string; interface: { inputs: Handle[]; outputs: Handle[] } };
 export type Project = Graph & { groups?: Record<string, GroupDef> };

@@ -1,10 +1,10 @@
-import { useId, useMemo } from "react";
-import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath, useInternalNode } from "@xyflow/react";
+import { useCallback, useId, useMemo } from "react";
+import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath, ReactFlowState, useInternalNode, useStore } from "@xyflow/react";
 import { useGroupContext } from "../../contexts/GroupContext";
 import { inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_COLORS } from "../../styles";
-import { socketCategory } from "../../utils/sockets";
+import { multiSlotOffset, socketCategory } from "../../utils/sockets";
 import ErrorBadge, { useBadInput } from "./ErrorBadge";
 
 // a lighter shade of a color, what a selection is drawn in (a selected node's ring in index.css)
@@ -23,7 +23,7 @@ export function EdgeRing({ path, stroke, width = 3 }: { path: string; stroke: st
 
 // an edge in the color of the sockets it connects, fading from one to the other when their types differ.
 // one whose value was the wrong type for its input in the last run is drawn red with a warning sign on it
-function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, style, interactionWidth }: EdgeProps) {
+function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY: socketY, targetX, targetY, sourcePosition, targetPosition, selected, style, interactionWidth }: EdgeProps) {
     const { groups, scope } = useGroupContext();
     const specs = useNodeSpecs();
     const lookup = useMemo(() => specLookup(Object.fromEntries(specs.map((spec: any) => [spec.id, spec])), groups), [specs, groups]);
@@ -35,7 +35,19 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
 
     // inputs are react flow's source handles and outputs its targets, data flows from the target to the source
     const from = targetNode ? SOCKET_COLORS[socketCategory(outputHandle(lookup, targetNode, targetHandleId ?? "", scope).data_type)] : SOCKET_COLORS.any;
-    const to = sourceNode ? SOCKET_COLORS[socketCategory(inputHandle(lookup, sourceNode, sourceHandleId ?? "", scope).data_type)] : SOCKET_COLORS.any;
+    const input = sourceNode ? inputHandle(lookup, sourceNode, sourceHandleId ?? "", scope) : null;
+    const to = input ? SOCKET_COLORS[socketCategory(input.data_type)] : SOCKET_COLORS.any;
+
+    // into a multi input, the edge ends at its own slot on the socket, in the order the links were made
+    const slot = useCallback(
+        (s: ReactFlowState) => {
+            const into = s.edges.filter((e) => e.source === source && e.sourceHandle === sourceHandleId);
+            return `${into.findIndex((e) => e.id === id)}/${into.length}`;
+        },
+        [id, source, sourceHandleId]
+    );
+    const [index, links] = useStore(slot).split("/").map(Number);
+    const sourceY = input?.multi && index >= 0 ? socketY + multiSlotOffset(index, links) : socketY;
     const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
     if (bad) {
