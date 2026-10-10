@@ -774,8 +774,19 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             if (dropped) {
                 const output = { node: dropped.target, side: "outputs" as const, socket: dropped.targetHandle ?? "" };
                 const input = { node: dropped.source, side: "inputs" as const, socket: dropped.sourceHandle ?? "" };
-                const links = connectAlong(store.getState().nodeLookup, getEdges(), output, input, along);
-                apply([connectOp(dropped), ...links.map(({ output, input }): Op => ({ op: "connect", from_node: output.node, from_output: output.socket, to_node: input.node, to_input: input.socket }))]);
+                const { nodeLookup } = store.getState();
+                const inputNode = nodeLookup.get(input.node);
+                // outputs dropped on a multi input all go into it
+                const multi = !!inputNode && !!inputHandle(lookup, inputNode, input.socket, level.def).multi && along.every((s) => s.side === "outputs");
+                const links = connectAlong(nodeLookup, getEdges(), output, input, along, multi);
+                const connect = (output: SocketRef, input: SocketRef): Op => ({ op: "connect", from_node: output.node, from_output: output.socket, to_node: input.node, to_input: input.socket });
+                let ops = [connectOp(dropped), ...links.map((link) => connect(link.output, link.input))];
+                // a multi input gets its links top to bottom so they don't cross, the dragged one where its socket is
+                if (multi) {
+                    const y = (s: SocketRef) => socketPoints(nodeLookup.get(s.node)!).find((p) => sameSocket(p, s))?.y ?? 0;
+                    ops = [output, ...links.map((link) => link.output)].sort((a, b) => y(a) - y(b)).map((o) => connect(o, input));
+                }
+                apply(ops);
                 return;
             }
             // several links dropped on nothing don't add a node

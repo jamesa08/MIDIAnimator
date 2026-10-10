@@ -75,6 +75,12 @@ Use `inject` to put a UI element on a handle (keyed by handle id), and `hidden` 
 
 Add a test in `tests/executor_test.rs` that calls the function directly with `Inputs::from([("handle_id", json!(...))])`, at minimum for a missing input and for the normal case.
 
+## Multi Inputs
+
+An input with `"multi": true` takes any number of connections, like Blender's multi input sockets (Animation Generator's Note On and Note Off Keyframes). The run gathers them into one list in the order they were connected, and a list connected to it is flattened in, so the executor reads it as `Option<&Vec<T>>`. Connecting the same output twice changes nothing, and `graph_disconnect` can remove one connection by its `from_node` and `from_output`.
+
+The socket is drawn as a pill that grows with its links up to three slots, more links squeeze in closer (`multiSocketStyle` in `src/utils/sockets.ts`). `TypedEdge` ends each link at its own place on it. Outputs dragged together onto a multi input all go into it, top to bottom.
+
 ## Dynamic Handles
 
 Dynamic handles are output handles that are generated at runtime based on the data a node receives. Unlike static handles, they are not defined in `default_nodes.json`: they are derived from the node's execution results.

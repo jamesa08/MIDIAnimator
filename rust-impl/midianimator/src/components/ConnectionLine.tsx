@@ -39,17 +39,22 @@ export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle
     const fromSide = fromHandle ? handleSide(fromHandle.type) : "inputs";
     const along = useMemo(() => (fromNode && fromHandle?.id ? draggedAlong(nodeLookup, { node: fromNode.id, side: fromSide, socket: fromHandle.id }) : []), [nodeLookup, fromNode?.id, fromHandle?.id, fromSide]);
     const dropOn = connectionStatus === "valid" && toNode && toHandle?.id ? { node: toNode.id, side: handleSide(toHandle.type), socket: toHandle.id } : null;
-    const links = useMemo(() => {
-        if (!dropOn || !fromNode || !fromHandle?.id || along.length === 0) return [];
-        const from = { node: fromNode.id, side: fromSide, socket: fromHandle.id };
-        const [output, input] = fromSide === "outputs" ? [from, dropOn] : [dropOn, from];
-        return connectAlong(nodeLookup, edges, output, input, along);
-    }, [dropOn?.node, dropOn?.socket, along, nodeLookup, edges]);
 
     // a socket's color from its type, a graph whose nodes have no specs (a note map) gives its own as the line's stroke
     const specs = useNodeSpecs();
     const { groups, scope } = useGroupContext();
     const lookup = useMemo(() => specLookup(Object.fromEntries(specs.map((spec: any) => [spec.id, spec])), groups), [specs, groups]);
+
+    const links = useMemo(() => {
+        if (!dropOn || !fromNode || !fromHandle?.id || along.length === 0) return [];
+        const from = { node: fromNode.id, side: fromSide, socket: fromHandle.id };
+        const [output, input] = fromSide === "outputs" ? [from, dropOn] : [dropOn, from];
+        // outputs dropped on a multi input all go into it
+        const inputNode = nodeLookup.get(input.node);
+        const multi = fromSide === "outputs" && !!inputNode && !!inputHandle(lookup, inputNode, input.socket, scope).multi;
+        return connectAlong(nodeLookup, edges, output, input, along, multi);
+    }, [dropOn?.node, dropOn?.socket, along, nodeLookup, edges, lookup, scope]);
+
     const given = (connectionLineStyle as CSSProperties | undefined)?.stroke;
     const colorOf = (node: InternalNode | null | undefined, socket: SocketRef | null) => {
         if (given) return given;
