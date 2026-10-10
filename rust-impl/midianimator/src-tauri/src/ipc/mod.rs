@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
+use crate::blender::curves::carry_over_curves;
 use crate::graph::execute::run_instance;
 use crate::scene_generics;
 use crate::settings::get_setting;
@@ -212,15 +213,18 @@ pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
 /// becomes its pending scene data instead, so accepting it uses the newest scene. with no tab linked it goes nowhere.
 /// doesn't notify the front end, the caller calls `update_state()`
 pub fn apply_scene_update(message: &str) -> Result<Option<String>, String> {
-    let scene_data = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message).map_err(|e| e.to_string())?;
+    let mut scene_data = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message).map_err(|e| e.to_string())?;
     let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(id) = state.connected_instance_id.clone() else {
         return Ok(None);
     };
     let shown = state.active_instance_id == id;
+    let watched = state.watched_curves.clone().unwrap_or_default();
     let Some(instance) = state.instance_mut(&id) else {
         return Ok(None);
     };
+    // only the watched objects come with their curves
+    carry_over_curves(&instance.scene_data, &mut scene_data, &watched);
     if instance.execution_paused {
         instance.pending_scene_data = Some(scene_data);
         return Ok(None);
@@ -293,6 +297,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     log(format!("Blender disconnected from {}", peer.map_or("unknown".to_string(), |addr| addr.to_string())));
     let mut state = STATE.lock().unwrap();
     state.connected = false;
+    state.watched_curves = None;
     state.connected_application = "".to_string();
     state.connected_version = "".to_string();
     state.connected_file_name = "".to_string();
@@ -323,15 +328,15 @@ pub async fn send_message_with_timeout(message: String, timeout: Duration) -> Op
     let server = SERVER.lock().unwrap();
     // send the message to all clients
     let mut clients = server.clients.lock().unwrap();
+    // nobody to answer, no point waiting out the timeout
+    if clients.is_empty() {
+        return None;
+    }
     for client in clients.iter_mut() {
         // a closed client is removed by its handle_client thread
         write_in_chunks(client, json_msg.as_bytes()).ok();
     }
     drop(clients);
-    // nobody to answer, no point waiting out the timeout
-    if clients.is_empty() {
-        return None;
-    }
 
     // create a channel to receive the response, and insert it into the message_map
     let (tx, rx) = mpsc::channel();

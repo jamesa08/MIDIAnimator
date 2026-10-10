@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
+use crate::blender::curves::sync_curves;
 use crate::graph::builtin::all_groups;
 use crate::graph::executors::scene::with_scene;
 use crate::graph::model::{node_specs, Graph};
@@ -32,6 +33,9 @@ pub async fn execute_graph(realtime: bool) {
 /// a full run (`realtime` false) writes to Blender, so only the live tab does one
 pub async fn run_instance(id: String, realtime: bool) {
     let now = std::time::Instant::now();
+
+    // the live tab's graph may read keyframes from objects Blender doesn't send yet
+    sync_curves(&id).await;
 
     // copy what the run needs out of the state
     let (rf_instance, scene, open_group, specs) = {

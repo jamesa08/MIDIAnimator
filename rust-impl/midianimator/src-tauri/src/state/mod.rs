@@ -1,12 +1,14 @@
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::{MutexGuard, PoisonError};
 use std::{collections::HashMap, sync::Mutex};
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::blender::curves::{carry_over_curves, curve_sources, prune_curves, unwatch_curves};
 use crate::blender::scene_data::{compare_scene_data, get_scene_data};
 use crate::graph::execute::{forget_memo, run_instance};
 use crate::scene_generics::Scene;
@@ -50,6 +52,9 @@ pub struct AppState {
     pub active_instance_id: String,
     /// the tab Blender is linked to (live). it stays linked while Blender is away, and is linked again when it's back
     pub connected_instance_id: Option<String>,
+    /// the objects Blender's tracker sends keyframes for, the ones the live tab's graph reads (blender/curves.rs). none
+    /// when it isn't known (a tab just went live, Blender reconnected, the live tab closed), the next sync sends them
+    pub watched_curves: Option<BTreeSet<String>>,
     /// numbers the next tab's id, ids are never reused
     next_instance: u64,
 }
@@ -70,6 +75,12 @@ pub struct InstanceState {
     pub executed_inputs: HashMap<String, serde_json::Value>,
     pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
+    /// objects over the keyframe limit and their keyframe counts, waiting to be imported or left out (blender/curves.rs)
+    pub pending_curve_import: Option<BTreeMap<String, u64>>,
+    /// objects over the keyframe limit that were imported, they don't ask again
+    pub approved_curves: BTreeSet<String>,
+    /// objects over the keyframe limit that were left out, until they're picked again
+    pub declined_curves: BTreeSet<String>,
     /// path of the node group open in the editor (`group-1/group-2`), empty at the top level
     pub open_group: String,
     /// `AppState::graph_rev` when this tab's graph last changed
@@ -92,6 +103,9 @@ impl InstanceState {
             executed_inputs: HashMap::new(),
             pending_scene_data: None,
             execution_paused: false,
+            pending_curve_import: None,
+            approved_curves: BTreeSet::new(),
+            declined_curves: BTreeSet::new(),
             open_group: String::new(),
             graph_rev: 0,
             saved: serde_json::Value::Null,
@@ -135,6 +149,7 @@ impl Default for AppState {
             active_instance_id: first.id.clone(),
             instances: vec![first],
             connected_instance_id: None,
+            watched_curves: None,
             next_instance: 2,
         }
     }
@@ -224,6 +239,7 @@ impl AppState {
             executed_inputs: active.executed_inputs.clone(),
             pending_scene_data: active.pending_scene_data.clone(),
             execution_paused: active.execution_paused,
+            pending_curve_import: active.pending_curve_import.clone(),
             open_group: active.open_group.clone(),
             layout: active.layout.clone(),
         }
@@ -251,6 +267,7 @@ pub struct StateView {
     pub executed_inputs: HashMap<String, serde_json::Value>,
     pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
+    pub pending_curve_import: Option<BTreeMap<String, u64>>,
     pub open_group: String,
     pub layout: serde_json::Value,
 }
@@ -507,8 +524,12 @@ pub fn save_project_to(path: &str) -> Result<String, String> {
 pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
     // copy what we need out of the state so we don't hold the lock while writing
     let saved_data = {
-        let state = lock();
-        let instance = state.instance(id).ok_or_else(|| format!("no tab '{}'", id))?;
+        let mut state = lock();
+        let instance = state.instance_mut(id).ok_or_else(|| format!("no tab '{}'", id))?;
+        // curves of objects the graph stopped reading are kept until now
+        if let Ok(graph) = crate::graph::model::Graph::from_rf(&instance.rf_instance) {
+            prune_curves(&mut instance.scene_data, &curve_sources(&graph));
+        }
         SavedProject {
             scene_data: instance.scene_data.clone(),
             rf_instance: instance.rf_instance.clone(),
@@ -664,7 +685,7 @@ pub fn create_instance() -> String {
 /// the last tab isn't closed (the window closes instead), returns whether it closed
 #[tauri::command]
 pub async fn close_instance(id: String) -> bool {
-    let run = {
+    let (run, unlinked) = {
         let mut state = lock();
         if state.instances.len() <= 1 {
             return false;
@@ -673,22 +694,28 @@ pub async fn close_instance(id: String) -> bool {
             return false;
         };
         state.instances.remove(index);
-        if state.connected_instance_id.as_deref() == Some(&id) {
+        let unlinked = state.connected_instance_id.as_deref() == Some(&id);
+        if unlinked {
             state.connected_instance_id = None;
         }
-        if state.active_instance_id != id {
+        let run = if state.active_instance_id != id {
             None
         } else {
             let next = &state.instances[index.min(state.instances.len() - 1)];
             let run = (!next.execution_paused).then(|| next.id.clone());
             state.active_instance_id = next.id.clone();
             run
-        }
+        };
+        (run, unlinked)
     };
     history::forget(&id);
     forget_memo(&id);
     update_state();
     history::notify_active();
+    // no tab reads keyframes from Blender now
+    if unlinked {
+        unwatch_curves().await;
+    }
     // the tab shown now may have missed scene changes while it was in the background
     if let Some(next) = run {
         run_instance(next, true).await;
@@ -771,10 +798,12 @@ pub async fn link(id: String) -> Result<(), String> {
             return Err(format!("no tab '{}'", id));
         }
         state.connected_instance_id = Some(id.clone());
+        // the tab's run tells the tracker what to watch and fetches the curves (blender/curves.rs)
+        state.watched_curves = None;
     }
     update_state();
 
-    let fresh = get_scene_data().await;
+    let mut fresh = get_scene_data().await;
     let run = {
         let mut state = lock();
         // the tab was closed or another one went live while Blender answered
@@ -784,6 +813,8 @@ pub async fn link(id: String) -> Result<(), String> {
         let Some(instance) = state.instance_mut(&id) else {
             return Ok(());
         };
+        // Blender's scene comes without curves, the tab keeps its own until the run fetches them again
+        carry_over_curves(&instance.scene_data, &mut fresh, &BTreeSet::new());
         if compare_scene_data(&instance.scene_data, &fresh).has_changes() {
             instance.pending_scene_data = Some(fresh);
             instance.execution_paused = true;

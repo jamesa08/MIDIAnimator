@@ -6,6 +6,9 @@
     "ipc": {
         "port": 6577
     },
+    "blender": {
+        "keyframe_import_limit": 5000
+    },
     "panels": {
         "hide_when_inactive": false,
         "nodes_view": "grid"
