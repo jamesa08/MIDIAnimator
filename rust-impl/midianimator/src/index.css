@@ -1158,6 +1158,14 @@ img {
     --socket-color: var(--error-edge);
 }
 
+/* the area a multi input takes a dragged link in: all of it and as far around it as react flow looks around a socket's
+   middle (its connection radius) */
+.react-flow__handle.socket-drop-zone::before {
+    content: "";
+    position: absolute;
+    inset: -20px;
+}
+
 .react-flow__handle.socket-selected {
     box-shadow:
         0 0 0 2px color-mix(in srgb, var(--socket-color, #888) 50%, white),

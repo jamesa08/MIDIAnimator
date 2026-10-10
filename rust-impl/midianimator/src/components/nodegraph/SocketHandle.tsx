@@ -78,7 +78,7 @@ const PICK_UP_STYLE = { pointerEvents: "all", cursor: "crosshair" };
 
 // a socket of a node: react flow's handle, selected by a click that doesn't drag a link off it, a double click opens
 // the tag menu. `side` is which of the node's sockets it is
-export default function SocketHandle({ side, style, ...props }: HandleProps & { id: string; side: Side; style?: CSSProperties }) {
+export default function SocketHandle({ side, multi = false, style, ...props }: HandleProps & { id: string; side: Side; multi?: boolean; style?: CSSProperties }) {
     const nodeId = useNodeId() ?? "";
     const { scopeId, editable } = useGroupContext();
     const selected = useSocketSelected(nodeId, side, props.id);
@@ -88,6 +88,8 @@ export default function SocketHandle({ side, style, ...props }: HandleProps & { 
     // a connected input doesn't start a new link, a press picks up the one it has (a tag isn't a link to pick up)
     const isConnected = useCallback((s: ReactFlowState) => side === "inputs" && s.edges.some((e: any) => e.source === nodeId && e.sourceHandle === props.id && !e.tagged), [nodeId, side, props.id]);
     const pickUp = useStore(isConnected) && editable && !open;
+    // while a link is dragged, a multi input takes it anywhere near the whole socket, react flow only looks near its middle
+    const dropZone = useStore((s: ReactFlowState) => s.connection.inProgress) && multi;
     const press = (event: React.MouseEvent) => {
         pressRef.current = { x: event.clientX, y: event.clientY };
         if (!pickUp || event.button !== 0) return;
@@ -102,5 +104,15 @@ export default function SocketHandle({ side, style, ...props }: HandleProps & { 
         selectSocket(scopeId, nodeId, side, props.id, event);
     };
 
-    return <Handle {...props} isConnectableStart={!pickUp} className={selected ? "socket-selected" : undefined} style={{ ...style, "--socket-color": style?.background, ...(pickUp ? PICK_UP_STYLE : {}) } as CSSProperties} onMouseDown={press} onClick={click} onDoubleClick={editable && !open ? (event) => editTag(scopeId, nodeId, side, props.id, event) : undefined} />;
+    return (
+        <Handle
+            {...props}
+            isConnectableStart={!pickUp}
+            className={[selected && "socket-selected", dropZone && "socket-drop-zone"].filter(Boolean).join(" ") || undefined}
+            style={{ ...style, "--socket-color": style?.background, ...(pickUp ? PICK_UP_STYLE : {}) } as CSSProperties}
+            onMouseDown={press}
+            onClick={click}
+            onDoubleClick={editable && !open ? (event) => editTag(scopeId, nodeId, side, props.id, event) : undefined}
+        />
+    );
 }

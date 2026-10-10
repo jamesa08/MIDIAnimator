@@ -5,8 +5,8 @@ import { SOCKET_COLORS } from "../styles";
 import { SocketRef } from "../utils/graphOps";
 import { inputHandle, outputHandle, specLookup } from "../utils/groups";
 import { useNodeSpecs } from "../utils/nodeEntries";
-import { socketCategory } from "../utils/sockets";
-import { draggedAlong, handleSide } from "./nodegraph/SocketHandle";
+import { multiSlotOffset, socketCategory } from "../utils/sockets";
+import { draggedAlong, handleSide, sameSocket, socketPoints } from "./nodegraph/SocketHandle";
 import { connectAlong } from "./nodegraph/connectAlong";
 
 // one link being dragged, in its sockets' colors like a connected edge (TypedEdge): fading from `start`'s color to `end`'s
@@ -55,6 +55,16 @@ export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle
         return connectAlong(nodeLookup, edges, output, input, along, multi);
     }, [dropOn?.node, dropOn?.socket, along, nodeLookup, edges, lookup, scope]);
 
+    // over a multi input the link ends at the slot it will take, under the links it has
+    const end = useMemo(() => {
+        const node = dropOn?.side === "inputs" ? nodeLookup.get(dropOn.node) : null;
+        if (!dropOn || !node || !inputHandle(lookup, node, dropOn.socket, scope).multi) return { x: toX, y: toY };
+        const socket = socketPoints(node).find((p) => sameSocket(p, dropOn));
+        if (!socket) return { x: toX, y: toY };
+        const links = edges.filter((e) => e.source === dropOn.node && e.sourceHandle === dropOn.socket && !e.hidden).length;
+        return { x: socket.x, y: socket.y + multiSlotOffset(links, links + 1) };
+    }, [dropOn?.node, dropOn?.side, dropOn?.socket, nodeLookup, edges, lookup, scope, toX, toY]);
+
     const given = (connectionLineStyle as CSSProperties | undefined)?.stroke;
     const colorOf = (node: InternalNode | null | undefined, socket: SocketRef | null) => {
         if (given) return given;
@@ -78,8 +88,8 @@ export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle
                 const color = colorOf(nodeLookup.get(socket.node), socket);
                 return <Wire key={`${socket.node}\n${socket.socket}`} x={socket.x} y={socket.y} endX={end.x} endY={end.y} start={color} end={target ? colorOf(nodeLookup.get(target.node), target) : color} opacity={target ? 1 : 0.5} />;
             })}
-            <Wire x={fromX} y={fromY} endX={toX} endY={toY} start={fromColor} end={dropColor} />
-            <circle cx={toX} cy={toY} fill="#fff" r={3} stroke={"black"} strokeWidth={1.5} />
+            <Wire x={fromX} y={fromY} endX={end.x} endY={end.y} start={fromColor} end={dropColor} />
+            <circle cx={end.x} cy={end.y} fill="#fff" r={3} stroke={"black"} strokeWidth={1.5} />
             {/* dropped on nothing, a single link opens the add menu */}
             {!isHovering && along.length === 0 && <path className="edge-plus-sign" stroke={"black"} d={"M0,-5 V5 M-5,0 H5"} style={{ transform: `translate(${toX + 15}px, ${toY - 15}px)` }} />}
         </g>

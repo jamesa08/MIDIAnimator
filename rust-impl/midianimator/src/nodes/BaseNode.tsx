@@ -94,7 +94,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                             {preview ? (
                                 <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }}></div>
                             ) : (
-                                <SocketHandle id={handle["id"]} side={handleType} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }} />
+                                <SocketHandle id={handle["id"]} side={handleType} multi={!!multi} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }} />
                             )}
                             {tag && <SocketTag side={handleType} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
                         </div>

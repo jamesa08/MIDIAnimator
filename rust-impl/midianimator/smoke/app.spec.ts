@@ -631,6 +631,38 @@ test("dragging off a connected input picks up its link", async ({ page }) => {
     await settle(page);
 });
 
+test("a multi input takes a link dropped anywhere along it", async ({ page }) => {
+    // five links into the generator's note on keyframes make its socket tall
+    const tall = JSON.parse(JSON.stringify(backend));
+    for (const output of ["control_change", "pitchwheel", "aftertouch", "unique_note_numbers"]) {
+        tall.get_state.rf_instance.edges.push({ id: `extra-${output}`, source: "animation_generator-1", sourceHandle: "note_on_keyframes", target: "get_midi_track_data-1", targetHandle: output });
+    }
+    await openWindow(page, tall, "/#/");
+    const socket = socketOf(page, "animation_generator-1", "note_on_keyframes");
+    await expect(socket).toBeVisible();
+    await graphReady(page);
+    await settle(page);
+    const box = (await socket.boundingBox())!;
+    const from = (await socketOf(page, "get_midi_track_data-1", "notes").boundingBox())!;
+
+    // beside its ends and just above it, further than react flow looks around a socket's middle
+    for (const [x, y] of [
+        [box.x - 10, box.y + 2],
+        [box.x - 10, box.y + box.height - 2],
+        [box.x + box.width / 2, box.y - 6],
+    ]) {
+        const before = (await applied(page)).length;
+        await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(x - 40, y, { steps: 6 });
+        await page.mouse.move(x, y, { steps: 6 });
+        await expect(page.locator(".react-flow__connection")).toHaveClass(/valid/);
+        await page.mouse.up();
+        await expect.poll(async () => (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op === "connect"))).toEqual([[{ op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "animation_generator-1", to_input: "note_on_keyframes" }]]);
+    }
+    await settle(page);
+});
+
 test("tagging several sockets at once", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const first = socketOf(page, "evaluate_instrument-1", "midi_notes");
