@@ -56,15 +56,16 @@ pub fn scene_link() -> NodeResult {
 ///
 /// inputs:
 /// "keyframes": `HashMap<String, Array<BlendKeyframe>>`
+/// "clean_keyframes": `bool`, clears each object's existing animation before writing, on when unset
 ///
 /// outputs:
 /// None. it fails with Blender's error when the write doesn't go through, or with the objects it skipped and the
 /// errors Blender gave for single objects. a node that ran without an error wrote everything
 #[node_registry::node]
-pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
+pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: Option<bool>) -> NodeResult {
     // every write and how it went is in the log file, with Blender's error when it failed
     log(format!("writing keyframes for {} object(s) to Blender", keyframes.len()));
-    let outcome = write(keyframes);
+    let outcome = write(keyframes, clean_keyframes.unwrap_or(true));
     match &outcome {
         Ok(_) => log("wrote keyframes to Blender"),
         Err(error) => log(format!("writing keyframes to Blender failed: {error}")),
@@ -73,7 +74,7 @@ pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResu
 }
 
 // the scene writer's write, what Blender says ends up on the node
-fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
+fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool) -> NodeResult {
     // the Blender side reads JSON
     let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
 
@@ -83,7 +84,7 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>) -> NodeResult {
     }
 
     // the write finishes before the node does
-    let report = block_on(write_scene_data(keyframes)).map_err(|e| e.to_string())?;
+    let report = block_on(write_scene_data(keyframes, clean_keyframes)).map_err(|e| e.to_string())?;
 
     let mut problems = Vec::new();
     if !report.missing_objects.is_empty() {

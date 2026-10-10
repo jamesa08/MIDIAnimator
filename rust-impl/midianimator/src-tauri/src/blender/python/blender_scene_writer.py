@@ -12,6 +12,8 @@ from contextlib import suppress
 
 JSON_DATA = r""""""
 # JSON_DATA is a static variable that is injected when rust function send_scene_data() is called
+# the scene writer's Clean Keyframes checkbox, injected with JSON_DATA
+CLEAN_KEYFRAMES = True
 
 
 
@@ -79,7 +81,6 @@ def clean_all_keyframes(data: dict, report: dict):
 
         obj = bpy.data.objects.get(object_name)
         if obj is None:
-            report["missing_objects"].append(object_name)
             continue
 
         # the object's own animation and its shape keys'
@@ -150,7 +151,7 @@ def write_keyframes(data: dict, report: dict):
 
         obj = bpy.data.objects.get(object_name)
         if obj is None:
-            # already reported by clean_all_keyframes
+            report["missing_objects"].append(object_name)
             continue
 
         fcurve_map: dict[tuple, list] = {}
@@ -168,8 +169,12 @@ def write_keyframes(data: dict, report: dict):
                 frames = [seconds_to_frame(kf["time"]) for kf in keyframes]
                 values = [kf["value"] for kf in keyframes]
 
+                # keys already on the curve (not cleaned) stay, foreach_set sets every point so they go in first
+                existing = [0.0] * (len(fc.keyframe_points) * 2)
+                fc.keyframe_points.foreach_get("co", existing)
+
                 fc.keyframe_points.add(len(keyframes))
-                fc.keyframe_points.foreach_set("co", [x for co in zip(frames, values) for x in co])
+                fc.keyframe_points.foreach_set("co", existing + [x for co in zip(frames, values) for x in co])
                 fc.update()
             except Exception as e:
                 report["errors"].append(f"couldn't write '{data_path}[{array_index}]' on '{object_name}': {e}")
@@ -187,7 +192,8 @@ def _execute_on_main_thread():
     """Runs on Blender's main thread via app.timers. Must return None to unregister."""
     try:
         data = json.loads(JSON_DATA)
-        clean_all_keyframes(data, _report)
+        if CLEAN_KEYFRAMES:
+            clean_all_keyframes(data, _report)
         write_keyframes(data, _report)
     except Exception:
         # the traceback shows on the scene writer node in MotionKeys

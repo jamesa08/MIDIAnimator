@@ -170,10 +170,10 @@ pub struct SceneWriteReport {
 // how long Blender gets to write, the Python side gives up a few seconds before this
 const SCENE_WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub async fn write_scene_data(data: serde_json::Value) -> std::io::Result<SceneWriteReport> {
+pub async fn write_scene_data(data: serde_json::Value, clean_keyframes: bool) -> std::io::Result<SceneWriteReport> {
     let json_string = serde_json::to_string(&data).map_err(std::io::Error::other)?;
 
-    let injected_script = SCENE_WRITER_PY.replace("JSON_DATA = r\"\"\"\"\"\"", &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string));
+    let injected_script = SCENE_WRITER_PY.replace("JSON_DATA = r\"\"\"\"\"\"", &format!("JSON_DATA = r\"\"\"{}\"\"\"", json_string)).replace("CLEAN_KEYFRAMES = True", if clean_keyframes { "CLEAN_KEYFRAMES = True" } else { "CLEAN_KEYFRAMES = False" });
 
     let Some(result) = ipc::send_message_with_timeout(injected_script, SCENE_WRITE_TIMEOUT).await else {
         return Err(std::io::Error::other("Blender didn't respond to the scene write"));

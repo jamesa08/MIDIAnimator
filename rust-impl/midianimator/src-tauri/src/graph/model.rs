@@ -290,7 +290,7 @@ pub fn describe_type(data_type: &str) -> Result<String, String> {
         "NoteTarget" => (schemars::schema_for!(NoteTarget), None),
         "CurveKeys" => (schemars::schema_for!(CurveKeys), None),
         // primitives don't have a schema, just describe them
-        "String" | "f64" | "u8" | "Any" => {
+        "String" | "f64" | "u8" | "bool" | "Any" => {
             return Ok(format!(
                 "{} is a plain JSON value ({})",
                 data_type,

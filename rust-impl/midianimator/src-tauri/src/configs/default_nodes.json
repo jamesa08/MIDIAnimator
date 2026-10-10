@@ -473,7 +473,15 @@
                         "id": "keyframes",
                         "name": "Keyframes",
                         "data_type": "HashMap<String, Array<BlendKeyframe>>",
-                        "description": "Keyframes per object from Evaluate Instrument. Each object's existing animation is cleared before writing."
+                        "description": "Keyframes per object from Evaluate Instrument."
+                    },
+                    {
+                        "id": "clean_keyframes",
+                        "default": true,
+                        "name": "Clean Keyframes",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "Clear each object's existing animation before writing. Off adds the keys to the curves already there."
                     }
                 ],
                 "outputs": []

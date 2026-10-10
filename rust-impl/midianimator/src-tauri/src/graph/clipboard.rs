@@ -149,6 +149,7 @@ fn clean_data(node: &RfNode, spec: Option<&NodeSpec>) -> Map<String, Value> {
             match handle.data_type.as_str() {
                 "String" => value.is_string(),
                 "f64" => value.is_number(),
+                "bool" => value.is_boolean(),
                 _ => !value.is_null(),
             }
         })

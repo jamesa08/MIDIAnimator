@@ -53,6 +53,7 @@ pub fn validate_inputs(spec: &NodeSpec, inputs: &Map<String, Value>) -> Result<(
             (_, Value::Null) => true,
             ("String", v) => v.is_string(),
             ("f64", v) => v.is_number(),
+            ("bool", v) => v.is_boolean(),
             _ => true,
         };
         // wrong type for this input
