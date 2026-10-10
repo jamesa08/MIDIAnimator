@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, FinalConnectionState } from "@xyflow/react";
+import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
@@ -582,6 +582,26 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     }, [menuOpen, closeMenu]);
 
     useShiftMultiSelection();
+
+    // react flow measures where a node's sockets are when the node is drawn or changes size. a measurement can land on a
+    // node that an update from the backend has just replaced (it happens most on the first frames after a restart),
+    // leaving the node its size but no sockets, and it's never measured again while its size stays the same. edges to it
+    // aren't drawn and no link can be dragged off it. a node like that, or with other sockets on screen than measured, is
+    // measured again
+    const updateNodeInternals = useUpdateNodeInternals();
+    useEffect(() => {
+        const { nodeLookup, domNode } = store.getState();
+        const stale = [...nodeLookup.values()]
+            .filter((node) => {
+                const element = node.measured?.width ? domNode?.querySelector(`.react-flow__node[data-id="${CSS.escape(node.id)}"]`) : null;
+                if (!element) return false;
+                const bounds = node.internals.handleBounds;
+                // the same sockets react flow measures
+                return !bounds || element.querySelectorAll(".source").length !== (bounds.source?.length ?? 0) || element.querySelectorAll(".target").length !== (bounds.target?.length ?? 0);
+            })
+            .map((node) => node.id);
+        if (stale.length > 0) updateNodeInternals(stale);
+    });
 
     // fit the view when a loaded project's tab is first shown, or when a group without a saved view is opened.
     // not the fitView prop, that one stays armed on an empty graph and zooms onto the first node added
