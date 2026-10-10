@@ -328,6 +328,10 @@ pub async fn send_message_with_timeout(message: String, timeout: Duration) -> Op
         write_in_chunks(client, json_msg.as_bytes()).ok();
     }
     drop(clients);
+    // nobody to answer, no point waiting out the timeout
+    if clients.is_empty() {
+        return None;
+    }
 
     // create a channel to receive the response, and insert it into the message_map
     let (tx, rx) = mpsc::channel();
