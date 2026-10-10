@@ -3,11 +3,12 @@ use std::sync::{Mutex, PoisonError};
 
 use crate::blender::curves::{curve_sources, sync_curves};
 use crate::graph::builtin::all_groups;
-use crate::graph::executors::scene::with_scene;
+use crate::graph::executors::io::node_error;
+use crate::graph::executors::scene::{with_scene, written};
 use crate::graph::model::{node_specs, Graph};
 use crate::graph::run::{run, write_paths, Memo, RunCtx};
 use crate::node_registry::get_node_registry;
-use crate::state::{lock, update_state};
+use crate::state::{lock, update_state, LastWrite};
 use crate::utils::log::log;
 
 pub use crate::graph::run::panic_message;
@@ -73,7 +74,7 @@ pub async fn run_instance(id: String, realtime: bool) {
     ctx.inspect = open_group;
 
     // failed nodes keep their error in the record, the rest of the graph still ran
-    let (record, _) = with_scene(scene, curve_sources(&graph), || run(&ctx, &graph));
+    let ((record, _), (objects, keyframes)) = with_scene(scene, curve_sources(&graph), || (run(&ctx, &graph), written()));
     memo_lock.insert(id.clone(), ctx.into_memo());
     drop(memo_lock);
 
@@ -81,9 +82,11 @@ pub async fn run_instance(id: String, realtime: bool) {
     let writers = write_paths(&graph, &groups, &specs);
     let stale: Vec<String> = writers.iter().filter(|path| !record.fresh.contains(path)).cloned().collect();
 
+    let ms = now.elapsed().as_millis() as u64;
     log(format!("took {} ms to execute {} ({})", now.elapsed().as_nanos() as f32 / 1_000_000.0, id, if realtime { "realtime" } else { "write" }));
 
-    let shown = {
+    // the tab on screen ran, or Blender was written to: the frontend gets the new state
+    let send = {
         let mut state = lock();
         let shown = state.active_instance_id == id;
         // the tab was closed while it ran
@@ -99,12 +102,26 @@ pub async fn run_instance(id: String, realtime: bool) {
                 results.insert(path, last.clone());
             }
         }
+        // a full run's writes, for the status bar and the run button
+        let last_write = (!realtime).then(|| LastWrite {
+            seq: 0,
+            error: writers.iter().find_map(|path| results.get(path).and_then(node_error)).map(str::to_string),
+            written: writers.iter().filter(|path| record.fresh.contains(path)).count(),
+            objects,
+            keyframes,
+            ms,
+        });
         instance.executed_results = results;
         instance.executed_inputs = record.inputs;
         instance.stale_writes = stale;
-        shown
+        let wrote = last_write.is_some();
+        if let Some(mut last_write) = last_write {
+            last_write.seq = state.last_write.as_ref().map_or(1, |last| last.seq + 1);
+            state.last_write = Some(last_write);
+        }
+        shown || wrote
     };
-    if shown {
+    if send {
         update_state();
     }
 }

@@ -55,6 +55,8 @@ pub struct AppState {
     /// the objects Blender's tracker sends keyframes for, the ones the live tab's graph reads (blender/curves.rs). none
     /// when it isn't known (a tab just went live, Blender reconnected, the live tab closed), the next sync sends them
     pub watched_curves: Option<BTreeSet<String>>,
+    /// the last full run, what it wrote to Blender. none until the first one
+    pub last_write: Option<LastWrite>,
     /// numbers the next tab's id, ids are never reused
     next_instance: u64,
 }
@@ -153,6 +155,7 @@ impl Default for AppState {
             instances: vec![first],
             connected_instance_id: None,
             watched_curves: None,
+            last_write: None,
             next_instance: 2,
         }
     }
@@ -241,6 +244,7 @@ impl AppState {
             executed_results: active.executed_results.clone(),
             executed_inputs: active.executed_inputs.clone(),
             stale_writes: active.stale_writes.clone(),
+            last_write: self.last_write.clone(),
             pending_scene_data: active.pending_scene_data.clone(),
             execution_paused: active.execution_paused,
             pending_curve_import: active.pending_curve_import.clone(),
@@ -270,11 +274,25 @@ pub struct StateView {
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
     pub stale_writes: Vec<String>,
+    pub last_write: Option<LastWrite>,
     pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
     pub pending_curve_import: Option<BTreeMap<String, u64>>,
     pub open_group: String,
     pub layout: serde_json::Value,
+}
+
+/// what a full run wrote to Blender. `seq` goes up with every one, so the frontend can tell a new write from the last
+/// one. `error`: the first error a node writing to Blender gave. `written`: how many of them wrote, `objects` and
+/// `keyframes` how much they wrote together. `ms`: how long the run took
+#[derive(Serialize, Clone, Debug)]
+pub struct LastWrite {
+    pub seq: u64,
+    pub error: Option<String>,
+    pub written: usize,
+    pub objects: usize,
+    pub keyframes: usize,
+    pub ms: u64,
 }
 
 /// a tab in the tab bar, `label` is its name. `path`: its file, none if it hasn't been saved. `linked`: Blender is linked

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 
 use super::io::{NodeResult, Outputs};
@@ -16,6 +16,8 @@ thread_local! {
     static SCENE: RefCell<Option<Scene>> = const { RefCell::new(None) };
     // the objects the tab's graph reads keyframes from, scene writers leave them alone
     static CURVE_SOURCES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    // the objects and keyframes the run's scene writers wrote, together
+    static WRITTEN: Cell<(usize, usize)> = const { Cell::new((0, 0)) };
 }
 
 /// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene. `curve_sources` are
@@ -23,10 +25,17 @@ thread_local! {
 pub fn with_scene<T>(scene: Option<Scene>, curve_sources: BTreeSet<String>, f: impl FnOnce() -> T) -> T {
     let before = SCENE.with(|current| current.replace(scene));
     let sources_before = CURVE_SOURCES.with(|current| current.replace(curve_sources));
+    let written_before = WRITTEN.replace((0, 0));
     let result = f();
     SCENE.with(|current| *current.borrow_mut() = before);
     CURVE_SOURCES.with(|current| *current.borrow_mut() = sources_before);
+    WRITTEN.set(written_before);
     result
+}
+
+/// how many objects and keyframes the scene writers wrote so far in the run `with_scene` is running
+pub fn written() -> (usize, usize) {
+    WRITTEN.get()
 }
 
 // Node: scene_link
@@ -86,6 +95,7 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool)
         log(format!("not writing keyframes to '{name}', its keyframes are read by Keyframes From Object and are in a collection being animated"));
     }
     let keyframes: HashMap<&String, &Vec<BlendKeyframe>> = keyframes.iter().filter(|(name, _)| !sources.contains(*name)).collect();
+    let totals = (keyframes.len(), keyframes.values().map(|keys| keys.len()).sum::<usize>());
 
     // the Blender side reads JSON
     let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
@@ -106,6 +116,8 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool)
     if !problems.is_empty() {
         return Err(problems.join("\n"));
     }
+    let (objects, keys) = WRITTEN.get();
+    WRITTEN.set((objects + totals.0, keys + totals.1));
     Ok(Outputs::new())
 }
 
