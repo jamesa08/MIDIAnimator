@@ -720,7 +720,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         },
         [getNodes, clearSockets, blockKeys]
     );
-    // the sockets in a box around sockets only (NodeGraphCanvas's BoxSelect), while it's dragged
+    // the sockets inside a box selection (NodeGraphCanvas's BoxSelect), while it's dragged
     const onBoxSockets = useCallback(
         (sockets: SocketRef[]) => {
             const base = boxBaseRef.current;

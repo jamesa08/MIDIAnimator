@@ -1,5 +1,5 @@
 import { CSSProperties, useEffect, useMemo, useRef } from "react";
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, Node, useStore, useStoreApi } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -39,16 +39,16 @@ function edgeCrosses(root: Element | null | undefined, id: string, box: { x0: nu
     return false;
 }
 
-// box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's). a box around
-// sockets but no whole node selects those sockets alone instead, in a graph that has `onBoxSockets` (the editor). each
-// change goes through the graph's onNodesChange and onEdgesChange like react flow's own
+// box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's), and in a
+// graph that has `onBoxSockets` (the editor) the sockets inside it. not the sockets of a node wholly inside it, that node
+// is selected. each change goes through the graph's onEdgesChange like react flow's own
 function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edge[]; onBoxSockets?: (sockets: SocketRef[]) => void }) {
     const store = useStoreApi();
     const selectionRect = useStore((s) => s.userSelectionRect);
     const latest = useRef({ nodes, edges, onBoxSockets });
     latest.current = { nodes, edges, onBoxSockets };
     useEffect(() => {
-        const { userSelectionActive, transform, domNode, nodeLookup, triggerNodeChanges, triggerEdgeChanges } = store.getState();
+        const { userSelectionActive, transform, domNode, nodeLookup, triggerEdgeChanges } = store.getState();
         // not yet dragged, a press on the graph sets an empty box
         if (!selectionRect || !userSelectionActive) return;
         const { nodes, edges, onBoxSockets } = latest.current;
@@ -56,25 +56,14 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
         const box = { x0: (selectionRect.x - tx) / zoom, y0: (selectionRect.y - ty) / zoom, x1: (selectionRect.x + selectionRect.width - tx) / zoom, y1: (selectionRect.y + selectionRect.height - ty) / zoom };
         const inBox = (x: number, y: number) => x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1;
 
-        let sockets: SocketRef[] = [];
         if (onBoxSockets) {
-            const shown = [...nodeLookup.values()].filter((n) => !n.hidden);
-            const whole = shown.some((n) => {
+            const whole = (n: InternalNode) => {
                 const { x, y } = n.internals.positionAbsolute;
                 const [width, height] = [n.measured.width ?? 0, n.measured.height ?? 0];
                 return width > 0 && inBox(x, y) && inBox(x + width, y + height);
-            });
-            const points = whole ? [] : shown.flatMap(socketPoints).filter((p) => inBox(p.x, p.y));
-            sockets = points.map(({ node, side, socket }) => ({ node, side, socket }));
-            onBoxSockets(sockets);
-        }
-        if (sockets.length > 0) {
-            const deselected = <T extends { id: string; selected?: boolean }>(items: T[] = []) => items.filter((item) => item.selected).map((item) => ({ id: item.id, type: "select" as const, selected: false }));
-            const nodeChanges = deselected(nodes);
-            const edgeChanges = deselected(edges);
-            if (nodeChanges.length > 0) triggerNodeChanges(nodeChanges);
-            if (edgeChanges.length > 0) triggerEdgeChanges(edgeChanges);
-            return;
+            };
+            const points = [...nodeLookup.values()].filter((n) => !n.hidden && !whole(n)).flatMap(socketPoints);
+            onBoxSockets(points.filter((p) => inBox(p.x, p.y)).map(({ node, side, socket }) => ({ node, side, socket })));
         }
 
         const inside = new Set((nodes ?? []).filter((n) => n.selected).map((n) => n.id));

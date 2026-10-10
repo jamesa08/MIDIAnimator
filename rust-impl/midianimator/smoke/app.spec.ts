@@ -612,15 +612,15 @@ test("tagging several sockets at once", async ({ page }) => {
     await settle(page);
 });
 
-test("box select around sockets only selects the sockets", async ({ page }) => {
+test("box select takes nodes, edges and sockets", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
     await expect(node).toBeVisible();
     await graphReady(page);
     await settle(page);
 
-    // a narrow box down the outputs, from above the node to the aftertouch socket. it touches the node's edge, but it's
-    // around sockets and no whole node
+    // a narrow box down the outputs, from above the node to the aftertouch socket: the sockets in it, the node it
+    // touches and that node's edges
     const bounds = (await node.boundingBox())!;
     const aftertouch = (await socketOf(page, "get_midi_track_data-1", "aftertouch").boundingBox())!;
     const right = bounds.x + bounds.width;
@@ -630,8 +630,21 @@ test("box select around sockets only selects the sockets", async ({ page }) => {
     await page.mouse.up();
     for (const socket of ["notes", "control_change", "pitchwheel", "aftertouch"]) await expect(socketOf(page, "get_midi_track_data-1", socket)).toHaveClass(/socket-selected/);
     await expect(page.locator(".socket-selected")).toHaveCount(4);
-    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
-    await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+    await expect(node).toHaveClass(/selected/);
+    await expect(page.locator('.react-flow__edge.selected[data-id*="get_midi_track_data-1"]')).toHaveCount(3);
+
+    // a box around a whole node takes the node, not its sockets
+    const whole = page.locator('.react-flow__node[data-id="evaluate_instrument-1"]');
+    const wholeBounds = (await whole.boundingBox())!;
+    const start = { x: wholeBounds.x + wholeBounds.width + 25, y: wholeBounds.y - 20 };
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"), start)).toBe(true);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(wholeBounds.x - 25, wholeBounds.y + wholeBounds.height + 20, { steps: 8 });
+    await page.mouse.up();
+    await expect(whole).toHaveClass(/selected/);
+    await expect(page.locator(".socket-selected")).toHaveCount(0);
     await settle(page);
 });
 
