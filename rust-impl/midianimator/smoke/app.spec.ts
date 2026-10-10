@@ -735,6 +735,31 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     await settle(page);
 });
 
+test("status bar shows the keys that do something", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await expect(page.locator(".react-flow__node").first()).toBeVisible();
+    const status = page.locator(".status-bar");
+    const pane = (await page.locator(".node-graph").boundingBox())!;
+
+    // the node editor's keys under the mouse, the ones held modifiers run while they're held
+    await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height - 40);
+    await expect(status).toContainText("Grab");
+    await expect(status).not.toContainText("Add Node");
+    await page.keyboard.down("Shift");
+    await expect(status).toContainText("Add Node");
+    await expect(status).not.toContainText("Grab");
+    await page.keyboard.up("Shift");
+    await expect(status).toContainText("Grab");
+
+    // a modal's own keys while it's open
+    await page.keyboard.press("Shift+A");
+    await expect(status).toContainText("Add First");
+    await page.keyboard.press("Escape");
+    await expect(status).not.toContainText("Add First");
+    await expect(status).toContainText("Grab");
+    await settle(page);
+});
+
 test("drag ghost window", async ({ page }) => {
     await openWindow(page, backend, "/#/drag-ghost", "drag-ghost");
     await settle(page);

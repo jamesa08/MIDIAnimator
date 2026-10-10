@@ -552,6 +552,19 @@ img {
     }
 }
 
+/* a key in the status bar's hints. the bar lifts its text 1px to center arial's caps, the box goes back down and lifts its
+   own text half as much */
+.status-key {
+    position: relative;
+    top: 1px;
+    display: inline-flex;
+    align-items: center;
+    height: 12px;
+    padding: 0 3px 1px;
+    font-size: 10px;
+    border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+}
+
 /* the active tab takes the toolbar's shade so it joins the toolbar below it. the status bar matches the toolbar */
 .tab-bar .bg-white,
 .toolbar,

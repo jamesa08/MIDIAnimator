@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { type Hint, setHints } from "./status";
 
 // every key in the app goes through here, one listener per window. the backend owns the keymap (src-tauri/src/ui/keybinds.rs):
 // commands grouped by scope, the app, an area (the node editor) or a modal (grab, the add menu, dialogs). components only
@@ -27,6 +28,7 @@ const keymapListeners = new Set<() => void>();
 const setKeymap = (next: Keymap) => {
     keymap = next;
     keymapListeners.forEach((listener) => listener());
+    refreshHints();
 };
 invoke<Keymap>("get_keymap").then(setKeymap);
 listen<Keymap>("keymap_changed", (event) => setKeymap(event.payload));
@@ -168,9 +170,11 @@ function handlerFor(scope: string, command: string): (() => void) | null {
 export function registerKeymap(scope: string, handlers: Handlers | (() => Handlers), enabled: () => boolean = () => true): () => void {
     const registration = { scope, handlers: typeof handlers === "function" ? handlers : () => handlers, enabled };
     registrations.push(registration);
+    refreshHints();
     return () => {
         const index = registrations.indexOf(registration);
         if (index >= 0) registrations.splice(index, 1);
+        refreshHints();
     };
 }
 
@@ -215,9 +219,11 @@ const modals: Modal[] = [];
 export function pushModal(scope: string | null, handlers: Handlers | (() => Handlers) = {}, options: ModalOptions = {}): () => void {
     const modal: Modal = { ...options, scope, handlers: typeof handlers === "function" ? handlers : () => handlers };
     modals.push(modal);
+    refreshHints();
     return () => {
         const index = modals.indexOf(modal);
         if (index >= 0) modals.splice(index, 1);
+        refreshHints();
     };
 }
 
@@ -258,6 +264,7 @@ const setHeld = (name: string, down: boolean) => {
     if (down) held.add(name);
     else held.delete(name);
     holdListeners.forEach((listener) => listener());
+    refreshHints();
 };
 
 const subscribeHolds = (listener: () => void) => {
@@ -301,6 +308,59 @@ function areasUnderMouse(): string[] {
         area = area.parentElement?.closest<HTMLElement>("[data-keymap-area]");
     }
     return areas;
+}
+
+// MARK: - Status
+
+// the keys that do something now, for the status bar: the modal's on top, or the area under the mouse's. holding
+// modifiers shows what they do with the area's and the app's keys
+function currentHints(): Hint[] {
+    const commands = (scope: string | null) => keymap?.scopes.find((s) => s.id === scope)?.commands ?? [];
+    const modal = modals[modals.length - 1];
+    if (modal) {
+        if (modal.raw) return [];
+        const handlers = modal.handlers();
+        return commands(modal.scope)
+            .filter((c) => handlers[c.id] && c.keys.length)
+            .map((c) => ({ key: c.keys[0], name: c.name }));
+    }
+    const modifiers = MODIFIERS.filter((m) => held.has(m));
+    const same = (key: string) => {
+        const { modifiers: of } = splitCombo(key);
+        return of.length === modifiers.length && of.every((m) => modifiers.includes(m));
+    };
+    const hints: Hint[] = [];
+    for (const scope of [...areasUnderMouse(), ...(modifiers.length ? ["app"] : [])]) {
+        for (const command of commands(scope)) {
+            // an area's command shows while something here runs it, holds are read where they're used
+            if (scope !== "app" && !command.hold && !handlerFor(scope, command.id)) continue;
+            const key = command.keys.find(same);
+            if (key && !hints.some((h) => h.key === key)) hints.push({ key, name: command.name });
+        }
+    }
+    return hints;
+}
+
+// the mouse is over this window, set when it comes in from outside and cleared when it leaves
+let mouseInside = false;
+let shownHints = "";
+// sends the hints when they changed, or always when `force` (this window took the mouse back from another one). only the
+// window with the mouse or the keys sends them, one in the background would take the status bar from it
+function refreshHints(force = false) {
+    if (!force && !mouseInside && !document.hasFocus()) return;
+    const hints = currentHints();
+    const key = JSON.stringify(hints);
+    if (key === shownHints && !force) return;
+    shownHints = key;
+    setHints(hints);
+}
+
+let shownAreas = "";
+function refreshAreas() {
+    const areas = areasUnderMouse().join(" ");
+    if (areas === shownAreas) return;
+    shownAreas = areas;
+    refreshHints();
 }
 
 const stop = (event: Event) => {
@@ -393,8 +453,27 @@ window.addEventListener("keydown", handleKeyDown, true);
 window.addEventListener("keyup", handleKeyUp, true);
 window.addEventListener("pointerdown", handlePointerDown, true);
 for (const type of ["mousedown", "mouseup", "click", "auxclick", "contextmenu"]) window.addEventListener(type, swallow as EventListener, true);
-window.addEventListener("mousemove", (event) => (mouse = { x: event.clientX, y: event.clientY }), true);
+window.addEventListener(
+    "mousemove",
+    (event) => {
+        mouse = { x: event.clientX, y: event.clientY };
+        refreshAreas();
+    },
+    true
+);
 window.addEventListener("blur", () => [...held].forEach((key) => setHeld(key, false)));
+// the mouse came in from outside the window, or the window was focused: its hints are the ones shown again
+window.addEventListener(
+    "mouseover",
+    (event) => {
+        if (event.relatedTarget) return;
+        mouseInside = true;
+        refreshHints(true);
+    },
+    true
+);
+window.addEventListener("mouseout", (event) => !event.relatedTarget && (mouseInside = false), true);
+window.addEventListener("focus", () => refreshHints(true));
 
 // a menu item picked or its shortcut pressed in this window. a modal ignores it like any other key, except quit so a modal
 // that never ended can't keep the app open (not while the shortcut editor is recording a key, that's the key it wants)
