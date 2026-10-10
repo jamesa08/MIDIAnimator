@@ -507,6 +507,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
                 edges={wires}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
+                connectionLineStyle={{ stroke: SOCKET_COLORS.midi }}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}

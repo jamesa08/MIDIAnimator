@@ -311,8 +311,6 @@ img {
     display: none;
 }
 
-/* the line being dragged out of a socket */
-.react-flow__connection .node-edge,
 .react-flow__connection .edge-plus-sign {
     stroke: var(--canvas-line);
 }
