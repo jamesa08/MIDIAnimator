@@ -539,3 +539,60 @@ fn a_scene_writer_inside_a_closed_group_is_still_recorded() {
     let (record, _) = run_graph(&root, &groups, false);
     assert_eq!(node_error(&record.results["group-1/scene_writer-1"]), Some("Blender isn't connected"));
 }
+
+// MARK: - Stale Writes
+
+/// a scene writer with keyframes set on it
+fn writer_graph(value: f64) -> Graph {
+    graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": { "Cube": [{ "time": 1.0, "value": value, "data_path": "location", "array_index": 2 }] } } }))], &[])
+}
+
+/// `run_memo` with a scene writer that writes nothing and goes through
+fn run_writes(root: &Graph, realtime: bool, memo: Memo) -> (Record, Memo) {
+    let specs = specs();
+    let mut registry: HashMap<String, NodeFunction> = get_node_registry();
+    registry.insert("scene_writer".to_string(), |_| Ok(MIDIAnimator::graph::executors::io::Outputs::new()));
+    let groups = BTreeMap::new();
+    let ctx = RunCtx::new(&specs, &registry, &groups, realtime).with_memo(memo);
+    let (record, _) = run(&ctx, root);
+    (record, ctx.into_memo())
+}
+
+#[test]
+fn a_writer_is_stale_until_it_writes() {
+    let root = writer_graph(1.0);
+    let (record, memo) = run_writes(&root, true, Memo::default());
+    assert!(record.fresh.is_empty());
+
+    // a write, then a realtime run giving it the same values: Blender has what the graph gives
+    let (record, memo) = run_writes(&root, false, memo);
+    assert_eq!(record.fresh, vec!["scene_writer-1"]);
+    let (record, _) = run_writes(&root, true, memo);
+    assert_eq!(record.fresh, vec!["scene_writer-1"]);
+}
+
+#[test]
+fn a_changed_value_makes_a_writer_stale() {
+    let (_, memo) = run_writes(&writer_graph(1.0), false, Memo::default());
+    let (record, _) = run_writes(&writer_graph(2.0), true, memo);
+    assert!(record.fresh.is_empty());
+}
+
+#[test]
+fn equal_values_made_again_keep_a_writer_fresh() {
+    let (_, memo) = run_writes(&writer_graph(1.0), false, Memo::default());
+    // the value changes and changes back: it's made again, a new value equal to the written one
+    let (_, memo) = run_writes(&writer_graph(2.0), true, memo);
+    let (record, _) = run_writes(&writer_graph(1.0), true, memo);
+    assert_eq!(record.fresh, vec!["scene_writer-1"]);
+}
+
+#[test]
+fn a_failed_write_is_stale() {
+    // the real scene writer fails, Blender isn't connected
+    let root = writer_graph(1.0);
+    let (record, _, memo) = run_memo(&root, &BTreeMap::new(), "", false, Memo::default());
+    assert!(record.fresh.is_empty());
+    let (record, _, _) = run_memo(&root, &BTreeMap::new(), "", true, memo);
+    assert!(record.fresh.is_empty());
+}

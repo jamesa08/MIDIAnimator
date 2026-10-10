@@ -73,6 +73,8 @@ pub struct InstanceState {
     pub rf_instance: HashMap<String, serde_json::Value>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
+    /// paths of the nodes writing to Blender whose last write isn't what the graph gives now, as of the last run
+    pub stale_writes: Vec<String>,
     pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
     /// objects over the keyframe limit and their keyframe counts, waiting to be imported or left out (blender/curves.rs)
@@ -101,6 +103,7 @@ impl InstanceState {
             rf_instance: empty_graph(),
             executed_results: HashMap::new(),
             executed_inputs: HashMap::new(),
+            stale_writes: Vec::new(),
             pending_scene_data: None,
             execution_paused: false,
             pending_curve_import: None,
@@ -237,6 +240,7 @@ impl AppState {
             scene_data: active.scene_data.clone(),
             executed_results: active.executed_results.clone(),
             executed_inputs: active.executed_inputs.clone(),
+            stale_writes: active.stale_writes.clone(),
             pending_scene_data: active.pending_scene_data.clone(),
             execution_paused: active.execution_paused,
             pending_curve_import: active.pending_curve_import.clone(),
@@ -265,6 +269,7 @@ pub struct StateView {
     pub scene_data: HashMap<String, Scene>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
+    pub stale_writes: Vec<String>,
     pub pending_scene_data: Option<HashMap<String, Scene>>,
     pub execution_paused: bool,
     pub pending_curve_import: Option<BTreeMap<String, u64>>,

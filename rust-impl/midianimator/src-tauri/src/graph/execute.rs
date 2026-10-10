@@ -5,7 +5,7 @@ use crate::blender::curves::{curve_sources, sync_curves};
 use crate::graph::builtin::all_groups;
 use crate::graph::executors::scene::with_scene;
 use crate::graph::model::{node_specs, Graph};
-use crate::graph::run::{run, Memo, RunCtx};
+use crate::graph::run::{run, write_paths, Memo, RunCtx};
 use crate::node_registry::get_node_registry;
 use crate::state::{lock, update_state};
 use crate::utils::log::log;
@@ -77,6 +77,10 @@ pub async fn run_instance(id: String, realtime: bool) {
     memo_lock.insert(id.clone(), ctx.into_memo());
     drop(memo_lock);
 
+    // the nodes writing to Blender whose last write isn't what the graph gives now
+    let writers = write_paths(&graph, &groups, &specs);
+    let stale: Vec<String> = writers.iter().filter(|path| !record.fresh.contains(path)).cloned().collect();
+
     log(format!("took {} ms to execute {} ({})", now.elapsed().as_nanos() as f32 / 1_000_000.0, id, if realtime { "realtime" } else { "write" }));
 
     let shown = {
@@ -97,6 +101,7 @@ pub async fn run_instance(id: String, realtime: bool) {
         }
         instance.executed_results = results;
         instance.executed_inputs = record.inputs;
+        instance.stale_writes = stale;
         shown
     };
     if shown {

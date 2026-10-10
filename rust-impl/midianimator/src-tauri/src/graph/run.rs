@@ -12,6 +12,11 @@
 // connected (a file, the Blender scene) always runs, and keeps its old values when they come out the same so the
 // nodes after it still hit the memo. a node that isn't realtime (writing to Blender) always runs
 //
+// STALE WRITES: the memo also keeps the inputs of each node writing to Blender's last write that went through. a run
+// that skips the node (realtime) compares what it would get now with them: the same values, or equal ones (compared
+// by a fingerprint of their JSON, values made again upstream are new values even when they come out equal), mean
+// Blender still has what the graph gives. the record lists those nodes as fresh, every other one is stale
+//
 // TYPES: anything can be connected to anything in the editor, the run checks it. a connection whose output type
 // doesn't fit its input (`model::compatible`) fails the node it goes into without running it, and so does a value
 // that can't be converted to what the node asked for. a failed node records which inputs were bad.
@@ -19,9 +24,10 @@
 // after it don't run
 
 use serde_json::{json, Map, Value};
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hasher;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -64,8 +70,10 @@ pub struct RunCtx<'a> {
 
 /// what a node writing to Blender (not realtime) did in a run
 enum Write {
-    /// a realtime run skipped it
-    Skipped,
+    /// a realtime run skipped it, `fresh` if Blender still has what it would write now
+    Skipped {
+        fresh: bool,
+    },
     /// it ran, with its error if it failed
     Ran(Option<String>),
 }
@@ -130,6 +138,15 @@ pub struct Memo {
     seen_json: HashSet<usize>,
     seen_literals: HashSet<String>,
     hits: usize,
+    /// what each node writing to Blender was given in its last write that went through, by path
+    written: HashMap<String, Written>,
+}
+
+/// the inputs of a write that went through
+struct Written {
+    key: Values,
+    /// made the first time other values are compared with these
+    fingerprint: OnceCell<u64>,
 }
 
 struct NodeMemo {
@@ -161,6 +178,37 @@ impl Memo {
         same.then_some(memo)
     }
 
+    /// true if the node writing to Blender at `path` would write what its last write did with `key`. equal values that
+    /// aren't the same ones take their place, so the next run can compare them by pointer again
+    fn still_written(&mut self, path: &str, key: &Values) -> bool {
+        let Some(written) = self.written.get_mut(path) else {
+            return false;
+        };
+        let same = written.key.len() == key.len() && written.key.iter().zip(key).all(|((k1, v1), (k2, v2))| k1 == k2 && v1.same(v2));
+        if same {
+            return true;
+        }
+        let equal = *written.fingerprint.get_or_init(|| fingerprint(&written.key)) == fingerprint(key);
+        if equal {
+            written.key = key.clone();
+        }
+        equal
+    }
+
+    /// a node writing to Blender wrote `key`, or failed (`None`) and Blender may have anything
+    fn set_written(&mut self, path: &str, key: Option<Values>) {
+        match key {
+            Some(key) => self.written.insert(
+                path.to_string(),
+                Written {
+                    key,
+                    fingerprint: OnceCell::new(),
+                },
+            ),
+            None => self.written.remove(path),
+        };
+    }
+
     fn store(&mut self, path: &str, memo: NodeMemo) {
         self.seen_nodes.insert(path.to_string());
         self.nodes.insert(path.to_string(), memo);
@@ -186,6 +234,26 @@ impl Memo {
     }
 }
 
+/// a hash of values' JSON, equal values give the same one. the JSON is streamed into the hash, never kept
+fn fingerprint(values: &Values) -> u64 {
+    struct HashWriter(std::collections::hash_map::DefaultHasher);
+    impl std::io::Write for HashWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.write(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut writer = HashWriter(Default::default());
+    for (key, value) in values {
+        writer.0.write(key.as_bytes());
+        let _ = serde_json::to_writer(&mut writer, &value.to_json());
+    }
+    writer.0.finish()
+}
+
 // MARK: - Record
 
 /// one node's values for the record, turned into JSON at the end. `outputs` is `None` for a node that didn't run
@@ -207,6 +275,9 @@ pub struct Record {
     pub inputs: HashMap<String, Value>,
     /// nodes writing to Blender a realtime run skipped (also inside a group that isn't open), they have no results of their own
     pub skipped: Vec<String>,
+    /// nodes writing to Blender that Blender has the latest of: written in this run, or skipped with what their last
+    /// write had. the other ones in the graph are stale
+    pub fresh: Vec<String>,
 }
 
 /// runs the root graph, returns the record and the first error (the rest of the graph still ran)
@@ -235,8 +306,18 @@ pub fn run(ctx: &RunCtx, graph: &Graph) -> (Record, Option<String>) {
     // writes inside a group that isn't open weren't recorded above
     for (path, write) in ctx.writes.take() {
         match write {
-            Write::Skipped => record.skipped.push(path),
+            Write::Skipped {
+                fresh,
+            } => {
+                if fresh {
+                    record.fresh.push(path.clone());
+                }
+                record.skipped.push(path);
+            }
             Write::Ran(error) => {
+                if error.is_none() {
+                    record.fresh.push(path.clone());
+                }
                 record.results.entry(path).or_insert_with(|| error.map_or_else(|| json!({}), |message| json!({ ERROR_KEY: message })));
             }
         }
@@ -665,7 +746,14 @@ impl<'a, 'c> Runner<'a, 'c> {
         };
         // not run in a realtime run, only what it got is shown
         if self.ctx.realtime && !node.realtime {
-            self.ctx.writes.borrow_mut().push((self.path(index), Write::Skipped));
+            let path = self.path(index);
+            let fresh = self.ctx.memo.borrow_mut().still_written(&path, &inputs);
+            self.ctx.writes.borrow_mut().push((
+                path,
+                Write::Skipped {
+                    fresh,
+                },
+            ));
             if let Some(record) = record {
                 record.push(Entry {
                     path: self.path(index),
@@ -689,7 +777,9 @@ impl<'a, 'c> Runner<'a, 'c> {
             },
         };
         if !node.realtime {
-            self.ctx.writes.borrow_mut().push((self.path(index), Write::Ran(outcome.as_ref().err().cloned())));
+            let path = self.path(index);
+            self.ctx.memo.borrow_mut().set_written(&path, outcome.is_ok().then(|| inputs.clone()));
+            self.ctx.writes.borrow_mut().push((path, Write::Ran(outcome.as_ref().err().cloned())));
         }
         self.finish(index, outcome, inputs, bad_inputs, frame, record)
     }
@@ -995,4 +1085,30 @@ pub fn instance_path(graph: &Graph, groups: &BTreeMap<String, GroupDef>, group_i
 pub fn scoped_values(values: &HashMap<String, Value>, path: &str) -> HashMap<String, Value> {
     let prefix = format!("{}{}", path, PATH_SEP);
     values.iter().filter_map(|(k, v)| k.strip_prefix(&prefix).filter(|rest| !rest.contains(PATH_SEP)).map(|rest| (rest.to_string(), v.clone()))).collect()
+}
+
+/// paths of the nodes writing to Blender (not realtime) in a graph and in the groups its group nodes run, at any depth
+pub fn write_paths(graph: &Graph, groups: &BTreeMap<String, GroupDef>, specs: &[NodeSpec]) -> Vec<String> {
+    fn search(graph: &Graph, groups: &BTreeMap<String, GroupDef>, specs: &[NodeSpec], prefix: &str, seen: &mut Vec<String>, paths: &mut Vec<String>) {
+        for node in &graph.nodes {
+            let node_type = node.resolved_node_type();
+            if node_type == GROUP {
+                // a group can't contain itself, but a broken project could say it does
+                let Some(inner_id) = node.data.get("group_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(inner) = groups.get(inner_id).filter(|_| !seen.iter().any(|s| s == inner_id)) else {
+                    continue;
+                };
+                seen.push(inner_id.to_string());
+                search(&inner.graph, groups, specs, &format!("{}{}{}", prefix, node.id, PATH_SEP), seen, paths);
+                seen.pop();
+            } else if find_spec(specs, node_type).is_some_and(|spec| !spec.realtime) {
+                paths.push(format!("{}{}", prefix, node.id));
+            }
+        }
+    }
+    let mut paths = Vec::new();
+    search(graph, groups, specs, "", &mut Vec::new(), &mut paths);
+    paths
 }
