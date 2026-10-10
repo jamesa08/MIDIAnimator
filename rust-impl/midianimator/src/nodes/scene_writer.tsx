@@ -25,7 +25,12 @@ function scene_writer({ id, data, isConnectable }: { id: any; data: any; isConne
         clean_keyframes: true,
     };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
+    // keyframes set on it (over MCP) are a whole map, too much to show under the socket
+    const hiddenValues = {
+        keyframes: true,
+    };
+
+    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} hideValues={hiddenValues} data={data} />;
 }
 
 export default scene_writer;

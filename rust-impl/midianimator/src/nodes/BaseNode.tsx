@@ -28,8 +28,9 @@ const handleStyle = {
 /// @param labels: map of handles to ui elements shown in place of their name, next to the socket
 /// @param data: reactflow data
 /// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
+/// @param hideValues: map of inputs whose typed in value isn't shown under them, e.g. scene writer's keyframes
 /// @param children: shown under the handles, e.g. the curve preview on Animation Generator
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; children?: ReactNode }) {
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -81,7 +82,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
 
                 // a value typed in for an input without a widget (properties panel, MCP) shows under it, unless a
                 // connection's value is used instead or it's the input's default
-                let value = rfHandleType && !preview && !uiHidden && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
+                let value = rfHandleType && !preview && !uiHidden && !hideValues?.[handle["id"]] && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
                 if (value === handle["default"]) value = undefined;
                 const tag = preview ? undefined : data?.[rfHandleType ? "input_tags" : "output_tags"]?.[handle["id"]];
                 // a multi input's socket is a pill as tall as its links need, its row makes room for it
