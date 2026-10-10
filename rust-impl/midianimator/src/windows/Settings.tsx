@@ -49,6 +49,27 @@ function PortInput({ id, label, description, value, onChange }: { id: string; la
     );
 }
 
+// a whole number setting, only saved on blur or enter once it's valid
+function NumberInput({ id, label, description, value, min, onChange }: { id: string; label: string; description: string; value: number; min: number; onChange: (value: number) => void }) {
+    const [draft, setDraft] = useState(String(value));
+    useEffect(() => setDraft(String(value)), [value]);
+
+    const number = Number(draft);
+    const valid = Number.isInteger(number) && number >= min;
+
+    // invalid input goes back to the saved value
+    const commit = () => {
+        if (!valid) setDraft(String(value));
+        else if (number !== value) onChange(number);
+    };
+
+    return (
+        <Row id={id} label={label} description={description}>
+            <input id={id} type="number" min={min} className="w-20 border border-black px-1" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+        </Row>
+    );
+}
+
 // one choice from a list
 function Choice({ id, label, description, value, options, onChange }: { id: string; label: string; description: string; value: string; options: [string, string][]; onChange: (value: string) => void }) {
     return (
@@ -116,6 +137,7 @@ function Settings() {
                                 {section === "appearance" && <Choice id="appearance-zoom" label="UI Scale" description="" value={String(settings.appearance?.zoom ?? 1)} options={ZOOMS.map((zoom) => [String(zoom), `${Math.round(zoom * 100)}%`])} onChange={(zoom) => update("appearance.zoom", Number(zoom))} />}
                                 {section === "panels" && <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
+                                {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
                                 {section === "connection" && (
                                     <Row id="save-diagnostics" label="" description="">
                                         <button id="save-diagnostics" className="px-2 h-6 border border-black text-sm hover:bg-zinc-100" onClick={() => invoke("save_diagnostics").catch(console.error)}>

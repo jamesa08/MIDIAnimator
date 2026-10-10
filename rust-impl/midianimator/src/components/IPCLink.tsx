@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import SceneDiffModal from "./SceneDiffModal";
+import CurveImportModal from "./CurveImportModal";
 import { useModal } from "../utils/keymap";
 
 declare global {
@@ -99,6 +100,10 @@ function IPCLink() {
     };
 
     // links Blender to the tab on screen, it checks the scene first (see go_live in src-tauri/src/state/mod.rs)
+    // objects over the keyframe limit the graph picked, imported or left out (src-tauri/src/blender/curves.rs)
+    const importCurves = () => invoke("accept_curve_import").catch((error) => console.error("Keyframe import failed:", error));
+    const skipCurves = () => invoke("reject_curve_import").catch((error) => console.error("Keyframe import failed:", error));
+
     const goLive = () => invoke("go_live", { id: state.active_tab }).catch((error) => console.error("Go live failed:", error));
     const activeLinked = (state.tabs ?? []).some((tab: any) => tab.id === state.active_tab && tab.linked);
 
@@ -183,6 +188,8 @@ function IPCLink() {
             {menuShown && createPortal(floatingPanel, document.body)}
 
             {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={() => setShowDiffModal(false)} />}
+
+            {state.pending_curve_import && <CurveImportModal objects={state.pending_curve_import} onImport={importCurves} onCancel={skipCurves} />}
         </>
     );
 }

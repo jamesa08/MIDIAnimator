@@ -540,7 +540,7 @@ impl MotionKeysMcp {
         } else {
             "not connected".to_string()
         };
-        ok_text(format!("ready: {}\nblender: {}\ntabs:\n{}\ngraph on screen: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}", state.ready, blender, tabs.join("\n"), nodes, edges, tab.execution_paused, tab.pending_scene_data.is_some()))
+        ok_text(format!("ready: {}\nblender: {}\ntabs:\n{}\ngraph on screen: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}\nkeyframes waiting to be imported (over the limit, the user confirms in the app): {}", state.ready, blender, tabs.join("\n"), nodes, edges, tab.execution_paused, tab.pending_scene_data.is_some(), tab.pending_curve_import.as_ref().map_or("none".to_string(), |objects| objects.iter().map(|(name, count)| format!("{name} ({count} keyframes)")).collect::<Vec<_>>().join(", "))))
     }
 
     // node_types_list: every node type with its inputs and outputs
