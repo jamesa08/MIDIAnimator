@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { Keymap, MOUSE_BUTTONS, formatCombo, splitCombo, useKeymapData } from "../utils/keymap";
-import { Hint, useStatusHints } from "../utils/status";
+import { Hint, showStatus, useStatusHints, useStatusMessage } from "../utils/status";
 
 const plural = (count: number, word: string) => `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
 
@@ -46,11 +46,25 @@ function HintKey({ hint, platform }: { hint: Hint; platform: Keymap["platform"] 
 }
 
 function StatusBar({ event }: { event: string }) {
-    // the last write's message stays until the next one, each write fades it in again
-    const write = useStateContext().backEndState?.last_write;
-    const message = lastWriteMessage(write);
+    const state = useStateContext().backEndState;
+    const message = useStatusMessage();
     const hints = useStatusHints();
     const platform = useKeymapData()?.platform ?? "mac";
+
+    // each write's result stays until the next message
+    const write = state?.last_write;
+    useEffect(() => {
+        const text = lastWriteMessage(write);
+        if (text) showStatus(text);
+    }, [write?.seq]);
+
+    // Blender connecting and going away, not what it was when the app started
+    const connected: boolean | undefined = state?.connected;
+    const wasConnected = useRef(connected);
+    useEffect(() => {
+        if (wasConnected.current !== undefined && connected !== undefined && connected !== wasConnected.current) showStatus(connected ? "Blender connected" : "Blender disconnected");
+        wasConnected.current = connected;
+    }, [connected]);
 
     const [version, setVersion] = useState("");
     const [hash, setHash] = useState("");
@@ -62,7 +76,7 @@ function StatusBar({ event }: { event: string }) {
         });
     }, []);
 
-    // the keys on the left, the last write's message and the version on the right
+    // the keys on the left, the last message and the version on the right. each message fades in
     return (
         <div className="status-bar card select-none">
             <div className="panel-header text-[11px] leading-none flex items-center gap-3 px-3 pb-0.5 h-4">
@@ -74,8 +88,8 @@ function StatusBar({ event }: { event: string }) {
                         </span>
                     ))}
                 </div>
-                <div key={write?.seq} className={`flex-none whitespace-nowrap${message ? " status-fade-in" : ""}`}>
-                    {message ?? event}
+                <div key={message?.seq} className={`flex-none whitespace-nowrap${message ? " status-fade-in" : ""}`}>
+                    {message?.text ?? event}
                 </div>
                 <div className="flex-none whitespace-nowrap">
                     MotionKeys {version} {hash}

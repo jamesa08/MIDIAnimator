@@ -3,6 +3,10 @@ import { useCallback, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { PANELS, panelWindowFrame } from "./panels";
 import { takeState } from "./graphOps";
+import { showStatus } from "./status";
+
+// the file name at the end of a path
+const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
 // the floating panels a layout has open
 export const floatingPanels = (layout: any) =>
@@ -36,7 +40,9 @@ export function useSaveTab() {
                 setTabLayout(shown, placed);
                 await invoke("set_layout", { tab: shown, layout: placed });
             }
-            return invoke<string>("save_project", { tab: tab ?? null, saveAs });
+            const path = await invoke<string>("save_project", { tab: tab ?? null, saveAs });
+            showStatus(`Saved "${fileName(path)}"`);
+            return path;
         },
         [setTabLayout]
     );
@@ -47,8 +53,10 @@ export function useOpenFile() {
     const { setBackEndState } = useStateContext();
     return useCallback(async () => {
         try {
-            const state = await invoke("load_project");
+            const state = await invoke<any>("load_project");
             setBackEndState((s: any) => takeState(s, state));
+            const path = state?.tabs?.find((t: any) => t.id === state.active_tab)?.path;
+            if (path) showStatus(`Opened "${fileName(path)}"`);
         } catch (error) {
             if (error !== "Load cancelled") console.error("Load failed:", error);
         }
