@@ -1,6 +1,6 @@
 // @ts-nocheck
 // colored by the --node-header var its node sets (styles.tsx nodeColors)
-function NodeHeader({ label, children }: { label: any; children?: any }) {
+function NodeHeader({ label, italic, children }: { label: any; italic?: boolean; children?: any }) {
     return (
         <div
             className="node-header"
@@ -9,7 +9,7 @@ function NodeHeader({ label, children }: { label: any; children?: any }) {
                 alignItems: "center",
             }}
         >
-            <span style={{ flex: 1 }}>{label}</span>
+            <span style={{ flex: 1, fontStyle: italic ? "italic" : undefined }}>{label}</span>
             {children}
         </div>
     );

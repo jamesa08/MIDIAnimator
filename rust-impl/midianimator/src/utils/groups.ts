@@ -65,6 +65,13 @@ export function resolvePath(project: Project, groups: Record<string, GroupDef>, 
     return levels;
 }
 
+// paths inside the group node at `path`, without its path. paths deeper in keep the group nodes they're under
+export function scopedPaths(paths: string[] | undefined, path: string): string[] {
+    if (!paths || path === "") return paths ?? [];
+    const prefix = path + PATH_SEP;
+    return paths.filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
+}
+
 // executed values recorded inside the group node at `path`, keyed by the inner node ids
 export function scopedValues(values: Record<string, any> | undefined, path: string): Record<string, any> {
     if (!values || path === "") return values ?? {};

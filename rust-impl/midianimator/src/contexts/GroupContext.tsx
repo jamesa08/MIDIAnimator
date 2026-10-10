@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import { StateContext, useStateContext } from "./StateContext";
-import { GroupDef, scopedValues } from "../utils/groups";
+import { GroupDef, scopedPaths, scopedValues } from "../utils/groups";
 
 // what nodes need to know about the graph they're in: the groups group nodes can run, the group being edited
 // (group input and output get their sockets from it), and how to open a group node
@@ -24,6 +24,6 @@ export const useGroupContext = () => useContext(GroupContext);
 export function ScopedState({ path, children }: { path: string; children: React.ReactNode }) {
     const context = useStateContext();
     const state = context.backEndState;
-    const scoped = useMemo(() => (path === "" ? state : { ...state, executed_results: scopedValues(state.executed_results, path), executed_inputs: scopedValues(state.executed_inputs, path) }), [state, path]);
+    const scoped = useMemo(() => (path === "" ? state : { ...state, executed_results: scopedValues(state.executed_results, path), executed_inputs: scopedValues(state.executed_inputs, path), stale_writes: scopedPaths(state.stale_writes, path) }), [state, path]);
     return <StateContext.Provider value={{ ...context, backEndState: scoped }}>{children}</StateContext.Provider>;
 }

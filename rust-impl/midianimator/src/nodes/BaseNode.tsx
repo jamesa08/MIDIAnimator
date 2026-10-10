@@ -6,7 +6,7 @@ import NodeHeader from "./NodeHeader";
 import { multiSocketStyle, socketStyle } from "../utils/sockets";
 import { nodeColors } from "../styles";
 import { memo } from "react";
-import ErrorBadge, { SuccessBadge, useNodeError, useWriteStatus } from "../components/nodegraph/ErrorBadge";
+import ErrorBadge, { SuccessBadge, useNodeError, useStale, useWriteStatus } from "../components/nodegraph/ErrorBadge";
 import SocketTag from "../components/nodegraph/SocketTag";
 import SocketHandle from "../components/nodegraph/SocketHandle";
 
@@ -38,6 +38,8 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     // a node's own error from the last run, else the error of the last write to Blender it made (or a group inside it made)
     const write = useWriteStatus();
     const error = useNodeError() ?? write.error;
+    // Blender doesn't have what it would write now, its title is italic until it writes
+    const stale = useStale() && !preview;
 
     // the inputs something is connected to, joined so the node only draws again when they change.
     // stored edges are reversed, `source`/`sourceHandle` is the node taking the value and its input
@@ -109,9 +111,9 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
 
     return (
         <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors(nodeData?.category)}>
-            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]}>
+            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale}>
                 {error && !preview && <ErrorBadge message={error} size={16} />}
-                {!error && write.written && !preview && <SuccessBadge size={16} />}
+                {!error && write.written && !stale && !preview && <SuccessBadge size={16} />}
                 {headerExtra}
             </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />

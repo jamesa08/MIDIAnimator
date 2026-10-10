@@ -26,6 +26,14 @@ export function useWriteStatus(): { error?: string; written: boolean } {
     return { error, written: writers.length > 0 && error == null };
 }
 
+// true if the node this is rendered in writes to Blender (or a group inside it has a node that does) and Blender
+// doesn't have what the graph gives now
+export function useStale(): boolean {
+    const id = useNodeId();
+    const stale: string[] = useStateContext().backEndState?.stale_writes ?? [];
+    return !!id && stale.some((path) => path === id || path.startsWith(`${id}/`));
+}
+
 // what's wrong with the value an input of a node got in the last run
 export function useBadInput(nodeId: string, inputId: string | null | undefined): string | undefined {
     const results = useStateContext().backEndState?.executed_results;
