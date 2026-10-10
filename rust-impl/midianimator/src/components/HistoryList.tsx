@@ -1,31 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
+import { historyLabel } from "../utils/history";
 
-// row text for each undo step by the op that made it (Op::name in src-tauri/src/graph/ops.rs, and the MCP tools'
-// ops). placeholders until the real copy is written, an op missing here shows its own name
-const LABELS: Record<string, string> = {
-    add_nodes: "Add Nodes",
-    add_node: "Add Node",
-    delete: "Delete",
-    remove_node: "Remove Node",
-    connect: "Connect",
-    disconnect: "Disconnect",
-    set_inputs: "Set Inputs",
-    set_label: "Set Label",
-    move: "Move",
-    resize: "Resize",
-    select: "Select",
-    duplicate: "Duplicate",
-    paste: "Paste",
-    cut: "Cut",
-    group: "Group",
-    ungroup: "Ungroup",
-    rename_socket: "Rename Socket",
-    remove_socket: "Remove Socket",
-    make_local: "Make Local",
-    revert_group: "Revert to Built-in",
-};
 // the first row, the project before any step
 const ORIGINAL = "Original";
 
@@ -55,7 +32,7 @@ function HistoryList() {
 
     // row `i` is the project with the first `i` steps done
     // cut and paste rows also name the nodes, MCP steps' details are for the MCP client
-    const rows = [{ key: "original", label: ORIGINAL, detail: "" }, ...history.entries.map((entry) => ({ key: String(entry.id), label: LABELS[entry.op] ?? entry.op, detail: entry.source === "ui" ? entry.detail : "" }))];
+    const rows = [{ key: "original", label: ORIGINAL, detail: "" }, ...history.entries.map((entry) => ({ key: String(entry.id), label: historyLabel(entry.op), detail: entry.source === "ui" ? entry.detail : "" }))];
 
     return (
         <div className="font-[Arial,sans-serif] text-xs p-1">
