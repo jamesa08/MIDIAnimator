@@ -1109,3 +1109,68 @@ img {
     padding: 0 6px;
     color: var(--properties-dim);
 }
+
+/* sockets sit 13px out from the node's side, their far edge 20px out */
+.socket-tag {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    font-size: 11px;
+    font-style: italic;
+    line-height: 16px;
+    --tag-base: #fcfcfc;
+    --tag-fill: color-mix(in srgb, var(--socket-color) 30%, var(--tag-base));
+    --tag-ink: color-mix(in srgb, var(--socket-color) 40%, black);
+}
+
+.socket-tag-inputs {
+    right: calc(100% + 23px);
+}
+
+.socket-tag-outputs {
+    left: calc(100% + 23px);
+}
+
+.socket-tag-name {
+    display: block;
+    background: var(--tag-fill);
+    color: var(--tag-ink);
+}
+
+.socket-tag-inputs .socket-tag-name {
+    padding: 0 12px 0 7px;
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 50%, calc(100% - 7px) 100%, 0 100%);
+}
+
+.socket-tag-outputs .socket-tag-name {
+    padding: 0 7px 0 12px;
+    clip-path: polygon(7px 0, 100% 0, 100% 100%, 7px 100%, 0 50%);
+}
+
+.socket-tag.broken .socket-tag-name {
+    background: repeating-linear-gradient(135deg, var(--tag-fill) 0 4px, var(--tag-base) 4px 7px);
+}
+
+.socket-tag.lit {
+    --tag-fill: color-mix(in srgb, var(--socket-color) 65%, var(--tag-base));
+}
+
+.socket-tag.bad {
+    --socket-color: var(--error-edge);
+}
+
+.react-flow__handle.socket-selected {
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--socket-color, #888) 50%, white),
+        0 0 6px 3px color-mix(in srgb, var(--socket-color, #888) 50%, white);
+}
+
+.socket-tag.selected .socket-tag-name {
+    background: var(--socket-color);
+    color: #fff;
+}
+
+.tag-menu-row:hover {
+    background-color: #4a7ba7;
+}

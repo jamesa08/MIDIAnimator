@@ -74,6 +74,15 @@
         ]
     },
     {
+        "id": "tag_menu",
+        "name": "Tag Menu",
+        "kind": "modal",
+        "commands": [
+            { "id": "confirm", "name": "Set Tag", "keys": ["Enter", "NumEnter"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["Escape"] }
+        ]
+    },
+    {
         "id": "dialog",
         "name": "Dialog",
         "kind": "modal",

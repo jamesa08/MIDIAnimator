@@ -9,6 +9,7 @@ use super::builtin::{all_groups, migrate};
 use super::model::{Graph, GroupDef, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::ops::{graph_in, id_prefix, select, target, with_zone_partners, zone_of, Added, UI_KEYS};
 use super::run::{GROUP, GROUP_INPUT, GROUP_OUTPUT};
+use super::tags;
 
 /// what copied nodes say they are
 pub const FORMAT: &str = "motionkeys/nodes";
@@ -159,6 +160,7 @@ fn clean_data(node: &RfNode, spec: Option<&NodeSpec>) -> Map<String, Value> {
             data.insert(key.to_string(), value.clone());
         }
     }
+    data.extend(tags::clean(&node.data));
     data
 }
 
@@ -292,6 +294,9 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
         }
         graph.edges.push(RfEdge::new(from, edge.from_output(), to, edge.to_input()));
     }
+
+    // pasted outputs get tags of their own, pasted inputs whose output stayed behind use the tags here
+    tags::adopt(graph, &ids.values().cloned().collect::<Vec<_>>());
 
     let pasted: Vec<&str> = ids.values().map(String::as_str).collect();
     select(graph, &pasted.iter().copied().collect(), &HashSet::new());

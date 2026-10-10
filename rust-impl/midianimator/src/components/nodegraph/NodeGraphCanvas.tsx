@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useRef } from "react";
+import { CSSProperties, useEffect, useMemo, useRef } from "react";
 import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, Node, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
@@ -6,6 +6,8 @@ import ConnectionLine from "../ConnectionLine";
 import ZoneFrames from "./ZoneFrames";
 import TypedEdge from "./TypedEdge";
 import { useHoldCodes } from "../../utils/keymap";
+import { SocketRef } from "../../utils/graphOps";
+import { socketPoints } from "./SocketHandle";
 
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
@@ -13,7 +15,7 @@ const edgeTypes = { default: TypedEdge };
 // how far the mouse can move between press and release and still be a click, further is a drag (blender's 3px). the
 // same for both, react flow's defaults (a drag past 1px, a click only with no movement at all) left a click that moved a
 // pixel as neither, it selected nothing
-const CLICK_DISTANCE = 3;
+export const CLICK_DISTANCE = 3;
 
 // a theme's paper texture (index.css .canvas-paper), pinned to the graph. it's its own gpu layer that panning only
 // slides, so moving the graph never repaints it. the vars live on this element alone so no other styles recalculate
@@ -37,22 +39,47 @@ function edgeCrosses(root: Element | null | undefined, id: string, box: { x0: nu
     return false;
 }
 
-// box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's). each
-// change goes through the graph's onEdgesChange like react flow's own
-function BoxSelectEdges({ nodes, edges }: { nodes?: Node[]; edges?: Edge[] }) {
+// box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's). a box around
+// sockets but no whole node selects those sockets alone instead, in a graph that has `onBoxSockets` (the editor). each
+// change goes through the graph's onNodesChange and onEdgesChange like react flow's own
+function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edge[]; onBoxSockets?: (sockets: SocketRef[]) => void }) {
     const store = useStoreApi();
     const selectionRect = useStore((s) => s.userSelectionRect);
-    const latest = useRef({ nodes, edges });
-    latest.current = { nodes, edges };
+    const latest = useRef({ nodes, edges, onBoxSockets });
+    latest.current = { nodes, edges, onBoxSockets };
     useEffect(() => {
-        const { userSelectionActive, transform, domNode, triggerEdgeChanges } = store.getState();
+        const { userSelectionActive, transform, domNode, nodeLookup, triggerNodeChanges, triggerEdgeChanges } = store.getState();
         // not yet dragged, a press on the graph sets an empty box
         if (!selectionRect || !userSelectionActive) return;
+        const { nodes, edges, onBoxSockets } = latest.current;
         const [tx, ty, zoom] = transform;
         const box = { x0: (selectionRect.x - tx) / zoom, y0: (selectionRect.y - ty) / zoom, x1: (selectionRect.x + selectionRect.width - tx) / zoom, y1: (selectionRect.y + selectionRect.height - ty) / zoom };
-        const inside = new Set((latest.current.nodes ?? []).filter((n) => n.selected).map((n) => n.id));
+        const inBox = (x: number, y: number) => x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1;
+
+        let sockets: SocketRef[] = [];
+        if (onBoxSockets) {
+            const shown = [...nodeLookup.values()].filter((n) => !n.hidden);
+            const whole = shown.some((n) => {
+                const { x, y } = n.internals.positionAbsolute;
+                const [width, height] = [n.measured.width ?? 0, n.measured.height ?? 0];
+                return width > 0 && inBox(x, y) && inBox(x + width, y + height);
+            });
+            const points = whole ? [] : shown.flatMap(socketPoints).filter((p) => inBox(p.x, p.y));
+            sockets = points.map(({ node, side, socket }) => ({ node, side, socket }));
+            onBoxSockets(sockets);
+        }
+        if (sockets.length > 0) {
+            const deselected = <T extends { id: string; selected?: boolean }>(items: T[] = []) => items.filter((item) => item.selected).map((item) => ({ id: item.id, type: "select" as const, selected: false }));
+            const nodeChanges = deselected(nodes);
+            const edgeChanges = deselected(edges);
+            if (nodeChanges.length > 0) triggerNodeChanges(nodeChanges);
+            if (edgeChanges.length > 0) triggerEdgeChanges(edgeChanges);
+            return;
+        }
+
+        const inside = new Set((nodes ?? []).filter((n) => n.selected).map((n) => n.id));
         const changes: EdgeSelectionChange[] = [];
-        for (const edge of latest.current.edges ?? []) {
+        for (const edge of edges ?? []) {
             const selected = inside.has(edge.source) || inside.has(edge.target) || edgeCrosses(domNode, edge.id, box);
             if (selected !== !!edge.selected) changes.push({ id: edge.id, type: "select", selected });
         }
@@ -93,8 +120,11 @@ export function useShiftMultiSelection() {
 }
 
 // how every node graph looks, with no state of its own. the editor passes its nodes and handlers, the frozen parent
-// graph behind an open group passes `frozen` so nothing in it can be touched
-function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps & { frozen?: boolean }) {
+// graph behind an open group passes `frozen` so nothing in it can be touched. `onBoxSockets` gets the sockets a box
+// selects while it's dragged (BoxSelect)
+function NodeGraphCanvas({ frozen = false, children, edges, onBoxSockets, ...props }: ReactFlowProps & { frozen?: boolean; onBoxSockets?: (sockets: SocketRef[]) => void }) {
+    // a connection made by a signal tag is drawn as the tags on its sockets (SocketTag), not as a wire
+    const shown = useMemo(() => edges?.map((edge: any) => (edge.tagged && !edge.hidden ? { ...edge, hidden: true } : edge)), [edges]);
     // react flow's own keys are off, the keymap runs them (src/utils/keymap.ts). box select is a key held while dragging,
     // react flow tracks that one itself
     const boxSelectKeys = useHoldCodes("node_editor", "box_select");
@@ -107,6 +137,7 @@ function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps 
             multiSelectionKeyCode={null}
             selectionKeyCode={frozen || boxSelectKeys.length === 0 ? null : boxSelectKeys}
             deleteKeyCode={null}
+            connectOnClick={false}
             nodeDragThreshold={CLICK_DISTANCE}
             nodeClickDistance={CLICK_DISTANCE}
             paneClickDistance={CLICK_DISTANCE}
@@ -119,11 +150,12 @@ function NodeGraphCanvas({ frozen = false, children, ...props }: ReactFlowProps 
             panOnDrag={!frozen}
             zoomOnScroll={!frozen}
             zoomOnPinch={!frozen}
+            edges={shown}
             {...props}
         >
             <ZoneFrames />
             <CanvasPaper />
-            {!frozen && <BoxSelectEdges nodes={props.nodes} edges={props.edges} />}
+            {!frozen && <BoxSelect nodes={props.nodes} edges={shown} onBoxSockets={onBoxSockets} />}
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

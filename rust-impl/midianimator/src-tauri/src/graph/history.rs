@@ -15,7 +15,7 @@ const UI_NODE_KEYS: &[&str] = &["dragging", "measured", "resizing"];
 /// edge fields only the UI cares about
 const UI_EDGE_KEYS: &[&str] = &[];
 /// node and edge fields that change how the graph looks but not what it computes
-const LAYOUT_KEYS: &[&str] = &["position", "selected", "width", "height"];
+const LAYOUT_KEYS: &[&str] = &["position", "selected", "selectedSockets", "width", "height"];
 /// fields of a graph that aren't part of its own record: its nodes, edges and groups are records of their own,
 /// and the viewport (where the graph is looked at) is never recorded
 const GRAPH_KEYS: &[&str] = &["nodes", "edges", "groups", "viewport"];

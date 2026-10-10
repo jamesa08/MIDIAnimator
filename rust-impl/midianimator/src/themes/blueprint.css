@@ -165,3 +165,8 @@ img[src="logo.webp"] {
 .react-flow__controls {
     border: 1px solid var(--blueprint-line);
 }
+
+.socket-tag {
+    --tag-base: var(--blueprint-node);
+    --tag-ink: color-mix(in srgb, var(--socket-color) 45%, white);
+}

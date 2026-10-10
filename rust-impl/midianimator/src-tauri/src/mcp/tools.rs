@@ -20,6 +20,7 @@ use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph,
 use crate::graph::run::{instance_path, scoped_values};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::graph::history::{EntryInfo, Source, Step};
+use crate::graph::tags;
 use crate::state::history::{self, Capture};
 use crate::state::{open_file, save_project_to, start_instance, update_state, AppState, InstanceState, Opened, STATE};
 use crate::ui::screenshot;
@@ -103,6 +104,21 @@ pub struct ConnectParams {
     pub to_node: String,
     /// Input handle id on the consuming node; an existing connection into it is replaced
     pub to_input: String,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
+}
+
+// graph_set_tag
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetTagParams {
+    /// Node (id or unique prefix)
+    pub node: String,
+    /// "input" or "output"
+    pub side: String,
+    /// Handle id of the input or output
+    pub socket: String,
+    /// Tag name; empty removes the tag
+    pub name: String,
     /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
     pub group: Option<String>,
 }
@@ -367,7 +383,10 @@ impl MotionKeysMcp {
                         groups: &groups,
                         scope: None,
                     };
-                    edit(&mut graph, &specs, results)
+                    edit(&mut graph, &specs, results).map(|result| {
+                        tags::sync(&mut graph);
+                        result
+                    })
                 }
                 // edit a copy of the group, it's stored in the project (a built-in becomes the project's own copy)
                 Some(group_id) => {
@@ -384,6 +403,7 @@ impl MotionKeysMcp {
                     let mut edited = def.clone();
                     let made_local = !graph.groups.contains_key(group_id);
                     edit(&mut edited.graph, &specs, &results).map(|mut result| {
+                        tags::sync(&mut edited.graph);
                         graph.groups.insert(group_id.to_string(), edited);
                         if made_local {
                             result.message.push_str(&format!("; node group '{}' is now this project's own copy", group_id));
@@ -680,6 +700,15 @@ impl MotionKeysMcp {
     #[tool(description = "Remove the connection into one input.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn graph_disconnect(&self, Parameters(params): Parameters<DisconnectParams>) -> Result<CallToolResult, McpError> {
         self.apply_edit("disconnect", params.group.as_deref(), |graph, _, _| edit::disconnect(graph, &params.to_node, &params.to_input)).await
+    }
+
+    // graph_set_tag
+    #[tool(
+        description = "Signal tags connect sockets by name instead of a wire (the UI draws a tag next to each socket, no wire). An output's tag is the source of that name in its graph, one output per name; every input with the same tag takes its value, as an ordinary connection. An input whose tag no output has is broken and unconnected until one does. Tagging an untagged output turns its wires into tags; renaming an output's tag renames it on every input using it; an empty name removes the tag and turns its connections back into wires. Tagging a wired input with a new name tags the wire's output too. graph_connect and graph_disconnect on an input remove its tag. Tags only connect inside one graph (the top level or one group).",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    async fn graph_set_tag(&self, Parameters(params): Parameters<SetTagParams>) -> Result<CallToolResult, McpError> {
+        self.apply_edit("set_tag", params.group.as_deref(), |graph, specs, results| edit::set_tag(graph, specs, results, &params.node, &params.side, &params.socket, &params.name)).await
     }
 
     // graph_set_inputs

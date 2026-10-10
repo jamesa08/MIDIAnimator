@@ -124,3 +124,8 @@ img[src="logo.webp"] {
     --xy-minimap-node-background-color: #3a3a3a;
     --xy-minimap-mask-background-color: rgba(60, 60, 60, 0.6);
 }
+
+.socket-tag {
+    --tag-base: #2e2e2e;
+    --tag-ink: color-mix(in srgb, var(--socket-color) 45%, white);
+}

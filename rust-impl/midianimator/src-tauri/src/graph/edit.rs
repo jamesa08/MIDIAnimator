@@ -5,7 +5,9 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 
 use super::model::{compatible, dyn_inner, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode, Specs};
+use super::ops::Side;
 use super::run::GROUP;
+use super::tags;
 use std::borrow::Cow;
 
 /// horizontal gap used when placing new nodes automatically
@@ -227,8 +229,9 @@ pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value
         }
         message = format!(" (replaced {} -> {})", old.from_node(), old.from_output());
     }
-    // add the new edge
+    // add the new edge, it takes the place of a tag on the input
     graph.edges.push(RfEdge::new(&from_id, from_output, &to_id, to_input));
+    tags::clear_input(graph, &to_id, to_input);
 
     // let the caller know if a value set on the input is now being ignored
     if graph.node(&to_id).and_then(|n| n.input_value(to_input)).is_some() {
@@ -258,8 +261,9 @@ pub fn disconnect(graph: &mut Graph, to_node: &str, to_input: &str) -> Result<Ed
             }
         ));
     };
-    // remove the edge
+    // remove the edge, a tag on the input goes too or it would connect it again
     let old = graph.edges.remove(index);
+    tags::clear_input(graph, &to_id, to_input);
     Ok(EditResult {
         message: format!("disconnected {} -> {} › {}", handle_label(old.from_node(), old.from_output()), to_id, to_input),
         touched: vec![old.from_node().to_string(), to_id],
@@ -329,5 +333,71 @@ pub fn remove_node(graph: &mut Graph, node: &str) -> Result<EditResult, String> 
             }
         ),
         touched: neighbours,
+    })
+}
+
+/// tags a socket (`graph::tags`): `side` is "input" or "output", an empty name removes the tag
+pub fn set_tag(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value>, node: &str, side: &str, socket: &str, name: &str) -> Result<EditResult, String> {
+    let id = graph.resolve(node)?;
+    let spec = spec_for(graph, specs, &id)?;
+    let side = match side {
+        "input" | "inputs" => Side::Inputs,
+        "output" | "outputs" => Side::Outputs,
+        other => return Err(format!("unknown side '{}'; use \"input\" or \"output\"", other)),
+    };
+    // only sockets that can be connected can be tagged
+    match side {
+        Side::Inputs => {
+            let inputs = node_inputs(&spec, graph, &id);
+            let Some(input) = inputs.iter().find(|h| h.id == socket) else {
+                let available = inputs.iter().filter(|h| dyn_inner(h).is_none() && !is_param(&spec, &h.id)).map(|h| h.id.as_str()).collect::<Vec<_>>().join(", ");
+                return Err(format!("'{}' has no input '{}'; inputs are: {}", id, socket, available));
+            };
+            if dyn_inner(input).is_some() || is_param(&spec, socket) {
+                return Err(format!("'{}' on '{}' can't be connected, so it can't be tagged", socket, id));
+            }
+        }
+        Side::Outputs => {
+            let outputs = node_outputs(&spec, results.get(&id));
+            let Some(output) = outputs.iter().find(|h| h.id == socket) else {
+                let available = outputs.iter().filter(|h| !h.hidden).map(|h| h.id.as_str()).collect::<Vec<_>>().join(", ");
+                return Err(format!("'{}' has no output '{}'; outputs are: {}", id, socket, available));
+            };
+            if output.hidden {
+                return Err(format!("'{}' on '{}' is hidden in the UI and can't be tagged", socket, id));
+            }
+        }
+    }
+
+    tags::set_tag(graph, &id, side, socket, name)?;
+    tags::sync(graph);
+
+    // say what the tag connects now
+    let name = name.trim();
+    let label = handle_label(&id, socket);
+    let mut touched = vec![id.clone()];
+    let message = match side {
+        _ if name.is_empty() => format!("removed the tag from {}; its tagged connections are wires now", label),
+        Side::Outputs => {
+            let targets: Vec<String> = graph.edges_from(&id, Some(socket)).filter(|e| tags::is_tagged(e)).map(|e| handle_label(e.to_node(), e.to_input())).collect();
+            touched.extend(graph.edges_from(&id, Some(socket)).filter(|e| tags::is_tagged(e)).map(|e| e.to_node().to_string()));
+            if targets.is_empty() {
+                format!("tagged {} {:?}; no input uses this tag yet", label, name)
+            } else {
+                format!("tagged {} {:?}; it connects to {}", label, name, targets.join(", "))
+            }
+        }
+        Side::Inputs => match graph.edge_into(&id, socket) {
+            Some(edge) => {
+                touched.push(edge.from_node().to_string());
+                format!("tagged {} {:?}; it takes the value of {}", label, name, handle_label(edge.from_node(), edge.from_output()))
+            }
+            None if tags::sources(graph).contains_key(name) => format!("tagged {} {:?}; broken: connecting it would make a cycle", label, name),
+            None => format!("tagged {} {:?}; broken until an output in this graph has this tag", label, name),
+        },
+    };
+    Ok(EditResult {
+        message,
+        touched,
     })
 }

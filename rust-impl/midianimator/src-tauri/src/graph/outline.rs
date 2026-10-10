@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use super::executors::animation::object_channels;
 use super::executors::io::node_error;
 use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, RfNode, Specs};
+use super::ops::Side;
+use super::tags;
 use crate::midi::MIDINote;
 use crate::scene_generics::{Object, Scene};
 
@@ -115,14 +117,29 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         // an input either comes from a connection, a value set on the node, or isn't set
         let edge = ctx.graph.edge_into(id, &input.id);
         let value = node.input_value(&input.id);
+        let tag = tags::tag(node, Side::Inputs, &input.id);
         // connected, show where it comes from (and the value that came in, in full detail)
         if let Some(edge) = edge {
             line.push_str(&format!("  <- {} › {}", edge.from_node(), output_name(ctx, edge.from_node(), edge.from_output())));
+            if let Some(tag) = &tag {
+                line.push_str(&format!("  (tag {:?})", tag));
+            }
             if detail == Detail::Full {
                 if let Some(v) = ctx.inputs.get(id).and_then(|i| i.get(&input.id)) {
                     line.push_str(&format!("   [{}]", summarize(&input.data_type, v)));
                 }
             }
+        } else if let Some(tag) = &tag {
+            // a tag that connects nothing
+            line.push_str(&format!(
+                "  tag {:?} (broken: {})",
+                tag,
+                if tags::sources(ctx.graph).contains_key(tag) {
+                    "connecting it would make a cycle"
+                } else {
+                    "no output in this graph has this tag"
+                }
+            ));
         } else if let Some(value) = value {
             // set on the node itself
             line.push_str(&format!(" = {}", truncate(&value.to_string(), 200)));
@@ -177,6 +194,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         let mut line = format!("  out  {}  ({}: {})", output.name, output.id, output.data_type);
         if output.hidden {
             line.push_str("  hidden, do not connect");
+        }
+        if let Some(tag) = tags::tag(node, Side::Outputs, &output.id) {
+            line.push_str(&format!("  tag {:?}", tag));
         }
         // where this output is connected to
         let targets: Vec<String> = ctx.graph.edges_from(id, Some(&output.id)).map(|e| format!("{} › {}", e.to_node(), input_name(ctx, e.to_node(), e.to_input()))).collect();

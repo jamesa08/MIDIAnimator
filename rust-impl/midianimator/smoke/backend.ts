@@ -78,7 +78,20 @@ function install({ backend, label }: { backend: Backend; label: string }) {
             return node ? backend.graph_value_curves[node] : [];
         }
         if (cmd === "graph_curves") return args.nodes.map((node: string) => backend.graph_curves[node] ?? { node, channels: [] });
-        if (EDITS.includes(cmd)) return { tab: args.tab, graph_rev: state.graph_rev, rf_instance: state.rf_instance, added: [] };
+        if (EDITS.includes(cmd)) {
+            // a selection is kept, so a test can select something and then act on it
+            for (const op of args.ops ?? []) {
+                if (op.op !== "select") continue;
+                for (const node of state.rf_instance.nodes) {
+                    node.selected = op.nodes.includes(node.id);
+                    const sockets = (side: string) => op.sockets.filter((s: any) => s.node === node.id && s.side === side).map((s: any) => s.socket);
+                    if (op.sockets.some((s: any) => s.node === node.id)) node.selectedSockets = { inputs: sockets("inputs"), outputs: sockets("outputs") };
+                    else delete node.selectedSockets;
+                }
+                for (const edge of state.rf_instance.edges) edge.selected = op.edges.includes(edge.id);
+            }
+            return { tab: args.tab, graph_rev: state.graph_rev, rf_instance: state.rf_instance, added: [] };
+        }
         if (cmd in WINDOW) return WINDOW[cmd];
         if (cmd in backend) return backend[cmd];
         // everything else (edits, saving, window management) does nothing

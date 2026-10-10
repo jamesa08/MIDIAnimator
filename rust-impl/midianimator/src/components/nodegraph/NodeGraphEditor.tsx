@@ -5,12 +5,14 @@ import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, appl
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
-import { ApplyOptions, Op, useGraphOps } from "../../utils/graphOps";
+import { ApplyOptions, Op, SocketRef, useGraphOps } from "../../utils/graphOps";
 import { blockUntilRelease, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
-import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
+import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
+import TagMenu from "./TagMenu";
+import { SOCKET_SELECT_EVENT, SocketSelect, TAG_EDIT_EVENT, TagEdit, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -46,6 +48,18 @@ type Grab = { txn: string | null; cursorX: number; cursorY: number; nodes: { id:
 
 // ids of the selected nodes or edges
 const selectedIds = (items: { id: string; selected?: boolean }[]) => items.filter((i) => i.selected).map((i) => i.id);
+
+// nodes with exactly these sockets selected, a node keeps which of its sockets are selected
+const withSockets = (nodes: any[], sockets: SocketRef[]) =>
+    nodes.map(({ selectedSockets, ...node }: any) => {
+        const side = (side: "inputs" | "outputs") => sockets.filter((s) => s.node === node.id && s.side === side).map((s) => s.socket);
+        const [inputs, outputs] = [side("inputs"), side("outputs")];
+        return inputs.length > 0 || outputs.length > 0 ? { ...node, selectedSockets: { inputs, outputs } } : node;
+    });
+
+// how long a click on one of several selected sockets waits before selecting it alone, a second click in that time is
+// a double click that tags them all
+const DOUBLE_CLICK_TIME = 500;
 
 // edits one graph: selection, adding, grabbing, duplicating, deleting, connecting, grouping. every edit is sent to the
 // backend as an op and the graph it sends back is shown, only selection and positions mid drag are ahead of it.
@@ -130,6 +144,13 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         inFlightRef.current++;
         setSelectionChanged((n) => n + 1);
     }, []);
+    // deselects every socket, for a click that selects something else
+    const clearSockets = useCallback(() => {
+        if (!getNodes().some((n: any) => n.selectedSockets)) return;
+        setNodes((nds) => withSockets(nds, []));
+        scheduleSelection();
+    }, [getNodes, setNodes, scheduleSelection]);
+
     // after react flow's own effects (it's a child), so its store has the selection
     useEffect(() => {
         if (!selectionPendingRef.current) return;
@@ -142,10 +163,11 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             selectionPendingRef.current = false;
             const nodes = selectedIds(getNodes());
             const edges = selectedIds(getEdges());
+            const sockets = selectedSockets(getNodes());
             const stored = storedRef.current;
             const same = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
-            if (canEdit() && !(same(nodes, selectedIds(stored.nodes ?? [])) && same(edges, selectedIds(stored.edges ?? [])))) {
-                apply([{ op: "select", nodes, edges }]);
+            if (canEdit() && !(same(nodes, selectedIds(stored.nodes ?? [])) && same(edges, selectedIds(stored.edges ?? [])) && sameSockets(sockets, selectedSockets(stored.nodes ?? [])))) {
+                apply([{ op: "select", nodes, edges, sockets }]);
             }
             inFlightRef.current--;
         };
@@ -303,9 +325,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         const handleCut = (event: ClipboardEvent) => {
             const nodes = selectedIds(getNodes());
             const edges = selectedIds(getEdges());
-            if (!ownsClipboard() || !canEdit() || (nodes.length === 0 && edges.length === 0)) return;
+            const sockets = selectedSockets(getNodes());
+            if (!ownsClipboard() || !canEdit() || (nodes.length === 0 && edges.length === 0 && sockets.length === 0)) return;
             event.preventDefault();
-            track("cut", () => ops.cut(nodes, edges));
+            track("cut", () => ops.cut(nodes, edges, sockets));
         };
 
         // under the cursor when it's over the graph, otherwise in the middle of the view. pasting again without moving
@@ -365,6 +388,95 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => window.removeEventListener(SOCKET_EDIT_EVENT, handleSocketEdit);
     }, [groupId, canEdit, apply]);
 
+    // MARK: - Sockets and tags
+
+    // a socket clicked: it alone is selected, or it's added to (or taken out of) the selection with shift
+    const selectSocket = useCallback(
+        (clicked: SocketRef, add: boolean) => {
+            const current = selectedSockets(getNodes());
+            const next = !add ? [clicked] : current.some((s) => sameSocket(s, clicked)) ? current.filter((s) => !sameSocket(s, clicked)) : [...current, clicked];
+            setNodes((nds) => withSockets(nds, next).map((n) => ({ ...n, selected: add ? n.selected : false })));
+            if (!add) setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
+            scheduleSelection();
+        },
+        [getNodes, setNodes, setEdges, scheduleSelection]
+    );
+    // a click on one of several selected sockets waiting to select it alone, a double click keeps them all
+    const collapseRef = useRef<number | null>(null);
+    const cancelCollapse = useCallback(() => {
+        if (collapseRef.current !== null) clearTimeout(collapseRef.current);
+        collapseRef.current = null;
+    }, []);
+    useEffect(() => cancelCollapse, [cancelCollapse]);
+    useEffect(() => {
+        const handleSocketSelect = (event: Event) => {
+            const { scope, node, side, socket, add } = (event as CustomEvent).detail as SocketSelect;
+            if (!shownRef.current || scope !== groupId) return;
+            cancelCollapse();
+            const clicked = { node, side, socket };
+            const current = selectedSockets(getNodes());
+            if (!add && current.length > 1 && current.some((s) => sameSocket(s, clicked))) {
+                collapseRef.current = window.setTimeout(() => {
+                    collapseRef.current = null;
+                    selectSocket(clicked, false);
+                }, DOUBLE_CLICK_TIME);
+                return;
+            }
+            selectSocket(clicked, add);
+        };
+        window.addEventListener(SOCKET_SELECT_EVENT, handleSocketSelect);
+        return () => window.removeEventListener(SOCKET_SELECT_EVENT, handleSocketSelect);
+    }, [groupId, getNodes, selectSocket, cancelCollapse]);
+
+    // the socket whose tag menu is open, and every socket the menu tags: the selected ones on its side when it's one of
+    // them, top to bottom
+    const [tagEdit, setTagEdit] = useState<(TagEdit & { sockets: SocketRef[] }) | null>(null);
+    useEffect(() => {
+        const handleTagEdit = (event: Event) => {
+            const detail = (event as CustomEvent).detail as TagEdit;
+            if (!shownRef.current || detail.scope !== groupId || !canEdit()) return;
+            cancelCollapse();
+            const edited = { node: detail.node, side: detail.side, socket: detail.socket };
+            const selected = selectedSockets(getNodes()).filter((s) => s.side === edited.side);
+            let sockets: SocketRef[] = [edited];
+            if (selected.length > 1 && selected.some((s) => sameSocket(s, edited))) {
+                const points = [...store.getState().nodeLookup.values()].flatMap(socketPoints);
+                const at = (s: SocketRef) => points.find((p) => sameSocket(p, s)) ?? { x: 0, y: 0 };
+                sockets = [...selected].sort((a, b) => at(a).y - at(b).y || at(a).x - at(b).x);
+            }
+            setTagEdit({ ...detail, sockets });
+        };
+        window.addEventListener(TAG_EDIT_EVENT, handleTagEdit);
+        return () => window.removeEventListener(TAG_EDIT_EVENT, handleTagEdit);
+    }, [groupId, canEdit, cancelCollapse, getNodes, store]);
+    const closeTagMenu = useCallback(() => setTagEdit(null), []);
+
+    // what the menu offers: an input the tags of the outputs here, an output the broken tags on inputs
+    const tagNames = useMemo(() => {
+        if (!tagEdit) return [];
+        const graphNodes: any[] = level.graph.nodes ?? [];
+        const outputs = new Set(graphNodes.flatMap((n) => Object.values(n.data?.output_tags ?? {}) as string[]));
+        if (tagEdit.side === "inputs") return [...outputs].sort();
+        const broken = new Set(graphNodes.flatMap((n) => Object.values(n.data?.input_tags ?? {}) as string[]).filter((name) => !outputs.has(name)));
+        return [...broken].sort();
+    }, [tagEdit, level.graph.nodes]);
+    const tagNode = tagEdit && (level.graph.nodes ?? []).find((n: any) => n.id === tagEdit.node);
+    const currentTag: string = (tagEdit && tagNode?.data?.[tagEdit.side === "inputs" ? "input_tags" : "output_tags"]?.[tagEdit.socket]) ?? "";
+
+    const setTag = useCallback(
+        (name: string) => {
+            if (!tagEdit) return;
+            setTagEdit(null);
+            if (tagEdit.sockets.length > 1) {
+                apply([{ op: "set_tags", sockets: tagEdit.sockets, name }]);
+                return;
+            }
+            if (name === currentTag) return;
+            apply([{ op: "set_tag", node: tagEdit.node, side: tagEdit.side, socket: tagEdit.socket, name }]);
+        },
+        [tagEdit, currentTag, apply]
+    );
+
     // MARK: - Commands
 
     // the node editor's commands, their keys come from the keymap (src/utils/keymap.ts). a graph getting ready behind the
@@ -398,8 +510,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 if (!canEdit()) return;
                 const nodes = selectedIds(getNodes());
                 const edges = selectedIds(getEdges());
-                if (nodes.length === 0 && edges.length === 0) return;
-                apply([{ op: "delete", nodes, edges }]);
+                const sockets = selectedSockets(getNodes());
+                if (nodes.length === 0 && edges.length === 0 && sockets.length === 0) return;
+                apply([{ op: "delete", nodes, edges, sockets }]);
             },
             grab: () => {
                 if (!editable) return;
@@ -421,8 +534,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             },
             // deselect everything if anything is selected, otherwise select every node
             select_all: () => {
-                const hasSelection = getNodes().some((node) => node.selected) || getEdges().some((edge) => edge.selected);
-                setNodes((nds) => nds.map((node) => ({ ...node, selected: !hasSelection })));
+                const hasSelection = getNodes().some((node: any) => node.selected || node.selectedSockets) || getEdges().some((edge) => edge.selected);
+                setNodes((nds) => withSockets(nds, []).map((node) => ({ ...node, selected: !hasSelection })));
                 setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
                 scheduleSelection();
             },
@@ -433,6 +546,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // react flow's own drags (box select, dragging a link or a node) take every key until the mouse is let go, so a key
     // can't open a group or start a grab halfway through one
     const blockKeys = useCallback(() => blockUntilRelease(), []);
+    // where a link drag started, letting go without moving is a click on the socket (the first of a double click to tag
+    // it), not a link dropped on nothing
+    const linkStartRef = useRef<{ x: number; y: number } | null>(null);
+    const onConnectStart = useCallback(
+        (event: MouseEvent | TouchEvent) => {
+            const { clientX, clientY } = "touches" in event ? event.touches[0] : event;
+            linkStartRef.current = { x: clientX, y: clientY };
+            blockKeys();
+        },
+        [blockKeys]
+    );
 
     // Close menu on click outside
     useEffect(() => {
@@ -523,7 +647,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const prev: any = current.get(node.id);
                 if (!prev) return node;
                 const position = prev.dragging || grabbed.has(node.id) ? prev.position : node.position;
-                return { ...node, position, measured: node.measured ?? prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging };
+                const { selectedSockets, ...stored } = node;
+                const sockets = keepSelection ? prev.selectedSockets : selectedSockets;
+                return { ...stored, position, measured: node.measured ?? prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
             });
         });
         setEdges((eds) => {
@@ -542,11 +668,37 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         (event: React.MouseEvent, node: any) => {
             // If shift key is not held, deselect all other nodes
             if (!event.shiftKey) {
-                setNodes((nds) => nds.map((n) => ({ ...n, selected: n.id === node.id })));
+                setNodes((nds) => withSockets(nds, []).map((n) => ({ ...n, selected: n.id === node.id })));
                 scheduleSelection();
             }
         },
         [setNodes, scheduleSelection]
+    );
+
+    // clicking an edge or the empty graph, or starting a box selection, without shift leaves no socket selected. react
+    // flow only deselects the nodes and edges it knows are selected
+    const handleEdgeClick = useCallback((event: React.MouseEvent) => !event.shiftKey && clearSockets(), [clearSockets]);
+    const handlePaneClick = useCallback(() => clearSockets(), [clearSockets]);
+    // the sockets selected before a box selection with shift, the sockets in the box are added to them
+    const boxBaseRef = useRef<SocketRef[]>([]);
+    const onSelectionStart = useCallback(
+        (event: React.MouseEvent) => {
+            boxBaseRef.current = event.shiftKey ? selectedSockets(getNodes()) : [];
+            if (!event.shiftKey) clearSockets();
+            blockKeys();
+        },
+        [getNodes, clearSockets, blockKeys]
+    );
+    // the sockets in a box around sockets only (NodeGraphCanvas's BoxSelect), while it's dragged
+    const onBoxSockets = useCallback(
+        (sockets: SocketRef[]) => {
+            const base = boxBaseRef.current;
+            const next = [...base, ...sockets.filter((s) => !base.some((b) => sameSocket(b, s)))];
+            if (sameSockets(next, selectedSockets(getNodes()))) return;
+            setNodes((nds) => withSockets(nds, next));
+            scheduleSelection();
+        },
+        [getNodes, setNodes, scheduleSelection]
     );
 
     const handleNodeDrag = useCallback(() => {
@@ -584,13 +736,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
             const { fromNode, fromHandle } = connectionState;
             if (connectionState.isValid || connectionState.toHandle || !editable || !fromNode || !fromHandle?.id) return;
+            const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
+            const start = linkStartRef.current;
+            if (start && Math.hypot(clientX - start.x, clientY - start.y) <= CLICK_DISTANCE) return;
 
             // react flow's targets are outputs
             const isOutput = fromHandle.type === "target";
             const handle = (isOutput ? outputHandle : inputHandle)(lookup, fromNode, fromHandle.id, level.def);
             setMenuLink({ nodeId: fromNode.id, handleId: fromHandle.id, isOutput, dataType: handle.data_type });
 
-            const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
             // the new node gets placed from this position, same as shift+a
             mousePositionRef.current = { x: clientX, y: clientY };
             setMenuPosition({ x: clientX, y: clientY });
@@ -689,12 +843,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
-                onConnectStart={blockKeys}
+                onConnectStart={onConnectStart}
                 onConnectEnd={onConnectEnd}
-                onSelectionStart={blockKeys}
+                onSelectionStart={onSelectionStart}
+                onBoxSockets={onBoxSockets}
                 onNodeDragStart={blockKeys}
                 onSelectionDragStart={blockKeys}
                 onNodeClick={handleNodeClickStop}
+                onEdgeClick={handleEdgeClick}
+                onPaneClick={handlePaneClick}
                 onNodeDrag={handleNodeDrag}
                 onPaneContextMenu={handleContextMenu}
                 onNodeContextMenu={handleContextMenu}
@@ -709,6 +866,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 className={isRoot ? "" : "group-canvas"}
             />
             <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
+            {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}
         </>
     );
 }

@@ -15,6 +15,7 @@ use crate::graph::history::{Source, Step};
 use crate::graph::clipboard;
 use crate::graph::model::{node_specs, Graph, Position};
 use crate::graph::ops::{self, Added, Ctx, Op};
+use crate::graph::sockets::SocketRef;
 use crate::graph::run::{instance_path, scoped_values};
 
 /// a tab's graph after an edit and the nodes it added
@@ -50,9 +51,9 @@ pub fn graph_copy(tab: String, scope: Option<String>, nodes: Vec<String>) -> Res
     system.set_buffer(CLIPBOARD_TYPE, payload.into_bytes()).map_err(|e| format!("could not write the clipboard: {}", e))
 }
 
-/// copies the nodes, then removes them and the edges, one undo step
+/// copies the nodes, then removes them, the edges and the tags on the sockets, one undo step
 #[tauri::command]
-pub async fn graph_cut(tab: String, scope: Option<String>, nodes: Vec<String>, edges: Vec<String>) -> Result<Applied, String> {
+pub async fn graph_cut(tab: String, scope: Option<String>, nodes: Vec<String>, edges: Vec<String>, sockets: Option<Vec<SocketRef>>) -> Result<Applied, String> {
     // only edges is a plain delete, there's nothing to copy
     if !nodes.is_empty() {
         graph_copy(tab.clone(), scope.clone(), nodes.clone())?;
@@ -63,6 +64,7 @@ pub async fn graph_cut(tab: String, scope: Option<String>, nodes: Vec<String>, e
         vec![Op::Cut {
             nodes,
             edges,
+            sockets: sockets.unwrap_or_default(),
         }],
         None,
         true,

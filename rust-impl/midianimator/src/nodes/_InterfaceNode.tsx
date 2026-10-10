@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Handle, NodeResizeControl, Position, useUpdateNodeInternals } from "@xyflow/react";
+import { NodeResizeControl, Position, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
 import { nodeColors } from "../styles";
@@ -7,6 +7,8 @@ import { socketStyle } from "../utils/sockets";
 import { useGroupContext } from "../contexts/GroupContext";
 import { NEW_SOCKET } from "../utils/groups";
 import ErrorBadge, { useNodeError } from "../components/nodegraph/ErrorBadge";
+import SocketTag from "../components/nodegraph/SocketTag";
+import SocketHandle from "../components/nodegraph/SocketHandle";
 
 // window event to rename or remove a socket of the group being edited, the node graph editor applies it.
 // detail: { side: "inputs" | "outputs", id, name? } (no name removes it)
@@ -84,8 +86,9 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
                         {preview ? (
                             <div className={`react-flow__handle react-flow__handle-${isOutput ? "right" : "left"}`} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }}></div>
                         ) : (
-                            <Handle id={socket.id} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }} />
+                            <SocketHandle id={socket.id} side={isOutput ? "outputs" : "inputs"} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }} />
                         )}
+                        {!preview && data?.[isOutput ? "output_tags" : "input_tags"]?.[socket.id] && <SocketTag side={isOutput ? "outputs" : "inputs"} socket={socket.id} name={data[isOutput ? "output_tags" : "input_tags"][socket.id]} dataType={socket.data_type} />}
                     </div>
                 ))}
             </div>

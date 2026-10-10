@@ -7,18 +7,22 @@ import { useGroupContext } from "../contexts/GroupContext";
 // every change to the project graph is an op applied by the backend (Op in src-tauri/src/graph/ops.rs), which records it
 // for undo and sends the graph back. connections are in data-flow terms: from an output to an input
 type XY = { x: number; y: number };
+// one socket of a node (src-tauri/src/graph/sockets.rs)
+export type SocketRef = { node: string; side: "inputs" | "outputs"; socket: string };
 export type Op =
     | { op: "add_nodes"; nodes: { type: string; data?: any; position: XY }[] }
-    | { op: "delete"; nodes?: string[]; edges?: string[] }
+    | { op: "delete"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[] }
     | { op: "connect"; from_node: string; from_output: string; to_node: string; to_input: string }
     | { op: "set_inputs"; node: string; inputs: Record<string, any> }
+    | { op: "set_tag"; node: string; side: "inputs" | "outputs"; socket: string; name: string }
+    | { op: "set_tags"; sockets: SocketRef[]; name: string }
     | { op: "set_label"; node: string; label: string }
     | { op: "move"; positions: Record<string, XY> }
     | { op: "resize"; node: string; width: number; height: number; position: XY }
-    | { op: "select"; nodes: string[]; edges: string[] }
+    | { op: "select"; nodes: string[]; edges: string[]; sockets: SocketRef[] }
     | { op: "duplicate"; nodes: string[]; offset: XY }
     | { op: "paste"; text: string; position: XY }
-    | { op: "cut"; nodes?: string[]; edges?: string[] }
+    | { op: "cut"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[] }
     | { op: "group"; nodes: string[]; widths: Record<string, number> }
     | { op: "ungroup"; nodes: string[] }
     | { op: "rename_socket"; side: "inputs" | "outputs"; id: string; name: string }
@@ -81,7 +85,7 @@ export function useGraphOps(scope: string | null) {
         return {
             apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true }),
             copy: (nodes: string[]) => invoke("graph_copy", { tab, scope, nodes }),
-            cut: (nodes: string[], edges: string[]) => edit("graph_cut", { nodes, edges }),
+            cut: (nodes: string[], edges: string[], sockets: SocketRef[]) => edit("graph_cut", { nodes, edges, sockets }),
             paste: (position: XY) => edit("graph_paste", { position }),
             end: (txn: string) => invoke("history_end", { tab, txn }),
             cancel: (txn: string) => invoke("history_cancel", { tab, txn }),

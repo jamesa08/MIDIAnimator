@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::builtin::{all_groups, builtin_groups};
 use super::edit;
+use super::sockets::{self, SocketRef};
+use super::tags;
 use super::model::{Graph, GroupDef, HandleSpec, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::run::{FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT};
 
@@ -17,7 +19,7 @@ const ZONE_WIDTH: f64 = 450.0;
 /// width of a node that hasn't been measured, for laying out a new group
 const NODE_WIDTH: f64 = 200.0;
 /// node fields only the UI uses, left out of nodes moved into a new group
-pub(super) const UI_KEYS: &[&str] = &["selected", "dragging", "measured", "resizing"];
+pub(super) const UI_KEYS: &[&str] = &["selected", sockets::SELECTED_SOCKETS, "dragging", "measured", "resizing"];
 
 /// a node to add: its type, data and where it goes. a group node is type `group` with `data.group_id`
 #[derive(Deserialize, Debug, Clone)]
@@ -45,12 +47,14 @@ pub enum Op {
     AddNodes {
         nodes: Vec<NewNode>,
     },
-    /// removes nodes with their connections (a zone as a pair) and edges
+    /// removes nodes with their connections (a zone as a pair), edges and the tags on sockets (`tags::remove`)
     Delete {
         #[serde(default)]
         nodes: Vec<String>,
         #[serde(default)]
         edges: Vec<String>,
+        #[serde(default)]
+        sockets: Vec<SocketRef>,
     },
     /// connects an output to an input, replacing what fed the input. `__new__` on the group input or output adds a group socket
     Connect {
@@ -63,6 +67,19 @@ pub enum Op {
     SetInputs {
         node: String,
         inputs: Map<String, Value>,
+    },
+    /// tags a socket (`graph::tags`), an empty name removes its tag
+    SetTag {
+        node: String,
+        side: Side,
+        socket: String,
+        name: String,
+    },
+    /// tags several sockets at once (`tags::set_tags`): the inputs get `name`, the outputs it numbered, an empty name
+    /// removes their tags
+    SetTags {
+        sockets: Vec<SocketRef>,
+        name: String,
     },
     /// the name shown in a node's header instead of its type's, empty goes back to the type's
     SetLabel {
@@ -78,12 +95,14 @@ pub enum Op {
         height: f64,
         position: Position,
     },
-    /// the selected nodes and edges, everything else is deselected
+    /// the selected nodes, edges and sockets, everything else is deselected
     Select {
         #[serde(default)]
         nodes: Vec<String>,
         #[serde(default)]
         edges: Vec<String>,
+        #[serde(default)]
+        sockets: Vec<SocketRef>,
     },
     /// copies nodes (a zone as a pair) and the connections between them, the copies become the selection
     Duplicate {
@@ -95,12 +114,14 @@ pub enum Op {
         text: String,
         position: Position,
     },
-    /// removes nodes and edges like `Delete`, once they're copied
+    /// removes nodes, edges and the tags on sockets like `Delete`, once the nodes are copied
     Cut {
         #[serde(default)]
         nodes: Vec<String>,
         #[serde(default)]
         edges: Vec<String>,
+        #[serde(default)]
+        sockets: Vec<SocketRef>,
     },
     /// moves nodes into a new group, a group node takes their place. `widths` are the nodes' drawn widths, for the layout
     Group {
@@ -148,6 +169,12 @@ impl Op {
             Op::SetInputs {
                 ..
             } => "set_inputs",
+            Op::SetTag {
+                ..
+            } => "set_tag",
+            Op::SetTags {
+                ..
+            } => "set_tags",
             Op::SetLabel {
                 ..
             } => "set_label",
@@ -240,19 +267,29 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
         scope: scope.and_then(|id| groups.get(id)),
     };
 
+    edit_graph(project, scope, op, ctx, &specs, &groups, added)?;
+    // the tagged connections follow whatever the op did to the nodes, tags and edges
+    tags::sync(target(project, scope)?);
+    Ok(())
+}
+
+/// applies an op that edits the graph `scope` itself
+fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, specs: &Specs, groups: &BTreeMap<String, GroupDef>, added: &mut Vec<Added>) -> Result<(), String> {
     match op {
         Op::AddNodes {
             nodes,
-        } => add_nodes(target(project, scope)?, &specs, scope, nodes, added),
+        } => add_nodes(target(project, scope)?, specs, scope, nodes, added),
         Op::Delete {
             nodes,
             edges,
+            sockets,
         }
         | Op::Cut {
             nodes,
             edges,
+            sockets,
         } => {
-            delete(target(project, scope)?, nodes, edges);
+            delete(target(project, scope)?, nodes, edges, sockets);
             Ok(())
         }
         Op::Connect {
@@ -260,11 +297,31 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
             from_output,
             to_node,
             to_input,
-        } => connect(project, scope, &specs, from_node, from_output, to_node, to_input),
+        } => connect(project, scope, specs, from_node, from_output, to_node, to_input),
         Op::SetInputs {
             node,
             inputs,
-        } => edit::set_inputs(target(project, scope)?, &specs, node, inputs).map(|_| ()),
+        } => edit::set_inputs(target(project, scope)?, specs, node, inputs).map(|_| ()),
+        Op::SetTag {
+            node,
+            side,
+            socket,
+            name,
+        } => {
+            if socket == NEW_SOCKET {
+                return Err("the empty socket can't be tagged".to_string());
+            }
+            tags::set_tag(target(project, scope)?, node, *side, socket, name)
+        }
+        Op::SetTags {
+            sockets,
+            name,
+        } => {
+            if sockets.iter().any(|s| s.socket == NEW_SOCKET) {
+                return Err("the empty socket can't be tagged".to_string());
+            }
+            tags::set_tags(target(project, scope)?, sockets, name)
+        }
         Op::SetLabel {
             node,
             label,
@@ -303,9 +360,11 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
         Op::Select {
             nodes,
             edges,
+            sockets,
         } => {
             let graph = target(project, scope)?;
             select(graph, &nodes.iter().map(String::as_str).collect(), &edges.iter().map(String::as_str).collect());
+            sockets::select(graph, sockets);
             Ok(())
         }
         Op::Duplicate {
@@ -319,10 +378,10 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
         Op::Group {
             nodes,
             widths,
-        } => make_group(project, scope, &specs, nodes, widths, added),
+        } => make_group(project, scope, specs, nodes, widths, added),
         Op::Ungroup {
             nodes,
-        } => ungroup(project, scope, &groups, nodes, added),
+        } => ungroup(project, scope, groups, nodes, added),
         Op::MakeLocal
         | Op::RevertGroup
         | Op::RenameSocket {
@@ -373,10 +432,11 @@ fn set_selected(extra: &mut Map<String, Value>, selected: bool) {
     }
 }
 
-/// selects exactly these nodes and edges
+/// selects exactly these nodes and edges, no sockets
 pub(super) fn select(graph: &mut Graph, nodes: &HashSet<&str>, edges: &HashSet<&str>) {
     for node in &mut graph.nodes {
         set_selected(&mut node.extra, nodes.contains(node.id.as_str()));
+        node.extra.remove(sockets::SELECTED_SOCKETS);
     }
     for edge in &mut graph.edges {
         set_selected(&mut edge.extra, edges.contains(edge.id.as_str()));
@@ -482,16 +542,19 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             nodes,
             ..
         } => names(before, nodes),
-        // removed connections are named by the nodes on their ends
+        // removed connections are named by the nodes on their ends, tags by their nodes
         Op::Delete {
             nodes,
             edges,
+            sockets,
         }
         | Op::Cut {
             nodes,
             edges,
+            sockets,
         } => {
             let mut ids = nodes.clone();
+            ids.extend(sockets.iter().map(|s| s.node.clone()));
             if let Ok(graph) = graph_in(before, scope) {
                 for edge in graph.edges.iter().filter(|e| edges.contains(&e.id)) {
                     ids.extend([edge.from_node().to_string(), edge.to_node().to_string()]);
@@ -512,6 +575,32 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             node,
             ..
         } => name(after, node),
+        // the node and the tag, the old one when it's removed
+        Op::SetTag {
+            node,
+            side,
+            socket,
+            name: tag,
+        } => {
+            let tag = if tag.trim().is_empty() {
+                graph_in(before, scope).ok().and_then(|g| g.node(node)).and_then(|n| tags::tag(n, *side, socket)).unwrap_or_default()
+            } else {
+                tag.trim().to_string()
+            };
+            format!("{} › {}", name(after, node), tag)
+        }
+        // the nodes and the tag
+        Op::SetTags {
+            sockets,
+            name: tag,
+        } => {
+            let nodes = names(after, &sockets.iter().map(|s| s.node.clone()).collect::<Vec<_>>());
+            if tag.trim().is_empty() {
+                nodes
+            } else {
+                format!("{} › {}", nodes, tag.trim())
+            }
+        }
         // the old name, the new one is in the header
         Op::SetLabel {
             node,
@@ -522,8 +611,9 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
         } => names(after, &positions.keys().cloned().collect::<Vec<_>>()),
         Op::Select {
             nodes,
+            sockets,
             ..
-        } => names(after, nodes),
+        } => names(after, &nodes.iter().cloned().chain(sockets.iter().map(|s| s.node.clone())).collect::<Vec<_>>()),
         Op::RenameSocket {
             name,
             ..
@@ -616,9 +706,14 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
     Ok(())
 }
 
-fn delete(graph: &mut Graph, nodes: &[String], edges: &[String]) {
+fn delete(graph: &mut Graph, nodes: &[String], edges: &[String], sockets: &[SocketRef]) {
+    for socket in sockets {
+        tags::remove(graph, socket);
+    }
     let nodes = with_zone_partners(graph, nodes);
     let edges: HashSet<&String> = edges.iter().collect();
+    // a removed tagged connection takes its input's tag along, or the tag would connect it again
+    tags::untag(graph, |e| edges.contains(&e.id));
     graph.nodes.retain(|n| !nodes.contains(&n.id));
     graph.edges.retain(|e| !edges.contains(&e.id) && !nodes.contains(e.from_node()) && !nodes.contains(e.to_node()));
 }
@@ -655,6 +750,8 @@ fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut
     // the connections between copied nodes
     let edges: Vec<RfEdge> = graph.edges.iter().filter(|e| ids.contains_key(e.from_node()) && ids.contains_key(e.to_node())).map(|e| edge_like(e, &ids[e.from_node()], e.from_output(), &ids[e.to_node()], e.to_input())).collect();
     graph.edges.extend(edges);
+    // copied outputs get tags of their own
+    tags::adopt(graph, &ids.values().cloned().collect::<Vec<_>>());
 
     let copies: Vec<&str> = originals.iter().map(|n| ids[&n.id].as_str()).collect();
     select(graph, &copies.iter().copied().collect(), &HashSet::new());
@@ -702,7 +799,10 @@ fn connect(project: &mut Graph, scope: Option<&str>, specs: &Specs, from_node: &
         }
     }
 
-    link(target(project, scope)?, from_node, &from_output, to_node, &to_input)
+    // a wire takes the place of the input's tag
+    let graph = target(project, scope)?;
+    tags::clear_input(graph, to_node, &to_input);
+    link(graph, from_node, &from_output, to_node, &to_input)
 }
 
 /// connects an output to an input, replacing what fed the input. only checks what would break the graph (missing
@@ -894,6 +994,9 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
         return Err("half a zone can't be grouped".to_string());
     }
 
+    // a tag only connects inside one graph, the tagged connections in and out of the group become wires through its sockets
+    tags::untag(&mut graph, |e| selected.contains(e.from_node()) != selected.contains(e.to_node()));
+
     let all = all_groups(project);
     let group_id = next_group_id(&all);
     let group_node_id = graph.next_node_id(&group_id);
@@ -1033,6 +1136,8 @@ fn ungroup(project: &mut Graph, scope: Option<&str>, groups: &BTreeMap<String, G
         return Err("no group nodes to ungroup".to_string());
     }
 
+    // their outputs keep their tags unless the names are taken here
+    tags::adopt(&mut graph, &placed);
     select(&mut graph, &placed.iter().map(String::as_str).collect(), &HashSet::new());
     added.extend(placed.iter().map(|id| Added {
         id: id.clone(),
@@ -1044,6 +1149,12 @@ fn ungroup(project: &mut Graph, scope: Option<&str>, groups: &BTreeMap<String, G
 
 /// puts the nodes of `def` in place of the group node, returns their ids
 fn ungroup_one(graph: &mut Graph, node_id: &str, def: &GroupDef) -> Vec<String> {
+    // connections through the group's sockets are joined into wires, a tag on the group node or its sockets inside goes
+    let mut def = def.clone();
+    let boundary_ids: HashSet<String> = def.graph.nodes.iter().filter(|n| n.node_type == GROUP_INPUT || n.node_type == GROUP_OUTPUT).map(|n| n.id.clone()).collect();
+    tags::untag(&mut def.graph, |e| boundary_ids.contains(e.from_node()) || boundary_ids.contains(e.to_node()));
+    tags::untag(graph, |e| e.from_node() == node_id || e.to_node() == node_id);
+    let def = &def;
     let group_node = graph.node(node_id).unwrap().clone();
     let boundary: HashSet<&str> = def.graph.nodes.iter().filter(|n| n.node_type == GROUP_INPUT || n.node_type == GROUP_OUTPUT).map(|n| n.id.as_str()).collect();
     let inner: Vec<&RfNode> = def.graph.nodes.iter().filter(|n| !boundary.contains(n.id.as_str())).collect();

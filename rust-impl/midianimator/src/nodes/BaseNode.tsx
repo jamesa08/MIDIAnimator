@@ -1,12 +1,14 @@
 // @ts-nocheck
 import React, { ReactNode, useCallback, useState, useEffect } from "react";
-import { Handle, NodeResizeControl, Position, useNodeId, useStore } from "@xyflow/react";
+import { NodeResizeControl, Position, useNodeId, useStore } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import NodeHeader from "./NodeHeader";
 import { socketStyle } from "../utils/sockets";
 import { nodeColors } from "../styles";
 import { memo } from "react";
 import ErrorBadge, { SuccessBadge, useNodeError, useWriteStatus } from "../components/nodegraph/ErrorBadge";
+import SocketTag from "../components/nodegraph/SocketTag";
+import SocketHandle from "../components/nodegraph/SocketHandle";
 
 const handleStyle = {
     width: "14px",
@@ -69,6 +71,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                 // connection's value is used instead or it's the input's default
                 let value = rfHandleType && !preview && !uiHidden && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
                 if (value === handle["default"]) value = undefined;
+                const tag = preview ? undefined : data?.[rfHandleType ? "input_tags" : "output_tags"]?.[handle["id"]];
 
                 const buildHandle = (
                     <>
@@ -78,8 +81,9 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                             {preview ? (
                                 <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></div>
                             ) : (
-                                <Handle id={handle["id"]} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }}></Handle>
+                                <SocketHandle id={handle["id"]} side={handleType} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]) }} />
                             )}
+                            {tag && <SocketTag side={handleType} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
                         </div>
                         {value != null && <div className="node-field node-value">{String(value)}</div>}
                         {uiInject}

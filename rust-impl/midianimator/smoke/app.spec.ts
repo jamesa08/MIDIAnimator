@@ -344,6 +344,193 @@ test("map mode hides the note numbers and previews the map", async ({ page }) =>
     await settle(page);
 });
 
+// the fixture with signal tags: get_midi_track_data-1's notes feed both their inputs by the tag "notes" instead of
+// wires, and "unused" on its pitchwheel output connects nothing
+function withTags() {
+    const state = structuredClone(backend.get_state);
+    const rf = state.rf_instance;
+    const node = (id: string) => rf.nodes.find((n: any) => n.id === id);
+    node("get_midi_track_data-1").data.output_tags = { notes: "notes", pitchwheel: "unused" };
+    for (const id of ["assign_notes_to_objects-1", "evaluate_instrument-1"]) node(id).data.input_tags = { midi_notes: "notes" };
+    for (const edge of rf.edges) if (edge.target === "get_midi_track_data-1" && edge.targetHandle === "notes") edge.tagged = true;
+    return { ...backend, get_state: state };
+}
+
+test("signal tags", async ({ page }) => {
+    await openWindow(page, withTags(), "/#/");
+    const source = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
+    await expect(source.locator(".socket-tag")).toHaveCount(2);
+    await expect(source.locator(".socket-tag.broken")).toHaveText("unused");
+    // each input shows the tag it takes its value from, its wire isn't drawn
+    for (const id of ["assign_notes_to_objects-1", "evaluate_instrument-1"]) {
+        const tag = page.locator(`.react-flow__node[data-id="${id}"] .socket-tag-inputs`);
+        await expect(tag).toHaveText("notes");
+        await expect(tag).not.toHaveClass(/broken/);
+    }
+    await expect(page.locator('.react-flow__edge[data-id*="get_midi_track_data-1notes"]')).toHaveCount(0);
+
+    // hovering a tag lights up every tag with its name
+    await source.locator(".socket-tag-outputs", { hasText: "notes" }).hover();
+    await expect(page.locator(".socket-tag.lit")).toHaveCount(3);
+
+    // double clicking a socket opens the tag menu like shift+a: it searches the outputs' tags, enter picks the first
+    const tagOps = async () => {
+        const ops = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+        return ops.filter((op: any) => op.op === "set_tag");
+    };
+    const viewerInput = page.locator('.react-flow__node[data-id="viewer-1"] .react-flow__handle[data-handleid="data"]');
+    const menu = page.locator(".tag-menu");
+    await viewerInput.dblclick();
+    await expect(menu.locator("input")).toBeFocused();
+    await expect(menu.locator(".tag-menu-row")).toHaveText(["notes", "unused"]);
+    await expect(menu.locator("input")).toHaveAttribute("placeholder", "Add tag");
+    await page.keyboard.type("no");
+    await expect(menu.locator(".tag-menu-row")).toHaveText(["notes", "no"]);
+    await page.keyboard.press("Enter");
+    await expect(menu).toHaveCount(0);
+    expect((await tagOps()).at(-1)).toEqual({ op: "set_tag", node: "viewer-1", side: "inputs", socket: "data", name: "notes" });
+
+    // a name no output has comes first when nothing matches it
+    await viewerInput.dblclick();
+    await page.keyboard.type("audio 1");
+    await expect(menu.locator(".tag-menu-row")).toHaveText(["audio 1"]);
+    await page.keyboard.press("Enter");
+    expect((await tagOps()).at(-1)).toEqual({ op: "set_tag", node: "viewer-1", side: "inputs", socket: "data", name: "audio 1" });
+
+    // escape closes it without tagging anything, an output gets the broken tags
+    await page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .react-flow__handle[data-handleid="notes"]').dblclick();
+    await expect(menu.locator("input")).toBeFocused();
+    await expect(menu.locator("input")).toHaveAttribute("placeholder", "Rename tag");
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    expect((await tagOps()).length).toBe(2);
+
+    // a click on a tag selects its socket on its own, not its node, and delete removes the tag like an edge
+    const inputTag = page.locator('.react-flow__node[data-id="evaluate_instrument-1"] .socket-tag-inputs');
+    await inputTag.click();
+    await expect(inputTag).toHaveClass(/selected/);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+    const selects = await page.evaluate(() =>
+        (window as any).__smokeCalls
+            .filter((c: any) => c.cmd === "graph_apply")
+            .flatMap((c: any) => c.args.ops)
+            .filter((op: any) => op.op === "select")
+    );
+    expect(selects.at(-1)).toEqual({ op: "select", nodes: [], edges: [], sockets: [{ node: "evaluate_instrument-1", side: "inputs", socket: "midi_notes" }] });
+    await page.keyboard.press("x");
+    const deletes = await page.evaluate(() =>
+        (window as any).__smokeCalls
+            .filter((c: any) => c.cmd === "graph_apply")
+            .flatMap((c: any) => c.args.ops)
+            .filter((op: any) => op.op === "delete")
+    );
+    expect(deletes.at(-1)).toEqual({ op: "delete", nodes: [], edges: [], sockets: [{ node: "evaluate_instrument-1", side: "inputs", socket: "midi_notes" }] });
+
+    // clicking the empty graph deselects it
+    await page.mouse.click(700, 700);
+    await expect(inputTag).not.toHaveClass(/selected/);
+    await settle(page);
+});
+
+// the graph_apply calls sent so far, each one's ops
+async function applied(page: Page): Promise<any[][]> {
+    return page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").map((c: any) => c.args.ops));
+}
+
+const socketOf = (page: Page, node: string, socket: string) => page.locator(`.react-flow__node[data-id="${node}"] .react-flow__handle[data-handleid="${socket}"]`);
+
+test("selecting sockets", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const notes = socketOf(page, "get_midi_track_data-1", "notes");
+    const numbers = socketOf(page, "get_midi_track_data-1", "unique_note_numbers");
+    await expect(notes).toBeVisible();
+    await settle(page);
+
+    // a click selects a socket on its own, not its node, shift adds another
+    await notes.click();
+    await expect(notes).toHaveClass(/socket-selected/);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+    await numbers.click({ modifiers: ["Shift"] });
+    await expect(numbers).toHaveClass(/socket-selected/);
+    await expect(notes).toHaveClass(/socket-selected/);
+    await expect
+        .poll(async () =>
+            (await applied(page))
+                .flat()
+                .filter((op) => op.op === "select")
+                .at(-1)
+        )
+        .toEqual({
+            op: "select",
+            nodes: [],
+            edges: [],
+            sockets: [
+                { node: "get_midi_track_data-1", side: "outputs", socket: "notes" },
+                { node: "get_midi_track_data-1", side: "outputs", socket: "unique_note_numbers" },
+            ],
+        });
+
+    await settle(page);
+});
+
+test("tagging several sockets at once", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const first = socketOf(page, "evaluate_instrument-1", "midi_notes");
+    const second = socketOf(page, "assign_notes_to_objects-1", "midi_notes");
+    await expect(first).toBeVisible();
+    await settle(page);
+    await first.click();
+    await second.click({ modifiers: ["Shift"] });
+
+    // double clicking one of them tags them all, the selection stays
+    await second.dblclick();
+    const menu = page.locator(".tag-menu");
+    await expect(menu.locator("input")).toBeFocused();
+    await page.keyboard.type("midi");
+    await page.keyboard.press("Enter");
+    const setTags = (await applied(page)).flat().filter((op) => op.op === "set_tags");
+    expect(setTags).toHaveLength(1);
+    expect(setTags[0].name).toBe("midi");
+    expect(setTags[0].sockets).toHaveLength(2);
+    expect(setTags[0].sockets).toEqual(
+        expect.arrayContaining([
+            { node: "evaluate_instrument-1", side: "inputs", socket: "midi_notes" },
+            { node: "assign_notes_to_objects-1", side: "inputs", socket: "midi_notes" },
+        ])
+    );
+    await page.waitForTimeout(700);
+    await expect(first).toHaveClass(/socket-selected/);
+    await expect(second).toHaveClass(/socket-selected/);
+
+    // a single click on one of them selects it alone
+    await second.click();
+    await expect(first).not.toHaveClass(/socket-selected/);
+    await expect(second).toHaveClass(/socket-selected/);
+    await settle(page);
+});
+
+test("box select around sockets only selects the sockets", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
+    await expect(node).toBeVisible();
+    await settle(page);
+
+    // a narrow box down the outputs, from above the node to the aftertouch socket. it touches the node's edge, but it's
+    // around sockets and no whole node
+    const bounds = (await node.boundingBox())!;
+    const aftertouch = (await socketOf(page, "get_midi_track_data-1", "aftertouch").boundingBox())!;
+    const right = bounds.x + bounds.width;
+    await page.mouse.move(right + 20, bounds.y - 10);
+    await page.mouse.down();
+    await page.mouse.move(right - 3, aftertouch.y + aftertouch.height / 2 + 2, { steps: 8 });
+    await page.mouse.up();
+    for (const socket of ["notes", "control_change", "pitchwheel", "aftertouch"]) await expect(socketOf(page, "get_midi_track_data-1", socket)).toHaveClass(/socket-selected/);
+    await expect(page.locator(".socket-selected")).toHaveCount(4);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+    await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+    await settle(page);
+});
+
 test("drag ghost window", async ({ page }) => {
     await openWindow(page, backend, "/#/drag-ghost", "drag-ghost");
     await settle(page);

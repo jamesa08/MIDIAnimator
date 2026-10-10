@@ -9,4 +9,6 @@ pub mod model;
 pub mod ops;
 pub mod outline;
 pub mod run;
+pub mod sockets;
+pub mod tags;
 pub mod types;
