@@ -32,6 +32,11 @@ export function selectSocket(scope: string | null, node: string, side: Side, soc
     window.dispatchEvent(new CustomEvent(SOCKET_SELECT_EVENT, { detail }));
 }
 
+// window event to pick up the link on a connected input like blender, the node graph editor drags it off. `mouse` is the
+// press, react flow's drag has to start from it
+export const PICK_UP_EVENT = "motionkeys:pick-up";
+export type PickUp = { scope: string | null; node: string; socket: string; mouse: MouseEvent };
+
 // a node keeps which of its sockets are selected
 export type SelectedSockets = { inputs: string[]; outputs: string[] };
 
@@ -68,6 +73,9 @@ export function draggedAlong(nodeLookup: Map<string, InternalNode>, from: Socket
     return [...nodeLookup.values()].flatMap(socketPoints).filter((p) => p.side === from.side && !sameSocket(p, from) && selected(nodeLookup.get(p.node)!, p.side, p.socket));
 }
 
+// react flow only takes presses on a socket that can start a link, one that picks up its link instead still has to
+const PICK_UP_STYLE = { pointerEvents: "all", cursor: "crosshair" };
+
 // a socket of a node: react flow's handle, selected by a click that doesn't drag a link off it, a double click opens
 // the tag menu. `side` is which of the node's sockets it is
 export default function SocketHandle({ side, style, ...props }: HandleProps & { id: string; side: Side; style?: CSSProperties }) {
@@ -77,6 +85,16 @@ export default function SocketHandle({ side, style, ...props }: HandleProps & { 
     const pressRef = useRef<{ x: number; y: number } | null>(null);
     const open = props.id === NEW_SOCKET;
 
+    // a connected input doesn't start a new link, a press picks up the one it has (a tag isn't a link to pick up)
+    const isConnected = useCallback((s: ReactFlowState) => side === "inputs" && s.edges.some((e: any) => e.source === nodeId && e.sourceHandle === props.id && !e.tagged), [nodeId, side, props.id]);
+    const pickUp = useStore(isConnected) && editable && !open;
+    const press = (event: React.MouseEvent) => {
+        pressRef.current = { x: event.clientX, y: event.clientY };
+        if (!pickUp || event.button !== 0) return;
+        const detail: PickUp = { scope: scopeId, node: nodeId, socket: props.id, mouse: event.nativeEvent };
+        window.dispatchEvent(new CustomEvent(PICK_UP_EVENT, { detail }));
+    };
+
     // a press that moved further than a click dragged a link off it
     const click = (event: React.MouseEvent) => {
         const press = pressRef.current;
@@ -84,5 +102,5 @@ export default function SocketHandle({ side, style, ...props }: HandleProps & { 
         selectSocket(scopeId, nodeId, side, props.id, event);
     };
 
-    return <Handle {...props} className={selected ? "socket-selected" : undefined} style={{ ...style, "--socket-color": style?.background } as CSSProperties} onMouseDown={(event) => (pressRef.current = { x: event.clientX, y: event.clientY })} onClick={click} onDoubleClick={editable && !open ? (event) => editTag(scopeId, nodeId, side, props.id, event) : undefined} />;
+    return <Handle {...props} isConnectableStart={!pickUp} className={selected ? "socket-selected" : undefined} style={{ ...style, "--socket-color": style?.background, ...(pickUp ? PICK_UP_STYLE : {}) } as CSSProperties} onMouseDown={press} onClick={click} onDoubleClick={editable && !open ? (event) => editTag(scopeId, nodeId, side, props.id, event) : undefined} />;
 }

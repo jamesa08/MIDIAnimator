@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
+import { XYHandle } from "@xyflow/system";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
@@ -12,7 +13,8 @@ import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 import TagMenu from "./TagMenu";
-import { SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
+import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
+import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
@@ -569,6 +571,91 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [blockKeys, store]
     );
 
+    // MARK: - Picking Up Links
+
+    // a press on a connected input picks up its link like blender: the link's input end follows the mouse from its output.
+    // dropped on an input it moves there, on nothing it's removed, a click leaves it. a multi input gives up the link whose
+    // slot is nearest the press. one of several selected sockets starts a new link like an empty one, the others come along
+    const pickedRef = useRef<string | null>(null);
+    useEffect(() => {
+        const handlePickUp = (event: Event) => {
+            const { scope, node, socket, mouse } = (event as CustomEvent).detail as PickUp;
+            if (!shownRef.current || scope !== groupId) return;
+            const state = store.getState();
+            // what react flow's own socket drag is given
+            const drag = {
+                autoPanOnConnect: state.autoPanOnConnect,
+                autoPanSpeed: state.autoPanSpeed,
+                connectionMode: state.connectionMode,
+                connectionRadius: state.connectionRadius,
+                domNode: state.domNode,
+                nodeLookup: state.nodeLookup,
+                lib: state.lib,
+                flowId: state.rfId,
+                panBy: state.panBy,
+                cancelConnection: state.cancelConnection,
+                updateConnection: state.updateConnection,
+                isValidConnection: state.isValidConnection,
+                getTransform: () => store.getState().transform,
+                getFromHandle: () => store.getState().connection.fromHandle,
+            };
+
+            // the links into the input, without the connection a tag makes
+            const input = { node, side: "inputs" as const, socket };
+            const into = getEdges().filter((e: any) => e.source === node && e.sourceHandle === socket && !e.tagged);
+            if (into.length === 0 || draggedAlong(state.nodeLookup, input).length > 0) {
+                XYHandle.onPointerDown(mouse, { ...drag, nodeId: node, handleId: socket, isTarget: false, onConnectStart: state.onConnectStart, onConnectEnd: state.onConnectEnd, onConnect: (connection) => state.onConnect?.(connection) });
+                return;
+            }
+
+            // the link whose slot is nearest the press, the links into a multi input are spread over its socket in order
+            const center = socketPoints(state.nodeLookup.get(node)!).find((p) => sameSocket(p, input))?.y ?? 0;
+            const pressY = screenToFlowPosition({ x: mouse.clientX, y: mouse.clientY }, { snapToGrid: false }).y;
+            const distance = (index: number) => Math.abs(center + multiSlotOffset(index, into.length) - pressY);
+            const picked = into[into.map((_, i) => i).reduce((best, i) => (distance(i) < distance(best) ? i : best), 0)];
+
+            // hidden once the mouse moves far enough to be a drag, not a click
+            let moved = false;
+            const follow = (move: MouseEvent) => {
+                if (moved || Math.hypot(move.clientX - mouse.clientX, move.clientY - mouse.clientY) <= CLICK_DISTANCE) return;
+                moved = true;
+                pickedRef.current = picked.id;
+                setEdges((eds) => eds.map((e) => (e.id === picked.id ? { ...e, hidden: true } : e)));
+            };
+            const restore = () => {
+                pickedRef.current = null;
+                setEdges((eds) => eds.map((e) => (e.id === picked.id ? { ...e, hidden: false } : e)));
+            };
+            window.addEventListener("mousemove", follow);
+
+            // dragged from the output end, react flow's reconnect
+            let dropped: Connection | null = null;
+            blockKeys();
+            XYHandle.onPointerDown(mouse, {
+                ...drag,
+                nodeId: picked.target,
+                handleId: picked.targetHandle ?? null,
+                isTarget: true,
+                edgeUpdaterType: "target",
+                onConnect: (connection) => (dropped = connection),
+                onReconnectEnd: () => {
+                    window.removeEventListener("mousemove", follow);
+                    if (!moved) return;
+                    // back where it was, nothing changes
+                    const same = dropped && dropped.source === picked.source && dropped.sourceHandle === picked.sourceHandle && dropped.target === picked.target && dropped.targetHandle === picked.targetHandle;
+                    if (same || !canEdit()) {
+                        restore();
+                        return;
+                    }
+                    // one undo step for taking it off and putting it on another input
+                    apply([{ op: "delete", edges: [picked.id] }, ...(dropped ? [connectOp(dropped)] : [])]).finally(() => (pickedRef.current = null));
+                },
+            });
+        };
+        window.addEventListener(PICK_UP_EVENT, handlePickUp);
+        return () => window.removeEventListener(PICK_UP_EVENT, handlePickUp);
+    }, [groupId, store, getEdges, setEdges, screenToFlowPosition, blockKeys, canEdit, apply]);
+
     // Close menu on click outside
     useEffect(() => {
         const handleClick = () => {
@@ -687,7 +774,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const current = new Map((eds ?? []).map((edge: any) => [edge.id, edge]));
             return stored.edges.map((edge: any) => {
                 const prev: any = current.get(edge.id);
-                return { ...edge, selected: keepSelection && prev ? prev.selected : !!edge.selected };
+                // a link being picked up stays hidden while it's dragged
+                const picked = edge.id === pickedRef.current ? { hidden: true } : {};
+                return { ...edge, selected: keepSelection && prev ? prev.selected : !!edge.selected, ...picked };
             });
         });
     }, [stored, state.ready, rfInstance]);

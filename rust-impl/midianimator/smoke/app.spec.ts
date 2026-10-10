@@ -44,7 +44,10 @@ test("main window with every panel docked", async ({ page }) => {
 
 test("resizing the docked panels", async ({ page }) => {
     await openWindow(page, withLayout({ ...ALL_DOCKED, panelSides: { 2: "left" } }), "/#/");
-    for (const [side, dx] of [["left", 100], ["right", -100]] as const) {
+    for (const [side, dx] of [
+        ["left", 100],
+        ["right", -100],
+    ] as const) {
         const column = page.locator(`.dock-column.dock-${side}`);
         await expect(column).toBeVisible();
         const before = (await column.boundingBox())!.width;
@@ -188,7 +191,10 @@ test("note map opens over the graph and closes", async ({ page }) => {
     };
     const box = page.locator(".note-add-box input");
     await page.mouse.move(640, 600);
-    for (const [typed, note] of [["70", 70], ["c#4", 73]] as const) {
+    for (const [typed, note] of [
+        ["70", 70],
+        ["c#4", 73],
+    ] as const) {
         await page.keyboard.press("Shift+A");
         await expect(box).toBeFocused();
         await page.keyboard.type(typed);
@@ -573,6 +579,55 @@ test("selecting sockets and dragging links off several at once", async ({ page }
     await page.mouse.up();
     await page.waitForTimeout(200);
     await expect(page.getByPlaceholder("Search nodes...")).toHaveCount(0);
+    await settle(page);
+});
+
+test("dragging off a connected input picks up its link", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const notes = socketOf(page, "assign_notes_to_objects-1", "midi_notes");
+    await expect(notes).toBeVisible();
+    await graphReady(page);
+    await settle(page);
+    const link = "xy-edge__assign_notes_to_objects-1midi_notes-get_midi_track_data-1notes";
+    const box = (await notes.boundingBox())!;
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    // the edits a drag made, without the selection
+    const edits = async (drag: () => Promise<void>) => {
+        const before = (await applied(page)).length;
+        await drag();
+        await page.waitForTimeout(300);
+        return (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op !== "select"));
+    };
+
+    // a click leaves it
+    expect(await edits(() => notes.click())).toEqual([]);
+
+    // dropped on nothing it's removed, hidden while it's dragged and no add menu opens
+    const removed = await edits(async () => {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x - 150, y + 120, { steps: 8 });
+        await expect(page.locator(`.react-flow__edge[data-id="${link}"]`)).toHaveCount(0);
+        await page.mouse.up();
+    });
+    expect(removed).toEqual([[{ op: "delete", edges: [link] }]]);
+    await expect(page.getByPlaceholder("Search nodes...")).toHaveCount(0);
+
+    // dropped on another input it moves there in one edit
+    const to = (await socketOf(page, "evaluate_instrument-1", "midi_notes").boundingBox())!;
+    const moved = await edits(async () => {
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(to.x - 30, to.y, { steps: 6 });
+        await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+        await page.mouse.up();
+    });
+    expect(moved).toEqual([
+        [
+            { op: "delete", edges: [link] },
+            { op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "evaluate_instrument-1", to_input: "midi_notes" },
+        ],
+    ]);
     await settle(page);
 });
 
