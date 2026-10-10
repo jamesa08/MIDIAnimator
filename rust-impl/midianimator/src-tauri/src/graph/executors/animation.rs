@@ -8,7 +8,7 @@ use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, Object, ObjectGroup};
 use crate::utils::note_to_name;
 
-use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::animation::{combine_curve_keys, note_curve_keys, parse_channel, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 
 /// Node: keyframes_from_object
 ///
@@ -268,6 +268,32 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
 
     let mut outputs = Outputs::new();
     outputs.set("generator", generator);
+    Ok(outputs)
+}
+
+/// Node: set_channel
+///
+/// inputs:
+/// "keyframes": `FCurveData`,
+/// "channel": `String`, a Blender path with its index like `rotation_euler[1]`, empty leaves the curve where it is
+///
+/// outputs:
+/// "keyframes": `FCurveData`, the same keys on the new channel
+#[node_registry::node]
+pub fn set_channel(keyframes: &AnimCurve, channel: Option<&String>) -> NodeResult {
+    let mut curve = keyframes.clone();
+    let channel = channel.map(|c| c.trim()).unwrap_or("");
+    if !channel.is_empty() {
+        let (data_path, array_index) = parse_channel(channel);
+        if data_path.is_empty() {
+            return Err(format!("'{}' has no data path, e.g. location[2]", channel));
+        }
+        curve.data_path = data_path;
+        curve.array_index = array_index;
+    }
+
+    let mut outputs = Outputs::new();
+    outputs.set("keyframes", curve);
     Ok(outputs)
 }
 

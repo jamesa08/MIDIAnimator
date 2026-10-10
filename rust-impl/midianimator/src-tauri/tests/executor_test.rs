@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::collections::BTreeMap;
-use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, targets_for_note};
+use MIDIAnimator::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, targets_for_note};
 use MIDIAnimator::graph::executors::io::Inputs;
 use MIDIAnimator::graph::executors::midi::{get_midi_file, get_midi_track_data};
 use MIDIAnimator::utils::animation::parse_channel;
@@ -280,6 +280,22 @@ fn animation_generator_errors_on_two_curves_on_one_channel() {
     let on = json!([curve("location[2]", vec![key(0.0, 0.0)]), curve("location[2]", vec![key(1.0, 1.0)])]);
     let error = animation_generator(&Inputs::from([("note_on_keyframes", on)])).unwrap_err();
     assert!(error.contains("two note on curves are on location[2]"), "{}", error);
+}
+
+#[test]
+fn set_channel_moves_a_curve() {
+    let moved = set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![key(0.0, 1.0)])), ("channel", json!("pose.bones[\"Arm\"].rotation_euler[1]"))])).unwrap().to_json();
+    assert_eq!(moved["keyframes"]["data_path"], json!("pose.bones[\"Arm\"].rotation_euler"));
+    assert_eq!(moved["keyframes"]["array_index"], json!(1));
+    assert_eq!(moved["keyframes"]["keyframe_points"], json!([key(0.0, 1.0)]));
+
+    // an empty channel leaves it where it is
+    let kept = set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![key(0.0, 1.0)])), ("channel", json!(""))])).unwrap().to_json();
+    assert_eq!(kept["keyframes"], curve("location[2]", vec![key(0.0, 1.0)]));
+
+    // no curve waits for one
+    assert_eq!(set_channel(&Inputs::default()).unwrap_err(), "missing input 'keyframes'");
+    assert!(set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![])), ("channel", json!("[2]"))])).unwrap_err().contains("no data path"));
 }
 
 #[test]

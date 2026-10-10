@@ -383,6 +383,35 @@ fn a_changed_value_reruns_what_depends_on_it() {
     assert_eq!(record.results["for_each_output-1"]["results"].as_array().unwrap().len(), 2);
 }
 
+// two curves into the generator's note on keyframes, one moved to another channel
+fn two_curves() -> Graph {
+    let curve = curve("location[2]", vec![key(0.0, 0.0), key(1.0, 1.0)]);
+    let nodes = vec![node("set_channel-1", json!({ "inputs": { "keyframes": curve } })), node("set_channel-2", json!({ "inputs": { "keyframes": curve, "channel": "rotation_euler[1]" } })), node("animation_generator-1", json!({}))];
+    graph(nodes, &[("set_channel-1", "keyframes", "animation_generator-1", "note_on_keyframes"), ("set_channel-2", "keyframes", "animation_generator-1", "note_on_keyframes")])
+}
+
+#[test]
+fn a_multi_input_gets_every_connection_in_order() {
+    let (record, error) = run_graph(&two_curves(), &BTreeMap::new(), true);
+    assert_eq!(error, None);
+    let curves = record.results["animation_generator-1"]["generator"]["note_on_keyframes"].as_array().unwrap().clone();
+    let channels: Vec<_> = curves.iter().map(|c| format!("{}[{}]", c["data_path"].as_str().unwrap(), c["array_index"])).collect();
+    assert_eq!(channels, ["location[2]", "rotation_euler[1]"]);
+    // the record shows the list it got
+    assert_eq!(record.inputs["animation_generator-1"]["note_on_keyframes"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn a_multi_input_with_the_same_values_reruns_from_the_memo() {
+    let root = two_curves();
+    let (_, _, memo) = run_memo(&root, &BTreeMap::new(), "", true, Memo::default());
+    // the set channel nodes have nothing connected and always run, but give the same curves, the generator's list is new
+    // but holds the same values
+    let (_, error, memo) = run_memo(&root, &BTreeMap::new(), "", true, memo);
+    assert_eq!(error, None);
+    assert_eq!(memo.hits(), 1);
+}
+
 #[test]
 fn nodes_inside_groups_are_memoized_per_group_node() {
     let (root, expected) = group_and_expected(50);

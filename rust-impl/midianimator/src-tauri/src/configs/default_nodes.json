@@ -240,6 +240,39 @@
         },
 
         {
+            "id": "set_channel",
+            "name": "Set Channel",
+            "category": "animation",
+            "description": "Move a curve's keys to another channel, e.g. play keys made on Location Z on Rotation Y.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "Array<Keyframe>",
+                        "description": "The curve to move, usually from Keyframes from Object."
+                    },
+                    {
+                        "id": "channel",
+                        "name": "Channel",
+                        "data_type": "String",
+                        "description": "Blender path with its index, e.g. location[2], rotation_euler[1], pose.bones[\"Arm\"].location[0] or key_blocks[\"Smile\"].value[0]. Empty leaves the curve on its own channel."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "Array<Keyframe>",
+                        "description": "The same keys on the new channel."
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "assign_notes_to_objects",
             "name": "Assign Notes to Objects",
             "category": "animation",
