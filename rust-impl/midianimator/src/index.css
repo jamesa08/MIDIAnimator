@@ -541,6 +541,17 @@ img {
     margin-bottom: -1px;
 }
 
+/* a new message in the status bar, after a write */
+.status-fade-in {
+    animation: status-fade-in 0.35s ease-out;
+}
+
+@keyframes status-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
 /* the active tab takes the toolbar's shade so it joins the toolbar below it. the status bar matches the toolbar */
 .tab-bar .bg-white,
 .toolbar,
