@@ -17,6 +17,9 @@ from . core import Server
 _last_structure = None
 _last_values = None
 
+# the objects MotionKeys reads keyframes from, only these send their curves (set_watched_objects)
+_watched = set()
+
 # Debounce variables
 _last_value_change_time = 0
 _values_pending = False
@@ -52,16 +55,33 @@ def action_name(id_data):
     return anim_data.action.name if anim_data and anim_data.action else None
 
 def get_values_signature():
-    """Values that change continuously while dragging: transforms, and the keyframes of ANIM objects.
+    """Values that change continuously while dragging: transforms, and the keyframes of watched objects.
     Changes are sent once they settle."""
     values = []
     for obj in bpy.data.objects:
         values.append((obj.name, tuple(obj.location), tuple(obj.rotation_euler), tuple(obj.scale)))
-        if obj.name.startswith("ANIM"):
+        if obj.name in _watched:
             for fcurve in FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj):
-                keys = tuple((tuple(key.co), tuple(key.handle_left), tuple(key.handle_right), key.interpolation) for key in fcurve.keyframe_points)
-                values.append((obj.name, fcurve.data_path, fcurve.array_index, keys))
+                values.append((obj.name, fcurve.data_path, fcurve.array_index, keyframes_signature(fcurve)))
     return tuple(values)
+
+def keyframes_signature(fcurve):
+    """An F-curve's keys, handles and interpolations as flat tuples. foreach_get reads them in one go, an object with
+    thousands of keys is compared on every depsgraph update"""
+    points = fcurve.keyframe_points
+    signature = []
+    for prop, size in (("co", 2), ("handle_left", 2), ("handle_right", 2), ("interpolation", 1)):
+        values = [0] * (len(points) * size)
+        points.foreach_get(prop, values)
+        signature.append(tuple(values))
+    return tuple(signature)
+
+def set_watched_objects(names):
+    """Sets the objects MotionKeys reads keyframes from. their curves go out with every scene update from now on"""
+    global _watched, _last_values
+    _watched = set(names)
+    # MotionKeys already has their curves, the new signature isn't a change to send
+    _last_values = get_values_signature()
 
 def shape_keys_from_object(obj):
     """gets shape keys from object"""
@@ -152,7 +172,7 @@ def get_all_objects_in_collection(collection, objects=None):
             "anim_curves": [],
         }
         
-        if obj.name.startswith("ANIM"):
+        if obj.name in _watched:
             fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
             obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
         
@@ -188,7 +208,7 @@ def execute():
                     "anim_curves": [],
                 }
                 
-                if obj.name.startswith("ANIM"):
+                if obj.name in _watched:
                     fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
                     obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
                 

@@ -130,6 +130,10 @@ class Server(metaclass=ServerMeta):
 
                     ipc_runtime.__dict__['bpy'] = bpy  # add bpy to module
 
+                    # the scene tracker, scripts set which objects it sends keyframes for. imported here, it imports this module
+                    from . import tracker
+                    ipc_runtime.__dict__['tracker'] = tracker
+
                     exec(compiled_code, ipc_runtime.__dict__) # execute the code object in the context of the new module
 
                     execute_func = ipc_runtime.execute   # retrieve the functions from the module
