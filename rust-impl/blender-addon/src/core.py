@@ -58,7 +58,8 @@ class Server(metaclass=ServerMeta):
         if not self.socket:
             raise Exception("Not connected to server")
         message_json = json.dumps({"sender": "client", "message": str(message), "uuid": uuid}) + '\n'
-        print(message_json)
+        # just the size, scene updates with keyframes can be megabytes and printing them stalls Blender
+        print(f"MotionKeys sending {uuid} ({len(message_json)} bytes)")
         data = message_json.encode()
         
         # the socket doesn't block (receive_messages), so a full send buffer raises partway through a message instead of
@@ -110,7 +111,7 @@ class Server(metaclass=ServerMeta):
                 
                 raw_message = json.loads(data.strip())
                 # if raw_message["sender"] == "server":
-                print(raw_message)
+                print(f"MotionKeys received {raw_message.get('uuid')} ({len(data)} bytes)")
                 
                 # if raw_message["message"][:3] == "":
                 d = {"bpy": bpy}
