@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
 
-use crate::blender::curves::sync_curves;
+use crate::blender::curves::{curve_sources, sync_curves};
 use crate::graph::builtin::all_groups;
 use crate::graph::executors::scene::with_scene;
 use crate::graph::model::{node_specs, Graph};
@@ -73,7 +73,7 @@ pub async fn run_instance(id: String, realtime: bool) {
     ctx.inspect = open_group;
 
     // failed nodes keep their error in the record, the rest of the graph still ran
-    let (record, _) = with_scene(scene, || run(&ctx, &graph));
+    let (record, _) = with_scene(scene, curve_sources(&graph), || run(&ctx, &graph));
     memo_lock.insert(id.clone(), ctx.into_memo());
     drop(memo_lock);
 

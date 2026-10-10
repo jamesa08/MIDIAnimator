@@ -76,9 +76,6 @@ def clean_all_keyframes(data: dict, report: dict):
     """Removes animation data entirely from each object to avoid stale pointer
     crashes on repeated runs. Does not touch frame_current."""
     for object_name in data.keys():
-        if object_name.startswith("ANIM"):
-            continue
-
         obj = bpy.data.objects.get(object_name)
         if obj is None:
             continue
@@ -146,9 +143,6 @@ def write_keyframes(data: dict, report: dict):
     """Writes keyframes directly to FCurves using FAST insertion to avoid
     depsgraph callbacks on every point. fc.update() is called once per curve."""
     for object_name, keyframe_data in data.items():
-        if object_name.startswith("ANIM"):
-            continue
-
         obj = bpy.data.objects.get(object_name)
         if obj is None:
             report["missing_objects"].append(object_name)

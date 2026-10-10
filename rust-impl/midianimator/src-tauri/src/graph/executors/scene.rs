@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use super::io::{NodeResult, Outputs};
 use crate::blender::scene_data::write_scene_data;
@@ -14,13 +14,18 @@ pub const NOT_CONNECTED: &str = "Blender isn't connected";
 thread_local! {
     // the scene of the tab being run, see `with_scene`
     static SCENE: RefCell<Option<Scene>> = const { RefCell::new(None) };
+    // the objects the tab's graph reads keyframes from, scene writers leave them alone
+    static CURVE_SOURCES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
-/// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene
-pub fn with_scene<T>(scene: Option<Scene>, f: impl FnOnce() -> T) -> T {
+/// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene. `curve_sources` are
+/// the objects its graph reads keyframes from (`blender::curves::curve_sources`)
+pub fn with_scene<T>(scene: Option<Scene>, curve_sources: BTreeSet<String>, f: impl FnOnce() -> T) -> T {
     let before = SCENE.with(|current| current.replace(scene));
+    let sources_before = CURVE_SOURCES.with(|current| current.replace(curve_sources));
     let result = f();
     SCENE.with(|current| *current.borrow_mut() = before);
+    CURVE_SOURCES.with(|current| *current.borrow_mut() = sources_before);
     result
 }
 
@@ -75,6 +80,13 @@ pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyfr
 
 // the scene writer's write, what Blender says ends up on the node
 fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool) -> NodeResult {
+    // objects the graph reads keyframes from are left alone, writing them would replace the keyframes they're read from
+    let sources = CURVE_SOURCES.with(|sources| sources.borrow().clone());
+    for name in keyframes.keys().filter(|name| sources.contains(*name)) {
+        log(format!("not writing keyframes to '{name}', its keyframes are read by Keyframes From Object and are in a collection being animated"));
+    }
+    let keyframes: HashMap<&String, &Vec<BlendKeyframe>> = keyframes.iter().filter(|(name, _)| !sources.contains(*name)).collect();
+
     // the Blender side reads JSON
     let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
 
