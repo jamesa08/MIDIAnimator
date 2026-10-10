@@ -7,6 +7,20 @@ import { SOCKET_COLORS } from "../../styles";
 import { socketCategory } from "../../utils/sockets";
 import ErrorBadge, { useBadInput } from "./ErrorBadge";
 
+// a lighter shade of a color, what a selection is drawn in (a selected node's ring in index.css)
+export const lighter = (color: string) => `color-mix(in srgb, ${color} 50%, white)`;
+
+// a selected edge's ring and glow, like a selected node's: a lighter shade of its own color drawn wider under it.
+// `stroke` is a color or a gradient's url, `width` the edge's own stroke width
+export function EdgeRing({ path, stroke, width = 3 }: { path: string; stroke: string; width?: number }) {
+    return (
+        <>
+            <path className="edge-ring" d={path} style={{ stroke, strokeWidth: width + 10, opacity: 0.35 }} />
+            <path className="edge-ring" d={path} style={{ stroke, strokeWidth: width + 4 }} />
+        </>
+    );
+}
+
 // an edge in the color of the sockets it connects, fading from one to the other when their types differ.
 // one whose value was the wrong type for its input in the last run is drawn red with a warning sign on it
 function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, style, interactionWidth }: EdgeProps) {
@@ -27,7 +41,8 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
     if (bad) {
         return (
             <>
-                <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: "var(--error-edge)", strokeWidth: selected ? 8 : 6 }} />
+                {selected && <EdgeRing path={path} stroke={lighter("var(--error-edge)")} width={6} />}
+                <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: "var(--error-edge)", strokeWidth: 6 }} />
                 <EdgeLabelRenderer>
                     <div className="edge-error" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
                         <ErrorBadge message={bad} size={26} />
@@ -47,9 +62,16 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
                         <stop offset="0%" style={{ stopColor: from }} />
                         <stop offset="100%" style={{ stopColor: to }} />
                     </linearGradient>
+                    {selected && (
+                        <linearGradient id={`${gradientId}-ring`} gradientUnits="userSpaceOnUse" x1={targetX} y1={targetY} x2={sourceX} y2={sourceY}>
+                            <stop offset="0%" style={{ stopColor: lighter(from) }} />
+                            <stop offset="100%" style={{ stopColor: lighter(to) }} />
+                        </linearGradient>
+                    )}
                 </defs>
             )}
-            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: from === to ? from : `url(#${gradientId})`, strokeWidth: selected ? 4 : undefined }} />
+            {selected && <EdgeRing path={path} stroke={from === to ? lighter(from) : `url(#${gradientId}-ring)`} />}
+            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ ...style, stroke: from === to ? from : `url(#${gradientId})` }} />
         </>
     );
 }

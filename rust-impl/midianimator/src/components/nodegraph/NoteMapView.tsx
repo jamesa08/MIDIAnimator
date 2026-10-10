@@ -8,6 +8,7 @@ import { socketStyle } from "../../utils/sockets";
 import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
 import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
+import { EdgeRing, lighter } from "./TypedEdge";
 import { MapData, NoteMap, shownMap, unique } from "../../utils/noteMap";
 
 // the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes wired to the object group's objects,
@@ -75,7 +76,12 @@ const ObjectNode = memo(({ data }: NodeProps) => (
 // a wire like the graph's edges, in the notes' socket color
 function MapWire({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, interactionWidth }: EdgeProps) {
     const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
-    return <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ stroke: SOCKET_COLORS.midi, strokeWidth: selected ? 4 : undefined }} />;
+    return (
+        <>
+            {selected && <EdgeRing path={path} stroke={lighter(SOCKET_COLORS.midi)} />}
+            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ stroke: SOCKET_COLORS.midi }} />
+        </>
+    );
 }
 
 // whether a wire's path passes through a box (flow coordinates), sampled along the path as it's drawn

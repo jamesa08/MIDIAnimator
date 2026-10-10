@@ -437,6 +437,11 @@ img {
     pointer-events: all;
 }
 
+.edge-ring {
+    fill: none;
+    pointer-events: none;
+}
+
 /* what's wrong, shown while hovering the warning sign. it's fixed to the screen so it stays readable at any zoom */
 .error-popover {
     position: fixed;
