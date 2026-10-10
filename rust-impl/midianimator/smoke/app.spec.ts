@@ -236,6 +236,32 @@ test("note map keeps its nodes when a run sends new results", async ({ page }) =
     await settle(page);
 });
 
+// the graph on screen is ready: until then it's drawn see-through and takes no clicks (NodeGraph.tsx). a locator's click
+// waits for that, a click at a point with the mouse doesn't, and opacity 0 still counts as visible
+async function graphReady(page: Page) {
+    await expect(page.locator('.graph-layer:not([style*="opacity"]) .react-flow__node').first()).toBeAttached();
+}
+
+// a point on an edge's path on screen where it's the edge a click gets, the nearest to its middle. another edge or a
+// node can be over the middle depending on how the nodes measure (fonts differ between platforms)
+async function edgePoint(edge: ReturnType<Page["locator"]>) {
+    return edge.evaluate((g: Element) => {
+        const path = g.querySelector<SVGPathElement>("path.react-flow__edge-path")!;
+        const ctm = path.getScreenCTM()!;
+        const at = (fraction: number) => {
+            const point = path.getPointAtLength(path.getTotalLength() * fraction);
+            return { x: point.x * ctm.a + ctm.e, y: point.y * ctm.d + ctm.f };
+        };
+        for (let step = 0; step <= 8; step++) {
+            for (const fraction of [0.5 - step * 0.05, 0.5 + step * 0.05]) {
+                const point = at(fraction);
+                if (document.elementFromPoint(point.x, point.y)?.closest(".react-flow__edge") === g) return point;
+            }
+        }
+        return at(0.5);
+    });
+}
+
 // the middle of an edge's path on screen
 async function edgeMiddle(edge: ReturnType<Page["locator"]>) {
     return edge.locator("path.react-flow__edge-path").evaluate((path: SVGPathElement) => {
@@ -247,11 +273,12 @@ async function edgeMiddle(edge: ReturnType<Page["locator"]>) {
 
 test("clicking an edge selects it in every graph", async ({ page }) => {
     await openWindow(page, backend, "/#/");
-    const edge = page.locator('.react-flow__edge[data-id*="get_midi_track_data-1notes"]').first();
+    const edge = page.locator('.react-flow__edge[data-id="xy-edge__assign_notes_to_objects-1midi_notes-get_midi_track_data-1notes"]');
     await expect(edge).toBeVisible();
+    await graphReady(page);
     await settle(page);
-    const middle = await edgeMiddle(edge);
-    await page.mouse.click(middle.x, middle.y);
+    const point = await edgePoint(edge);
+    await page.mouse.click(point.x, point.y);
     await expect(edge).toHaveClass(/selected/);
     await expect(edge.locator(".edge-ring")).toHaveCount(2);
     const selects = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
@@ -261,8 +288,8 @@ test("clicking an edge selects it in every graph", async ({ page }) => {
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
     await expect(page.locator(".note-map-layer .react-flow__node")).toHaveCount(12);
     const wire = page.locator(".note-map-layer .react-flow__edge").nth(2);
-    const wireMiddle = await edgeMiddle(wire);
-    await page.mouse.click(wireMiddle.x, wireMiddle.y);
+    const wirePoint = await edgePoint(wire);
+    await page.mouse.click(wirePoint.x, wirePoint.y);
     await expect(wire).toHaveClass(/selected/);
     await expect(wire.locator(".edge-ring")).toHaveCount(2);
     await settle(page);
@@ -272,6 +299,7 @@ test("box select takes the edges it crosses", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const edge = page.locator('.react-flow__edge[data-id="xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]"]');
     await expect(edge).toBeVisible();
+    await graphReady(page);
     await settle(page);
 
     // a small box from empty space across the middle of the wire, no node or other wire in it
@@ -444,6 +472,7 @@ test("selecting sockets and dragging links off several at once", async ({ page }
     const notes = socketOf(page, "get_midi_track_data-1", "notes");
     const numbers = socketOf(page, "get_midi_track_data-1", "unique_note_numbers");
     await expect(notes).toBeVisible();
+    await graphReady(page);
     await settle(page);
 
     // a click selects a socket on its own, not its node, shift adds another
@@ -587,6 +616,7 @@ test("box select around sockets only selects the sockets", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
     await expect(node).toBeVisible();
+    await graphReady(page);
     await settle(page);
 
     // a narrow box down the outputs, from above the node to the aftertouch socket. it touches the node's edge, but it's
