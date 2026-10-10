@@ -148,6 +148,7 @@ def write_keyframes(data: dict, report: dict):
             report["missing_objects"].append(object_name)
             continue
 
+        written_before = report["keyframes"]
         fcurve_map: dict[tuple, list] = {}
         for keyframe in keyframe_data:
             data_path = keyframe.get("data_path", "")
@@ -170,12 +171,58 @@ def write_keyframes(data: dict, report: dict):
                 fc.keyframe_points.add(len(keyframes))
                 fc.keyframe_points.foreach_set("co", existing + [x for co in zip(frames, values) for x in co])
                 fc.update()
+                report["keyframes"] += len(keyframes)
             except Exception as e:
                 report["errors"].append(f"couldn't write '{data_path}[{array_index}]' on '{object_name}': {e}")
+        if report["keyframes"] > written_before:
+            report["objects"] += 1
+
+
+# how long a write's message stays in Blender's status bar
+STATUS_SECONDS = 4
+
+
+def redraw_status_bar():
+    """Blender's status bar only draws again for a few notifiers, renaming an ID is one of them. the scene keeps its
+    name, nothing is evaluated again"""
+    scene = bpy.context.scene
+    scene.name = scene.name
+
+
+def show_status(text: str, icon: str):
+    """Shows `text` at the end of Blender's status bar for a few seconds, the next write's message replaces it.
+    The draw function is kept in driver_namespace so a later write (a new run of this script) can find it"""
+    namespace = bpy.app.driver_namespace
+    previous = namespace.pop("motionkeys_status", None)
+    if previous is not None:
+        with suppress(Exception):
+            bpy.types.STATUSBAR_HT_header.remove(previous)
+
+    def draw(self, context):
+        self.layout.label(text=text, icon=icon)
+
+    bpy.types.STATUSBAR_HT_header.append(draw)
+    namespace["motionkeys_status"] = draw
+
+    # gone after a while, unless another write replaced it
+    def clear():
+        if namespace.get("motionkeys_status") is draw:
+            del namespace["motionkeys_status"]
+            with suppress(Exception):
+                bpy.types.STATUSBAR_HT_header.remove(draw)
+                redraw_status_bar()
+        return None
+
+    bpy.app.timers.register(clear, first_interval=STATUS_SECONDS)
+    redraw_status_bar()
+
+
+def plural(count: int, word: str) -> str:
+    return f"{count:,} {word}{'' if count == 1 else 's'}"
 
 
 # filled in on the main thread, read back by execute()
-_report = {"missing_objects": [], "errors": []}
+_report = {"missing_objects": [], "errors": [], "objects": 0, "keyframes": 0}
 _done = threading.Event()
 
 # must be under the Rust side's SCENE_WRITE_TIMEOUT so the report gets back in time
@@ -194,6 +241,13 @@ def _execute_on_main_thread():
         _report["errors"].append(f"write failed: {traceback.format_exc()}")
     finally:
         _done.set()
+
+    # how it went, in Blender's status bar too
+    with suppress(Exception):
+        if _report["errors"] or _report["missing_objects"]:
+            show_status("MotionKeys: couldn't write keyframes", "ERROR")
+        else:
+            show_status(f"MotionKeys: wrote {plural(_report['keyframes'], 'keyframe')} to {plural(_report['objects'], 'object')}", "INFO")
     return None
 
 
