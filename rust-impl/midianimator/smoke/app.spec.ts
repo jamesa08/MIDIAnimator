@@ -439,7 +439,7 @@ async function applied(page: Page): Promise<any[][]> {
 
 const socketOf = (page: Page, node: string, socket: string) => page.locator(`.react-flow__node[data-id="${node}"] .react-flow__handle[data-handleid="${socket}"]`);
 
-test("selecting sockets", async ({ page }) => {
+test("selecting sockets and dragging links off several at once", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const notes = socketOf(page, "get_midi_track_data-1", "notes");
     const numbers = socketOf(page, "get_midi_track_data-1", "unique_note_numbers");
@@ -470,6 +470,80 @@ test("selecting sockets", async ({ page }) => {
             ],
         });
 
+    // a link dragged off one brings the other, drawn along with it. dropped on an input, the other connects to the free
+    // input of its type below it, in the same edit
+    const from = (await notes.boundingBox())!;
+    const to = (await socketOf(page, "assign_notes_to_objects-1", "midi_notes").boundingBox())!;
+    const calls = (await applied(page)).length;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x - 40, to.y, { steps: 6 });
+    await expect(page.locator(".react-flow__connection path.node-edge")).toHaveCount(2);
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    // over the input, the other one is drawn going into the input it will connect to
+    const target = (await socketOf(page, "assign_notes_to_objects-1", "note_numbers").boundingBox())!;
+    const ends = await page.locator(".react-flow__connection path.node-edge").evaluateAll((paths: SVGPathElement[]) =>
+        paths.map((path) => {
+            const end = path.getPointAtLength(path.getTotalLength());
+            const ctm = path.getScreenCTM()!;
+            return { x: end.x * ctm.a + ctm.e, y: end.y * ctm.d + ctm.f };
+        })
+    );
+    expect(ends.some((end) => Math.abs(end.x - (target.x + target.width / 2)) < 3 && Math.abs(end.y - (target.y + target.height / 2)) < 3)).toBe(true);
+    await page.mouse.up();
+    await expect
+        .poll(async () => (await applied(page)).slice(calls).filter((ops) => ops.some((op) => op.op === "connect")))
+        .toEqual([
+            [
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "assign_notes_to_objects-1", to_input: "midi_notes" },
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "unique_note_numbers", to_node: "assign_notes_to_objects-1", to_input: "note_numbers" },
+            ],
+        ]);
+
+    // a node with no free socket of the right type left, the next nearest one takes it
+    const evaluate = (await socketOf(page, "evaluate_instrument-1", "midi_notes").boundingBox())!;
+    const before = (await applied(page)).length;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(evaluate.x - 40, evaluate.y, { steps: 6 });
+    await page.mouse.move(evaluate.x + evaluate.width / 2, evaluate.y + evaluate.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect
+        .poll(async () => (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op === "connect")))
+        .toEqual([
+            [
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "evaluate_instrument-1", to_input: "midi_notes" },
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "unique_note_numbers", to_node: "assign_notes_to_objects-1", to_input: "note_numbers" },
+            ],
+        ]);
+
+    // they fill in order whatever their type, like the dragged link: control change takes the next free input
+    await numbers.click({ modifiers: ["Shift"] });
+    await socketOf(page, "get_midi_track_data-1", "control_change").click({ modifiers: ["Shift"] });
+    const last = (await applied(page)).length;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x - 40, to.y, { steps: 6 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect
+        .poll(async () => (await applied(page)).slice(last).filter((ops) => ops.some((op) => op.op === "connect")))
+        .toEqual([
+            [
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "assign_notes_to_objects-1", to_input: "midi_notes" },
+                { op: "connect", from_node: "get_midi_track_data-1", from_output: "control_change", to_node: "assign_notes_to_objects-1", to_input: "note_numbers" },
+            ],
+        ]);
+
+    // dropped on nothing they don't open the add menu, and there's no + for it
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 120, from.y + 200, { steps: 6 });
+    await page.waitForTimeout(50);
+    await expect(page.locator(".react-flow__connection .edge-plus-sign")).toHaveCount(0);
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+    await expect(page.getByPlaceholder("Search nodes...")).toHaveCount(0);
     await settle(page);
 });
 

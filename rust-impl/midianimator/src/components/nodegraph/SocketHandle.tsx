@@ -60,6 +60,14 @@ export function socketPoints(node: InternalNode): SocketPoint[] {
     return handles.filter((h) => h.id && h.id !== NEW_SOCKET && h.width > 0).map((h) => ({ node: node.id, side: handleSide(h.type), socket: h.id!, x: x + h.x + h.width / 2, y: y + h.y + h.height / 2 }));
 }
 
+// the other selected sockets a link dragged off `from` brings along: the ones on the same side, when `from` is selected
+export function draggedAlong(nodeLookup: Map<string, InternalNode>, from: SocketRef): SocketPoint[] {
+    const selected = (node: InternalNode, side: Side, socket: string) => !!(node.internals.userNode as any).selectedSockets?.[side]?.includes(socket);
+    const fromNode = nodeLookup.get(from.node);
+    if (!fromNode || !selected(fromNode, from.side, from.socket)) return [];
+    return [...nodeLookup.values()].flatMap(socketPoints).filter((p) => p.side === from.side && !sameSocket(p, from) && selected(nodeLookup.get(p.node)!, p.side, p.socket));
+}
+
 // a socket of a node: react flow's handle, selected by a click that doesn't drag a link off it, a double click opens
 // the tag menu. `side` is which of the node's sockets it is
 export default function SocketHandle({ side, style, ...props }: HandleProps & { id: string; side: Side; style?: CSSProperties }) {

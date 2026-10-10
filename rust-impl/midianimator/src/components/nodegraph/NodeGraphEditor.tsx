@@ -12,7 +12,8 @@ import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 import TagMenu from "./TagMenu";
-import { SOCKET_SELECT_EVENT, SocketSelect, TAG_EDIT_EVENT, TagEdit, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
+import { SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
+import { connectAlong } from "./connectAlong";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -60,6 +61,10 @@ const withSockets = (nodes: any[], sockets: SocketRef[]) =>
 // how long a click on one of several selected sockets waits before selecting it alone, a second click in that time is
 // a double click that tags them all
 const DOUBLE_CLICK_TIME = 500;
+
+// a link react flow made as an op. react flow's sources are inputs and its targets outputs, data flows from the target
+// to the source
+const connectOp = (params: Edge | Connection): Op => ({ op: "connect", from_node: params.target, from_output: params.targetHandle ?? "", to_node: params.source, to_input: params.sourceHandle ?? "" });
 
 // edits one graph: selection, adding, grabbing, duplicating, deleting, connecting, grouping. every edit is sent to the
 // backend as an op and the graph it sends back is shown, only selection and positions mid drag are ahead of it.
@@ -549,13 +554,19 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // where a link drag started, letting go without moving is a click on the socket (the first of a double click to tag
     // it), not a link dropped on nothing
     const linkStartRef = useRef<{ x: number; y: number } | null>(null);
+    // the other selected sockets a link dragged off a selected socket brings along, and that link once it's dropped on a
+    // socket (they're connected together when the drag ends)
+    const alongRef = useRef<SocketPoint[]>([]);
+    const droppedRef = useRef<Edge | Connection | null>(null);
     const onConnectStart = useCallback(
-        (event: MouseEvent | TouchEvent) => {
+        (event: MouseEvent | TouchEvent, { nodeId, handleId, handleType }: { nodeId: string | null; handleId: string | null; handleType: "source" | "target" | null }) => {
             const { clientX, clientY } = "touches" in event ? event.touches[0] : event;
             linkStartRef.current = { x: clientX, y: clientY };
+            alongRef.current = nodeId && handleId && handleType ? draggedAlong(store.getState().nodeLookup, { node: nodeId, side: handleSide(handleType), socket: handleId }) : [];
+            droppedRef.current = null;
             blockKeys();
         },
-        [blockKeys]
+        [blockKeys, store]
     );
 
     // Close menu on click outside
@@ -720,20 +731,35 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         },
     });
 
-    // react flow's sources are inputs and its targets outputs, data flows from the target to the source.
     // connecting to the empty socket on the group input or output adds a group socket, the backend does that
     const onConnect = useCallback(
         (params: Edge | Connection) => {
             if (!editable) return;
-            apply([{ op: "connect", from_node: params.target, from_output: params.targetHandle ?? "", to_node: params.source, to_input: params.sourceHandle ?? "" }]);
+            // the sockets brought along connect with it when the drag ends
+            if (alongRef.current.length > 0) droppedRef.current = params;
+            else apply([connectOp(params)]);
         },
         [editable, apply]
     );
 
-    // link dragged off a handle and dropped on nothing (the + sign), open the add menu where it was released with the
-    // nodes it can connect to
+    // a single link dragged off a handle and dropped on nothing (the + sign), open the add menu where it was released
+    // with the nodes it can connect to
     const onConnectEnd = useCallback(
         (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+            const along = alongRef.current;
+            const dropped = droppedRef.current;
+            alongRef.current = [];
+            droppedRef.current = null;
+            // one undo step for the link and the ones brought along
+            if (dropped) {
+                const output = { node: dropped.target, side: "outputs" as const, socket: dropped.targetHandle ?? "" };
+                const input = { node: dropped.source, side: "inputs" as const, socket: dropped.sourceHandle ?? "" };
+                const links = connectAlong(store.getState().nodeLookup, getEdges(), output, input, along);
+                apply([connectOp(dropped), ...links.map(({ output, input }): Op => ({ op: "connect", from_node: output.node, from_output: output.socket, to_node: input.node, to_input: input.socket }))]);
+                return;
+            }
+            // several links dropped on nothing don't add a node
+            if (along.length > 0) return;
             const { fromNode, fromHandle } = connectionState;
             if (connectionState.isValid || connectionState.toHandle || !editable || !fromNode || !fromHandle?.id) return;
             const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
@@ -750,7 +776,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             setMenuPosition({ x: clientX, y: clientY });
             setMenuOpen(true);
         },
-        [editable, lookup, level.def]
+        [editable, lookup, level.def, apply, store, getEdges]
     );
 
     // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops
