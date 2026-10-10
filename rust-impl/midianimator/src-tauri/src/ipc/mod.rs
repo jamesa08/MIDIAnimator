@@ -239,7 +239,8 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     let mut data = Vec::new();
 
     loop {
-        let mut buf = [0; 4096]; // 4 KiB buffer
+        // 64 KiB, each read sleeps after it so scene updates with keyframes (megabytes) would take seconds in small reads
+        let mut buf = [0; 65536];
 
         match reader.read(&mut buf) {
             Ok(0) => break, // connection closed
