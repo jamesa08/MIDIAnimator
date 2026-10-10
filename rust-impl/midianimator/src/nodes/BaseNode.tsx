@@ -98,7 +98,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                             )}
                             {tag && <SocketTag side={handleType} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
                         </div>
-                        {value != null && <div className="node-field node-value">{String(value)}</div>}
+                        {value != null && (typeof value === "object" ? <div className="node-field node-value node-value-json">{JSON.stringify(value)}</div> : <div className="node-field node-value">{String(value)}</div>)}
                         {uiInject}
                     </>
                 );

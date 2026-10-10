@@ -364,6 +364,17 @@ img {
     color: var(--node-value);
 }
 
+/* a list or an object typed in (over MCP) shows as JSON on one line, cut off at the node's edge. it takes the node's
+   width instead of widening it */
+.node .node-value-json {
+    display: block;
+    width: 0;
+    min-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .node-header {
     color: #fff;
     text-shadow: 0 1px rgba(0, 0, 0, 0.4);
