@@ -8,6 +8,7 @@ import { useNodeSpecs } from "../utils/nodeEntries";
 import { NodeCurves, ShownChannel, colorChannels, curveBounds } from "../utils/curves";
 import { usePanelGroups } from "../components/PanelBody";
 import CurveCanvas, { CurveCanvasHandle } from "../components/graph/CurveCanvas";
+import ScenePreview, { SHAPES } from "../components/graph/ScenePreview";
 import { useKeymap } from "../utils/keymap";
 import { Icon } from "../icons";
 
@@ -92,13 +93,20 @@ function Graph() {
     }, [tab, keys, state.executed_results]);
 
     // times in seconds or frames (the graph.time_units setting), frames at the scene's rate. 24 until Blender has sent it.
-    // key handles shown or not (graph.show_handles)
+    // key handles shown or not (graph.show_handles), the 3d preview shown or not (graph.show_preview), its shape
+    // (graph.preview_shape) and its floor grid shown or not (graph.preview_grid)
     const [frames, setFrames] = useState(false);
     const [showHandles, setShowHandles] = useState(true);
+    const [showPreview, setShowPreview] = useState(true);
+    const [previewShape, setPreviewShape] = useState(SHAPES[0].id);
+    const [showGrid, setShowGrid] = useState(true);
     useEffect(() => {
         const apply = (settings: any) => {
             setFrames(settings?.graph?.time_units === "frames");
             setShowHandles(settings?.graph?.show_handles !== false);
+            setShowPreview(settings?.graph?.show_preview !== false);
+            setPreviewShape(settings?.graph?.preview_shape ?? SHAPES[0].id);
+            setShowGrid(settings?.graph?.preview_grid !== false);
         };
         invoke("get_settings").then(apply);
         const unlisten = listen("settings_changed", (event: any) => apply(event.payload));
@@ -110,6 +118,9 @@ function Graph() {
     const scene = state.scene_data?.["Scene"] ?? Object.values(state.scene_data ?? {})[0];
     const fps: number = typeof (scene as any)?.fps === "number" && (scene as any).fps > 0 ? (scene as any).fps : 24;
     const toggleHandles = () => invoke("set_setting", { path: "graph.show_handles", value: !showHandles }).catch((e) => console.error(`Error saving setting graph.show_handles: ${e}`));
+    const togglePreview = () => invoke("set_setting", { path: "graph.show_preview", value: !showPreview }).catch((e) => console.error(`Error saving setting graph.show_preview: ${e}`));
+    const toggleGrid = () => invoke("set_setting", { path: "graph.preview_grid", value: !showGrid }).catch((e) => console.error(`Error saving setting graph.preview_grid: ${e}`));
+    const setShapeSetting = (shape: string) => invoke("set_setting", { path: "graph.preview_shape", value: shape }).catch((e) => console.error(`Error saving setting graph.preview_shape: ${e}`));
 
     // the view's own commands, for the toolbar
     const canvas = useRef<CurveCanvasHandle>(null);
@@ -273,6 +284,10 @@ function Graph() {
                         <circle cx="12" cy="8" r="1.5" fill="currentColor" />
                     </svg>
                 </ToolButton>
+                {/* a cube */}
+                <ToolButton active={showPreview} onClick={togglePreview}>
+                    <ToolIcon d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+                </ToolButton>
                 <div className="spacer h-5 w-[1px] mx-1" />
                 {/* jump to start, previous frame, play, next frame, jump to end */}
                 <ToolButton onClick={jumpToStart}>
@@ -305,6 +320,26 @@ function Graph() {
                 <div className="flex-auto min-w-0">
                     <CurveCanvas ref={canvas} channels={shown} frameKey={keys} fps={fps} frames={frames} showHandles={showHandles} time={time} onScrub={scrub} onScrubEnd={endScrub} />
                 </div>
+                {showPreview && (
+                    <div className="relative w-80 flex-none border-l border-[var(--properties-line)]">
+                        <ScenePreview channels={shown} time={time} shape={previewShape} showGrid={showGrid} />
+                        {/* the viewport's own controls over its top left: the shape and the floor grid */}
+                        <div className="absolute top-1.5 left-1.5 flex gap-1 text-xs">
+                            <select className="border border-black bg-white h-6" value={previewShape} onChange={(e) => setShapeSetting(e.target.value)}>
+                                {SHAPES.map((shape) => (
+                                    <option key={shape.id} value={shape.id}>
+                                        {shape.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <button className={`h-6 w-6 flex items-center justify-center border border-black ${showGrid ? "bg-black text-white" : "bg-white hover:bg-zinc-100"}`} onClick={toggleGrid}>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-4">
+                                    <path d="M3.75 3.75h16.5v16.5H3.75zM3.75 9.25h16.5M3.75 14.75h16.5M9.25 3.75v16.5M14.75 3.75v16.5" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

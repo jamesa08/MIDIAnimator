@@ -15,6 +15,9 @@
     },
     "graph": {
         "time_units": "seconds",
-        "show_handles": true
+        "show_handles": true,
+        "show_preview": true,
+        "preview_shape": "cube",
+        "preview_grid": true
     }
 }

@@ -134,6 +134,15 @@ test("graph window with every node selected", async ({ page }) => {
     await settle(page);
 });
 
+test("graph window previews an imported shape", async ({ page }) => {
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((node: any) => ({ ...node, selected: node.id === "evaluate_instrument-1" }));
+    const settings = { ...backend.get_settings, graph: { ...backend.get_settings.graph, preview_shape: "cymbal" } };
+    await openWindow(page, { ...backend, get_settings: settings, get_state: { ...state, rf_instance: { ...state.rf_instance, nodes } } }, "/#/graph", "Graph");
+    await expect(page.locator("select")).toHaveValue("cymbal");
+    await settle(page);
+});
+
 test("graph window scrubs and plays", async ({ page }) => {
     const state = backend.get_state;
     const nodes = state.rf_instance.nodes.map((node: any) => ({ ...node, selected: node.id === "evaluate_instrument-1" }));

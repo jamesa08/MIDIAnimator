@@ -280,6 +280,9 @@ img {
     --graph-handle: #b0739a;
     /* the playhead, Blender's current frame color */
     --graph-playhead: #4772b3;
+    /* the cube in the graph window's 3d preview (src/components/graph/ScenePreview.tsx) */
+    --preview-object: #b4b4b4;
+    --preview-edge: #000;
 }
 
 /* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's

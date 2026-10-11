@@ -21,6 +21,7 @@
     "rete-react-plugin": "^2.0.5",
     "rete-render-utils": "^2.0.2",
     "styled-components": "^6.1.8",
+    "three": "^0.186.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
@@ -54,6 +55,7 @@
     "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^18.3.2",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.3.0",
     "postcss-cli": "^11.0.0",
     "tailwindcss": "^3.4.3",
