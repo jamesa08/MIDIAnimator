@@ -5,9 +5,14 @@ description = "Procedurally animate a MIDI file. version beta5"
 authors = ["you"]
 license = "GPL-3.0"
 repository = "https://github.com/jamesa08/MotionKeys"
-default-run = "motionkeys"
+default-run = "MotionKeys"
 edition = "2021"
 rust-version = "1.60"
+
+# capitalized binary so the dev build shows "MotionKeys" in the menu bar and dock
+[[bin]]
+name = "MotionKeys"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
