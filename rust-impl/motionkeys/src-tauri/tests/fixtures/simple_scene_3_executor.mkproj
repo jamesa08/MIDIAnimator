@@ -1,0 +1,466 @@
+{
+  "scene_data": {
+    "Scene": {
+      "name": "Scene",
+      "object_groups": [
+        {
+          "name": "Cubes",
+          "objects": [
+            {
+              "name": "Cube.001",
+              "position": {
+                "x": -4.359868,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": []
+            },
+            {
+              "name": "Cube.002",
+              "position": {
+                "x": -2.159868,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": []
+            },
+            {
+              "name": "Cube.003",
+              "position": {
+                "x": 0.040132046,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": []
+            },
+            {
+              "name": "Cube.004",
+              "position": {
+                "x": 2.2401314,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": []
+            },
+            {
+              "name": "Cube.005",
+              "position": {
+                "x": 4.440132,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": []
+            },
+            {
+              "name": "ANIM_bounce",
+              "position": {
+                "x": 0.040132046,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "rotation": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "scale": {
+                "x": 1.0,
+                "y": 1.0,
+                "z": 1.0
+              },
+              "blend_shapes": {
+                "keys": [],
+                "reference": null
+              },
+              "anim_curves": [
+                {
+                  "array_index": 2,
+                  "auto_smoothing": "CONT_ACCEL",
+                  "data_path": "location",
+                  "extrapolation": "CONSTANT",
+                  "keyframe_points": [
+                    {
+                      "amplitude": 0.8,
+                      "back": 1.70158,
+                      "easing": "AUTO",
+                      "handle_left": [
+                        -1.6666666,
+                        0.0
+                      ],
+                      "handle_left_type": "AUTO",
+                      "handle_right": [
+                        1.6666666,
+                        0.0
+                      ],
+                      "handle_right_type": "AUTO",
+                      "interpolation": "BEZIER",
+                      "co": [
+                        0.0,
+                        0.0
+                      ],
+                      "period": 4.1
+                    },
+                    {
+                      "amplitude": 0.8,
+                      "back": 1.70158,
+                      "easing": "AUTO",
+                      "handle_left": [
+                        3.3333335,
+                        -3.0085726
+                      ],
+                      "handle_left_type": "AUTO",
+                      "handle_right": [
+                        7.0,
+                        -3.0941737
+                      ],
+                      "handle_right_type": "AUTO",
+                      "interpolation": "BEZIER",
+                      "co": [
+                        5.0,
+                        -3.0474823
+                      ],
+                      "period": 4.1
+                    },
+                    {
+                      "amplitude": 0.8,
+                      "back": 1.70158,
+                      "easing": "AUTO",
+                      "handle_left": [
+                        9.0,
+                        1.13545
+                      ],
+                      "handle_left_type": "AUTO",
+                      "handle_right": [
+                        13.333333,
+                        3.2684674
+                      ],
+                      "handle_right_type": "AUTO",
+                      "interpolation": "BEZIER",
+                      "co": [
+                        11.0,
+                        2.1199195
+                      ],
+                      "period": 4.1
+                    },
+                    {
+                      "amplitude": 0.8,
+                      "back": 1.70158,
+                      "easing": "AUTO",
+                      "handle_left": [
+                        15.666667,
+                        0.0
+                      ],
+                      "handle_left_type": "AUTO",
+                      "handle_right": [
+                        20.333334,
+                        0.0
+                      ],
+                      "handle_right_type": "AUTO",
+                      "interpolation": "BEZIER",
+                      "co": [
+                        18.0,
+                        0.0
+                      ],
+                      "period": 4.1
+                    }
+                  ],
+                  "range": [
+                    0.0,
+                    18.0
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "rf_instance": {
+    "nodes": [
+      {
+        "id": "viewer-1",
+        "position": {
+          "x": 1260.065279381486,
+          "y": 159.6851713259509
+        },
+        "data": {},
+        "type": "viewer",
+        "measured": {
+          "width": 503,
+          "height": 496
+        },
+        "selected": true,
+        "dragging": false
+      },
+      {
+        "id": "get_midi_file-1",
+        "position": {
+          "x": 162.32976633790292,
+          "y": 181.9011045310711
+        },
+        "data": {
+          "inputs": {
+            "file_path": "/Users/james/Documents/Blender/MotionKeys/SavingLoadingTests/piano_seq_test.mid"
+          }
+        },
+        "type": "get_midi_file",
+        "measured": {
+          "width": 200,
+          "height": 100
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "scene_link-1",
+        "position": {
+          "x": -168.30288759305597,
+          "y": 436.0855681158192
+        },
+        "data": {},
+        "type": "scene_link",
+        "measured": {
+          "width": 200,
+          "height": 78
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "assign_notes_to_objects-1",
+        "position": {
+          "x": 741.5256924616973,
+          "y": 135.17426828758138
+        },
+        "data": {
+          "inputs": {
+            "object_group_name": "Cubes"
+          }
+        },
+        "type": "assign_notes_to_objects",
+        "measured": {
+          "width": 200,
+          "height": 176
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "get_midi_track_data-1",
+        "position": {
+          "x": 433.0348568772408,
+          "y": 96.90431063688196
+        },
+        "data": {
+          "inputs": {
+            "track_name": "Studio Grand"
+          }
+        },
+        "type": "get_midi_track_data",
+        "measured": {
+          "width": 200,
+          "height": 16
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "animation_generator-1",
+        "position": {
+          "x": 437.5554033362751,
+          "y": 335.38854459011145
+        },
+        "data": {
+          "inputs": {
+            "name": "test"
+          }
+        },
+        "type": "animation_generator",
+        "measured": {
+          "width": 200,
+          "height": 308
+        },
+        "selected": false
+      },
+      {
+        "id": "keyframes_from_object-1",
+        "position": {
+          "x": 146.9682203866086,
+          "y": 503.0753412736839
+        },
+        "data": {
+          "inputs": {
+            "object_group_name": "Cubes",
+            "object_name": "ANIM_bounce",
+            "channels": [
+              "location[2]"
+            ]
+          }
+        },
+        "type": "keyframes_from_object",
+        "measured": {
+          "width": 200,
+          "height": 104
+        },
+        "selected": false,
+        "dragging": false
+      },
+      {
+        "id": "evaluate_instrument-1",
+        "position": {
+          "x": 1027.902599814239,
+          "y": 109.29921090332353
+        },
+        "data": {},
+        "type": "evaluate_instrument",
+        "measured": {
+          "width": 200,
+          "height": 100
+        },
+        "selected": false
+      }
+    ],
+    "edges": [
+      {
+        "source": "get_midi_track_data-1",
+        "sourceHandle": "tracks",
+        "target": "get_midi_file-1",
+        "targetHandle": "tracks",
+        "id": "xy-edge__get_midi_track_data-1tracks-get_midi_file-1tracks"
+      },
+      {
+        "source": "viewer-1",
+        "sourceHandle": "data",
+        "target": "evaluate_instrument-1",
+        "targetHandle": "keyframes",
+        "id": "xy-edge__viewer-1data-evaluate_instrument-1keyframes"
+      },
+      {
+        "source": "assign_notes_to_objects-1",
+        "sourceHandle": "midi_notes",
+        "target": "get_midi_track_data-1",
+        "targetHandle": "notes",
+        "id": "xy-edge__assign_notes_to_objects-1midi_notes-get_midi_track_data-1notes"
+      },
+      {
+        "source": "assign_notes_to_objects-1",
+        "sourceHandle": "object_groups",
+        "target": "scene_link-1",
+        "targetHandle": "object_groups",
+        "id": "xy-edge__assign_notes_to_objects-1object_groups-scene_link-1object_groups",
+        "selected": false
+      },
+      {
+        "source": "assign_notes_to_objects-1",
+        "sourceHandle": "generator",
+        "target": "animation_generator-1",
+        "targetHandle": "generator",
+        "id": "xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator"
+      },
+      {
+        "source": "keyframes_from_object-1",
+        "sourceHandle": "object_groups",
+        "target": "scene_link-1",
+        "targetHandle": "object_groups",
+        "id": "xy-edge__keyframes_from_object-1object_groups-scene_link-1object_groups"
+      },
+      {
+        "source": "animation_generator-1",
+        "sourceHandle": "note_on_keyframes",
+        "target": "keyframes_from_object-1",
+        "targetHandle": "location[2]",
+        "id": "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]"
+      },
+      {
+        "source": "evaluate_instrument-1",
+        "sourceHandle": "object_map",
+        "target": "assign_notes_to_objects-1",
+        "targetHandle": "object_map",
+        "id": "xy-edge__evaluate_instrument-1object_map-assign_notes_to_objects-1object_map"
+      },
+      {
+        "source": "evaluate_instrument-1",
+        "sourceHandle": "midi_notes",
+        "target": "get_midi_track_data-1",
+        "targetHandle": "notes",
+        "id": "xy-edge__evaluate_instrument-1midi_notes-get_midi_track_data-1notes"
+      }
+    ],
+    "viewport": {
+      "x": -435.4032224344729,
+      "y": 20.642265416098724,
+      "zoom": 0.8285563341266312
+    }
+  }
+}

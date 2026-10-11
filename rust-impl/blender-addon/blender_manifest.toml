@@ -9,7 +9,7 @@ tagline = "Bridge between MotionKeys and Blender"
 maintainer = "James Alt"
 type = "add-on"
 
-website = "https://github.com/jamesa08/MIDIAnimator"
+website = "https://github.com/jamesa08/MotionKeys"
 tags = ["Animation"]
 
 blender_version_min = "4.2.0"

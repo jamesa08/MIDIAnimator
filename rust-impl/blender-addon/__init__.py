@@ -25,9 +25,9 @@ bl_info = {
     "version": (0, 5, 0),
     "blender": (3, 0, 0),
     "location": "Scripting Space",
-    "doc_url": "https://midianimatordocs.readthedocs.io/en/latest/",
-    "tracker_url": "https://github.com/jamesa08/MIDIAnimator/issues",
-    "warning": "MotionKeys is currently in beta. If you encounter any issues, please feel free to open an issue on GitHub (https://github.com/jamesa08/MIDIAnimator/issues)",
+    "doc_url": "https://motionkeysdocs.readthedocs.io/en/latest/",
+    "tracker_url": "https://github.com/jamesa08/MotionKeys/issues",
+    "warning": "MotionKeys is currently in beta. If you encounter any issues, please feel free to open an issue on GitHub (https://github.com/jamesa08/MotionKeys/issues)",
     "support": "COMMUNITY",
     "category": "Animation"
 }
@@ -47,14 +47,14 @@ def register():
     for bpyClass in classes:
         bpy.utils.register_class(bpyClass)
 
-    bpy.types.Scene.midianimator_port = bpy.props.IntProperty(name="Port", description="Port of the MotionKeys server, must match the port in MotionKeys' settings", default=6577, min=1024, max=65535)
+    bpy.types.Scene.motionkeys_port = bpy.props.IntProperty(name="Port", description="Port of the MotionKeys server, must match the port in MotionKeys' settings", default=6577, min=1024, max=65535)
         
 
 def unregister():
     for bpyClass in classes:
         bpy.utils.unregister_class(bpyClass)
 
-    del bpy.types.Scene.midianimator_port
+    del bpy.types.Scene.motionkeys_port
     
     # close the client connection when the addon is unregistered
     client = Server()

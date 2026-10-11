@@ -1,0 +1,84 @@
+{
+    "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+    "build": {
+        "beforeBuildCommand": "npm run build",
+        "beforeDevCommand": "npm run dev",
+        "frontendDist": "../build",
+        "devUrl": "http://localhost:3000"
+    },
+    "bundle": {
+        "active": true,
+        "category": "DeveloperTool",
+        "copyright": "",
+        "targets": "all",
+        "externalBin": [],
+        "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+        "windows": {
+            "certificateThumbprint": null,
+            "digestAlgorithm": "sha256",
+            "timestampUrl": ""
+        },
+        "longDescription": "",
+        "macOS": {
+            "entitlements": null,
+            "exceptionDomain": "",
+            "frameworks": [],
+            "providerShortName": null,
+            "signingIdentity": null
+        },
+        "resources": ["src/configs/default_nodes.json"],
+        "shortDescription": "",
+        "linux": {
+            "deb": {
+                "depends": []
+            }
+        }
+    },
+    "productName": "MotionKeys",
+    "mainBinaryName": "MotionKeys",
+    "version": "0.5.0",
+    "identifier": "com.jamesa08.motionkeys",
+    "plugins": {
+        "macos-fps": {}
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "macOSPrivateApi": true,
+        "windows": [
+            {
+                "fullscreen": false,
+                "width": 1100,
+                "height": 600,
+                "minWidth": 900,
+                "minHeight": 500,
+                "resizable": true,
+                "title": "MotionKeys",
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true,
+                "visible": false,
+                "useHttpsScheme": true,
+                "label": "main",
+                "backgroundThrottling": "disabled",
+                "acceptFirstMouse": true,
+                "backgroundColor": "#ffffff"
+            },
+            {
+                "fullscreen": false,
+                "width": 400,
+                "height": 300,
+                "decorations": false,
+                "resizable": false,
+                "hiddenTitle": true,
+                "title": "Splash Screen",
+                "label": "splash",
+                "url": "splash.html",
+                "visible": false,
+                "useHttpsScheme": true,
+                "backgroundThrottling": "disabled"
+            }
+        ],
+        "security": {
+            "csp": null
+        }
+    }
+}

@@ -1,0 +1,47 @@
+## Front-end only:
+
+`cd` into `/rust-impl/motionkeys/`
+
+`npm run build` to build 
+
+`npm run dev` to run development server
+
+---
+
+## Back-end only:
+
+`cd` into `/rust-impl/motionkeys/src-tauri/`
+
+`cargo build` to build
+
+`cargo run` to run `main.rs`
+
+Note: for macs, install lld for faster build times
+
+`brew install lld`
+
+---
+
+## Complete app:
+
+`cd` into `/rust-impl/motionkeys/`
+
+`npm run tauri dev` to run Tauri development server
+
+`npm run bundle` to package up Tauri application into installers 
+
+
+## Built with the following technologies:
+
+- Rust
+    - midly
+- Typescript/Javascript
+- Python
+- Tauri
+    - drag-rs
+- Vite
+- React.js
+    - react-router
+    - React Flow
+    - framer-motion (tabs and animation)
+- TailwindCSS

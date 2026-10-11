@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: rust-impl/midianimator
+        working-directory: rust-impl/motionkeys
 
     steps:
       - name: Check out branch
@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: rust-impl/midianimator/package-lock.json
+          cache-dependency-path: rust-impl/motionkeys/package-lock.json
 
       - name: Set up rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,7 +38,7 @@ jobs:
       - name: Cache rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust-impl/midianimator/src-tauri
+          workspaces: rust-impl/motionkeys/src-tauri
 
       # tsc typechecks the frontend, and generate_context! needs the built frontend to exist
       - name: Build frontend
@@ -48,7 +48,7 @@ jobs:
 
       # also writes smoke/backend.json (tests/smoke_backend_test.rs) for the smoke test
       - name: Run rust tests
-        working-directory: rust-impl/midianimator/src-tauri
+        working-directory: rust-impl/motionkeys/src-tauri
         run: cargo test
 
       # every window in chromium, the engine of windows' webview2

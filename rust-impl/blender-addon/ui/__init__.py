@@ -11,7 +11,7 @@ class SCENE_OT_connect_to_server(bpy.types.Operator):
 
     def execute(self, context):
         client = Server()
-        client.port = context.scene.midianimator_port
+        client.port = context.scene.motionkeys_port
         try:
             client.open()
         except Exception as e:
@@ -52,7 +52,7 @@ class VIEW3D_PT_server_link(MIDIAniamtorPanel, bpy.types.Panel):
         # port must match the one set in MotionKeys' settings
         row = col.row()
         row.enabled = not client.connected
-        row.prop(context.scene, "midianimator_port", text="Port")
+        row.prop(context.scene, "motionkeys_port", text="Port")
 
         if client.connected:
             col.label(text="Connected to Server")
