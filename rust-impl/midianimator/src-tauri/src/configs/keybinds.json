@@ -52,6 +52,11 @@
             { "id": "zoom_out", "name": "Zoom Out", "keys": ["NumSubtract", "-"] },
             { "id": "show_seconds", "name": "Show Seconds", "keys": ["Ctrl+T"] },
             { "id": "show_handles", "name": "Show Handles", "keys": ["Ctrl+H"] },
+            { "id": "play", "name": "Play", "keys": ["Space"] },
+            { "id": "previous_frame", "name": "Previous Frame", "keys": ["Left"] },
+            { "id": "next_frame", "name": "Next Frame", "keys": ["Right"] },
+            { "id": "jump_to_start", "name": "Jump to Start", "keys": ["Shift+Left"] },
+            { "id": "jump_to_end", "name": "Jump to End", "keys": ["Shift+Right"] },
             { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
         ]
     },

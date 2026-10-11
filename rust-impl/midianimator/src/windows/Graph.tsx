@@ -1,11 +1,11 @@
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useStateContext } from "../contexts/StateContext";
 import { useStateSync } from "../utils/graphOps";
 import { PATH_SEP, resolvePath, specLookup } from "../utils/groups";
 import { useNodeSpecs } from "../utils/nodeEntries";
-import { NodeCurves, ShownChannel, colorChannels } from "../utils/curves";
+import { NodeCurves, ShownChannel, colorChannels, curveBounds } from "../utils/curves";
 import { usePanelGroups } from "../components/PanelBody";
 import CurveCanvas, { CurveCanvasHandle } from "../components/graph/CurveCanvas";
 import { useKeymap } from "../utils/keymap";
@@ -110,7 +110,6 @@ function Graph() {
     const scene = state.scene_data?.["Scene"] ?? Object.values(state.scene_data ?? {})[0];
     const fps: number = typeof (scene as any)?.fps === "number" && (scene as any).fps > 0 ? (scene as any).fps : 24;
     const toggleHandles = () => invoke("set_setting", { path: "graph.show_handles", value: !showHandles }).catch((e) => console.error(`Error saving setting graph.show_handles: ${e}`));
-    useKeymap("graph_editor", { show_seconds: () => setFramesSetting(!frames), show_handles: toggleHandles });
 
     // the view's own commands, for the toolbar
     const canvas = useRef<CurveCanvasHandle>(null);
@@ -118,6 +117,82 @@ function Graph() {
     const channels = useMemo(() => colorChannels(curves), [curves]);
     const [hidden, setHidden] = useState<Set<string>>(new Set());
     const shown = useMemo(() => channels.filter((channel) => !hidden.has(channel.key)), [channels, hidden]);
+
+    // MARK: Playback
+
+    // the playhead in seconds, always on a whole frame like Blender's current frame
+    const [time, setTime] = useState(0);
+    const [playing, setPlaying] = useState(false);
+    const timeRef = useRef(time);
+    timeRef.current = time;
+    const toFrame = useCallback((t: number) => Math.round(t * fps) / fps, [fps]);
+    // it plays from the first key to the last one of every curve and starts over, on and on with no curves
+    const bounds = useMemo(() => curveBounds(channels), [channels]);
+    const loopStart = bounds ? toFrame(bounds.x0) : 0;
+    const loopEnd = bounds ? toFrame(bounds.x1) : Infinity;
+
+    // playback counts from the playhead's time at a moment, moving the playhead while it plays carries on from there
+    const origin = useRef({ wall: 0, time: 0 });
+    const seek = useCallback(
+        (t: number) => {
+            const snapped = toFrame(t);
+            origin.current = { wall: performance.now(), time: snapped };
+            setTime(snapped);
+        },
+        [toFrame]
+    );
+    // while scrubbing it stays where the mouse has it, playing or not, and plays on from there when it's let go (Blender)
+    const scrubbing = useRef(false);
+    const scrub = useCallback(
+        (t: number) => {
+            scrubbing.current = true;
+            seek(t);
+        },
+        [seek]
+    );
+    const endScrub = useCallback(() => {
+        scrubbing.current = false;
+    }, []);
+    const stepFrames = (frames: number) => seek(timeRef.current + frames / fps);
+    const jumpToStart = () => seek(loopStart);
+    // nowhere to jump with no curves
+    const jumpToEnd = () => {
+        if (Number.isFinite(loopEnd)) seek(loopEnd);
+    };
+
+    // plays in real time from where the playhead is, it moves a frame at a time
+    useEffect(() => {
+        if (!playing) return;
+        origin.current = { wall: performance.now(), time: timeRef.current < loopStart || timeRef.current >= loopEnd ? loopStart : timeRef.current };
+        let frame = 0;
+        const tick = (now: number) => {
+            frame = requestAnimationFrame(tick);
+            // held, its clock starts again from where it's held
+            if (scrubbing.current) {
+                origin.current = { wall: now, time: origin.current.time };
+                return;
+            }
+            // a frame's time can be from just before the playhead was moved
+            let t = origin.current.time + Math.max(0, now - origin.current.wall) / 1000;
+            if (t > loopEnd) {
+                origin.current = { wall: now, time: loopStart };
+                t = loopStart;
+            }
+            setTime(Math.floor(t * fps + 1e-6) / fps);
+        };
+        frame = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(frame);
+    }, [playing, fps, loopStart, loopEnd]);
+
+    useKeymap("graph_editor", {
+        show_seconds: () => setFramesSetting(!frames),
+        show_handles: toggleHandles,
+        play: () => setPlaying((on) => !on),
+        previous_frame: () => stepFrames(-1),
+        next_frame: () => stepFrames(1),
+        jump_to_start: jumpToStart,
+        jump_to_end: jumpToEnd,
+    });
 
     // shows or hides channels together, hidden if any of them is showing
     const toggle = (some: ShownChannel[]) =>
@@ -198,7 +273,25 @@ function Graph() {
                         <circle cx="12" cy="8" r="1.5" fill="currentColor" />
                     </svg>
                 </ToolButton>
-                <div className="ml-auto flex border border-black text-xs">
+                <div className="spacer h-5 w-[1px] mx-1" />
+                {/* jump to start, previous frame, play, next frame, jump to end */}
+                <ToolButton onClick={jumpToStart}>
+                    <ToolIcon d="M6 6v12M18 6l-9 6 9 6Z" />
+                </ToolButton>
+                <ToolButton onClick={() => stepFrames(-1)}>
+                    <ToolIcon d="M15.75 19.5 8.25 12l7.5-7.5" />
+                </ToolButton>
+                <ToolButton active={playing} onClick={() => setPlaying((on) => !on)}>
+                    {playing ? <ToolIcon d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" /> : <ToolIcon d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />}
+                </ToolButton>
+                <ToolButton onClick={() => stepFrames(1)}>
+                    <ToolIcon d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                </ToolButton>
+                <ToolButton onClick={jumpToEnd}>
+                    <ToolIcon d="M18 6v12M6 6l9 6-9 6Z" />
+                </ToolButton>
+                <span className="ml-auto mr-2 text-xs">{`${Number(fps.toFixed(3))} fps`}</span>
+                <div className="flex border border-black text-xs">
                     <button className={`h-6 px-2 ${frames ? "hover:bg-zinc-100" : "bg-black text-white"}`} onClick={() => setFramesSetting(false)}>
                         Seconds
                     </button>
@@ -210,7 +303,7 @@ function Graph() {
             <div className="flex flex-auto min-h-0">
                 <div className="properties w-56 flex-none overflow-y-auto border-r border-[var(--properties-line)]">{rows}</div>
                 <div className="flex-auto min-w-0">
-                    <CurveCanvas ref={canvas} channels={shown} frameKey={keys} fps={fps} frames={frames} showHandles={showHandles} />
+                    <CurveCanvas ref={canvas} channels={shown} frameKey={keys} fps={fps} frames={frames} showHandles={showHandles} time={time} onScrub={scrub} onScrubEnd={endScrub} />
                 </div>
             </div>
         </div>

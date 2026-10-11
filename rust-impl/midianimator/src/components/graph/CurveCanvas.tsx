@@ -6,6 +6,9 @@ import { useHold, useKeymap } from "../../utils/keymap";
 
 // the strip along the bottom with the times
 const TIME_STRIP = 20;
+// the strip along the top with the playhead's time (Blender's scrubbing region), over the curves. dragging it or the
+// curves scrubs
+const SCRUB_STRIP = 20;
 // the strip down the left with the values, dragging it scales the values like dragging the time strip scales time
 const VALUE_STRIP = 40;
 // how much the zoom buttons and keys zoom by
@@ -48,8 +51,8 @@ function scrollBars(width: number, plot: number, view: View, bounds: Bounds | nu
     const rangeY = total.y1 - total.y0;
     return [
         bar("x", VALUE_STRIP, width - BAR - BAR_INSET * 2, plot - BAR - BAR_INSET, rangeX, (view.x0 - total.x0) / rangeX, (view.x1 - total.x0) / rangeX),
-        // values go up, the bar goes down
-        bar("y", BAR_INSET, plot - BAR - BAR_INSET * 2, width - BAR - BAR_INSET, rangeY, (total.y1 - view.y1) / rangeY, (total.y1 - view.y0) / rangeY),
+        // values go up, the bar goes down. it starts under the scrub strip
+        bar("y", SCRUB_STRIP + BAR_INSET, plot - BAR - BAR_INSET * 2, width - BAR - BAR_INSET, rangeY, (total.y1 - view.y1) / rangeY, (total.y1 - view.y0) / rangeY),
     ];
 }
 
@@ -66,25 +69,28 @@ function barAt(bars: Bar[], x: number, y: number): { bar: Bar; part: BarPart } |
     return null;
 }
 
-// what a drag that starts at a point does: pans in the curves, scales time in the time strip and values in the value strip
-type DragZone = "curves" | "time" | "value";
+// what a left drag that starts at a point does: scales time in the time strip and values in the value strip, moves the
+// playhead anywhere else
+type DragZone = "curves" | "time" | "value" | "scrub";
 function dragZone(x: number, y: number, height: number): DragZone {
     if (y >= height - TIME_STRIP) return "time";
+    if (y < SCRUB_STRIP) return "scrub";
     if (x < VALUE_STRIP) return "value";
     return "curves";
 }
-const ZONE_CURSORS: Record<DragZone, string> = { curves: "", time: "ew-resize", value: "ns-resize" };
+const ZONE_CURSORS: Record<DragZone, string> = { curves: "", time: "ew-resize", value: "ns-resize", scrub: "" };
 
 // what the graph window's toolbar can do with the view
 export type CurveCanvasHandle = { zoomIn: () => void; zoomOut: () => void; frameAll: () => void };
 
-type CurveCanvasProps = { channels: ShownChannel[]; frameKey: string; fps: number; frames: boolean; showHandles: boolean };
+type CurveCanvasProps = { channels: ShownChannel[]; frameKey: string; fps: number; frames: boolean; showHandles: boolean; time: number; onScrub: (time: number) => void; onScrubEnd: () => void };
 
 // curves drawn on a time and value grid: wheel zooms, middle drag (or the pan key held and drag) pans, ctrl middle
-// drag stretches each axis, dragging the time or value strip scales that axis. times show in seconds or, with
-// `frames`, in frames at `fps`. `frameKey` changing frames the channels once they're there
+// drag stretches each axis, dragging the time or value strip scales that axis, any other left drag scrubs. times show in seconds or, with
+// `frames`, in frames at `fps`. `frameKey` changing frames the channels once they're there. the playhead is at `time`
+// in seconds, scrubbing gives `onScrub` the time under the mouse and calls `onScrubEnd` when it's let go
 
-const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function CurveCanvas({ channels, frameKey, fps, frames, showHandles }, ref) {
+const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function CurveCanvas({ channels, frameKey, fps, frames, showHandles, time, onScrub, onScrubEnd }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const view = useRef<View>({ x0: -0.5, x1: 4.5, y0: -1.2, y1: 1.2 });
     const channelsRef = useRef(channels);
@@ -98,6 +104,8 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
     timeScale.current = frames ? fps : 1;
     const showHandlesRef = useRef(showHandles);
     showHandlesRef.current = showHandles;
+    const timeRef = useRef(time);
+    timeRef.current = time;
     const framedFor = useRef<string | null>(null);
     const panHeld = useHold("graph_editor", "pan");
 
@@ -146,6 +154,32 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
             ctx.fillText(inFrames ? gridLabel(t, stepX) : `${gridLabel(t, stepX)}s`, sx(t / scale), plot.height + TIME_STRIP / 2);
         }
 
+        // the scrub strip, then the playhead down through the curves with its time in a box in the strip
+        ctx.fillStyle = color("--graph-strip");
+        ctx.fillRect(0, 0, width, SCRUB_STRIP);
+        ctx.strokeStyle = color("--graph-grid");
+        ctx.beginPath();
+        ctx.moveTo(0, SCRUB_STRIP - 0.5);
+        ctx.lineTo(width, SCRUB_STRIP - 0.5);
+        ctx.stroke();
+        const playhead = Math.round(sx(timeRef.current)) + 0.5;
+        if (playhead > -40 && playhead < width + 40) {
+            ctx.strokeStyle = color("--graph-playhead");
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(playhead, SCRUB_STRIP);
+            ctx.lineTo(playhead, plot.height);
+            ctx.stroke();
+            const label = inFrames ? `${Math.round(timeRef.current * scale)}` : `${timeRef.current.toFixed(2)}s`;
+            const boxWidth = Math.max(ctx.measureText(label).width + 10, 24);
+            ctx.fillStyle = color("--graph-playhead");
+            ctx.fillRect(Math.round(playhead - boxWidth / 2), 2, Math.round(boxWidth), SCRUB_STRIP - 4);
+            ctx.fillStyle = "#fff";
+            ctx.textBaseline = "middle";
+            ctx.textAlign = "center";
+            ctx.fillText(label, playhead, SCRUB_STRIP / 2);
+        }
+
         // scroll bars on top: the thumb with a round grip at each end
         for (const bar of scrollBars(width, plot.height, view.current, boundsRef.current)) {
             const horizontal = bar.axis === "x";
@@ -183,6 +217,9 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
     const frameAll = useCallback(() => {
         const next = framed(channelsRef.current);
         if (!next) return;
+        // more room on top so nothing's under the scrub strip
+        const plot = (canvasRef.current?.clientHeight ?? 0) - TIME_STRIP;
+        if (plot > SCRUB_STRIP * 2) next.y1 = next.y0 + ((next.y1 - next.y0) * plot) / (plot - SCRUB_STRIP);
         view.current = next;
         redraw();
     }, [redraw]);
@@ -215,7 +252,7 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
     }, [draw, redraw]);
 
     // the units change what's drawn, not the view
-    useEffect(redraw, [frames, fps, showHandles, redraw]);
+    useEffect(redraw, [frames, fps, showHandles, time, redraw]);
 
     // zooms both axes around the middle of the curves
     const zoom = useCallback(
@@ -306,6 +343,29 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
         canvas.addEventListener("pointercancel", handleUp);
     };
 
+    // a left drag on the scrub strip or the curves: the playhead goes to the time under the mouse until it's let go
+    const scrub = (event: React.PointerEvent<HTMLCanvasElement>) => {
+        const canvas = event.currentTarget;
+        const rect = canvas.getBoundingClientRect();
+        const timeAt = (clientX: number) => {
+            const { x0, x1 } = view.current;
+            return x0 + ((clientX - rect.left) / rect.width) * (x1 - x0);
+        };
+        onScrub(timeAt(event.clientX));
+        const handleMove = (e: PointerEvent) => onScrub(timeAt(e.clientX));
+        const handleUp = () => {
+            canvas.removeEventListener("pointermove", handleMove);
+            canvas.removeEventListener("pointerup", handleUp);
+            canvas.removeEventListener("pointercancel", handleUp);
+            onScrubEnd();
+        };
+        event.preventDefault();
+        canvas.setPointerCapture(event.pointerId);
+        canvas.addEventListener("pointermove", handleMove);
+        canvas.addEventListener("pointerup", handleUp);
+        canvas.addEventListener("pointercancel", handleUp);
+    };
+
     // the scroll bar part under the mouse, if any
     const barUnder = (event: React.PointerEvent<HTMLCanvasElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
@@ -320,8 +380,12 @@ const CurveCanvas = forwardRef<CurveCanvasHandle, CurveCanvasProps>(function Cur
             dragBar(event, hit.bar, hit.part);
             return;
         }
-        // a left drag on the time or value strip scales that axis
+        // a left drag on the time or value strip scales that axis, anywhere else it moves the playhead
         const zone = dragZone(event.clientX - rect.left, event.clientY - rect.top, rect.height);
+        if (event.button === 0 && !panHeld && (zone === "scrub" || zone === "curves")) {
+            scrub(event);
+            return;
+        }
         const scaleAxis = event.button === 0 && !panHeld && zone !== "curves";
         const pan = event.button === 1 || (event.button === 0 && panHeld);
         if (!pan && !scaleAxis) return;

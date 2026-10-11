@@ -278,6 +278,8 @@ img {
     --graph-scrollbar-grip: var(--node-value);
     /* key handles, Blender's auto clamped handle color */
     --graph-handle: #b0739a;
+    /* the playhead, Blender's current frame color */
+    --graph-playhead: #4772b3;
 }
 
 /* vignette from the center out, behind the graphs so a paper texture and the dots sit on top of it, and the open group's

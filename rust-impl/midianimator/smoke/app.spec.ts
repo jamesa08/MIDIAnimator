@@ -134,6 +134,26 @@ test("graph window with every node selected", async ({ page }) => {
     await settle(page);
 });
 
+test("graph window scrubs and plays", async ({ page }) => {
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((node: any) => ({ ...node, selected: node.id === "evaluate_instrument-1" }));
+    await openWindow(page, { ...backend, get_state: { ...state, rf_instance: { ...state.rf_instance, nodes } } }, "/#/graph", "Graph");
+    await settle(page);
+    // dragging along the scrub strip on top of the curves and through the curves, then playing from there
+    const box = (await page.locator("canvas").first().boundingBox())!;
+    for (const y of [box.y + 10, box.y + box.height / 2]) {
+        await page.mouse.move(box.x + box.width * 0.3, y);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width * 0.4, y, { steps: 5 });
+        await page.mouse.up();
+    }
+    await page.keyboard.press("Space");
+    await settle(page);
+    // stepping and jumping while it plays, then stopped
+    for (const key of ["ArrowLeft", "ArrowRight", "Shift+ArrowLeft", "Shift+ArrowRight"]) await page.keyboard.press(key);
+    await page.keyboard.press("Space");
+});
+
 // the fixture with only `id` selected and every panel docked
 function withSelected(id: string) {
     const state = backend.get_state;
