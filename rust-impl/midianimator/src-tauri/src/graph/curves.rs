@@ -21,6 +21,9 @@ pub struct CurveChannel {
     pub name: String,
     /// the axis of a vector property (`X`, `Y`, `Z`, `W`), for its color
     pub axis: Option<&'static str>,
+    /// the property it animates and its index, for the 3d preview
+    pub data_path: String,
+    pub array_index: u32,
     /// drawn on past its ends. false for keys that aren't a whole curve yet (one note's keys)
     pub extend: bool,
     pub pieces: Vec<Drawing>,
@@ -111,6 +114,8 @@ fn curves_in(value: &Value, handle: &str, label: Option<&str>, out: &mut Vec<Cur
                 group: String::new(),
                 name,
                 axis: curve_axis(&curve.data_path, curve.array_index),
+                data_path: curve.data_path.clone(),
+                array_index: curve.array_index,
                 extend: true,
                 pieces: vec![FCurve::from_anim_curve(&curve).drawing()],
             });
@@ -126,6 +131,8 @@ fn curves_in(value: &Value, handle: &str, label: Option<&str>, out: &mut Vec<Cur
                         group: generator.name.clone(),
                         name: format!("{} › {}", name, curve_channel(&curve.data_path, curve.array_index, &all).label()),
                         axis: curve_axis(&curve.data_path, curve.array_index),
+                        data_path: curve.data_path.clone(),
+                        array_index: curve.array_index,
                         extend: true,
                         pieces: vec![FCurve::from_points(&curve.keyframe_points).drawing()],
                     });
@@ -184,6 +191,8 @@ fn written_curves(handle: &str, object: &str, keys: &[BlendKeyframe], out: &mut 
             group: object.to_string(),
             name: curve_channel(path, index, &all).label(),
             axis: curve_axis(path, index),
+            data_path: path.to_string(),
+            array_index: index,
             extend: true,
             pieces: vec![FCurve::written(keys).drawing()],
         });
@@ -204,6 +213,8 @@ fn note_curves(handle: &str, chunks: Vec<CurveKeys>, out: &mut Vec<CurveChannel>
             id: format!("{}/{}/{}[{}]", handle, object, path, index),
             name: curve_channel(&path, index, &all).label(),
             axis: curve_axis(&path, index),
+            data_path: path.clone(),
+            array_index: index,
             group: object,
             extend: false,
             pieces,
