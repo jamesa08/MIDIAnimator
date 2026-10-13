@@ -13,6 +13,15 @@ import re
 import traceback
 import bpy
 
+def redraw_view3d():
+    # the link panel lives in the 3D viewport sidebar
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+    # runs once
+    return None
+
 class ServerMeta(type):
     _instances = {}
 
@@ -53,6 +62,9 @@ class Server(metaclass=ServerMeta):
             self.socket = None
             print("Disconnected from server")
             self.connected = False
+            # the receiving thread closes this when MotionKeys quits, the panel only redraws on UI events and Blender's
+            # UI is touched from the main thread, so a timer redraws it there
+            bpy.app.timers.register(redraw_view3d)
 
     def send_message(self, message, uuid):
         if not self.socket:
