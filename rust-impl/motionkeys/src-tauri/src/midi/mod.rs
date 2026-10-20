@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::utils::{closest_tempo, gm_program_to_name};
+use crate::utils::gm_program_to_name;
 
 // TODO eventually refactor into more of The Rust Way
 // MARK: - MIDINote
@@ -86,10 +86,70 @@ impl PartialOrd for MIDIEvent {
     }
 }
 
-fn tick2second(tick: u32, ticks_per_beat: f64, tempo: f64) -> f64 {
-    let scale = tempo * 1e-6 / ticks_per_beat;
-    return tick as f64 * scale;
+// MARK: - TempoMap
+
+/// the tempo until a file sets one, in microseconds per beat (120 BPM)
+const DEFAULT_TEMPO: f64 = 500000.0;
+
+/// turns ticks into seconds. tempo applies to the whole file (type 1 files keep it in track 0, some put changes in other
+/// tracks too), so every track's times come from the same tempo changes
+struct TempoMap {
+    /// (tick, seconds, microseconds per beat) where each tempo starts, the first starts at tick 0
+    changes: Vec<(u64, f64, f64)>,
+    ticks_per_beat: f64,
+    /// SMPTE timed files count ticks in real time, tempo changes don't move them
+    ticks_per_second: Option<f64>,
 }
+
+impl TempoMap {
+    fn new(smf: &Smf) -> Self {
+        let (ticks_per_beat, ticks_per_second) = match smf.header.timing {
+            midly::Timing::Metrical(tpq) => (tpq.as_int() as f64, None),
+            midly::Timing::Timecode(fps, tpf) => (1.0, Some(fps.as_f32() as f64 * tpf as f64)),
+        };
+
+        // every tempo change at its tick, from all tracks
+        let mut tempos: Vec<(u64, f64)> = Vec::new();
+        for track in smf.tracks.iter() {
+            let mut tick: u64 = 0;
+            for msg in track {
+                tick += msg.delta.as_int() as u64;
+                if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = msg.kind {
+                    tempos.push((tick, tempo.as_int() as f64));
+                }
+            }
+        }
+        // stable, so the last change on a tick wins
+        tempos.sort_by_key(|&(tick, _)| tick);
+
+        // each change starts where the time at the previous tempo got to
+        let mut map = TempoMap {
+            changes: vec![(0, 0.0, DEFAULT_TEMPO)],
+            ticks_per_beat,
+            ticks_per_second,
+        };
+        for (tick, tempo) in tempos {
+            let seconds = map.seconds(tick);
+            let last = map.changes.last_mut().unwrap();
+            if last.0 == tick {
+                last.2 = tempo;
+            } else {
+                map.changes.push((tick, seconds, tempo));
+            }
+        }
+        map
+    }
+
+    fn seconds(&self, tick: u64) -> f64 {
+        if let Some(ticks_per_second) = self.ticks_per_second {
+            return tick as f64 / ticks_per_second;
+        }
+        // the last change at or before this tick, the first is always at tick 0
+        let (start, seconds, tempo) = self.changes[self.changes.partition_point(|change| change.0 <= tick) - 1];
+        seconds + (tick - start) as f64 * tempo * 1e-6 / self.ticks_per_beat
+    }
+}
+
 // MARK: - MIDITrack
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -223,16 +283,7 @@ impl MIDIFile {
         let mut midi_tracks: &mut Vec<MIDITrack> = &mut Vec::new();
         let mut temp_tracks: Vec<MIDITrack> = Vec::new();
 
-        let mut tempo_map: Vec<(f64, f64)> = Vec::new();
-
-        let ticks_per_beat = match smf.header.timing {
-            midly::Timing::Metrical(tpq) => tpq.as_int() as f64, // normal ticks per beat
-            midly::Timing::Timecode(fps, tpf) => {
-                let ticks_per_second = (fps.as_f32() * tpf as f32) as u32;
-                let beats_per_minute = 120;
-                (ticks_per_second as f64 / beats_per_minute as f64 * 60.0) as f64
-            }
-        };
+        let tempo_map = TempoMap::new(&smf);
 
         if midi_type == midly::Format::Sequential {
             return Err("type 2 (sequential) MIDI files are not supported".into());
@@ -244,31 +295,10 @@ impl MIDIFile {
             // Instance in 16 blank MIDI tracks
             new_tracks = vec![MIDITrack::new(""); 16];
             midi_tracks = &mut new_tracks;
-        } else {
-            // Type 1
-            // Tracks are independent of MIDI channels
-
-            // get tempo map first
-            let mut time: f64 = 0.0;
-            let mut current_tempo: f64 = 500000.0;
-
-            for track in smf.tracks.iter() {
-                for msg in track {
-                    // TODO investigate if we need to add time first or last, also in main for loop
-                    time += tick2second(msg.delta.as_int(), ticks_per_beat, current_tempo);
-
-                    if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = msg.kind {
-                        current_tempo = tempo.as_int() as f64; // FIXME I think this is needed, not in original implementation
-                        tempo_map.push((time, current_tempo));
-                    }
-                    // update time with new tempo
-                }
-            }
-        }
+        } // Type 1 tracks are independent of MIDI channels
         let mut i = 0;
         for track in smf.tracks.iter() {
-            let mut time: f64 = 0.0;
-            let mut tempo: f64 = 500000.0;
+            let mut tick: u64 = 0;
             let mut current_channel: i32;
             let mut current_track = &mut MIDITrack::new("");
 
@@ -278,7 +308,8 @@ impl MIDIFile {
             } // type 1 is already handled
 
             for msg in track {
-                time += tick2second(msg.delta.as_int(), ticks_per_beat, tempo);
+                tick += msg.delta.as_int() as u64;
+                let time = tempo_map.seconds(tick);
                 // channel messages
                 if let TrackEventKind::Midi {
                     channel,
@@ -300,10 +331,6 @@ impl MIDIFile {
                     // set track name
                     if let MetaMessage::TrackName(name) = meta_message {
                         current_track.name = String::from_utf8_lossy(name).into_owned();
-                    }
-
-                    if let MetaMessage::Tempo(new_tempo) = meta_message {
-                        tempo = new_tempo.as_int() as f64;
                     }
                 // midi messages
                 } else if let TrackEventKind::Midi {
@@ -360,9 +387,6 @@ impl MIDIFile {
                     {
                         // FIXME fix this, need to add key
                         current_track.add_aftertouch(channel.as_int() as u8, vel.as_int() as f64 / 127.0, time as f64);
-                    }
-                    if midi_type == midly::Format::Parallel {
-                        tempo = closest_tempo(&tempo_map, time, false).1;
                     }
                 }
 

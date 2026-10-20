@@ -71,35 +71,6 @@ pub fn gm_program_to_name(pc_num: i32) -> String {
     return GM_INST.get(&(pc_num)).unwrap().to_string();
 }
 
-pub fn closest_tempo(vals: &Vec<(f64, f64)>, t: f64, sort_list: bool) -> (f64, f64) {
-    /*
-    takes a list of tempos and times and returns the one closest to n
-
-    :param list vals: list of values to compare to, List[(time, tempo)]
-    :param float n: the time to compare to
-    :param bool sortList: have the tempo list sorted, defaults to False
-    :return tuple: returns the closest time value's tempo & time as a tuple, e.g. (2.50 sec, 500000 ticks)
-     */
-    let mut vals = vals.to_vec();
-
-    if sort_list {
-        vals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    }
-
-    if vals.len() == 1 {
-        return vals[0];
-    }
-
-    // go through each tempo tuple and find the one that is closest to t
-    for i in 0..vals.len() {
-        if vals[i].0 <= t && t < vals[(i + 1) % vals.len()].0 {
-            return vals[i];
-        }
-    }
-    // return last tempo tuple
-    return vals[vals.len() - 1];
-}
-
 pub fn remove_duplicates(vals: &[i32]) -> Vec<i32> {
     let mut result = Vec::new();
     let mut seen = std::collections::HashSet::new();
