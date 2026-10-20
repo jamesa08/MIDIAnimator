@@ -148,6 +148,20 @@ impl TempoMap {
         let (start, seconds, tempo) = self.changes[self.changes.partition_point(|change| change.0 <= tick) - 1];
         seconds + (tick - start) as f64 * tempo * 1e-6 / self.ticks_per_beat
     }
+
+    /// (BPM, seconds) where each tempo starts, the first at 0 seconds
+    fn bpm(&self) -> Vec<(f64, f64)> {
+        let mut bpm: Vec<(f64, f64)> = Vec::new();
+        for &(_, seconds, tempo) in &self.changes {
+            // whole microseconds per beat can't hold most BPMs exactly (115 is 521739), round back to what the DAW had
+            let value = (60_000_000.0 / tempo * 1000.0).round() / 1000.0;
+            // a change to the same tempo isn't a change
+            if bpm.last().map_or(true, |last| last.0 != value) {
+                bpm.push((value, seconds));
+            }
+        }
+        bpm
+    }
 }
 
 // MARK: - MIDITrack
@@ -269,6 +283,8 @@ impl fmt::Display for MIDITrack {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MIDIFile {
     tracks: Vec<MIDITrack>,
+    /// (BPM, seconds) where each tempo starts
+    tempo: Vec<(f64, f64)>,
 }
 
 impl MIDIFile {
@@ -429,11 +445,17 @@ impl MIDIFile {
 
         Ok(MIDIFile {
             tracks,
+            tempo: tempo_map.bpm(),
         })
     }
 
     pub fn get_midi_tracks(&self) -> &Vec<MIDITrack> {
         &self.tracks
+    }
+
+    /// (BPM, seconds) where each tempo starts, the first at 0 seconds
+    pub fn get_tempo(&self) -> &Vec<(f64, f64)> {
+        &self.tempo
     }
 
     pub fn find_track(&self, name: &str) -> Option<&MIDITrack> {

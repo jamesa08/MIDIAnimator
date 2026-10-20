@@ -13,6 +13,7 @@ fn get_midi_file_reads_string_path() {
     let outputs = get_midi_file(&Inputs::from([("file_path", json!(TYPE_1))])).unwrap().to_json();
     assert!(!outputs["tracks"].as_array().unwrap().is_empty());
     assert!(outputs["stats"].as_str().unwrap().contains("tracks"));
+    assert_eq!(outputs["tempo"][0][1], json!(0.0));
 }
 
 #[test]
@@ -20,6 +21,7 @@ fn get_midi_file_empty_without_path() {
     for inputs in [Inputs::default(), Inputs::from([("file_path", json!(""))])] {
         let outputs = get_midi_file(&inputs).unwrap().to_json();
         assert_eq!(outputs["tracks"], json!([]));
+        assert_eq!(outputs["tempo"], json!([]));
         assert_eq!(outputs["stats"], json!(""));
     }
 }

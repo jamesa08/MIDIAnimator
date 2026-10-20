@@ -25,6 +25,12 @@
                         "description": "All tracks in the MIDI file with their notes and controller events."
                     },
                     {
+                        "id": "tempo",
+                        "name": "Tempo",
+                        "data_type": "Array<Array<f64>>",
+                        "description": "The file's tempo changes as [BPM, seconds] pairs, in order. The first is at 0 seconds (120 BPM if the file doesn't set one)."
+                    },
+                    {
                         "id": "stats",
                         "name": "MIDI Stats",
                         "data_type": "String",

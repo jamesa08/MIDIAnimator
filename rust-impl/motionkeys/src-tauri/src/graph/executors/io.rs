@@ -59,7 +59,7 @@ macro_rules! node_data {
     };
 }
 
-node_data!(String, f64, u8, u32, i64, bool, serde_json::Map<String, Value>);
+node_data!(String, f64, u8, u32, i64, bool, (f64, f64), serde_json::Map<String, Value>);
 
 // the types nodes pass around
 use crate::midi::{MIDIEvent, MIDINote, MIDITrack};

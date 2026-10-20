@@ -118,6 +118,11 @@ mod tests {
         let path = write_type_1("tempo_changes", vec![vec![(0, tempo(500000)), (960, tempo(521739))], vec![(1440, tempo(600000)), (0, note(true)), (480, note(false))], vec![(960, note(true)), (960, note(false))]]);
         let midi_file = MIDIFile::new(&path).unwrap();
         let change = 1.0 + 0.521739;
+        assert_eq!(midi_file.get_tempo().len(), 3);
+        assert_eq!(midi_file.get_tempo()[0], (120.0, 0.0));
+        assert_eq!(midi_file.get_tempo()[1], (115.0, 1.0));
+        assert_eq!(midi_file.get_tempo()[2].0, 100.0);
+        assert!((midi_file.get_tempo()[2].1 - change).abs() < 1e-9);
 
         // times after a change follow the new tempo, in every track
         let notes: Vec<(f64, f64)> = midi_file.get_midi_tracks().iter().map(|track| (track.notes[0].time_on, track.notes[0].time_off)).collect();
@@ -129,6 +134,7 @@ mod tests {
     fn test_tempo_defaults_to_120() {
         let path = write_type_1("no_tempo", vec![vec![], vec![(480, note(true)), (480, note(false))]]);
         let midi_file = MIDIFile::new(&path).unwrap();
+        assert_eq!(midi_file.get_tempo(), &vec![(120.0, 0.0)]);
         assert_eq!(midi_file.get_midi_tracks()[0].notes[0].time_off, 1.0);
     }
 }

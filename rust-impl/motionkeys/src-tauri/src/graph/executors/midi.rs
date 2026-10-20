@@ -42,6 +42,7 @@ pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
 ///
 /// outputs:
 /// "tracks": `Array<MIDITrack>`,
+/// "tempo": `Array<Array<f64>>`,
 /// "stats": `String`
 #[node_registry::node]
 pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
@@ -51,6 +52,7 @@ pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
     let file_path = file_path.map(String::as_str).unwrap_or("");
     if file_path.is_empty() {
         outputs.set("tracks", Vec::<MIDITrack>::new());
+        outputs.set("tempo", Vec::<(f64, f64)>::new());
         outputs.set("stats", String::new());
         return Ok(outputs);
     }
@@ -59,6 +61,7 @@ pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
     let midi_file = MIDIFile::new(file_path).map_err(|e| format!("could not read MIDI file '{}': {}", file_path, e))?;
     let midi_file_statistics = get_midi_file_statistics(&midi_file);
     outputs.set("tracks", midi_file.get_midi_tracks().clone());
+    outputs.set("tempo", midi_file.get_tempo().clone());
     outputs.set("stats", midi_file_statistics);
     Ok(outputs)
 }
