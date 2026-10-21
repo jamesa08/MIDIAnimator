@@ -481,6 +481,17 @@ impl Graph {
         self.nodes.iter().find(|n| n.id == id)
     }
 
+    /// drops what react flow measured or was doing to the nodes (sizes, drags, resizes), here and inside every group.
+    /// only the canvas knows those and a saved one goes stale as soon as a node draws differently
+    pub fn strip_measured(&mut self) {
+        for group in self.groups.values_mut() {
+            group.graph.strip_measured();
+        }
+        for node in &mut self.nodes {
+            node.extra.retain(|k, _| !super::history::UI_NODE_KEYS.contains(&k.as_str()));
+        }
+    }
+
     /// finds a node by its exact id (mutable)
     pub fn node_mut(&mut self, id: &str) -> Option<&mut RfNode> {
         self.nodes.iter_mut().find(|n| n.id == id)
@@ -642,5 +653,22 @@ mod tests {
             });
         }
         assert_eq!(graph.next_node_id("viewer"), "viewer-4");
+    }
+
+    // checks that measured sizes go from the nodes and the nodes inside groups, and a size set by resizing stays
+    #[test]
+    fn strip_measured_keeps_resized_sizes() {
+        let node = serde_json::json!({ "id": "viewer-1", "type": "viewer", "position": { "x": 0, "y": 0 }, "measured": { "width": 200, "height": 16 }, "width": 300, "height": 400, "selected": true });
+        let mut rf: HashMap<String, Value> = HashMap::new();
+        rf.insert("nodes".to_string(), Value::Array(vec![node.clone()]));
+        rf.insert("groups".to_string(), serde_json::json!({ "group_1": { "name": "Group", "nodes": [node] } }));
+        let mut graph = Graph::from_rf(&rf).unwrap();
+        graph.strip_measured();
+        for node in [&graph.nodes[0], &graph.groups["group_1"].graph.nodes[0]] {
+            assert!(!node.extra.contains_key("measured"));
+            assert_eq!(node.extra["width"], 300);
+            assert_eq!(node.extra["height"], 400);
+            assert_eq!(node.extra["selected"], true);
+        }
     }
 }

@@ -421,13 +421,15 @@ fn strip_groups(mut groups: serde_json::Value) -> serde_json::Value {
     groups
 }
 
-/// updates a graph saved by an older version, see `graph::builtin::migrate`. the graph is always written back the way
-/// `Graph` writes it (`0` positions become `0.0`), so the first edit after loading doesn't also show up as those changes
+/// updates a graph saved by an older version, see `graph::builtin::migrate`, and drops the node sizes older versions
+/// saved. the graph is always written back the way `Graph` writes it (`0` positions become `0.0`), so the first edit
+/// after loading doesn't also show up as those changes
 pub fn migrate_rf_instance(rf_instance: &mut HashMap<String, serde_json::Value>) {
     let Ok(mut graph) = crate::graph::model::Graph::from_rf(rf_instance) else {
         return;
     };
     crate::graph::builtin::migrate(&mut graph);
+    graph.strip_measured();
     *rf_instance = graph.to_rf();
 }
 
@@ -549,13 +551,17 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
     let saved_data = {
         let mut state = lock();
         let instance = state.instance_mut(id).ok_or_else(|| format!("no tab '{}'", id))?;
-        // curves of objects the graph stopped reading are kept until now
-        if let Ok(graph) = crate::graph::model::Graph::from_rf(&instance.rf_instance) {
+        // curves of objects the graph stopped reading are kept until now. node sizes are never saved, the canvas
+        // measures them
+        let mut rf_instance = instance.rf_instance.clone();
+        if let Ok(mut graph) = crate::graph::model::Graph::from_rf(&instance.rf_instance) {
             prune_curves(&mut instance.scene_data, &curve_sources(&graph));
+            graph.strip_measured();
+            rf_instance = graph.to_rf();
         }
         SavedProject {
             scene_data: instance.scene_data.clone(),
-            rf_instance: instance.rf_instance.clone(),
+            rf_instance,
             layout: instance.layout.clone(),
         }
     };

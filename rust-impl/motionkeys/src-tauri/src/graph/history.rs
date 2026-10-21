@@ -9,9 +9,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 /// how many entries are kept by default, the oldest go first
 pub const DEFAULT_LIMIT: usize = 100;
 
-/// node fields only the UI cares about, never recorded and left as they are when a record is put back.
+/// node fields only the UI cares about, never recorded and left as they are when a record is put back. never saved
+/// either (`Graph::strip_measured`).
 /// selection is recorded, selecting is an undo step like in blender
-const UI_NODE_KEYS: &[&str] = &["dragging", "measured", "resizing"];
+pub(super) const UI_NODE_KEYS: &[&str] = &["dragging", "measured", "resizing"];
 /// edge fields only the UI cares about
 const UI_EDGE_KEYS: &[&str] = &[];
 /// node and edge fields that change how the graph looks but not what it computes
