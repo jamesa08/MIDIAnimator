@@ -761,13 +761,16 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         // functional updates so we merge onto the latest nodes, not a snapshot from before a click/drag that hasn't rendered yet
         setNodes((nds) => {
             const current = new Map((nds ?? []).map((node: any) => [node.id, node]));
-            return stored.nodes.map((node: any) => {
+            // sizes only ever come from what react flow measured on screen. the backend's are whatever was measured when
+            // it was last told (a saved project keeps them), and react flow doesn't measure a node again until its size
+            // changes, so a stale one would stick (framing and edges going by the wrong size)
+            return stored.nodes.map(({ measured, ...node }: any) => {
                 const prev: any = current.get(node.id);
                 if (!prev) return node;
                 const position = prev.dragging || grabbed.has(node.id) ? prev.position : node.position;
                 const { selectedSockets, ...stored } = node;
                 const sockets = keepSelection ? prev.selectedSockets : selectedSockets;
-                return { ...stored, position, measured: node.measured ?? prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
+                return { ...stored, position, measured: prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
             });
         });
         setEdges((eds) => {
