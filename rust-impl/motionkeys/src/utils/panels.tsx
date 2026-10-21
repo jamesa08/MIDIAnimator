@@ -95,6 +95,21 @@ export function inDockZone(side: Side, clientX: number, clientY: number) {
     return clientX >= content.left && clientX <= content.left + zone;
 }
 
+// the part of `element` the docked panels don't cover, in client pixels. they float over the canvas in a column on each
+// side, so it's what's between the columns (all of it when nothing is docked, or in a window without docks)
+export function uncoveredRect(element: Element) {
+    const rect = element.getBoundingClientRect();
+    let left = rect.left;
+    let right = rect.right;
+    document.querySelectorAll(".content > .dock-column").forEach((column) => {
+        const dock = column.getBoundingClientRect();
+        if (dock.width === 0 || dock.right <= rect.left || dock.left >= rect.right) return;
+        if (column.classList.contains("dock-left")) left = Math.max(left, dock.right);
+        else right = Math.min(right, dock.left);
+    });
+    return { left, top: rect.top, width: Math.max(0, right - left), height: rect.height };
+}
+
 // the dock slot a client point in the main window is over, if any
 export function dockSideAt(clientX: number, clientY: number): Side | null {
     return (["left", "right"] as const).find((side) => inDockZone(side, clientX, clientY)) ?? null;

@@ -16,6 +16,7 @@ import TagMenu from "./TagMenu";
 import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
+import { useFrameView } from "./frameView";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -78,6 +79,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     const { getNodes, getEdges, screenToFlowPosition } = useReactFlow();
     const store = useStoreApi();
+    const frameView = useFrameView();
 
     const [rfInstance, setRfInstance] = useState(null as ReactFlowInstance | null);
 
@@ -498,6 +500,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 else exitGroup(false);
             },
             exit_to_root: () => exitGroup(true),
+            frame_all: () => frameView(),
+            // frames everything when nothing is selected
+            frame_selected: () => frameView(getNodes().filter((n) => n.selected)),
             group: () => {
                 if (canEdit()) groupSelection();
             },
@@ -709,7 +714,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             done = true;
             if (fitPendingRef.current && getNodes().length > 0) {
                 fitPendingRef.current = false;
-                rfInstance.fitView({ maxZoom: 1 });
+                frameView();
             }
             // one more frame so the framed view is what shows first
             frame = requestAnimationFrame(() => {
@@ -740,15 +745,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             cancelAnimationFrame(frame);
             clearTimeout(cap);
         };
-    }, [ready, rfInstance, getNodes, store, onReady]);
+    }, [ready, rfInstance, getNodes, store, onReady, frameView]);
 
     useEffect(() => {
         // nodes that only got their sizes after the graph was shown (framing on the first draw is done above)
         if (ready && fitPendingRef.current && nodesInitialized && rfInstance && getNodes().length > 0) {
             fitPendingRef.current = false;
-            rfInstance.fitView({ maxZoom: 1 });
+            frameView();
         }
-    }, [ready, nodesInitialized, rfInstance, getNodes]);
+    }, [ready, nodesInitialized, rfInstance, getNodes, frameView]);
 
     // the backend's graph changed (an op came back, undo, an MCP edit): show it.
     // kept from what's on screen: sizes, nodes mid drag or grab where the cursor has them, and the selection while ops

@@ -38,6 +38,8 @@
             { "id": "ungroup", "name": "Ungroup", "keys": ["Alt+G"] },
             { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
             { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },
+            { "id": "frame_all", "name": "Frame All", "keys": ["Home"] },
+            { "id": "frame_selected", "name": "Frame Selected", "keys": ["NumDecimal", "."] },
             { "id": "box_select", "name": "Box Select", "keys": ["B"], "hold": true },
             { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
         ]

@@ -10,6 +10,7 @@ import { noteToName } from "../../nodes/assign_notes_to_objects";
 import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
 import { MapData, NoteMap, shownMap, unique } from "../../utils/noteMap";
+import { useFrameView } from "./frameView";
 
 // the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes wired to the object group's objects,
 // drawn as a graph of small nodes that can be selected and moved like the node editor's. in rules mode it shows what the
@@ -358,6 +359,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
     // MARK: - Grab and Add
 
     const { screenToFlowPosition } = useReactFlow();
+    // framed with the room around it the map first opens with
+    const frameView = useFrameView();
+    const frame = (nodes?: Node[]) => frameView(nodes, { padding: 0.2 });
     const mouseRef = useRef({ x: 0, y: 0 });
     useEffect(() => {
         const move = (event: MouseEvent) => (mouseRef.current = { x: event.clientX, y: event.clientY });
@@ -476,6 +480,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         },
         edit_group: onExit,
         exit_to_root: onExitToRoot,
+        frame_all: () => frame(),
+        // frames everything when nothing is selected
+        frame_selected: () => frame(nodesRef.current.filter((n) => n.selected)),
     });
 
     // back to map mode keeps the map the node had, a node without one starts from what the rules give
