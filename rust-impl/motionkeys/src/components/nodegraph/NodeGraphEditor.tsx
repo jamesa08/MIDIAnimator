@@ -767,6 +767,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         };
     }, [ready, rfInstance, getNodes, store, onReady, frameView]);
 
+    // a graph shown empty has nothing to frame, the first node added stays where it was put
+    const shownEmpty = ready && state.ready && level.graph.nodes?.length === 0;
+    useEffect(() => {
+        if (shownEmpty) fitPendingRef.current = false;
+    }, [shownEmpty]);
+
     useEffect(() => {
         // nodes that only got their sizes after the graph was shown (framing on the first draw is done above)
         if (ready && fitPendingRef.current && nodesInitialized && rfInstance && getNodes().length > 0) {
