@@ -302,6 +302,20 @@ async function graphReady(page: Page) {
     await expect(page.locator('.graph-layer:not([style*="opacity"]) .react-flow__node').first()).toBeAttached();
 }
 
+// selects the nodes `ids` and frames them (Frame Selected), so a test that goes by screen distances sees them at about
+// full size. the whole fixture is framed small, its viewer is tall and the docked panels take a side each
+async function frameNodes(page: Page, ids: string[]) {
+    for (const [i, id] of ids.entries()) {
+        await page.locator(`.react-flow__node[data-id="${id}"] .node-header`).click({ modifiers: i > 0 ? ["Shift"] : [] });
+    }
+    const pane = (await page.locator(".node-graph").boundingBox())!;
+    await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height - 40);
+    const viewport = page.locator(".graph-layer .react-flow__viewport").first();
+    const before = await viewport.getAttribute("style");
+    await page.keyboard.press(".");
+    await expect(viewport).not.toHaveAttribute("style", before!);
+}
+
 // a point on an edge's path on screen where it's the edge a click gets, the nearest to its middle. another edge or a
 // node can be over the middle depending on how the nodes measure (fonts differ between platforms)
 async function edgePoint(edge: ReturnType<Page["locator"]>) {
@@ -361,6 +375,7 @@ test("box select takes the edges it crosses", async ({ page }) => {
     await expect(edge).toBeVisible();
     await graphReady(page);
     await settle(page);
+    await frameNodes(page, ["animation_generator-1", "keyframes_from_object-1"]);
 
     // a small box from empty space across the middle of the wire, no node or other wire in it
     const middle = await edgeMiddle(edge);
@@ -696,6 +711,7 @@ test("a multi input takes a link dropped anywhere along it", async ({ page }) =>
     await expect(socket).toBeVisible();
     await graphReady(page);
     await settle(page);
+    await frameNodes(page, ["get_midi_track_data-1", "animation_generator-1"]);
     const box = (await socket.boundingBox())!;
     const from = (await socketOf(page, "get_midi_track_data-1", "notes").boundingBox())!;
 
@@ -759,6 +775,7 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     await expect(node).toBeVisible();
     await graphReady(page);
     await settle(page);
+    await frameNodes(page, ["get_midi_track_data-1", "evaluate_instrument-1"]);
 
     // a narrow box down the outputs, from above the node to the aftertouch socket: the sockets in it, the node it
     // touches and that node's edges
