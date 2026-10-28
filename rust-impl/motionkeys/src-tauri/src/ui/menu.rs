@@ -16,6 +16,9 @@ pub const FILE_EVENT: &str = "menu-file";
 pub const APP_COMMAND_EVENT: &str = "app-command";
 // sent to the main window to show or hide a panel, payload the panel id (PANELS in src/utils/panels.tsx)
 pub const PANEL_TOGGLE_EVENT: &str = "panel-toggle";
+// starts the id of a menu item for an area's command (the node editor's make group), the window runs it in its area that
+// has the command (src/utils/keymap.ts)
+const AREA_PREFIX: &str = "area.";
 /// the history panel's id
 const HISTORY_PANEL: u32 = 2;
 
@@ -26,6 +29,11 @@ fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> tauri::Result<
         builder = builder.accelerator(key);
     }
     builder.build(app)
+}
+
+// a menu item for an area's command, no shortcut since its keys belong to the area
+fn area_item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> tauri::Result<MenuItem<R>> {
+    MenuItemBuilder::with_id(format!("{AREA_PREFIX}{id}"), label).build(app)
 }
 
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
@@ -55,9 +63,18 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let zoom_in = item(app, "zoom_in", "Zoom In")?;
     let zoom_out = item(app, "zoom_out", "Zoom Out")?;
     let actual_size = item(app, "actual_size", "Actual Size")?;
-    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).build()?;
+    let frame_all = area_item(app, "frame_all", "Frame All")?;
+    let frame_selected = area_item(app, "frame_selected", "Frame Selected")?;
+    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).separator().item(&frame_all).item(&frame_selected).build()?;
 
-    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&view_submenu).item(&window_submenu).build()?;
+    let group = area_item(app, "group", "Make Group")?;
+    let ungroup = area_item(app, "ungroup", "Ungroup")?;
+    let edit_group = area_item(app, "edit_group", "Edit Group")?;
+    let exit_group = area_item(app, "exit_group", "Exit Group")?;
+    let exit_to_root = area_item(app, "exit_to_root", "Exit All Groups")?;
+    let node_submenu = SubmenuBuilder::new(app, "Node").item(&group).item(&ungroup).separator().item(&edit_group).item(&exit_group).item(&exit_to_root).build()?;
+
+    let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&view_submenu).item(&node_submenu).item(&window_submenu).build()?;
 
     Ok(menu)
 }
@@ -76,6 +93,11 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::menu::Me
 
 // runs an app command for `window` (the main window when none)
 pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow<R>>, id: &str) {
+    // an area's command picked with no window focused, the main window's node editor runs it
+    if id.starts_with(AREA_PREFIX) {
+        app.emit_to("main", APP_COMMAND_EVENT, id).ok();
+        return;
+    }
     match id {
         "settings" => {
             event::open_settings(app);

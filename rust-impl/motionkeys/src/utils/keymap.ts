@@ -195,8 +195,18 @@ export function useKeymap(scope: string, handlers: Handlers, enabled?: () => boo
     );
 }
 
-// an app command, by this window's handler or the backend's (run_app_command in ui/keybinds.rs)
+// an app command, by this window's handler or the backend's (run_app_command in ui/keybinds.rs). an area's command from the
+// menu ("area.group") runs in the first area that has it, the one the mouse was last over first
 function runApp(command: string) {
+    if (command.startsWith("area.")) {
+        const id = command.slice("area.".length);
+        const areas = [...areasUnderMouse(), ...[...document.querySelectorAll<HTMLElement>("[data-keymap-area]")].map((area) => area.dataset.keymapArea!)];
+        for (const area of areas) {
+            const handler = handlerFor(area, id);
+            if (handler) return handler();
+        }
+        return;
+    }
     const handler = handlerFor("app", command);
     if (handler) handler();
     else invoke("run_app_command", { id: command });
