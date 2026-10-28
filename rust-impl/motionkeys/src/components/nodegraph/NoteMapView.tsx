@@ -479,6 +479,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
             setWires((current) => current.map((w) => ({ ...w, selected: false })));
         },
         edit_group: onExit,
+        exit_group: onExit,
         exit_to_root: onExitToRoot,
         frame_all: () => frame(),
         // frames everything when nothing is selected

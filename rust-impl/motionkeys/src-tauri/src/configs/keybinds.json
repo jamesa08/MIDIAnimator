@@ -37,6 +37,7 @@
             { "id": "group", "name": "Make Group", "keys": ["Ctrl+G", "CmdOrCtrl+G"] },
             { "id": "ungroup", "name": "Ungroup", "keys": ["Alt+G"] },
             { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
+            { "id": "exit_group", "name": "Exit Group", "keys": ["Escape"] },
             { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },
             { "id": "frame_all", "name": "Frame All", "keys": ["Home"] },
             { "id": "frame_selected", "name": "Frame Selected", "keys": ["NumDecimal", "."] },

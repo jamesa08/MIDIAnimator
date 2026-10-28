@@ -499,6 +499,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 if (selectedGroups.length === 1) openGroup(selectedGroups[0].id);
                 else exitGroup(false);
             },
+            exit_group: () => exitGroup(false),
             exit_to_root: () => exitGroup(true),
             frame_all: () => frameView(),
             // frames everything when nothing is selected
@@ -792,6 +793,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // MARK: -
     // HANDLERS FOR REACT FLOW EVENTS
     // a click while grabbing never reaches react flow, the grab modal confirms or cancels it
+    // a double click on a group (or a note map) opens it, not one on its sockets or fields
+    const handleNodeDoubleClick = useCallback(
+        (event: React.MouseEvent, node: any) => {
+            if ((event.target as Element).closest(".nodrag, .react-flow__handle")) return;
+            if (node.type === GROUP || node.type === NOTE_MAP_NODE) openGroup(node.id);
+        },
+        [openGroup]
+    );
+
     const handleNodeClickStop = useCallback(
         (event: React.MouseEvent, node: any) => {
             // If shift key is not held, deselect all other nodes
@@ -1004,6 +1014,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onNodeDragStart={blockKeys}
                 onSelectionDragStart={blockKeys}
                 onNodeClick={handleNodeClickStop}
+                onNodeDoubleClick={handleNodeDoubleClick}
                 onEdgeClick={handleEdgeClick}
                 onPaneClick={handlePaneClick}
                 onNodeDrag={handleNodeDrag}

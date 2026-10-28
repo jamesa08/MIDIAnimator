@@ -233,8 +233,6 @@ test("note map opens over the graph and closes", async ({ page }) => {
         expect(added.inputs.mode).toBe("map");
         expect(added.inputs.note_map.notes).toContain(note);
         expect(added.inputs.map_layout[`n:${note}`]).toBeTruthy();
-        // the fake backend doesn't add it, escape cancels the grab
-        await page.keyboard.press("Escape");
     }
 
     // a click outside the box closes it without adding anything
