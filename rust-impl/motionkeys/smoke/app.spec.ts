@@ -35,6 +35,33 @@ test("main window", async ({ page }) => {
     await settle(page);
 });
 
+test("toolbar adds a node and fades what can't run", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await expect(page.locator(".react-flow__node").first()).toBeVisible();
+
+    // at the root graph there's no group to leave
+    await expect(page.locator('.toolbar [data-command="area.exit_group"]')).toHaveClass(/disabled/);
+    await expect(page.locator('.toolbar [data-command="area.exit_to_root"]')).toHaveClass(/disabled/);
+    await expect(page.locator('.toolbar [data-command="area.frame_all"]')).not.toHaveClass(/disabled/);
+
+    // typing in the add menu searches every node, enter adds the first under the cursor
+    await page.locator('.toolbar [data-tool="add_node"]').click();
+    await page.keyboard.type("scene link");
+    await page.keyboard.press("Enter");
+    const added = () =>
+        page.evaluate(() =>
+            (window as any).__smokeCalls
+                .filter((c: any) => c.cmd === "graph_apply")
+                .flatMap((c: any) => c.args.ops)
+                .filter((op: any) => op.op === "add_nodes")
+                .map((op: any) => op.nodes[0].type)
+        );
+    await expect.poll(added).toContain("scene_link");
+    // the grab it starts is cancelled
+    await page.keyboard.press("Escape");
+    await settle(page);
+});
+
 test("main window with every panel docked", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     await expect(page.locator(".dock-column .nodes-grid .node.preview").first()).toBeVisible();

@@ -17,6 +17,7 @@ import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, 
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
 import { useFrameView } from "./frameView";
+import { TOOLBAR_ADD_EVENT, setEditorState } from "../../utils/editorState";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -236,8 +237,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // ADD NODE MENU HANDLERS
     // the node (a for each zone brings its other end) is added under the cursor and grabbed until a click places it.
     // opened from a link, the link is connected to the new node's matching socket in the same undo step
-    const addNode = useCallback(
-        async (key: string) => {
+    const addEntry = useCallback(
+        async (key: string, link: LinkFrom | null) => {
             setMenuOpen(false);
             const entry = entries.find((e) => e.key === key);
             if (!entry || !canEdit()) return;
@@ -245,16 +246,25 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const txn = crypto.randomUUID();
             const applied = await apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x + 10, y: flowPosition.y + 10 } }] }], { txn });
             if (!applied) return;
-            const socket = menuLink && linkSocket(entry, menuLink, nodeSpecs, groups);
+            const socket = link && linkSocket(entry, link, nodeSpecs, groups);
             const added = socket && applied.added[socket.node];
-            if (menuLink && socket && added) {
-                const ends = menuLink.isOutput ? { from_node: menuLink.nodeId, from_output: menuLink.handleId, to_node: added.id, to_input: socket.handle } : { from_node: added.id, from_output: socket.handle, to_node: menuLink.nodeId, to_input: menuLink.handleId };
+            if (link && socket && added) {
+                const ends = link.isOutput ? { from_node: link.nodeId, from_output: link.handleId, to_node: added.id, to_input: socket.handle } : { from_node: added.id, from_output: socket.handle, to_node: link.nodeId, to_input: link.handleId };
                 await apply([{ op: "connect", ...ends }], { txn });
             }
             startGrab(applied.added, flowPosition, txn);
         },
-        [entries, canEdit, screenToFlowPosition, apply, startGrab, menuLink, nodeSpecs, groups]
+        [entries, canEdit, screenToFlowPosition, apply, startGrab, nodeSpecs, groups]
     );
+    const addNode = useCallback((key: string) => addEntry(key, menuLink), [addEntry, menuLink]);
+    // picked from the toolbar's add menu: added under the cursor over the toolbar, the grab brings it down into the graph
+    useEffect(() => {
+        const handleAdd = (event: Event) => {
+            if (shownRef.current) addEntry((event as CustomEvent).detail, null);
+        };
+        window.addEventListener(TOOLBAR_ADD_EVENT, handleAdd);
+        return () => window.removeEventListener(TOOLBAR_ADD_EVENT, handleAdd);
+    }, [addEntry]);
     // node dragged in from the nodes panel, added where it was released
     useEffect(() => {
         const handleDrop = (event: Event) => {
@@ -384,6 +394,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (selected.length === 0) return;
         apply([{ op: "ungroup", nodes: selected.map((n) => n.id) }]);
     }, [getNodes, apply]);
+
+    // what the toolbar's buttons can do here, said by the graph on screen
+    const selectedNodes = nodes.filter((n) => n.selected);
+    const selectedCount = selectedNodes.length;
+    const groupCount = selectedNodes.filter((n) => n.type === GROUP).length;
+    const openableCount = selectedNodes.filter((n) => n.type === GROUP || n.type === NOTE_MAP_NODE).length;
+    useEffect(() => {
+        if (shown) setEditorState({ editable, selected: selectedCount, groups: groupCount, openable: openableCount, inGroup: !isRoot, entries });
+    }, [shown, editable, selectedCount, groupCount, openableCount, isRoot, entries]);
 
     // renames or removes a socket of the group being edited (from the group input and output nodes)
     useEffect(() => {

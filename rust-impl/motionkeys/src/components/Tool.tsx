@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import { useOpenFile, useSaveTab } from "../utils/tabs";
+import { Icon, IconName } from "../icons";
+import { runCommand } from "../utils/keymap";
 
 function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     const { backEndState } = useStateContext();
@@ -24,43 +26,31 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     var icon;
     if (type == "run" && outcome == "done") {
         icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="tool-icon">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
             </svg>
         );
     } else if (type == "run" && outcome == "failed") {
         icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="tool-icon">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
             </svg>
         );
     } else if (type == "run") {
-        icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z" />
-            </svg>
-        );
+        icon = <Icon name="run" className="tool-icon" />;
     } else if (type == "save") {
-        icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-        );
+        icon = <Icon name="save" className="tool-icon" />;
     } else if (type == "load") {
-        icon = (
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="size-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-            </svg>
-        );
+        icon = <Icon name="open" className="tool-icon" />;
     } else if (type == "collapse-left") {
-        icon = <img src="collapse-left.png" alt="collapse-left" className="size-6 h-5" />;
+        icon = <Icon name="hide_panels" className="tool-icon" />;
     } else if (type == "collapse-right") {
-        icon = <img src="collapse-right.png" alt="collapse-right" className="size-6 h-5" />;
+        icon = <Icon name="hide_panels" className="tool-icon flip" />;
     }
 
     return (
         <div
-            className="toolbar-button flex items-center pr-1 pl-1"
+            className="toolbar-button"
             onClick={async () => {
                 if (type == "run") {
                     if (backEndState.execution_paused) {
@@ -83,6 +73,15 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
             }}
         >
             {icon}
+        </div>
+    );
+}
+
+// a button that runs an app or area command, the same as its menu item. faded when it can't run now
+export function CommandTool({ icon, command, disabled = false }: { icon: IconName; command: string; disabled?: boolean }) {
+    return (
+        <div className={`toolbar-button${disabled ? " disabled" : ""}`} data-command={command} onClick={() => runCommand(command)}>
+            <Icon name={icon} className="tool-icon" />
         </div>
     );
 }

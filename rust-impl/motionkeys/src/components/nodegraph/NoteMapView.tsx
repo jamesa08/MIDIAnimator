@@ -11,6 +11,7 @@ import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
 import { MapData, NoteMap, shownMap, unique } from "../../utils/noteMap";
 import { useFrameView } from "./frameView";
+import { setEditorState } from "../../utils/editorState";
 
 // the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes wired to the object group's objects,
 // drawn as a graph of small nodes that can be selected and moved like the node editor's. in rules mode it shows what the
@@ -461,6 +462,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         pendingGrab.current = null;
         startGrab([added], pending.from, pending.txn);
     }, [builtKey, startGrab]);
+
+    // the toolbar's group buttons only leave the map, nothing is added from its add menu
+    useEffect(() => setEditorState({ editable, selected: 0, groups: 0, openable: 0, inGroup: true, entries: null }), [editable]);
 
     // the node editor's keys, its own commands are off while the map covers it
     useKeymap("node_editor", {

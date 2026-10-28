@@ -212,6 +212,11 @@ function runApp(command: string) {
     else invoke("run_app_command", { id: command });
 }
 
+// a toolbar button's command, the same as its menu item. a modal ignores it
+export function runCommand(command: string) {
+    if (modals.length === 0) runApp(command);
+}
+
 // MARK: - Modals
 
 type ModalOptions = {

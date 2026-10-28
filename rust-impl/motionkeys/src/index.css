@@ -526,6 +526,31 @@ img {
     background-color: var(--chrome-line);
 }
 
+/* toolbar buttons are all one box, their 18px icon in the middle. a button that can't run now is faded */
+.toolbar-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 4px;
+}
+
+.toolbar .tool-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.toolbar .tool-icon.flip {
+    transform: scaleX(-1);
+}
+
+.toolbar-button.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
 /* lines inside nodes keep their own color */
 .node .border-black {
     border-color: var(--node-line);

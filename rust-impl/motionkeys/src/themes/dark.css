@@ -76,12 +76,6 @@ body {
     background-color: #c8c8c8;
 }
 
-/* black icon images */
-img[src="collapse-left.png"],
-img[src="collapse-right.png"] {
-    filter: invert(1);
-}
-
 /* themed logo */
 img[src="logo.webp"] {
     content: url("/logo-dark.webp");

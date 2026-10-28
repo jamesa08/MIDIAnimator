@@ -102,12 +102,6 @@ body,
     background-color: #d4e2fa;
 }
 
-/* black icon images */
-img[src="collapse-left.png"],
-img[src="collapse-right.png"] {
-    filter: invert(1);
-}
-
 /* themed logo */
 img[src="logo.webp"] {
     content: url("/logo-transparent.webp");
