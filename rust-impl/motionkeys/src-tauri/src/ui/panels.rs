@@ -11,6 +11,14 @@ use tauri::Manager;
 // panels hidden because the app went inactive, shown again when it's active
 static HIDDEN_WHILE_INACTIVE: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+// a hidden window isn't resizable, macos still shows resize cursors at the edges of one at alpha 0 that ignores the mouse
+#[cfg(target_os = "macos")]
+fn set_resizable(ns_window: &objc2_app_kit::NSWindow, resizable: bool) {
+    let mut mask = ns_window.styleMask();
+    mask.set(objc2_app_kit::NSWindowStyleMask::Resizable, resizable);
+    ns_window.setStyleMask(mask);
+}
+
 #[cfg(target_os = "macos")]
 fn make_floating(window: &tauri::WebviewWindow, ghost: bool) -> Result<(), String> {
     window
@@ -21,6 +29,7 @@ fn make_floating(window: &tauri::WebviewWindow, ghost: bool) -> Result<(), Strin
                 // invisible and click through until shown
                 ns_window.setAlphaValue(0.0);
                 ns_window.setIgnoresMouseEvents(true);
+                set_resizable(ns_window, false);
                 // the ghost goes above the panels, its node draws its own shadow
                 ns_window.setLevel(if ghost {
                     NSPopUpMenuWindowLevel
@@ -92,8 +101,10 @@ fn set_floating_level(app: &tauri::AppHandle, active: bool) {
             if hide && ns_window.alphaValue() > 0.0 {
                 ns_window.setAlphaValue(0.0);
                 ns_window.setIgnoresMouseEvents(true);
+                set_resizable(ns_window, false);
                 hidden.push(label);
             } else if active && hidden.contains(&label) {
+                set_resizable(ns_window, true);
                 ns_window.setAlphaValue(1.0);
                 ns_window.setIgnoresMouseEvents(false);
             }
@@ -150,6 +161,7 @@ pub fn floating_window_set_shown(app: tauri::AppHandle, label: String, shown: bo
                     0.0
                 });
                 ns_window.setIgnoresMouseEvents(!clickable);
+                set_resizable(ns_window, clickable);
                 // in case it's shown before the page finished loading
                 if shown {
                     ns_window.orderFront(None);
