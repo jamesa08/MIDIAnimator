@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useModal } from "../../utils/keymap";
+import { MenuCard, MenuRow, MenuSearch } from "../GlassMenu";
 
 // double clicking a socket, like the shift+a menu: searches `names` (an input gets the outputs' tags, an output the broken
 // tags on inputs), a name nothing has yet comes after them. enter picks the first
@@ -35,19 +35,17 @@ function TagMenu({ current, names, position, onClose, onSubmit }: { current: str
         { passthrough: true }
     );
 
-    // on the body so it sits above the floating panels, the canvas is its own stacking context
-    return createPortal(
-        <div style={{ position: "fixed", left: position.x, top: position.y }} className="tag-menu bg-[#2a2a2a] border border-[#444] rounded w-[250px] max-h-[400px] z-[1000] flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
-            <input ref={searchInputRef} type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={current ? "Rename tag" : "Add tag"} spellCheck={false} className="px-2 py-1 bg-[#1a1a1a] border-0 border-b border-[#444] text-white outline-none text-[13px]" />
-            <div style={{ overflowY: "auto", maxHeight: "350px" }}>
+    return (
+        <MenuCard x={position.x} y={position.y} className="w-[250px] tag-menu">
+            <MenuSearch inputRef={searchInputRef} value={search} onChange={setSearch} placeholder={current ? "Rename tag" : "Add tag"} />
+            <div className="glass-menu-scroll">
                 {rows.map((name) => (
-                    <div key={name} onClick={() => onSubmit(name)} className="tag-menu-row px-2 py-1 cursor-pointer text-white text-[13px] truncate">
+                    <MenuRow key={name} onClick={() => onSubmit(name)}>
                         {name}
-                    </div>
+                    </MenuRow>
                 ))}
             </div>
-        </div>,
-        document.body
+        </MenuCard>
     );
 }
 

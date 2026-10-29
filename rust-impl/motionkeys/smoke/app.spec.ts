@@ -434,13 +434,13 @@ test("map mode hides the note numbers and previews the map", async ({ page }) =>
     await openWindow(page, { ...backend, get_state: state }, "/#/");
 
     const node = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" });
-    await expect(node.locator("select").nth(1)).toHaveValue("map");
+    await expect(node.locator(".glass-select").nth(1)).toHaveText("Map");
     await expect(node.getByText("Notes", { exact: true })).toBeVisible();
     await expect(node.getByText("Note Numbers", { exact: true })).toBeHidden();
     await expect(node.locator('input[type="text"]')).toHaveCount(0);
 
     // the preview shows the map: a line per note an object gets, the MIDI's 3 notes and the added one, every object
-    const preview = node.locator(".node-field svg");
+    const preview = node.locator("div.node-field svg");
     await expect(preview.locator("path")).toHaveCount(5);
     await expect(preview.locator(`rect[fill="#B8962E"]`)).toHaveCount(4);
     await expect(preview.locator(`rect[fill="#3E9E72"]`)).toHaveCount(6);
@@ -485,10 +485,10 @@ test("signal tags", async ({ page }) => {
     const menu = page.locator(".tag-menu");
     await viewerInput.dblclick();
     await expect(menu.locator("input")).toBeFocused();
-    await expect(menu.locator(".tag-menu-row")).toHaveText(["notes", "unused"]);
+    await expect(menu.locator(".glass-menu-row")).toHaveText(["notes", "unused"]);
     await expect(menu.locator("input")).toHaveAttribute("placeholder", "Add tag");
     await page.keyboard.type("no");
-    await expect(menu.locator(".tag-menu-row")).toHaveText(["notes", "no"]);
+    await expect(menu.locator(".glass-menu-row")).toHaveText(["notes", "no"]);
     await page.keyboard.press("Enter");
     await expect(menu).toHaveCount(0);
     expect((await tagOps()).at(-1)).toEqual({ op: "set_tag", node: "viewer-1", side: "inputs", socket: "data", name: "notes" });
@@ -496,7 +496,7 @@ test("signal tags", async ({ page }) => {
     // a name no output has comes first when nothing matches it
     await viewerInput.dblclick();
     await page.keyboard.type("audio 1");
-    await expect(menu.locator(".tag-menu-row")).toHaveText(["audio 1"]);
+    await expect(menu.locator(".glass-menu-row")).toHaveText(["audio 1"]);
     await page.keyboard.press("Enter");
     expect((await tagOps()).at(-1)).toEqual({ op: "set_tag", node: "viewer-1", side: "inputs", socket: "data", name: "audio 1" });
 

@@ -186,4 +186,7 @@ img[src="logo.webp"] {
     --lg-on: #30d158;
     --lg-fill: #0091ff;
     --lg-ring: rgb(255 255 255 / 0.5);
+    --select-fill: rgb(255 255 255 / 0.1);
+    --select-edge: rgb(255 255 255 / 0.08);
+    --select-shadow: rgb(0 0 0 / 0.3);
 }

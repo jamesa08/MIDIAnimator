@@ -1055,7 +1055,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 nodesConnectable={editable}
                 className={isRoot ? "" : "group-canvas"}
             />
-            <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
+            {menuOpen && <NodeAddMenu entries={menuEntries} x={menuPosition.x} y={menuPosition.y} onClose={closeMenu} onSelect={addNode} />}
             {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}
         </>
     );

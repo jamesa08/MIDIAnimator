@@ -9,6 +9,7 @@ import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
+import GlassSelect from "./GlassSelect";
 
 // MARK: - Parameters
 
@@ -115,16 +116,7 @@ function NumberField({ value, onCommit, empty, readOnly }: { value: number | und
 function SelectField({ value, options, onChange, readOnly }: { value: string | undefined; options: Option[]; onChange: (value: string) => void; readOnly?: boolean }) {
     // a value that isn't one of the options (gone from the scene, or nothing ran yet) still shows
     const all = value && !options.some((o) => o.value === value) ? [{ value, label: value }, ...options] : options;
-    return (
-        <select value={value ?? ""} disabled={readOnly} onChange={(e) => onChange(e.target.value)}>
-            {!value && <option value="" />}
-            {all.map((option) => (
-                <option key={option.value} value={option.value}>
-                    {option.label}
-                </option>
-            ))}
-        </select>
-    );
+    return <GlassSelect value={value ?? ""} options={all} disabled={readOnly} onChange={onChange} />;
 }
 
 function MidiFileField({ value, onCommit, readOnly }: { value: string | undefined; onCommit: (value: string) => void; readOnly?: boolean }) {

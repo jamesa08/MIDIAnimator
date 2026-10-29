@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
+import GlassSelect from "../components/GlassSelect";
 
 // an animated channel of the object, see Channel in src-tauri/src/graph/executors/animation.rs
 type Channel = { id: string; group: string; name: string };
@@ -115,18 +116,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     };
 
     // the object's channels as dropdown options, by group
-    const channelOptions = (options: Channel[]) =>
-        [...new Set(options.map((c) => c.group))].map((group) => (
-            <optgroup key={group} label={group}>
-                {options
-                    .filter((c) => c.group === group)
-                    .map((c) => (
-                        <option key={c.id} value={c.id}>
-                            {c.name}
-                        </option>
-                    ))}
-            </optgroup>
-        ));
+    const channelOptions = (options: Channel[]) => [...new Set(options.map((c) => c.group))].flatMap((group) => options.filter((c) => c.group === group).map((c) => ({ value: c.id, label: c.name, group })));
 
     // a row's dropdown: the object's channels, without the ones other rows picked
     const channelSelect = (channel: string, index: number) => {
@@ -137,9 +127,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
                 <button className="channel-remove nodrag nopan" onClick={() => removeChannel(index)}>
                     ×
                 </button>
-                <select className="nodrag nopan" value={channel} onChange={(e) => changeChannel(index, e.target.value)}>
-                    {channelOptions(options)}
-                </select>
+                <GlassSelect className="nodrag nopan" value={channel} options={channelOptions(options)} onChange={(next) => changeChannel(index, next)} />
             </div>
         );
     };
@@ -152,10 +140,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
             <button className="channel-remove" style={{ visibility: "hidden" }} tabIndex={-1}>
                 ×
             </button>
-            <select className="nodrag nopan" value="" onChange={(e) => addChannel(e.target.value)}>
-                <option value="" disabled hidden></option>
-                {channelOptions(unpickedChannels)}
-            </select>
+            <GlassSelect className="nodrag nopan" value="" options={channelOptions(unpickedChannels)} onChange={addChannel} />
         </div>
     );
 
@@ -165,33 +150,9 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         setInputs(id, { object_group_name: groupName, object_name: firstObject });
     };
 
-    const objectGroupNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => changeGroup(e.target.value)}>
-            {groupOptions.length > 0 ? (
-                groupOptions.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
-                    </option>
-                ))
-            ) : (
-                <option value="">No ObjectGroup names found</option>
-            )}
-        </select>
-    );
+    const objectGroupNameComponent = <GlassSelect className="node-field nodrag nopan" value={selectedGroupName} options={groupOptions.length > 0 ? groupOptions.map((name: string) => ({ value: name, label: name })) : [{ value: selectedGroupName, label: "No ObjectGroup names found" }]} onChange={changeGroup} />;
 
-    const objectNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedObjectName} onChange={(e) => setInputs(id, { object_name: e.target.value })}>
-            {objectOptions.length > 0 ? (
-                objectOptions.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
-                    </option>
-                ))
-            ) : (
-                <option value="">No Object names found</option>
-            )}
-        </select>
-    );
+    const objectNameComponent = <GlassSelect className="node-field nodrag nopan" value={selectedObjectName} options={objectOptions.length > 0 ? objectOptions.map((name: string) => ({ value: name, label: name })) : [{ value: selectedObjectName, label: "No Object names found" }]} onChange={(name) => setInputs(id, { object_name: name })} />;
 
     // the empty dropdown goes under the last output, or where the outputs would be
     const uiInject: any = {

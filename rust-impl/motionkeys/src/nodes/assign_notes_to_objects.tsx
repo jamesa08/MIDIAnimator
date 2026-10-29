@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";
+import GlassSelect from "../components/GlassSelect";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
@@ -52,28 +53,21 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
         }
     }, [id, notesText, data.inputs?.note_numbers, setInputs]);
 
-    const objectGroupNameComponent = (
-        <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
-            {objectGroupNames.length > 0 ? (
-                objectGroupNames.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
-                    </option>
-                ))
-            ) : (
-                <option value="">No ObjectGroup names found</option>
-            )}
-        </select>
-    );
+    const objectGroupNameComponent = <GlassSelect className="node-field nodrag nopan" value={selectedGroupName} options={objectGroupNames.length > 0 ? objectGroupNames.map((name) => ({ value: name, label: name })) : [{ value: selectedGroupName, label: "No ObjectGroup names found" }]} onChange={(name) => setInputs(id, { object_group_name: name })} />;
 
     // rules work out each object's notes, map takes them from the note map (Tab, or the button in the header)
     const modeComponent = (
         <>
             <div className="node-field">Mode</div>
-            <select className="node-field nodrag nopan" value={data.inputs?.mode ?? "rules"} onChange={(e) => setInputs(id, { mode: e.target.value })}>
-                <option value="rules">Rules</option>
-                <option value="map">Map</option>
-            </select>
+            <GlassSelect
+                className="node-field nodrag nopan"
+                value={data.inputs?.mode ?? "rules"}
+                options={[
+                    { value: "rules", label: "Rules" },
+                    { value: "map", label: "Map" },
+                ]}
+                onChange={(mode) => setInputs(id, { mode })}
+            />
         </>
     );
 

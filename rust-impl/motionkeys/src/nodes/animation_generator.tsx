@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
+import GlassSelect from "../components/GlassSelect";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -65,13 +66,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
             <div className="node-field field-inputs">
                 <span>Animation Overlap</span>
             </div>
-            <select className="node-field nodrag nopan" value={data.inputs?.animation_overlap || "add"} onChange={(e) => setInputs(id, { animation_overlap: e.target.value })}>
-                {overlapModes.map((mode) => (
-                    <option key={mode.id} value={mode.id}>
-                        {mode.name}
-                    </option>
-                ))}
-            </select>
+            <GlassSelect className="node-field nodrag nopan" value={data.inputs?.animation_overlap || "add"} options={overlapModes.map((mode) => ({ value: mode.id, label: mode.name }))} onChange={(mode) => setInputs(id, { animation_overlap: mode })} />
         </>
     );
 

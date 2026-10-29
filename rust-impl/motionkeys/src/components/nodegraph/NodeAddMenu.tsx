@@ -1,77 +1,81 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { NodeEntry } from "../../utils/nodeEntries";
 import { useModal } from "../../utils/keymap";
+import { CATEGORY_LABELS, CATEGORY_ORDER } from "../../styles";
+import { MenuCard, MenuPanel, MenuRow, MenuSearch } from "../GlassMenu";
 
-// shift+a menu, searches the nodes that can be added
-function NodeAddMenu({ isOpen, entries, onClose, onSelect, position }: { isOpen: boolean; entries: NodeEntry[]; onClose: () => void; onSelect: (key: string) => void; position: { x: number; y: number } }) {
+// a category's place in the nodes panel's order, ones it doesn't know go last
+const categoryIndex = (category: string) => {
+    const index = CATEGORY_ORDER.indexOf(category);
+    return index < 0 ? CATEGORY_ORDER.length : index;
+};
+
+// the add menu, like blender's: the nodes that can be added by category, each category's nodes to its side. typing
+// searches them all, enter adds the first. opened with shift+a (or from a dropped link) at the cursor, and from the
+// toolbar's add button under it
+function NodeAddMenu({ entries, x, y, onSelect, onClose }: { entries: NodeEntry[]; x: number; y: number; onSelect: (key: string) => void; onClose: () => void }) {
     const [search, setSearch] = useState("");
-    const searchInputRef = useRef<HTMLInputElement>(null);
+    const [category, setCategory] = useState<string | null>(null);
+    // the hovered category row's top, its nodes open level with it
+    const [categoryTop, setCategoryTop] = useState(0);
+    const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (!isOpen) {
-            setSearch("");
-        }
-    }, [isOpen]);
+        searchRef.current?.focus();
+    }, []);
 
-    const filteredEntries = entries.filter((entry) => entry.label.toLowerCase().includes(search.toLowerCase()) || entry.key.toLowerCase().includes(search.toLowerCase()));
-
-    useEffect(() => {
-        if (isOpen && searchInputRef.current) {
-            searchInputRef.current.focus();
-        }
-    }, [isOpen]);
+    const categories = useMemo(() => [...new Set(entries.map((entry) => entry.category))].sort((a, b) => categoryIndex(a) - categoryIndex(b)), [entries]);
+    const typed = search.trim().toLowerCase();
+    const matches = typed ? entries.filter((entry) => entry.label.toLowerCase().includes(typed) || entry.key.toLowerCase().includes(typed)) : [];
 
     // takes the keys while it's open, typing still goes to the search
     useModal(
         "add_menu",
         {
             confirm: () => {
-                if (filteredEntries.length > 0) onSelect(filteredEntries[0].key);
+                if (matches.length > 0) onSelect(matches[0].key);
             },
             cancel: onClose,
         },
-        isOpen,
+        true,
         { passthrough: true }
     );
 
-    if (!isOpen) return null;
-
-    // on the body so it sits above the floating panels, the canvas is its own stacking context
-    return createPortal(
-        <div
-            style={{
-                position: "fixed",
-                left: position.x,
-                top: position.y,
-            }}
-            className="bg-[#2a2a2a] border border-[#444] rounded w-[250px] max-h-[400px] z-[1000] flex flex-col"
-            onMouseDown={(e) => e.stopPropagation()}
-        >
-            <input ref={searchInputRef} type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search nodes..." className="px-2 py-1 bg-[#1a1a1a] border-0 border-b border-[#444] text-white outline-none text-[13px]" />
-            <div style={{ overflowY: "auto", maxHeight: "350px" }}>
-                {filteredEntries.map((entry) => (
-                    <div
-                        key={entry.key}
-                        onClick={() => onSelect(entry.key)}
-                        style={{
-                            backgroundColor: "transparent",
-                        }}
-                        className="px-2 py-1 cursor-pointer text-white text-[13px] flex justify-between"
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = "#4a7ba7";
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = "transparent";
-                        }}
-                    >
-                        <span>{entry.label}</span>
-                        {entry.nodeType === "group" && <span className="text-[#8ab4d8]">group</span>}
-                    </div>
+    const aside = !typed && category && (
+        <MenuPanel className="glass-submenu w-56" style={{ top: categoryTop }}>
+            {entries
+                .filter((entry) => entry.category === category)
+                .map((entry) => (
+                    <MenuRow key={entry.key} onClick={() => onSelect(entry.key)}>
+                        {entry.label}
+                    </MenuRow>
                 ))}
-            </div>
-        </div>,
-        document.body
+        </MenuPanel>
+    );
+
+    return (
+        <MenuCard x={x} y={y} className="w-52" aside={aside}>
+            <MenuSearch inputRef={searchRef} value={search} onChange={setSearch} />
+            {typed
+                ? matches.map((entry) => (
+                      <MenuRow key={entry.key} detail={CATEGORY_LABELS[entry.category] ?? entry.category} onClick={() => onSelect(entry.key)}>
+                          {entry.label}
+                      </MenuRow>
+                  ))
+                : categories.map((name) => (
+                      <MenuRow
+                          key={name}
+                          detail="›"
+                          active={category === name}
+                          onMouseEnter={(e) => {
+                              setCategory(name);
+                              setCategoryTop(e.currentTarget.offsetTop);
+                          }}
+                      >
+                          {CATEGORY_LABELS[name] ?? name}
+                      </MenuRow>
+                  ))}
+        </MenuCard>
     );
 }
 

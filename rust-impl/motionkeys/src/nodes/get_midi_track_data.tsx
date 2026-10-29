@@ -4,6 +4,7 @@ import BaseNode from "./BaseNode";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useSetInputs } from "../utils/graphOps";
+import GlassSelect from "../components/GlassSelect";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
@@ -29,17 +30,7 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
 
     const trackNameComponent = (
         <>
-            <select className="node-field nodrag nopan" value={selectedTrackName} onChange={(event) => setInputs(id, { track_name: event.target.value })}>
-                {trackNames.length > 0 ? (
-                    trackNames.map((track, index) => (
-                        <option key={index} value={track}>
-                            {track}
-                        </option>
-                    ))
-                ) : (
-                    <option value={selectedTrackName}>No track names found</option>
-                )}
-            </select>
+            <GlassSelect className="node-field nodrag nopan" value={selectedTrackName} options={trackNames.length > 0 ? trackNames.map((track) => ({ value: track, label: track })) : [{ value: selectedTrackName, label: "No track names found" }]} onChange={(track) => setInputs(id, { track_name: track })} />
         </>
     );
 

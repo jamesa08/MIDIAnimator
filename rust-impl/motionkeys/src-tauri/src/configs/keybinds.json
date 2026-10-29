@@ -91,6 +91,17 @@
         ]
     },
     {
+        "id": "dropdown",
+        "name": "Dropdown",
+        "kind": "modal",
+        "commands": [
+            { "id": "up", "name": "Previous", "keys": ["Up"] },
+            { "id": "down", "name": "Next", "keys": ["Down"] },
+            { "id": "confirm", "name": "Pick", "keys": ["Enter", "NumEnter", "Space"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["Escape"] }
+        ]
+    },
+    {
         "id": "dialog",
         "name": "Dialog",
         "kind": "modal",
@@ -103,6 +114,11 @@
         "id": "drag",
         "name": "Panel Drag",
         "kind": "modal",
-        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["Escape"] }]
+        "commands": [
+            { "id": "up", "name": "Previous", "keys": ["Up"] },
+            { "id": "down", "name": "Next", "keys": ["Down"] },
+            { "id": "confirm", "name": "Pick", "keys": ["Enter", "NumEnter", "Space"] },
+            { "id": "cancel", "name": "Cancel", "keys": ["Escape"] }
+        ]
     }
 ]
