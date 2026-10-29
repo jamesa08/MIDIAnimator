@@ -11,6 +11,8 @@ declare global {
     }
 }
 
+import { pauseRefraction, resumeRefraction } from "glisse";
+
 const sized = () => [document.documentElement, ...document.querySelectorAll<HTMLElement>('[data-live-resize="window"]')];
 const vignettes = () => document.querySelectorAll<HTMLElement>('[data-live-resize="vignette"]');
 
@@ -25,6 +27,8 @@ window.liveResize = {
         viewInset ??= { width: Math.max(0, webviewWidth - window.innerWidth), height: Math.max(0, webviewHeight - window.innerHeight) };
         const width = webviewWidth - viewInset.width;
         const height = webviewHeight - viewInset.height;
+        // the glass keeps its lenses for the drag and refits once at the end (vendor/glisse)
+        if (!document.documentElement.classList.contains("live-resize")) pauseRefraction();
         document.documentElement.classList.add("live-resize");
         for (const element of sized()) {
             element.style.width = `${width}px`;
@@ -43,6 +47,7 @@ window.liveResize = {
     },
 
     end() {
+        if (document.documentElement.classList.contains("live-resize")) resumeRefraction();
         document.documentElement.classList.remove("live-resize");
         for (const element of sized()) {
             element.style.width = "";

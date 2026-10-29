@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { pauseRefraction, resumeRefraction } from "glisse";
 
 import { useStateContext } from "./contexts/StateContext";
 import NodeGraph from "./components/NodeGraph";
@@ -258,6 +259,8 @@ function App() {
                 setWidth(startWidth);
             },
         });
+        // the panels' glass keeps its lenses for the drag and refits once at the end (vendor/glisse)
+        pauseRefraction();
 
         const handleMove = (e: PointerEvent) => {
             const dx = side === "left" ? e.clientX - startX : startX - e.clientX;
@@ -269,6 +272,7 @@ function App() {
 
         const cleanup = () => {
             endModal();
+            resumeRefraction();
             document.body.style.cursor = "";
             window.removeEventListener("pointermove", handleMove);
             window.removeEventListener("pointerup", handleUp);
