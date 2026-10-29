@@ -97,6 +97,26 @@
   transition: opacity 220ms ease-in-out;
 }
 
+/* A rim sliced from its shape's tile (internal/refraction.ts): the corners as
+   they are and the edges stretched, so it fits any size with no new image.
+   Under the content like the background rim it replaces. */
+.lg-glass[data-rim] {
+  isolation: isolate;
+}
+
+.lg-glass[data-rim]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  border-width: var(--lg-rim-width);
+  border-image: var(--lg-rim-tile) var(--lg-rim-slice) / var(--lg-rim-width) stretch;
+  pointer-events: none;
+}
+
 .lg-glass[data-pressed]::after {
   opacity: 1;
   transition-duration: 0s;

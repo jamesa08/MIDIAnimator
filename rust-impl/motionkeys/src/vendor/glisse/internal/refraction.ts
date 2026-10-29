@@ -3,20 +3,38 @@ import { useEffect, type RefObject } from "react";
 // Refraction model: https://kube.io/blog/liquid-glass-css-svg/
 
 const SVG = "http://www.w3.org/2000/svg";
+
+/** What a glass element is given: a filter for its backdrop and its rim highlight. */
 interface Lens {
-  filter: string;
-  rim: string;
+  /** `url(#id)` of the backdrop filter, only while the glass refracts. */
+  filter?: string;
+  /** The rim as one image stretched over the element, for glass too small to slice. */
+  rim?: string;
+  /** The rim as a tile whose corners are kept and edges stretched to any size, drawn as a border-image. */
+  tile?: { image: string; slice: number; width: number };
 }
 
 interface Shape {
-  bezel: number | undefined;
-  thickness: number | undefined;
+  bezel: number;
+  thickness: number;
   level: number;
   zoom: number;
   saturation: number;
 }
 
-const lenses = new Map<string, Lens>();
+interface Entry {
+  lens: Lens;
+  node?: Element;
+  users: number;
+}
+
+// Lenses in the order they were last used. Ones no element uses any more are
+// kept up to SPARE, for glass that comes back to a size it had, then evicted
+// with their filters.
+const lenses = new Map<string, Entry>();
+const SPARE = 16;
+// Ids are never reused, an evicted filter's id could still be in a stylesheet.
+let nextId = 0;
 let defs: SVGDefsElement | undefined;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -51,26 +69,36 @@ function profile(bezel: number, thickness: number): { samples: Float32Array; max
   return { samples, maximum };
 }
 
-function maps(width: number, height: number, radius: number, selection: boolean, shape: Shape) {
-  const density = Math.min(devicePixelRatio || 1, 2);
-  const bezel = shape.bezel ?? clamp(Math.min(width, height) * 0.12, 4, 10);
-  const thickness = shape.thickness ?? clamp(Math.min(width, height) * 0.2, 8, 24);
+const density = () => Math.min(devicePixelRatio || 1, 2);
+
+function canvasOf(image: ImageData): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = image.width;
+  canvas.height = image.height;
+  canvas.getContext("2d")!.putImageData(image, 0, 0);
+  return canvas;
+}
+
+// The displacement field (only when `field`, it's only used to refract) and
+// the rim highlight, drawn per pixel.
+function maps(width: number, height: number, radius: number, selection: boolean, shape: Shape, field: boolean) {
+  const scale = density();
+  const { bezel, thickness } = shape;
   const { samples, maximum } = profile(bezel, thickness);
 
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(width * density);
-  canvas.height = Math.ceil(height * density);
-  const context = canvas.getContext("2d")!;
-  const field = context.createImageData(canvas.width, canvas.height);
-  const shine = context.createImageData(canvas.width, canvas.height);
-  const magnify = shape.zoom > 1 ? context.createImageData(canvas.width, canvas.height) : undefined;
+  const columns = Math.ceil(width * scale);
+  const rows = Math.ceil(height * scale);
+  const context = document.createElement("canvas").getContext("2d")!;
+  const displacement = field ? context.createImageData(columns, rows) : undefined;
+  const shine = context.createImageData(columns, rows);
+  const magnify = field && shape.zoom > 1 ? context.createImageData(columns, rows) : undefined;
   const reach = Math.max(width, height) / 2;
   const direction = selection ? 1 : -1;
 
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const px = ((x + 0.5) * width) / canvas.width - width / 2;
-      const py = ((y + 0.5) * height) / canvas.height - height / 2;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < columns; x++) {
+      const px = ((x + 0.5) * width) / columns - width / 2;
+      const py = ((y + 0.5) * height) / rows - height / 2;
       const qx = Math.abs(px) - (width / 2 - radius);
       const qy = Math.abs(py) - (height / 2 - radius);
       const ox = Math.max(qx, 0);
@@ -79,21 +107,22 @@ function maps(width: number, height: number, radius: number, selection: boolean,
       const distance = radius - (length + Math.min(Math.max(qx, qy), 0));
       const nx = length > 0 ? (ox / length) * Math.sign(px) : qx > qy ? Math.sign(px) : 0;
       const ny = length > 0 ? (oy / length) * Math.sign(py) : qx > qy ? 0 : Math.sign(py);
+      const i = (y * columns + x) * 4;
 
-      let shift = 0;
-      if (distance >= 0 && distance < bezel) {
-        const sample = (distance / bezel) * (samples.length - 1);
-        const lower = Math.floor(sample);
-        const a = samples[lower]!;
-        const b = samples[Math.min(lower + 1, samples.length - 1)]!;
-        shift = a + (b - a) * (sample - lower);
+      if (displacement) {
+        let shift = 0;
+        if (distance >= 0 && distance < bezel) {
+          const sample = (distance / bezel) * (samples.length - 1);
+          const lower = Math.floor(sample);
+          const a = samples[lower]!;
+          const b = samples[Math.min(lower + 1, samples.length - 1)]!;
+          shift = a + (b - a) * (sample - lower);
+        }
+        displacement.data[i] = Math.round(127.5 + ((direction * nx * shift) / maximum) * 127.5);
+        displacement.data[i + 1] = Math.round(127.5 + ((direction * ny * shift) / maximum) * 127.5);
+        displacement.data[i + 2] = 128;
+        displacement.data[i + 3] = 255;
       }
-
-      const i = (y * canvas.width + x) * 4;
-      field.data[i] = Math.round(127.5 + ((direction * nx * shift) / maximum) * 127.5);
-      field.data[i + 1] = Math.round(127.5 + ((direction * ny * shift) / maximum) * 127.5);
-      field.data[i + 2] = 128;
-      field.data[i + 3] = 255;
 
       // A linear field: each point samples from closer to the centre, which
       // enlarges the whole face evenly.
@@ -126,27 +155,27 @@ function maps(width: number, height: number, radius: number, selection: boolean,
     }
   }
 
-  context.putImageData(field, 0, 0);
-  const displacement = canvas.toDataURL();
-  context.putImageData(shine, 0, 0);
-  const highlight = canvas.toDataURL();
-  let zoom: { map: string; scale: number } | undefined;
-  if (magnify) {
-    context.putImageData(magnify, 0, 0);
-    zoom = { map: canvas.toDataURL(), scale: 2 * reach * (1 - 1 / shape.zoom) };
-  }
-  return { displacement, highlight, zoom, scale: maximum * 2 * shape.level };
+  return {
+    displacement: displacement && canvasOf(displacement),
+    shine: canvasOf(shine),
+    zoom: magnify && { map: canvasOf(magnify).toDataURL(), scale: 2 * reach * (1 - 1 / shape.zoom) },
+    scale: maximum * 2 * shape.level,
+  };
 }
 
 // The filter only bends the rim. Blur and the rim highlight are applied in CSS,
 // which Chromium positions correctly when it repaints part of the glass.
-function lens(width: number, height: number, radius: number, selection: boolean, shape: Shape): Lens {
-  const key = Object.values({ width, height, radius, selection, ...shape }).join("-");
-  const cached = lenses.get(key);
-  if (cached) return cached;
-
-  const { displacement, highlight, zoom, scale } = maps(width, height, radius, selection, shape);
-  const id = `glisse-${lenses.size}`;
+function filterOf(
+  width: number,
+  height: number,
+  selection: boolean,
+  shape: Shape,
+  scale: number,
+  displacement: string,
+  highlight: string | undefined,
+  zoom: { map: string; scale: number } | undefined,
+): { node: Element; filter: string } {
+  const id = `glisse-${nextId++}`;
   const box = { x: 0, y: 0, width, height };
   const filter = svg("filter", {
     id,
@@ -211,7 +240,7 @@ function lens(width: number, height: number, radius: number, selection: boolean,
     );
     // Along the rim highlight, show the bent backdrop far more saturated, so
     // strong edges break into colour where they cross it.
-    if (shape.saturation > 1) {
+    if (shape.saturation > 1 && highlight) {
       const mask = svg("feComponentTransfer", { in: "shine", result: "mask" });
       mask.append(svg("feFuncA", { type: "linear", slope: 1.8 }));
       filter.append(
@@ -224,16 +253,116 @@ function lens(width: number, height: number, radius: number, selection: boolean,
     }
   }
   container().append(filter);
-
-  const result = { filter: `url("#${id}")`, rim: `url("${highlight}")` };
-  lenses.set(key, result);
-  return result;
+  return { node: filter, filter: `url("#${id}")` };
 }
 
-function fit(element: HTMLElement, selection: boolean, filtered: boolean): void {
+// One small lens per shape: a square just big enough to hold two corners and
+// a strip of edge between them. Past the corners the rim and field only depend
+// on the distance to the nearest edge, so any larger glass is the tile's
+// corners with its middle row and column stretched along the edges.
+interface Tile {
+  /** Its corner pieces' side, in css pixels and in the tile's pixels. */
+  slice: number;
+  pixels: number;
+  displacement?: HTMLCanvasElement;
+  shine: HTMLCanvasElement;
+  rim: string;
+  scale: number;
+}
+
+const tiles = new Map<string, Tile>();
+const TILES = 32;
+
+/** The corner pieces' side for a shape: the bezel or the corner, whichever reaches further in, and some room for the rim's glow. */
+const sliceOf = (radius: number, shape: Shape) => Math.ceil(Math.max(radius, shape.bezel)) + 8;
+
+function tileOf(radius: number, shape: Shape, field: boolean): Tile {
+  const key = Object.values({ radius, field, scale: density(), ...shape }).join("-");
+  const cached = tiles.get(key);
+  if (cached) return cached;
+  const slice = sliceOf(radius, shape);
+  const size = 2 * slice + 1;
+  const { displacement, shine, scale } = maps(size, size, radius, false, shape, field);
+  const tile = { slice, pixels: Math.round(slice * density()), displacement, shine, rim: shine.toDataURL(), scale };
+  tiles.set(key, tile);
+  if (tiles.size > TILES) tiles.delete(tiles.keys().next().value!);
+  return tile;
+}
+
+// A tile stretched to a size: its corners copied as they are, its middle row
+// and column drawn along the edges, and `fill` (the field's "no shift")
+// in the middle.
+function stretch(tile: HTMLCanvasElement, slice: number, width: number, height: number, fill?: string): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(width * density());
+  canvas.height = Math.ceil(height * density());
+  const context = canvas.getContext("2d")!;
+  context.imageSmoothingEnabled = false;
+  const { width: w, height: h } = canvas;
+  const size = tile.width;
+  const middle = size - 2 * slice;
+  if (fill) {
+    context.fillStyle = fill;
+    context.fillRect(0, 0, w, h);
+  }
+  context.drawImage(tile, 0, 0, slice, slice, 0, 0, slice, slice);
+  context.drawImage(tile, size - slice, 0, slice, slice, w - slice, 0, slice, slice);
+  context.drawImage(tile, 0, size - slice, slice, slice, 0, h - slice, slice, slice);
+  context.drawImage(tile, size - slice, size - slice, slice, slice, w - slice, h - slice, slice, slice);
+  context.drawImage(tile, slice, 0, middle, slice, slice, 0, w - 2 * slice, slice);
+  context.drawImage(tile, slice, size - slice, middle, slice, slice, h - slice, w - 2 * slice, slice);
+  context.drawImage(tile, 0, slice, slice, middle, 0, slice, slice, h - 2 * slice);
+  context.drawImage(tile, size - slice, slice, slice, middle, w - slice, slice, slice, h - 2 * slice);
+  return canvas;
+}
+
+// Builds a lens, from the shape's tile where the glass is big enough to slice.
+function build(width: number, height: number, radius: number, selection: boolean, shape: Shape, refracting: boolean, tiled: boolean): Entry {
+  if (tiled) {
+    const tile = tileOf(radius, shape, refracting);
+    const lens: Lens = { tile: { image: `url("${tile.rim}")`, slice: tile.pixels, width: tile.slice } };
+    if (!refracting || !tile.displacement) return { lens, users: 0 };
+    const displacement = stretch(tile.displacement, tile.pixels, width, height, "rgb(128 128 128)").toDataURL();
+    const highlight = shape.saturation > 1 ? stretch(tile.shine, tile.pixels, width, height).toDataURL() : undefined;
+    const { node, filter } = filterOf(width, height, selection, shape, tile.scale, displacement, highlight, undefined);
+    return { lens: { ...lens, filter }, node, users: 0 };
+  }
+  const { displacement, shine, zoom, scale } = maps(width, height, radius, selection, shape, refracting);
+  const highlight = shine.toDataURL();
+  const lens: Lens = { rim: `url("${highlight}")` };
+  if (!displacement) return { lens, users: 0 };
+  const { node, filter } = filterOf(width, height, selection, shape, scale, displacement.toDataURL(), highlight, zoom);
+  return { lens: { ...lens, filter }, node, users: 0 };
+}
+
+function acquire(key: string, make: () => Entry): Lens {
+  const entry = lenses.get(key) ?? make();
+  lenses.delete(key);
+  lenses.set(key, entry);
+  entry.users++;
+  return entry.lens;
+}
+
+function release(key: string | undefined): void {
+  const entry = key === undefined ? undefined : lenses.get(key);
+  if (!entry) return;
+  entry.users--;
+  let spare = 0;
+  for (const other of lenses.values()) if (other.users <= 0) spare++;
+  for (const [name, other] of lenses) {
+    if (spare <= SPARE) break;
+    if (other.users > 0) continue;
+    other.node?.remove();
+    lenses.delete(name);
+    spare--;
+  }
+}
+
+/** Fits the element's lens to its size and shape, returning the lens' key (or none for a hidden element). */
+function fit(element: HTMLElement, selection: boolean, filtered: boolean): string | undefined {
   const width = element.offsetWidth;
   const height = element.offsetHeight;
-  if (!width || !height) return;
+  if (!width || !height) return undefined;
   const style = getComputedStyle(element);
   const corner = style.borderTopLeftRadius;
   const radius = Math.min(
@@ -245,45 +374,105 @@ function fit(element: HTMLElement, selection: boolean, filtered: boolean): void 
     const value = parseFloat(style.getPropertyValue(name));
     return Number.isFinite(value) ? value : undefined;
   };
+  const shortest = Math.min(width, height);
   const shape = {
-    bezel: length("--lg-bezel"),
-    thickness: length("--lg-thickness"),
+    bezel: length("--lg-bezel") ?? clamp(shortest * 0.12, 4, 10),
+    thickness: length("--lg-thickness") ?? clamp(shortest * 0.2, 8, 24),
     level: length("--lg-refraction") ?? 1,
     zoom: Math.max(1, length("--lg-zoom") ?? 1),
     saturation: Math.max(1, length("--lg-rim-saturation") ?? 1),
   };
-  const { filter, rim } = lens(width, height, radius, selection, shape);
-  if (filtered) element.style.setProperty("--lg-filter", filter);
-  element.style.setProperty("--lg-rim", rim);
+  // Without refraction the tiled lens doesn't depend on the size at all, so
+  // every glass of one shape shares it.
+  const refracting = filtered && shape.level > 0;
+  const tiled = !selection && shape.zoom === 1 && shortest >= 2 * sliceOf(radius, shape) + 1;
+  const sized = refracting || !tiled;
+  const key = Object.values({ tiled, refracting, radius, selection, density: density(), ...shape, ...(sized && { width, height }) }).join("-");
+  const lens = acquire(key, () => build(width, height, radius, selection, shape, refracting, tiled));
+
+  if (lens.filter) element.style.setProperty("--lg-filter", lens.filter);
+  else element.style.removeProperty("--lg-filter");
+  if (lens.tile) {
+    element.style.removeProperty("--lg-rim");
+    element.style.setProperty("--lg-rim-tile", lens.tile.image);
+    element.style.setProperty("--lg-rim-slice", String(lens.tile.slice));
+    element.style.setProperty("--lg-rim-width", `${lens.tile.width}px`);
+    element.setAttribute("data-rim", "");
+  } else {
+    element.style.setProperty("--lg-rim", lens.rim!);
+    unsetTile(element);
+  }
+  return key;
 }
 
+function unsetTile(element: HTMLElement): void {
+  element.style.removeProperty("--lg-rim-tile");
+  element.style.removeProperty("--lg-rim-slice");
+  element.style.removeProperty("--lg-rim-width");
+  element.removeAttribute("data-rim");
+}
+
+// A short wait so a resize that keeps going fits once it stops, then the next
+// idle moment where there's one.
 function whenIdle(callback: () => void): () => void {
-  if ("requestIdleCallback" in window) {
-    const handle = requestIdleCallback(callback, { timeout: 500 });
-    return () => cancelIdleCallback(handle);
-  }
-  const handle = setTimeout(callback, 50);
-  return () => clearTimeout(handle);
+  let idle = 0;
+  const timer = setTimeout(() => {
+    if ("requestIdleCallback" in window) idle = requestIdleCallback(callback, { timeout: 500 });
+    else callback();
+  }, 50);
+  return () => {
+    clearTimeout(timer);
+    if (idle) cancelIdleCallback(idle);
+  };
 }
 
 /** Only Chromium applies SVG filters to the live backdrop. */
 export const refractsBackdrop = (): boolean => /Chrom(?:e|ium)\//.test(navigator.userAgent);
+
+// While paused, glass that changes size waits here and refits once it's resumed.
+let paused = 0;
+const waiting = new Set<() => void>();
+
+/** Holds every lens at the size it had, for a drag that resizes glass continuously. Nests; each call needs a `resumeRefraction`. */
+export function pauseRefraction(): void {
+  paused++;
+}
+
+/** Refits the glass that changed size while paused. */
+export function resumeRefraction(): void {
+  if (paused === 0 || --paused > 0) return;
+  const refits = [...waiting];
+  waiting.clear();
+  refits.forEach((refit) => refit());
+}
 
 // Refits the lens whenever the element changes size. Unfiltered, it sets only
 // the rim highlight: the nearest Safari and Firefox come to refraction over
 // content they have no copy of.
 function refract(element: HTMLElement, selection: boolean, filtered: boolean): () => void {
   let cancel: (() => void) | undefined;
-  const observer = new ResizeObserver(() => {
+  let current: string | undefined;
+  const refit = () => {
+    const previous = current;
+    current = fit(element, selection, filtered);
+    release(previous);
+  };
+  const schedule = () => {
     cancel?.();
-    cancel = whenIdle(() => fit(element, selection, filtered));
-  });
+    cancel = undefined;
+    if (paused) waiting.add(schedule);
+    else cancel = whenIdle(refit);
+  };
+  const observer = new ResizeObserver(schedule);
   observer.observe(element);
   return () => {
     cancel?.();
+    waiting.delete(schedule);
     observer.disconnect();
+    release(current);
     element.style.removeProperty("--lg-filter");
     element.style.removeProperty("--lg-rim");
+    unsetTile(element);
   };
 }
 
@@ -602,7 +791,8 @@ export function useRefraction(ref: RefObject<HTMLElement | null>, selection = fa
     const element = ref.current;
     if (!element) return;
     if (refractsBackdrop()) return refract(element, selection, true);
-    const source = selection ? null : findBackdrop(element);
+    // Looking for marked content is a search up every ancestor, so only when there is any.
+    const source = selection || !document.querySelector(`[${MARK}]`) ? null : findBackdrop(element);
     if (!source) return refract(element, selection, false);
     const stop = copyBackdrop(element, source);
     const unfit = refract(element, selection, true);
