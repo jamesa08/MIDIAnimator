@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useOpenFile, useSaveTab } from "../utils/tabs";
 import { Icon, IconName } from "../icons";
 import { runCommand } from "../utils/keymap";
+import { Button } from "glisse";
 
 function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     const { backEndState } = useStateContext();
@@ -49,8 +50,9 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     }
 
     return (
-        <div
+        <Button
             className="toolbar-button"
+            icon={icon}
             onClick={async () => {
                 if (type == "run") {
                     if (backEndState.execution_paused) {
@@ -71,19 +73,13 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
 
                 onClick?.();
             }}
-        >
-            {icon}
-        </div>
+        />
     );
 }
 
 // a button that runs an app or area command, the same as its menu item. faded when it can't run now
 export function CommandTool({ icon, command, disabled = false }: { icon: IconName; command: string; disabled?: boolean }) {
-    return (
-        <div className={`toolbar-button${disabled ? " disabled" : ""}`} data-command={command} onClick={() => runCommand(command)}>
-            <Icon name={icon} className="tool-icon" />
-        </div>
-    );
+    return <Button className={`toolbar-button${disabled ? " disabled" : ""}`} disabled={disabled} data-command={command} icon={<Icon name={icon} className="tool-icon" />} onClick={() => runCommand(command)} />;
 }
 
 export default Tool;

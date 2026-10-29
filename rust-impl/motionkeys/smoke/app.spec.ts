@@ -148,7 +148,7 @@ for (const [id, name] of [
 
 test("settings window, every section", async ({ page }) => {
     await openWindow(page, backend, "/#/settings", "settings");
-    const sections = page.locator("button.block");
+    const sections = page.locator(".settings-nav-item");
     await expect(sections.first()).toBeVisible();
     for (let i = 0; i < (await sections.count()); i++) await sections.nth(i).click();
     await settle(page);

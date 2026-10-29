@@ -1,4 +1,5 @@
 import { useModal } from "../utils/keymap";
+import { Button, Glass } from "glisse";
 
 interface UnsavedChangesModalProps {
     onSave: () => void;
@@ -19,25 +20,21 @@ function UnsavedChangesModal({ onSave, onDiscard, onCancel }: UnsavedChangesModa
         { passthrough: true }
     );
 
-    const button = "px-3 h-6 border border-black text-sm";
-
     return (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-[9999] font-[Arial,sans-serif] select-none" onClick={onCancel}>
-            <div className="bg-white border border-black w-80" onClick={(e) => e.stopPropagation()}>
-                <div className="panel-header h-7 border-b border-black flex items-center pl-2 pr-2">Unsaved changes</div>
-                <p className="px-2 py-3 text-sm">Save changes to this project before closing?</p>
-                <div className="flex gap-2 justify-end px-2 pb-2">
-                    <button className={`${button} mr-auto hover:bg-zinc-100`} onClick={onDiscard}>
+            <Glass className="glass-dialog w-80" onClick={(e) => e.stopPropagation()}>
+                <div className="h-7 flex items-center px-3 pt-2 font-bold">Unsaved changes</div>
+                <p className="px-3 py-3 text-sm">Save changes to this project before closing?</p>
+                <div className="flex gap-2 justify-end px-3 pb-3">
+                    <Button className="mr-auto" onClick={onDiscard}>
                         Don't Save
-                    </button>
-                    <button className={`${button} hover:bg-zinc-100`} onClick={onCancel}>
-                        Cancel
-                    </button>
-                    <button className={`${button} bg-black text-white hover:bg-zinc-800`} onClick={onSave}>
+                    </Button>
+                    <Button onClick={onCancel}>Cancel</Button>
+                    <Button variant="filled" onClick={onSave}>
                         Save
-                    </button>
+                    </Button>
                 </div>
-            </div>
+            </Glass>
         </div>
     );
 }

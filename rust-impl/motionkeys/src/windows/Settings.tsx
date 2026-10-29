@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { THEMES } from "../utils/theme";
 import KeymapEditor from "./KeymapEditor";
+import { Button, Input, Switch } from "glisse";
 
 // the page zooms, the same steps as the view menu's zoom in and out (ZOOM_STEPS in src-tauri/src/ui/windows.rs)
 const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
@@ -23,7 +24,7 @@ function Row({ id, label, description, children }: { id: string; label: string; 
 function Toggle({ id, label, description, checked, onChange }: { id: string; label: string; description: string; checked: boolean; onChange: (checked: boolean) => void }) {
     return (
         <Row id={id} label={label} description={description}>
-            <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+            <Switch id={id} checked={checked} onCheckedChange={onChange} />
         </Row>
     );
 }
@@ -44,7 +45,7 @@ function PortInput({ id, label, description, value, onChange }: { id: string; la
 
     return (
         <Row id={id} label={label} description={description}>
-            <input id={id} type="number" min={1024} max={65535} className="w-20 border border-black px-1" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+            <Input id={id} type="number" min={1024} max={65535} value={draft} onValueChange={setDraft} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
         </Row>
     );
 }
@@ -65,7 +66,7 @@ function NumberInput({ id, label, description, value, min, onChange }: { id: str
 
     return (
         <Row id={id} label={label} description={description}>
-            <input id={id} type="number" min={min} className="w-20 border border-black px-1" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+            <Input id={id} type="number" min={min} value={draft} onValueChange={setDraft} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
         </Row>
     );
 }
@@ -118,9 +119,9 @@ function Settings() {
 
     return (
         <div className="settings h-screen flex text-sm select-none overflow-hidden">
-            <nav className="flex-none w-48 border-r border-black">
+            <nav className="settings-nav flex-none w-48 border-r border-black">
                 {SECTIONS.map((s) => (
-                    <button key={s.id} className={`block w-full text-left px-2 h-7 ${s.id === section ? "bg-black text-white" : "hover:bg-zinc-100"}`} onClick={() => setSection(s.id)}>
+                    <button key={s.id} className={`settings-nav-item${s.id === section ? " active" : ""}`} onClick={() => setSection(s.id)}>
                         {s.name}
                     </button>
                 ))}
@@ -140,9 +141,9 @@ function Settings() {
                                 {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
                                 {section === "connection" && (
                                     <Row id="save-diagnostics" label="" description="">
-                                        <button id="save-diagnostics" className="px-2 h-6 border border-black text-sm hover:bg-zinc-100" onClick={() => invoke("save_diagnostics").catch(console.error)}>
+                                        <Button id="save-diagnostics" onClick={() => invoke("save_diagnostics").catch(console.error)}>
                                             Save Diagnostics…
-                                        </button>
+                                        </Button>
                                     </Row>
                                 )}
                             </tbody>

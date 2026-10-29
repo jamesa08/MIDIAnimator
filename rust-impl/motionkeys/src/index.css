@@ -1263,3 +1263,220 @@ span.icon {
 .tag-menu-row:hover {
     background-color: #4a7ba7;
 }
+
+/* glisse's colors (its Liquid Glass buttons, switches, fields and cards), set by the theme instead of following the
+   system's appearance. dark themes change these */
+:root {
+    --lg-foreground: rgb(0 0 0 / 0.88);
+    --lg-muted: rgb(60 60 67 / 0.6);
+    --lg-glass: rgb(255 255 255 / 0.6);
+    --lg-glass-active: rgb(236 236 240 / 0.85);
+    --lg-edge: rgb(0 0 0 / 0.08);
+    --lg-drop: rgb(0 0 0 / 0.06);
+    --lg-selection: rgb(0 0 0 / 0.1);
+    --lg-lens: rgb(255 255 255 / 0.3);
+    --lg-surface: rgb(250 250 252 / 0.86);
+    --lg-surface-edge: rgb(0 0 0 / 0.08);
+    --lg-shadow: rgb(25 25 35 / 0.12);
+    --lg-highlight: rgb(60 60 67 / 0.09);
+    --lg-separator: rgb(60 60 67 / 0.15);
+    --lg-destructive: #ff383c;
+    --lg-track: rgb(59 59 66 / 0.3);
+    --lg-rail: rgb(0 0 0 / 0.1);
+    --lg-on: #34c759;
+    --lg-fill: #0088ff;
+    --lg-ring: rgb(0 0 0 / 0.4);
+}
+
+/* glisse sets these inline on each glass element, a rim image and a filter as long data urls. not inherited, so a new one
+   doesn't restyle everything inside the glass, and glass inside glass doesn't show its parent's rim */
+@property --lg-rim {
+    syntax: "*";
+    inherits: false;
+}
+
+@property --lg-filter {
+    syntax: "*";
+    inherits: false;
+}
+
+/* no blur where nothing shows through: the toolbar is opaque, and dialogs and settings are nearly so. a switch's
+   thumb only shows what's behind it while it's held (its face is opaque at rest). --lg-refraction 0 also skips building
+   the refraction filter (vendor/glisse) */
+.toolbar .lg-glass,
+.glass-dialog .lg-button,
+.settings .lg-input,
+.settings .lg-button {
+    --lg-refraction: 0;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.lg-switch:not(:active) .lg-switch-thumb {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* the large glass is blurred enough that bending its edge barely shows, so it's only blurred, the same on every engine */
+.dock-column > .panel.lg-glass,
+.glass-dialog {
+    --lg-refraction: 0;
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(1.5);
+    backdrop-filter: blur(var(--lg-blur)) saturate(1.5);
+}
+
+/* toolbar buttons: a capsule per group, or one of their own, sized to the toolbar */
+.toolbar .tool-group {
+    display: flex;
+    height: 28px;
+    padding: 0 1px;
+    border-radius: 14px;
+}
+
+.toolbar .lg-button {
+    height: 28px;
+    min-width: 30px;
+    padding: 0 6px;
+    border-radius: 14px;
+}
+
+.toolbar .lg-button[data-icon="only"] {
+    width: 30px;
+    padding: 0;
+}
+
+.toolbar .lg-button > svg.tool-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.toolbar .lg-button > svg.tool-chevron {
+    width: 8px;
+    height: 8px;
+}
+
+/* inside a group the capsule is the glass, its buttons only light up */
+.toolbar .tool-group .lg-button {
+    background-color: transparent;
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+}
+
+.toolbar .tool-group .lg-button:hover,
+.toolbar .tool-group .lg-button:is(:active, [data-pressed]) {
+    background-color: var(--lg-highlight);
+}
+
+.toolbar .lg-button.disabled {
+    pointer-events: none;
+}
+
+/* a pressed button stretches past its card (glisse's press), so the toolbar's card doesn't clip it and its glass sits
+   above the tabs, the canvas and the docked panels. the toolbar rounds itself inside the card's border instead */
+.head-card {
+    overflow: visible;
+}
+
+.head-card > .toolbar {
+    border-radius: 7px;
+}
+
+.toolbar .lg-glass {
+    z-index: 10;
+}
+
+/* docked panels are glass over the canvas, the nodes blurred behind them. what's inside goes see-through so it shows */
+.dock-column > .panel.lg-glass {
+    --lg-blur: 20px;
+    background-color: var(--lg-glass);
+    background-image: var(--lg-rim, none);
+    border-color: transparent;
+    box-shadow:
+        inset 0 0 0 0.5px var(--lg-edge),
+        0 8px 30px var(--lg-shadow);
+}
+
+.dock-column > .panel.lg-glass .panel-header {
+    background: transparent;
+    border-color: var(--lg-separator);
+}
+
+.dock-column > .panel.lg-glass .panel-scroll,
+.dock-column > .panel.lg-glass .properties {
+    background-color: transparent;
+}
+
+.dock-column > .panel.lg-glass .properties-row,
+.dock-column > .panel.lg-glass .properties-row > div,
+.dock-column > .panel.lg-glass .properties-section {
+    background-color: transparent;
+    border-color: var(--lg-separator);
+}
+
+.dock-column > .panel.lg-glass .properties-rows > .properties-row:nth-child(even) > div {
+    background-color: var(--lg-highlight);
+}
+
+/* dialogs: thicker glass, rounder */
+.glass-dialog {
+    --lg-blur: 22px;
+    background-color: var(--lg-surface);
+    border-radius: 14px;
+    color: var(--lg-foreground);
+    box-shadow:
+        inset 0 0 0 0.5px var(--lg-surface-edge),
+        0 12px 40px var(--lg-shadow);
+}
+
+.glass-dialog {
+    border-radius: 18px;
+}
+
+.glass-dialog .lg-button {
+    height: 28px;
+    padding: 0 14px;
+    border-radius: 14px;
+    font-size: 13px;
+}
+
+/* the settings window */
+.settings-nav {
+    padding: 6px;
+}
+
+.settings-nav-item {
+    display: block;
+    width: 100%;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 8px;
+    text-align: left;
+}
+
+.settings-nav-item:hover {
+    background-color: var(--lg-highlight);
+}
+
+.settings-nav-item.active {
+    background-color: var(--lg-selection);
+}
+
+.settings .lg-input {
+    width: 96px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 13px;
+}
+
+.settings .lg-input input {
+    font-size: 13px;
+}
+
+.settings .lg-button {
+    height: 26px;
+    padding: 0 12px;
+    border-radius: 13px;
+    font-size: 13px;
+}

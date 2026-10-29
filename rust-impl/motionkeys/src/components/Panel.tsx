@@ -4,6 +4,7 @@ import { NODE_DROP_EVENT } from "../utils/node";
 import { PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, panelSide, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
 import PanelBody, { PanelHeaderButtons, PanelNodeDrop } from "./PanelBody";
 import { pushModal } from "../utils/keymap";
+import { Glass } from "glisse";
 
 interface PanelProps {
     id: string;
@@ -90,7 +91,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
     const shown = frontEndState.panelsShown.includes(panelId) && !poppedOut;
 
     return (
-        <div ref={ref} className="panel card select-none p-0 flex flex-col" style={shown ? {} : { display: "none" }}>
+        <Glass ref={ref} className="panel card select-none p-0 flex flex-col" style={shown ? {} : { display: "none" }}>
             <div className="panel-header h-6 flex-none border-b border-black flex items-center pl-2 pr-2 text-sm" onPointerDown={startTearOff}>
                 <span className="mr-auto">{name}</span>
                 <PanelHeaderButtons id={panelId} />
@@ -101,7 +102,7 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
             <div className="panel-scroll flex-auto">
                 <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
             </div>
-        </div>
+        </Glass>
     );
 };
 

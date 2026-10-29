@@ -123,3 +123,26 @@ img[src="logo.webp"] {
     --tag-base: #2e2e2e;
     --tag-ink: color-mix(in srgb, var(--socket-color) 45%, white);
 }
+
+/* glisse's dark colors (index.css glass) */
+:root {
+    --lg-foreground: rgb(255 255 255);
+    --lg-muted: rgb(235 235 245 / 0.6);
+    --lg-glass: rgb(40 40 40 / 0.62);
+    --lg-glass-active: rgb(70 70 70 / 0.62);
+    --lg-edge: rgb(255 255 255 / 0.08);
+    --lg-drop: transparent;
+    --lg-selection: rgb(255 255 255 / 0.145);
+    --lg-lens: rgb(255 255 255 / 0.055);
+    --lg-surface: rgb(28 28 31 / 0.86);
+    --lg-surface-edge: rgb(255 255 255 / 0.13);
+    --lg-shadow: rgb(0 0 0 / 0.38);
+    --lg-highlight: rgb(235 235 245 / 0.13);
+    --lg-separator: rgb(235 235 245 / 0.16);
+    --lg-destructive: #ff4245;
+    --lg-track: rgb(235 235 245 / 0.3);
+    --lg-rail: rgb(255 255 255 / 0.1);
+    --lg-on: #30d158;
+    --lg-fill: #0091ff;
+    --lg-ring: rgb(255 255 255 / 0.5);
+}
