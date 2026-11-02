@@ -880,7 +880,22 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // clicking an edge or the empty graph, or starting a box selection, without shift leaves no socket selected. react
     // flow only deselects the nodes and edges it knows are selected
     const handleEdgeClick = useCallback((event: React.MouseEvent) => !event.shiftKey && clearSockets(), [clearSockets]);
-    const handlePaneClick = useCallback(() => clearSockets(), [clearSockets]);
+    const handlePaneClick = useCallback(() => {
+        clickedRef.current = true;
+        clearSockets();
+    }, [clearSockets]);
+    // react flow only takes a press on the graph as a click when the mouse didn't move at all, one that moved a pixel was
+    // an empty box select. one that ends within the click distance (blender's 3px) is a click too
+    const clickedRef = useRef(false);
+    const pressRef = useRef<{ x: number; y: number } | null>(null);
+    const onSelectionEnd = useCallback(
+        (event: React.MouseEvent) => {
+            const press = pressRef.current;
+            pressRef.current = null;
+            if (!clickedRef.current && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= CLICK_DISTANCE) handlePaneClick();
+        },
+        [handlePaneClick]
+    );
     // the sockets selected before a box selection with shift, the sockets in the box are added to them
     const boxBaseRef = useRef<SocketRef[]>([]);
     // everything selected before a box selection, cancelling it (a right click partway through) puts that back. react
@@ -896,6 +911,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     }, [store, setNodes, setEdges, scheduleSelection]);
     const onSelectionStart = useCallback(
         (event: React.MouseEvent) => {
+            clickedRef.current = false;
+            pressRef.current = { x: event.clientX, y: event.clientY };
             boxBaseRef.current = event.shiftKey ? selectedSockets(getNodes()) : [];
             boxBeforeRef.current = { nodes: selectedIds(getNodes()), edges: selectedIds(getEdges()), sockets: selectedSockets(getNodes()) };
             if (!event.shiftKey) clearSockets();
@@ -1176,6 +1193,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onConnectStart={onConnectStart}
                 onConnectEnd={onConnectEnd}
                 onSelectionStart={onSelectionStart}
+                onSelectionEnd={onSelectionEnd}
                 onBoxSockets={onBoxSockets}
                 onNodeDragStart={blockKeys}
                 onSelectionDragStart={blockKeys}
