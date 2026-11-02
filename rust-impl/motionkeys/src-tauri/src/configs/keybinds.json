@@ -91,6 +91,12 @@
         ]
     },
     {
+        "id": "context_menu",
+        "name": "Context Menu",
+        "kind": "modal",
+        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["Escape"] }]
+    },
+    {
         "id": "box_select",
         "name": "Box Select",
         "kind": "modal",

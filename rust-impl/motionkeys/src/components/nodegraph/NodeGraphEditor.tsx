@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
 import { XYHandle } from "@xyflow/system";
@@ -7,12 +8,13 @@ import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, SocketRef, useGraphOps } from "../../utils/graphOps";
-import { blockUntilRelease, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
+import { blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 import TagMenu from "./TagMenu";
+import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
@@ -50,6 +52,9 @@ type EditorProps = {
 // nodes following the cursor until a click places them (G, Shift+D, adding from the menu). `txn` is the transaction the
 // add or duplicate was made in, placing ends it and cancelling undoes it
 type Grab = { txn: string | null; cursorX: number; cursorY: number; nodes: { id: string; x: number; y: number }[] };
+
+// the right click menu: where it opened (a screen position), what was right clicked, and whether the clipboard had nodes
+type ContextMenuState = { at: { x: number; y: number }; target: "nodes" | "edge" | "pane"; canPaste: boolean };
 
 // ids of the selected nodes or edges
 const selectedIds = (items: { id: string; selected?: boolean }[]) => items.filter((i) => i.selected).map((i) => i.id);
@@ -329,40 +334,57 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // MARK: - Clipboard
 
     // copy, cut and paste (the edit menu or its shortcuts) arrive as the page's clipboard events, never as keys (both fire).
-    // a text field, or text selected on the page, keeps its own. the graph's go to the backend, which uses the system clipboard
+    // a text field, or text selected on the page, keeps its own. the graph's go to the backend, which uses the system
+    // clipboard. the context menu runs the same ones. each says whether it did anything
+    const copy = useCallback(() => {
+        const nodes = selectedIds(getNodes());
+        if (nodes.length === 0) return false;
+        ops.copy(nodes).catch((e) => console.error(`copy: ${e}`));
+        return true;
+    }, [getNodes, ops]);
+
+    const cut = useCallback(() => {
+        const nodes = selectedIds(getNodes());
+        const edges = selectedIds(getEdges());
+        const sockets = selectedSockets(getNodes());
+        if (!canEdit() || (nodes.length === 0 && edges.length === 0 && sockets.length === 0)) return false;
+        track("cut", () => ops.cut(nodes, edges, sockets));
+        return true;
+    }, [getNodes, getEdges, canEdit, ops, track]);
+
+    // centered on `at` (a screen position). pasting again in the same place steps each paste down and to the right
     const lastPasteRef = useRef<{ x: number; y: number; count: number } | null>(null);
+    const paste = useCallback(
+        (at: { x: number; y: number }) => {
+            if (!canEdit()) return false;
+            const position = screenToFlowPosition(at, { snapToGrid: false });
+            const last = lastPasteRef.current;
+            const count = last && Math.abs(last.x - position.x) < 1 && Math.abs(last.y - position.y) < 1 ? last.count + 1 : 0;
+            lastPasteRef.current = { ...position, count };
+            track("paste", () => ops.paste({ x: position.x + 20 * count, y: position.y + 20 * count }));
+            return true;
+        },
+        [canEdit, screenToFlowPosition, ops, track]
+    );
+
     useEffect(() => {
         const ownsClipboard = () => shownRef.current && !isTextField(document.activeElement) && !window.getSelection()?.toString();
 
         const handleCopy = (event: ClipboardEvent) => {
-            const nodes = selectedIds(getNodes());
-            if (!ownsClipboard() || nodes.length === 0) return;
-            event.preventDefault();
-            ops.copy(nodes).catch((e) => console.error(`copy: ${e}`));
+            if (ownsClipboard() && copy()) event.preventDefault();
         };
 
         const handleCut = (event: ClipboardEvent) => {
-            const nodes = selectedIds(getNodes());
-            const edges = selectedIds(getEdges());
-            const sockets = selectedSockets(getNodes());
-            if (!ownsClipboard() || !canEdit() || (nodes.length === 0 && edges.length === 0 && sockets.length === 0)) return;
-            event.preventDefault();
-            track("cut", () => ops.cut(nodes, edges, sockets));
+            if (ownsClipboard() && cut()) event.preventDefault();
         };
 
-        // under the cursor when it's over the graph, otherwise in the middle of the view. pasting again without moving
-        // the cursor steps each paste down and to the right
+        // under the cursor when it's over the graph, otherwise in the middle of the view
         const handlePaste = (event: ClipboardEvent) => {
             const rect = store.getState().domNode?.getBoundingClientRect();
-            if (!ownsClipboard() || !canEdit() || !rect) return;
-            event.preventDefault();
+            if (!ownsClipboard() || !rect) return;
             const { x, y } = mousePositionRef.current;
             const over = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-            const at = screenToFlowPosition(over ? { x, y } : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }, { snapToGrid: false });
-            const last = lastPasteRef.current;
-            const count = last && Math.abs(last.x - at.x) < 1 && Math.abs(last.y - at.y) < 1 ? last.count + 1 : 0;
-            lastPasteRef.current = { ...at, count };
-            track("paste", () => ops.paste({ x: at.x + 20 * count, y: at.y + 20 * count }));
+            if (paste(over ? { x, y } : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })) event.preventDefault();
         };
 
         // webkit enables the edit menu's copy, cut and paste for a page that claims these. copied nodes aren't text, so
@@ -376,7 +398,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => {
             for (const [type, listener] of Object.entries(listeners)) document.removeEventListener(type, listener);
         };
-    }, [getNodes, getEdges, canEdit, ops, track, store, screenToFlowPosition]);
+    }, [getNodes, copy, cut, paste, store]);
 
     // MARK: - Groups
 
@@ -507,9 +529,20 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     // MARK: - Commands
 
+    // the add menu at `at` (a screen position), shift+a opens it under the cursor
+    const openAddMenu = useCallback(
+        (at: { x: number; y: number }) => {
+            if (!canEdit()) return;
+            setMenuPosition(at);
+            setMenuLink(null);
+            setMenuOpen(true);
+        },
+        [canEdit]
+    );
+
     // the node editor's commands, their keys come from the keymap (src/utils/keymap.ts). a graph getting ready behind the
-    // one on screen doesn't take them
-    useKeymap(
+    // one on screen doesn't take them. the context menu runs them by id
+    const runEditorCommand = useKeymap(
         "node_editor",
         {
             // tab opens the selected group (or a note map), or goes back out when no group is selected
@@ -529,13 +562,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             ungroup: () => {
                 if (canEdit()) ungroupSelection();
             },
-            add_node: () => {
-                if (!canEdit()) return;
-                const { x, y } = mousePositionRef.current;
-                setMenuPosition({ x, y });
-                setMenuLink(null);
-                setMenuOpen(true);
-            },
+            add_node: () => openAddMenu({ ...mousePositionRef.current }),
             // the selected nodes (a zone as a pair) and edges, edges of deleted nodes go with them.
             // read from the store, the closure's nodes can be a render behind
             delete: () => {
@@ -897,9 +924,98 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         event.preventDefault();
     }, []);
 
+    // MARK: - Context Menu
+
+    // right click opens the menu for what's under the cursor: nodes, an edge or the empty graph. a right click during a
+    // modal cancels it instead and never gets here (src/utils/keymap.ts), one on a text field opens nothing
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const closeContextMenu = useCallback(() => setContextMenu(null), []);
+    // the latest right click, a slower one's answer about the clipboard doesn't open its menu
+    const contextRequestRef = useRef(0);
+    const openContextMenu = useCallback(
+        (event: MouseEvent | React.MouseEvent, target: ContextMenuState["target"]) => {
+            const at = { x: event.clientX, y: event.clientY };
+            const request = ++contextRequestRef.current;
+            const show = (canPaste: boolean) => {
+                if (request === contextRequestRef.current) setContextMenu({ at, target, canPaste });
+            };
+            // paste is only there when the clipboard has nodes, asked before the menu shows
+            if (target !== "edge" && editable) invoke<boolean>("graph_can_paste").then(show, () => show(false));
+            else show(false);
+        },
+        [editable]
+    );
+    // a node or edge right clicked outside the selection becomes the selection, like a click on it
+    const selectOnly = useCallback(
+        (nodeId: string | null, edgeId: string | null) => {
+            setNodes((nds) => withSockets(nds, []).map((node) => ({ ...node, selected: node.id === nodeId })));
+            setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: edge.id === edgeId })));
+            scheduleSelection();
+        },
+        [setNodes, setEdges, scheduleSelection]
+    );
+    const handleNodeContextMenu = useCallback(
+        (event: React.MouseEvent, node: any) => {
+            event.preventDefault();
+            if (isTextField(event.target as Element)) return;
+            if (!node.selected) selectOnly(node.id, null);
+            openContextMenu(event, "nodes");
+        },
+        [selectOnly, openContextMenu]
+    );
+    const handleSelectionContextMenu = useCallback(
+        (event: React.MouseEvent) => {
+            event.preventDefault();
+            openContextMenu(event, "nodes");
+        },
+        [openContextMenu]
+    );
+    // delete is all an edge has, a graph that can't be edited has nothing to show
+    const handleEdgeContextMenu = useCallback(
+        (event: React.MouseEvent, edge: Edge) => {
+            event.preventDefault();
+            if (!editable) return;
+            if (!edge.selected) selectOnly(null, edge.id);
+            openContextMenu(event, "edge");
+        },
+        [editable, selectOnly, openContextMenu]
+    );
+    const handlePaneContextMenu = useCallback(
+        (event: MouseEvent | React.MouseEvent) => {
+            event.preventDefault();
+            openContextMenu(event, "pane");
+        },
+        [openContextMenu]
+    );
+    // another tab or group shown closes it
+    useEffect(() => {
+        if (!shown) setContextMenu(null);
+    }, [shown]);
+
+    // the entries for what was right clicked, named and run like the same commands in the menus and the toolbar. one that
+    // can't run here isn't there. paste and add node go where the menu was opened. joining nodes in a new frame will be
+    // a section of its own after delete
+    const contextSections = (menu: ContextMenuState): ContextEntry[][] => {
+        const entry = (scope: string, id: string, run = () => runEditorCommand(id)): ContextEntry => ({ id, label: commandName(scope, id), run });
+        const pasteHere = editable && menu.canPaste && entry("app", "paste", () => paste(menu.at));
+        const hasNodes = nodes.length > 0;
+        const sections =
+            menu.target === "edge"
+                ? [[entry("node_editor", "delete")]]
+                : menu.target === "nodes"
+                  ? [
+                        [editable && entry("app", "cut", cut), entry("app", "copy", copy), pasteHere, editable && entry("node_editor", "duplicate"), editable && entry("node_editor", "delete")],
+                        [editable && entry("node_editor", "group"), editable && groupCount > 0 && entry("node_editor", "ungroup"), openableCount === 1 && entry("node_editor", "edit_group")],
+                    ]
+                  : [[editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere], [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")], [!isRoot && entry("node_editor", "exit_group")]];
+        return sections.map((entries) => entries.filter((e): e is ContextEntry => !!e)).filter((entries) => entries.length > 0);
+    };
+    const contextEntries = contextMenu ? contextSections(contextMenu) : [];
+
     useOnViewportChange({
         onStart: () => {
             if (grabRef.current) confirmGrab();
+            setContextMenu(null);
         },
         // keep where the graph is looked at, coming back out of a group restores it. never an undo step
         onEnd: (viewport) => {
@@ -1068,11 +1184,11 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onEdgeClick={handleEdgeClick}
                 onPaneClick={handlePaneClick}
                 onNodeDrag={handleNodeDrag}
-                onPaneContextMenu={handleContextMenu}
-                onNodeContextMenu={handleContextMenu}
+                onPaneContextMenu={handlePaneContextMenu}
+                onNodeContextMenu={handleNodeContextMenu}
                 onContextMenu={handleContextMenu}
-                onSelectionContextMenu={handleContextMenu}
-                onEdgeContextMenu={handleContextMenu}
+                onSelectionContextMenu={handleSelectionContextMenu}
+                onEdgeContextMenu={handleEdgeContextMenu}
                 onInit={onInit}
                 isValidConnection={isValidConnection}
                 panOnDrag={panHeld ? true : [1]}
@@ -1082,6 +1198,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             />
             <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
             {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}
+            {contextMenu && contextEntries.length > 0 && <ContextMenu key={`${contextMenu.at.x},${contextMenu.at.y}`} position={contextMenu.at} sections={contextEntries} onClose={closeContextMenu} />}
         </>
     );
 }

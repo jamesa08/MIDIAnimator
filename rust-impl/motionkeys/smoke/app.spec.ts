@@ -317,14 +317,15 @@ async function frameNodes(page: Page, ids: string[]) {
 }
 
 // a point on an edge's path on screen where it's the edge a click gets, the nearest to its middle. another edge or a
-// node can be over the middle depending on how the nodes measure (fonts differ between platforms)
+// node can be over the middle depending on how the nodes measure (fonts differ between platforms). on whole pixels, a
+// right click's context menu is found at the pixel the mouse is on
 async function edgePoint(edge: ReturnType<Page["locator"]>) {
     return edge.evaluate((g: Element) => {
         const path = g.querySelector<SVGPathElement>("path.react-flow__edge-path")!;
         const ctm = path.getScreenCTM()!;
         const at = (fraction: number) => {
             const point = path.getPointAtLength(path.getTotalLength() * fraction);
-            return { x: point.x * ctm.a + ctm.e, y: point.y * ctm.d + ctm.f };
+            return { x: Math.round(point.x * ctm.a + ctm.e), y: Math.round(point.y * ctm.d + ctm.f) };
         };
         for (let step = 0; step <= 8; step++) {
             for (const fraction of [0.5 - step * 0.05, 0.5 + step * 0.05]) {
@@ -838,5 +839,144 @@ test("drag ghost window", async ({ page }) => {
 
 test("splash window", async ({ page }) => {
     await openWindow(page, backend, "/splash.html", "splashscreen");
+    await settle(page);
+});
+
+// the ops the page has sent to graph_apply
+const sentOps = (page: Page) => page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+
+// a point of the empty graph where a click gets the pane, outside `away` (a menu open on the graph)
+async function panePoint(page: Page, away?: { x: number; y: number; width: number; height: number }) {
+    return page.evaluate((away) => {
+        const pane = document.querySelector('.graph-layer:not([style*="opacity"]) .react-flow__pane')!.getBoundingClientRect();
+        const inside = (x: number, y: number) => !!away && x >= away.x - 20 && x <= away.x + away.width + 20 && y >= away.y - 20 && y <= away.y + away.height + 20;
+        for (let y = pane.top + 40; y < pane.bottom - 40; y += 20) {
+            for (let x = pane.left + 40; x < pane.right - 40; x += 20) {
+                if (!inside(x, y) && document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+            }
+        }
+        throw new Error("no empty point on the graph");
+    }, away);
+}
+
+test("context menu on an edge, a node and the empty graph", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const menu = page.locator(".context-menu");
+    const rows = menu.locator(".context-menu-row");
+
+    // an edge outside the selection is selected alone, delete disconnects it
+    const id = "xy-edge__assign_notes_to_objects-1midi_notes-get_midi_track_data-1notes";
+    const edge = page.locator(`.react-flow__edge[data-id="${id}"]`);
+    const point = await edgePoint(edge);
+    await page.mouse.click(point.x, point.y, { button: "right" });
+    await expect(rows).toHaveText(["Delete"]);
+    await expect(edge).toHaveClass(/selected/);
+    await rows.click();
+    await expect(menu).toHaveCount(0);
+    expect((await sentOps(page)).at(-1)).toMatchObject({ op: "delete", nodes: [], edges: [id] });
+
+    // a node outside the selection is selected alone, then it's the node's entries. delete runs the editor's delete
+    await page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .node-header').click({ button: "right" });
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Make Group"]);
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["get_midi_track_data-1"], edges: [] });
+    await rows.getByText("Delete", { exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    expect((await sentOps(page)).at(-1)).toMatchObject({ op: "delete", nodes: ["get_midi_track_data-1"], edges: [] });
+
+    // a group node can be ungrouped and opened, escape closes the menu
+    await page.locator('.react-flow__node[data-id="evaluate_instrument-1"] .node-header').click({ button: "right" });
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Make Group", "Ungroup", "Edit Group"]);
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // the empty graph, add node opens the add menu where it was right clicked
+    const empty = await panePoint(page);
+    await page.mouse.click(empty.x, empty.y, { button: "right" });
+    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All"]);
+    await rows.getByText("Add Node", { exact: true }).click();
+    const search = page.getByPlaceholder("Search nodes...");
+    await expect(search).toBeFocused();
+    expect(await search.evaluate((input) => input.parentElement!.getBoundingClientRect().left)).toBeCloseTo(empty.x, 0);
+    await page.keyboard.press("Escape");
+    await expect(search).toHaveCount(0);
+
+    await settle(page);
+});
+
+test("right click cancels a modal and opens no menu", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const menu = page.locator(".context-menu");
+    const noMenu = async () => {
+        await page.waitForTimeout(200);
+        await expect(menu).toHaveCount(0);
+    };
+    const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
+
+    // a grab puts the node back, nothing moved it
+    await node.locator(".node-header").click();
+    const before = (await node.boundingBox())!;
+    const empty = await panePoint(page);
+    await page.mouse.move(empty.x, empty.y);
+    await page.keyboard.press("g");
+    await page.mouse.move(empty.x + 60, empty.y + 40, { steps: 4 });
+    await expect.poll(async () => (await node.boundingBox())!.x).not.toBe(before.x);
+    await page.mouse.click(empty.x + 60, empty.y + 40, { button: "right" });
+    await expect.poll(async () => (await node.boundingBox())!.x).toBe(before.x);
+    await noMenu();
+    expect((await sentOps(page)).some((op: any) => op.op === "move")).toBe(false);
+
+    // the add menu closes
+    await page.mouse.move(empty.x, empty.y);
+    await page.keyboard.press("Shift+A");
+    const search = page.getByPlaceholder("Search nodes...");
+    await expect(search).toBeFocused();
+    const outside = await panePoint(page, (await search.locator("..").boundingBox())!);
+    await page.mouse.click(outside.x, outside.y, { button: "right" });
+    await expect(search).toHaveCount(0);
+    await noMenu();
+
+    // a box select goes, the selection is what it was before it
+    await page.mouse.move(empty.x, empty.y);
+    await page.mouse.down();
+    await page.mouse.move(empty.x + 300, empty.y + 300, { steps: 8 });
+    await page.mouse.down({ button: "right" });
+    await expect(page.locator(".react-flow__selection")).toHaveCount(0);
+    await page.mouse.up({ button: "right" });
+    await page.mouse.move(empty.x + 320, empty.y + 320, { steps: 2 });
+    await page.mouse.up();
+    await noMenu();
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+    await expect(node).toHaveClass(/selected/);
+    await expect(page.locator(".react-flow__edge.selected")).toHaveCount(0);
+
+    // the tag menu closes
+    const output = node.locator(".react-flow__handle.target").first();
+    await output.dblclick();
+    const tags = page.locator(".tag-menu");
+    await expect(tags).toBeVisible();
+    const away = await panePoint(page, (await tags.boundingBox())!);
+    await page.mouse.click(away.x, away.y, { button: "right" });
+    await expect(tags).toHaveCount(0);
+    await noMenu();
+
+    // a link dragged off an output connects nothing, and no add menu opens where it's let go
+    const connects = (await sentOps(page)).filter((op: any) => op.op === "connect").length;
+    const socket = (await output.boundingBox())!;
+    await page.mouse.move(socket.x + socket.width / 2, socket.y + socket.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(socket.x + 150, socket.y + 80, { steps: 8 });
+    await expect(page.locator(".react-flow__connectionline")).toHaveCount(1);
+    await page.mouse.down({ button: "right" });
+    await expect(page.locator(".react-flow__connectionline")).toHaveCount(0);
+    await page.mouse.up({ button: "right" });
+    await page.mouse.move(socket.x + 170, socket.y + 90, { steps: 2 });
+    await page.mouse.up();
+    await noMenu();
+    await expect(search).toHaveCount(0);
+    expect((await sentOps(page)).filter((op: any) => op.op === "connect").length).toBe(connects);
     await settle(page);
 });

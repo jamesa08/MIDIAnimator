@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -41,6 +41,11 @@ const subscribeKeymap = (listener: () => void) => {
 // the keymap, null until it's loaded
 export function useKeymapData(): Keymap | null {
     return useSyncExternalStore(subscribeKeymap, () => keymap);
+}
+
+// a command's name, what a menu entry running it is called
+export function commandName(scope: string, command: string): string {
+    return keymap?.scopes.find((s) => s.id === scope)?.commands.find((c) => c.id === command)?.name ?? command;
 }
 
 // the command in `scope` that `key` runs, holds are never run
@@ -178,8 +183,9 @@ export function registerKeymap(scope: string, handlers: Handlers | (() => Handle
     };
 }
 
-// what the commands of `scope` do while this component is mounted. `enabled` is read when a key is pressed
-export function useKeymap(scope: string, handlers: Handlers, enabled?: () => boolean) {
+// what the commands of `scope` do while this component is mounted. `enabled` is read when a key is pressed. gives back
+// a function that runs one of them as its key would, for a menu entry (the graph's context menu)
+export function useKeymap(scope: string, handlers: Handlers, enabled?: () => boolean): (command: string) => void {
     const handlersRef = useRef(handlers);
     handlersRef.current = handlers;
     const enabledRef = useRef(enabled);
@@ -193,6 +199,7 @@ export function useKeymap(scope: string, handlers: Handlers, enabled?: () => boo
             ),
         [scope]
     );
+    return useCallback((command: string) => handlersRef.current[command]?.(), []);
 }
 
 // an app command, by this window's handler or the backend's (run_app_command in ui/keybinds.rs). an area's command from the
@@ -437,9 +444,13 @@ function handleKeyUp(event: KeyboardEvent) {
 // set by a mouse press a modal used, the rest of that click (mousedown, mouseup, click, the context menu) is swallowed so
 // nothing under the cursor reacts to it, like blender's confirming click
 let swallowClick = false;
+// set by any mouse press while a modal is up, the context menu that press opens is swallowed. a right click that cancels
+// a modal or closes a menu never opens the graph's context menu. a text field keeps its own
+let swallowMenu = false;
 
 function handlePointerDown(event: PointerEvent) {
     swallowClick = false;
+    swallowMenu = false;
     mouse = { x: event.clientX, y: event.clientY };
     const modal = modals[modals.length - 1];
     if (!modal) return;
@@ -467,6 +478,7 @@ const BUTTON_BITS = [1, 4, 2];
 function handleMouseDown(event: MouseEvent) {
     const modal = modals[modals.length - 1];
     if (!modal) return;
+    if (!isTextField(event.target as Element)) swallowMenu = true;
     const chorded = (event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) !== 0;
     if (!chorded || swallowClick || modal.raw) return;
     const button = MOUSE_BUTTONS[event.button];
@@ -478,6 +490,11 @@ function handleMouseDown(event: MouseEvent) {
 }
 
 function swallow(event: MouseEvent) {
+    if (event.type === "contextmenu" && swallowMenu) {
+        swallowMenu = false;
+        stop(event);
+        return;
+    }
     if (!swallowClick) return;
     stop(event);
     if (event.type === "click" || event.type === "auxclick") swallowClick = false;
