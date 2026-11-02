@@ -805,6 +805,135 @@ img {
     border: 1px solid var(--properties-frame);
 }
 
+/* a color (src/components/ColorPicker.tsx's ColorField): a square swatch that opens the picker, then its hex code */
+.color-field {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.color-field > .color-swatch {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    margin-left: 6px;
+    padding: 0;
+    border: 1px solid var(--properties-frame);
+}
+
+/* the color picker (src/components/ColorPicker.tsx) floating under its swatch, in the properties panel's colors */
+.color-popover {
+    position: fixed;
+    z-index: 1000;
+    padding: 8px;
+    background-color: var(--properties-background);
+    border: 1px solid var(--properties-frame);
+    box-shadow: 0 2px 8px var(--chrome-card-shadow);
+}
+
+.color-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    user-select: none;
+}
+
+/* the wheel with the value slider beside it */
+.color-picker-wheel {
+    display: flex;
+}
+
+/* the wheel's handle, a dot of the color picked with a white ring */
+.color-picker-handle {
+    width: 10px;
+    height: 10px;
+    transform: translate(-5px, -5px);
+    border-radius: 50%;
+    box-shadow:
+        0 0 0 1.5px #fff,
+        0 0 1px 2px rgb(0 0 0 / 40%);
+}
+
+/* rgb or hsv, the one showing pressed in */
+.color-picker-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--properties-frame);
+}
+
+.color-picker-modes button {
+    height: 22px;
+    background-color: var(--properties-background);
+}
+
+.color-picker-modes button + button {
+    border-left: 1px solid var(--properties-frame);
+}
+
+.color-picker-modes button.active {
+    background-color: var(--properties-section);
+    font-weight: bold;
+}
+
+/* a channel from 0 to 1: a bar filled that far with its name and number over it */
+.color-picker-sliders {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--properties-frame);
+}
+
+.color-picker-slider {
+    position: relative;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    background-color: var(--properties-background);
+    border-bottom: 1px solid var(--properties-line);
+    cursor: ew-resize;
+}
+
+.color-picker-slider:last-child {
+    border-bottom: none;
+}
+
+.color-picker-slider > span {
+    position: relative;
+}
+
+.color-picker-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background-color: var(--properties-frame);
+}
+
+input.color-picker-slider,
+.color-picker-hex input {
+    color: inherit;
+    font: inherit;
+    outline: none;
+    cursor: text;
+}
+
+.color-picker-hex {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.color-picker-hex input {
+    flex: 1;
+    min-width: 0;
+    height: 22px;
+    padding: 0 6px;
+    background-color: var(--properties-background);
+    border: 1px solid var(--properties-frame);
+}
+
 /* docked and floating panels */
 .panel,
 .panel-window {

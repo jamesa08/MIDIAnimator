@@ -1062,6 +1062,62 @@ test("frames", async ({ page }) => {
     await settle(page);
 });
 
+test("frame color picker", async ({ page }) => {
+    await openWindow(page, withLayout(ALL_DOCKED), "/#/");
+    await graphReady(page);
+    await settle(page);
+    const state = backend.get_state;
+    const rf = structuredClone(state.rf_instance);
+    for (const node of rf.nodes) node.selected = false;
+    rf.nodes.find((n: any) => n.id === "get_midi_file-1").frame = "frame-1";
+    rf.nodes.push({ id: "frame-1", type: "frame", position: { x: 0, y: 0 }, data: { color: "#e7e7e7" }, selected: true });
+    await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: state.graph_rev + 1, rf_instance: rf });
+
+    // the frame's color row has its hex code, typing one sets it
+    const rowHex = page.locator(".properties .color-field input");
+    await expect(rowHex).toHaveValue("#E7E7E7");
+    await rowHex.fill("aa3333");
+    await rowHex.press("Enter");
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "set_frame").at(-1)).toMatchObject({ node: "frame-1", color: "#aa3333" });
+
+    // its square opens the picker: the wheel with the value beside it, the channels as sliders and the hex
+    await page.locator(".color-field .color-swatch").click();
+    const picker = page.locator(".color-popover");
+    await expect(picker.locator(".w-color-wheel")).toBeVisible();
+    await expect(picker.locator(".color-picker-slider")).toHaveText(["Hue0.000", "Saturation0.000", "Value0.906"]);
+    await expect(picker.locator(".color-picker-hex input")).toHaveValue("#E7E7E7");
+    const wheel = (await picker.locator(".w-color-wheel").boundingBox())!;
+    const slider = (await picker.locator(".w-color-saturation").boundingBox())!;
+    expect(slider.x).toBeGreaterThan(wheel.x + wheel.width);
+    expect(Math.abs(slider.y - wheel.y)).toBeLessThan(2);
+
+    // every change while it's open is one transaction, sent as a hex code
+    const colors = async () => (await sentOps(page)).filter((op: any) => op.op === "set_frame").map((op: any) => op.color);
+    // red at the bottom of the wheel like blender's, the value slider bright at the top
+    await page.mouse.click(wheel.x + wheel.width / 2, wheel.y + wheel.height - 8);
+    await expect.poll(async () => (await colors()).at(-1)).toMatch(/^#e[0-9a-f]{3}[0-3][0-9a-f]$/);
+    await page.mouse.click(slider.x + slider.width / 2, slider.y + 2);
+    await expect.poll(async () => (await colors()).at(-1)).toMatch(/^#f[0-9a-f]{5}$/);
+    const handle = (await picker.locator(".w-color-saturation [class*=pointer]").first().boundingBox())!;
+    expect(handle.y - slider.y).toBeLessThan(6);
+    await picker.getByText("RGB", { exact: true }).click();
+    await expect(picker.locator(".color-picker-slider").first()).toContainText("Red");
+    const hex = picker.locator(".color-picker-hex input");
+    await hex.fill("#336699");
+    await hex.press("Enter");
+    await expect.poll(async () => (await colors()).at(-1)).toBe("#336699");
+    await expect(picker.locator(".color-picker-slider")).toHaveText(["Red0.200", "Green0.400", "Blue0.600"]);
+    const txns = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply" && c.args.ops.some((op: any) => op.op === "set_frame") && c.args.txn).map((c: any) => c.args.txn));
+    expect(new Set(txns).size).toBe(1);
+    expect(txns[0]).toBeTruthy();
+
+    // escape closes it and ends the transaction
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "history_end").map((c: any) => c.args.txn))).toContain(txns[0]);
+    await settle(page);
+});
+
 test("right click cancels a modal and opens no menu", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await graphReady(page);

@@ -99,6 +99,12 @@
         "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["Escape"] }]
     },
     {
+        "id": "color_picker",
+        "name": "Color Picker",
+        "kind": "modal",
+        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["Escape"] }]
+    },
+    {
         "id": "box_select",
         "name": "Box Select",
         "kind": "modal",

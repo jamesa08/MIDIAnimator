@@ -1,7 +1,7 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useStateContext } from "../contexts/StateContext";
-import { Op, TabContext, useGraphOps } from "../utils/graphOps";
+import { ApplyOptions, Op, TabContext, useGraphOps } from "../utils/graphOps";
 import { Handle, PATH_SEP, outputHandle, resolvePath, scopedValues, specLookup } from "../utils/groups";
 import { useNodeSpecs } from "../utils/nodeEntries";
 import { ERROR_KEY } from "./nodegraph/ErrorBadge";
@@ -9,6 +9,7 @@ import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
+import { ColorField } from "./ColorPicker";
 import { FRAME, FRAME_COLOR, isLocked, labelSize, locksSize, shrinks, withContents } from "../utils/frames";
 
 // MARK: - Parameters
@@ -227,7 +228,11 @@ function Properties() {
         .join(PATH_SEP);
     // a built-in group that hasn't been made local can't be edited
     const editable = !level || level.groupId === null || !!project.groups?.[level.groupId];
-    const { apply } = useGraphOps(level?.groupId ?? null);
+    const { apply, end } = useGraphOps(level?.groupId ?? null);
+    // the transaction a color picker open on a frame makes its changes in, one undo step, and its last change, the
+    // transaction ends once that's in
+    const colorTxnRef = useRef<string | null>(null);
+    const colorSentRef = useRef<Promise<unknown>>(Promise.resolve());
 
     if (!level) return null;
 
@@ -255,10 +260,10 @@ function Properties() {
     );
 
     // one undo step for every selected node
-    const edit = (op: (node: any) => Op | null) => {
-        if (!editable) return;
+    const edit = (op: (node: any) => Op | null, options: ApplyOptions = {}): Promise<unknown> => {
         const ops = selected.map(op).filter((o): o is Op => o !== null);
-        if (ops.length) apply(ops).catch((e) => console.error(`Error editing properties: ${e}`));
+        if (!editable || ops.length === 0) return Promise.resolve();
+        return apply(ops, options).catch((e) => console.error(`Error editing properties: ${e}`));
     };
 
     const typeName = (node: any): string => (lookup(node, level.def) as any)?.name ?? node.type;
@@ -394,7 +399,7 @@ function Properties() {
         const x = shared(selected, (node) => Math.round(node.position.x));
         const y = shared(selected, (node) => Math.round(node.position.y));
         // a style for every selected frame, and a flag of theirs as a box that sets it on all of them
-        const setFrame = (style: Omit<Extract<Op, { op: "set_frame" }>, "op" | "node">) => edit((node) => ({ op: "set_frame", node: node.id, ...style }));
+        const setFrame = (style: Omit<Extract<Op, { op: "set_frame" }>, "op" | "node">, options: ApplyOptions = {}) => edit((node) => ({ op: "set_frame", node: node.id, ...style }), options);
         const flag = (name: string, get: (frame: any) => boolean, key: "shrink" | "lock_size" | "locked") => {
             const checked = shared(selected, get) ?? false;
             return (
@@ -462,7 +467,17 @@ function Properties() {
                         "Frame",
                         <>
                             <Row name="Color" readOnly={!editable}>
-                                <TextField value={shared(selected, (node) => node.data?.color ?? FRAME_COLOR) ?? ""} readOnly={!editable} onCommit={(v) => v.trim() && setFrame({ color: v.trim() })} />
+                                <ColorField
+                                    value={shared(selected, (node) => node.data?.color ?? FRAME_COLOR) ?? FRAME_COLOR}
+                                    readOnly={!editable}
+                                    onOpen={() => (colorTxnRef.current = crypto.randomUUID())}
+                                    onChange={(color) => (colorSentRef.current = setFrame({ color }, { txn: colorTxnRef.current ?? undefined }))}
+                                    onClose={() => {
+                                        const txn = colorTxnRef.current;
+                                        colorTxnRef.current = null;
+                                        if (txn) colorSentRef.current.finally(() => end(txn));
+                                    }}
+                                />
                             </Row>
                             <Row name="Label Size" readOnly={!editable}>
                                 <NumberField value={shared(selected, labelSize)} readOnly={!editable} onCommit={(v) => v !== null && setFrame({ label_size: v })} />
