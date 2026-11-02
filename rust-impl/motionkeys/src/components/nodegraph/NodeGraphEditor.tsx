@@ -932,9 +932,14 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [getNodes, setNodes, scheduleSelection]
     );
 
-    const handleNodeDrag = useCallback(() => {
-        if (grabRef.current) confirmGrab();
-    }, [confirmGrab]);
+    // react flow's drag keeps mouse moves from the window, the cursor is taken from the drag
+    const handleNodeDrag = useCallback(
+        (event: React.MouseEvent | MouseEvent) => {
+            mousePositionRef.current = { x: event.clientX, y: event.clientY };
+            if (grabRef.current) confirmGrab();
+        },
+        [confirmGrab]
+    );
 
     // no browser context menu on the graph
     const handleContextMenu = useCallback((event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
@@ -1202,6 +1207,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onEdgeClick={handleEdgeClick}
                 onPaneClick={handlePaneClick}
                 onNodeDrag={handleNodeDrag}
+                onSelectionDrag={handleNodeDrag}
                 onPaneContextMenu={handlePaneContextMenu}
                 onNodeContextMenu={handleNodeContextMenu}
                 onContextMenu={handleContextMenu}
