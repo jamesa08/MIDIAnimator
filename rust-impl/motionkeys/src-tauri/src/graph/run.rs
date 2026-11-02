@@ -22,6 +22,10 @@
 // that can't be converted to what the node asked for. a failed node records which inputs were bad.
 // a node that's only missing a required input isn't an error, it waits: it isn't shown as failed and the nodes
 // after it don't run
+//
+// TIMINGS: every node that came up in a run gets a `NodeTiming` in the record: whether it ran or came from the memo, how
+// long it took and how it went. a node inside a zone has one for all of its items together, a group node's time
+// includes its inside. measuring is a clock read before and after each node, nothing else changes
 
 use serde_json::{json, Map, Value};
 use std::cell::{OnceCell, RefCell};
@@ -31,6 +35,9 @@ use std::hash::Hasher;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use serde::Serialize;
 
 use super::executors::io::{Conversions, Inputs, NodeFunction, Outputs, Val, BAD_INPUTS_KEY, ERROR_KEY};
 use super::model::{compatible, dyn_index, dyn_inner, find_spec, Graph, GroupDef, HandleSpec, NodeSpec, RfNode, Specs};
@@ -68,6 +75,8 @@ pub struct RunCtx<'a> {
     plans: RefCell<HashMap<String, Rc<Plan>>>,
     /// what the nodes writing to Blender did, kept even inside a group that isn't open so the group node can show it
     writes: RefCell<Vec<(String, Write)>>,
+    /// how each node went, and where each path is in it (a group inside a zone runs once per item)
+    timings: RefCell<(Vec<NodeTiming>, HashMap<String, usize>)>,
 }
 
 /// what a node writing to Blender (not realtime) did in a run
@@ -92,6 +101,7 @@ impl<'a> RunCtx<'a> {
             conversions: Conversions::default(),
             plans: RefCell::new(HashMap::new()),
             writes: RefCell::new(Vec::new()),
+            timings: RefCell::new((Vec::new(), HashMap::new())),
         }
     }
 
@@ -110,6 +120,28 @@ impl<'a> RunCtx<'a> {
         memo.json.retain(|address, _| seen_json.contains(address));
         memo.literals.retain(|json, _| seen_literals.contains(json));
         memo
+    }
+
+    /// adds a node's timing, a path that already has one (a group inside a zone, once per item) adds up with it
+    fn add_timing(&self, timing: NodeTiming) {
+        let (timings, index) = &mut *self.timings.borrow_mut();
+        let Some(&at) = index.get(&timing.node) else {
+            index.insert(timing.node.clone(), timings.len());
+            timings.push(timing);
+            return;
+        };
+        let into = &mut timings[at];
+        into.ms += timing.ms;
+        into.cached &= timing.cached;
+        into.iterations = match (into.iterations, timing.iterations) {
+            (Some(a), Some(b)) => Some(a + b),
+            (a, b) => a.or(b),
+        };
+        if into.status != Status::Failed {
+            into.status = timing.status;
+            into.error = timing.error;
+            into.own_error = timing.own_error;
+        }
     }
 
     /// the plan for a graph, each group is planned once per run. frames are only layout, they're left out
@@ -291,6 +323,41 @@ pub struct Record {
     /// nodes writing to Blender that Blender has the latest of: written in this run, or skipped with what their last
     /// write had. the other ones in the graph are stale
     pub fresh: Vec<String>,
+    /// how each node that came up went, in the order they came up (inside groups and zones too, open or not)
+    pub timings: Vec<NodeTiming>,
+}
+
+/// how a node went in a run
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Ok,
+    Failed,
+    /// missing a required input
+    Waiting,
+    /// a realtime run skipped it, it writes to Blender
+    Skipped,
+}
+
+/// how long a node took in a run and how it went. `node`: its path. `cached`: it came from the memo every time it came
+/// up. `ms`: wall time, for a group node with its inside, inside a zone for every item. `group`: path of the group node
+/// it's inside. `zone`: path of the for each output of the zone it's inside. `iterations`: a zone's items, or how many
+/// times a node inside a zone came up
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct NodeTiming {
+    pub node: String,
+    pub node_type: String,
+    pub label: String,
+    pub cached: bool,
+    pub ms: f64,
+    pub status: Status,
+    pub error: Option<String>,
+    pub group: Option<String>,
+    pub zone: Option<String>,
+    pub iterations: Option<u32>,
+    /// the error started at this node, not inside the group it runs or one of its zone's items
+    #[serde(skip)]
+    pub own_error: bool,
 }
 
 /// runs the root graph, returns the record and the first error (the rest of the graph still ran)
@@ -335,6 +402,7 @@ pub fn run(ctx: &RunCtx, graph: &Graph) -> (Record, Option<String>) {
             }
         }
     }
+    record.timings = std::mem::take(&mut ctx.timings.borrow_mut().0);
     (record, error)
 }
 
@@ -352,6 +420,9 @@ enum Kind {
 
 struct PlanNode {
     id: String,
+    /// its type and what it's called, for its timing
+    node_type: String,
+    label: String,
     kind: Kind,
     /// values set on the node, for inputs that aren't connected
     literals: Values,
@@ -388,6 +459,8 @@ struct Plan {
     /// for the whole graph and for each zone's inside: the nodes that only run with a zone in it
     owned: HashMap<Option<usize>, HashSet<usize>>,
     group_output: Option<usize>,
+    /// by node: the innermost zone it's inside
+    zone_of: Vec<Option<usize>>,
 }
 
 impl Plan {
@@ -436,8 +509,12 @@ impl Plan {
                     (_, Some(to)) => graph.edges.iter().filter(|e| e.to_node() == node.id).filter_map(|e| Some((Arc::from(e.to_input()), connection_error(sockets[*index.get(e.from_node())?].as_deref()?, e.from_output(), to, e.to_input())?))).collect(),
                 };
                 let multi = sockets[i].as_deref().map(|s| s.handles.inputs.iter().filter(|h| h.multi).map(|h| Arc::from(h.id.as_str())).collect()).unwrap_or_default();
+                // its own label, or what its group or type is called
+                let label = node.label().map(str::to_string).or_else(|| node.data.get("group_id").and_then(Value::as_str).and_then(|g| ctx.groups.get(g)).map(|g| g.name.clone())).or_else(|| spec.map(|s| s.name.clone())).unwrap_or_else(|| node_type.to_string());
                 PlanNode {
                     id: node.id.clone(),
+                    node_type: node_type.to_string(),
+                    label,
                     kind,
                     literals,
                     connections,
@@ -457,8 +534,18 @@ impl Plan {
             zones: Vec::new(),
             zone_by_output: HashMap::new(),
             owned: HashMap::new(),
+            zone_of: Vec::new(),
         };
         plan.find_zones(graph, &index);
+        // a node in nested zones is in the inner one, it has the smaller inside
+        plan.zone_of = vec![None; plan.nodes.len()];
+        for (z, zone) in plan.zones.iter().enumerate() {
+            for &node in &zone.body {
+                if plan.zone_of[node].is_none_or(|other| plan.zones[other].body.len() > zone.body.len()) {
+                    plan.zone_of[node] = Some(z);
+                }
+            }
+        }
         // for the whole graph and each zone's inside, the zones in it own their input and inside
         let orders: Vec<(Option<usize>, Vec<usize>)> = std::iter::once((None, plan.order.clone())).chain(plan.zones.iter().enumerate().map(|(z, zone)| (Some(z), zone.body.clone()))).collect();
         for (key, order) in orders {
@@ -577,10 +664,11 @@ fn connection_error(from: &NodeSpec, output: &str, to: &NodeSpec, input: &str) -
 
 // MARK: - Run
 
-/// how running an executor went: what it gave and the inputs that had the wrong type, or it's missing a required input
+/// how running an executor went: what it gave and the inputs that had the wrong type, or it's missing a required input.
+/// `true` when it came from the memo
 enum Ran {
-    Done(Result<Outputs, String>, BadInputs),
-    Waiting,
+    Done(Result<Outputs, String>, BadInputs, bool),
+    Waiting(bool),
 }
 
 /// what a node gave in this run
@@ -627,20 +715,38 @@ struct Runner<'a, 'c> {
     prefix: String,
     /// what the `group_input` nodes output
     group_inputs: &'a Outputs,
+    /// how each node went, by node
+    times: RefCell<Vec<Timing>>,
+}
+
+/// how one node went while its graph ran, added up over a zone's items
+#[derive(Default, Clone)]
+struct Timing {
+    elapsed: Duration,
+    runs: u32,
+    hits: u32,
+    status: Option<Status>,
+    error: Option<String>,
+    own_error: bool,
+    /// a zone's items
+    items: Option<u32>,
 }
 
 /// runs a graph and returns what its `group_output` node got (nothing if it has none).
 /// `stack` is the group ids being run, so a group can't run itself.
 /// errors with the first failed node, the rest of the graph still runs and is recorded
 fn run_graph(ctx: &RunCtx, graph: &Graph, group_id: Option<&str>, prefix: &str, group_inputs: &Outputs, stack: &mut Vec<String>, record: &mut Sink) -> Result<Outputs, String> {
+    let plan = ctx.plan(graph, group_id);
     let runner = Runner {
         ctx,
-        plan: ctx.plan(graph, group_id),
+        times: RefCell::new(vec![Timing::default(); plan.nodes.len()]),
+        plan,
         prefix: prefix.to_string(),
         group_inputs,
     };
     let mut frame = Frame::new(runner.plan.nodes.len(), None);
     let first_error = runner.run_nodes(None, &mut frame, stack, record, false);
+    runner.add_timings();
 
     // the group's outputs are whatever its output node got
     let outputs = match runner.plan.group_output.and_then(|i| frame.slots[i].clone()) {
@@ -656,6 +762,49 @@ fn run_graph(ctx: &RunCtx, graph: &Graph, group_id: Option<&str>, prefix: &str, 
 impl<'a, 'c> Runner<'a, 'c> {
     fn path(&self, index: usize) -> String {
         format!("{}{}", self.prefix, self.plan.nodes[index].id)
+    }
+
+    /// a node came up: how long since `start`, whether it came from the memo, and how it went. a failure in any of a
+    /// zone's items is how it went
+    fn time(&self, index: usize, start: Instant, cached: bool, status: Status, error: Option<&String>, own_error: bool) {
+        let elapsed = start.elapsed();
+        let timing = &mut self.times.borrow_mut()[index];
+        timing.elapsed += elapsed;
+        if cached {
+            timing.hits += 1;
+        } else {
+            timing.runs += 1;
+        }
+        if timing.status != Some(Status::Failed) {
+            timing.status = Some(status);
+            timing.error = error.cloned();
+            timing.own_error = own_error;
+        }
+    }
+
+    /// the timings of the nodes that came up go to the run, by path
+    fn add_timings(&self) {
+        let group = self.prefix.strip_suffix(PATH_SEP).map(str::to_string);
+        for (index, timing) in self.times.take().into_iter().enumerate() {
+            let Some(status) = timing.status else {
+                continue;
+            };
+            let node = &self.plan.nodes[index];
+            let zone = self.plan.zone_of[index].map(|z| self.path(self.plan.zones[z].output));
+            self.ctx.add_timing(NodeTiming {
+                node: self.path(index),
+                node_type: node.node_type.clone(),
+                label: node.label.clone(),
+                cached: timing.runs == 0,
+                ms: timing.elapsed.as_secs_f64() * 1000.0,
+                status,
+                error: timing.error,
+                group: group.clone(),
+                iterations: timing.items.or((zone.is_some() && timing.runs > 0).then_some(timing.runs)),
+                zone,
+                own_error: timing.own_error,
+            });
+        }
     }
 
     /// runs `order` (already sorted), zones run when their output node comes up.
@@ -741,18 +890,20 @@ impl<'a, 'c> Runner<'a, 'c> {
     }
 
     /// fails a node with connections of the wrong type without running it, even if what it's connected to didn't run
-    fn reject(&self, index: usize, frame: &mut Frame, record: &mut Sink) -> Result<(), String> {
+    fn reject(&self, index: usize, start: Instant, frame: &mut Frame, record: &mut Sink) -> Result<(), String> {
         let node = &self.plan.nodes[index];
         let inputs = self.gather(index, frame).unwrap_or_else(|| node.literals.clone());
         let message = node.bad_inputs.iter().map(|(_, m)| m.as_str()).collect::<Vec<_>>().join("; ");
+        self.time(index, start, false, Status::Failed, Some(&message), true);
         self.finish(index, Err(message), inputs, node.bad_inputs.clone(), frame, record)
     }
 
     /// runs one node that isn't part of a zone
     fn run_node(&self, index: usize, frame: &mut Frame, stack: &mut Vec<String>, record: &mut Sink, in_item: bool) -> Result<(), String> {
         let node = &self.plan.nodes[index];
+        let start = Instant::now();
         if !node.bad_inputs.is_empty() {
-            return self.reject(index, frame, record);
+            return self.reject(index, start, frame, record);
         }
         let Some(inputs) = self.gather(index, frame) else {
             return Ok(());
@@ -775,18 +926,23 @@ impl<'a, 'c> Runner<'a, 'c> {
                     bad_inputs: BadInputs::new(),
                 });
             }
+            self.time(index, start, false, Status::Skipped, None, false);
             return Ok(());
         }
 
-        let (outcome, bad_inputs) = match &node.kind {
-            Kind::GroupInput => (Ok(self.group_inputs.clone()), BadInputs::new()),
-            Kind::GroupOutput => (Ok(values_to_outputs(&inputs)), BadInputs::new()),
-            Kind::Group(group_id) => (self.run_group(index, group_id, &inputs, stack, record), BadInputs::new()),
-            Kind::ZoneEnd => (Err(format!("'{}' isn't part of a for each zone", node.id)), BadInputs::new()),
-            Kind::Broken(message) => (Err(message.clone()), BadInputs::new()),
+        let (outcome, bad_inputs, cached) = match &node.kind {
+            Kind::GroupInput => (Ok(self.group_inputs.clone()), BadInputs::new(), false),
+            Kind::GroupOutput => (Ok(values_to_outputs(&inputs)), BadInputs::new(), false),
+            Kind::Group(group_id) => (self.run_group(index, group_id, &inputs, stack, record), BadInputs::new(), false),
+            Kind::ZoneEnd => (Err(format!("'{}' isn't part of a for each zone", node.id)), BadInputs::new(), false),
+            Kind::Broken(message) => (Err(message.clone()), BadInputs::new(), false),
             Kind::Executor(func) => match self.run_executor(index, *func, &inputs, in_item) {
-                Ran::Done(outcome, bad_inputs) => (outcome, bad_inputs),
-                Ran::Waiting => return Ok(self.wait(index, inputs, frame, record)),
+                Ran::Done(outcome, bad_inputs, cached) => (outcome, bad_inputs, cached),
+                Ran::Waiting(cached) => {
+                    self.wait(index, inputs, frame, record);
+                    self.time(index, start, cached, Status::Waiting, None, false);
+                    return Ok(());
+                }
             },
         };
         if !node.realtime {
@@ -794,6 +950,13 @@ impl<'a, 'c> Runner<'a, 'c> {
             self.ctx.memo.borrow_mut().set_written(&path, outcome.is_ok().then(|| inputs.clone()));
             self.ctx.writes.borrow_mut().push((path, Write::Ran(outcome.as_ref().err().cloned())));
         }
+        // a group's error is the one inside it
+        let status = if outcome.is_ok() {
+            Status::Ok
+        } else {
+            Status::Failed
+        };
+        self.time(index, start, cached, status, outcome.as_ref().err(), !matches!(node.kind, Kind::Group(_)));
         self.finish(index, outcome, inputs, bad_inputs, frame, record)
     }
 
@@ -821,8 +984,8 @@ impl<'a, 'c> Runner<'a, 'c> {
         if !in_item && reusable {
             if let Some(memo) = self.ctx.memo.borrow_mut().hit(&path, &node.signature, inputs) {
                 return match memo.waiting {
-                    true => Ran::Waiting,
-                    false => Ran::Done(memo.outputs.clone(), memo.bad_inputs.clone()),
+                    true => Ran::Waiting(true),
+                    false => Ran::Done(memo.outputs.clone(), memo.bad_inputs.clone(), true),
                 };
             }
         }
@@ -858,8 +1021,8 @@ impl<'a, 'c> Runner<'a, 'c> {
             );
         }
         match waiting {
-            true => Ran::Waiting,
-            false => Ran::Done(outcome, bad_inputs),
+            true => Ran::Waiting(false),
+            false => Ran::Done(outcome, bad_inputs, false),
         }
     }
 
@@ -890,12 +1053,13 @@ impl<'a, 'c> Runner<'a, 'c> {
     /// runs a for each zone: the nodes inside once per item, collecting what reaches the zone output
     fn run_zone(&self, zone_index: usize, frame: &mut Frame, stack: &mut Vec<String>, record: &mut Sink, in_item: bool) -> Result<(), String> {
         let zone = &self.plan.zones[zone_index];
+        let start = Instant::now();
         // a connection of the wrong type into either end stops the whole zone
         for end in [zone.input, zone.output] {
             if !self.plan.nodes[end].bad_inputs.is_empty() {
                 frame.slots[zone.input] = Some(Slot::Failed);
                 frame.slots[zone.output] = Some(Slot::Failed);
-                return self.reject(end, frame, record);
+                return self.reject(end, start, frame, record);
             }
         }
         let Some(inputs) = self.gather(zone.input, frame) else {
@@ -917,10 +1081,13 @@ impl<'a, 'c> Runner<'a, 'c> {
             self.ctx.memo.borrow_mut().hit(&path, &zone.signature, &key).map(|m| (m.outputs.clone(), m.record.clone()))
         };
 
+        let cached = hit.is_some();
+        let mut items = None;
         let (outputs, zone_record) = match hit {
             Some(hit) => hit,
             None => {
-                let (outputs, zone_record) = self.run_items(zone_index, &inputs, frame, stack);
+                let (outputs, zone_record, ran) = self.run_items(zone_index, &inputs, frame, stack);
+                items = ran;
                 if !in_item {
                     self.ctx.memo.borrow_mut().store(
                         &path,
@@ -943,15 +1110,36 @@ impl<'a, 'c> Runner<'a, 'c> {
         if let Some(record) = record {
             record.extend(zone_record);
         }
+
+        // the zone's time is its output's. one from the memo didn't run anything inside, its nodes came from it too.
+        // the error is the zone's own if it failed before its items ran
+        let status = if outputs.is_ok() {
+            Status::Ok
+        } else {
+            Status::Failed
+        };
+        self.time(zone.output, start, cached, status, outputs.as_ref().err(), !cached && items.is_none());
+        // a zone inside another one adds up its items over the outer one's
+        if let Some(items) = items {
+            let timing = &mut self.times.borrow_mut()[zone.output];
+            timing.items = Some(timing.items.unwrap_or(0) + items);
+        }
+        if cached && outputs.is_ok() {
+            let mut times = self.times.borrow_mut();
+            for &node in &zone.body {
+                times[node].hits += 1;
+                times[node].status.get_or_insert(Status::Ok);
+            }
+        }
         outputs.map(|_| ()).map_err(|message| {
             eprintln!("ERROR: node '{}' failed: {}", path, message);
             format!("{}: {}", path, message)
         })
     }
 
-    /// the zone's items, each run through the nodes inside. gives the zone output's outputs, and the record of the
-    /// first item (the zone output's entry last)
-    fn run_items(&self, zone_index: usize, inputs: &Values, frame: &Frame, stack: &mut Vec<String>) -> (Result<Outputs, String>, Vec<Entry>) {
+    /// the zone's items, each run through the nodes inside. gives the zone output's outputs, the record of the first
+    /// item (the zone output's entry last), and how many items ran (none when it failed before the first)
+    fn run_items(&self, zone_index: usize, inputs: &Values, frame: &Frame, stack: &mut Vec<String>) -> (Result<Outputs, String>, Vec<Entry>, Option<u32>) {
         let zone = &self.plan.zones[zone_index];
         let mut zone_record: Vec<Entry> = Vec::new();
         let output_entry = |outputs: &Result<Outputs, String>, result: Values| Entry {
@@ -960,13 +1148,13 @@ impl<'a, 'c> Runner<'a, 'c> {
             inputs: result,
             bad_inputs: BadInputs::new(),
         };
-        let fail = |message: String, mut zone_record: Vec<Entry>| {
+        let fail = |message: String, mut zone_record: Vec<Entry>, ran: Option<u32>| {
             let outputs = Err(message);
             zone_record.push(output_entry(&outputs, Values::new()));
-            (outputs, zone_record)
+            (outputs, zone_record, ran)
         };
         if let Kind::Broken(message) = &self.plan.nodes[zone.input].kind {
-            return fail(message.clone(), zone_record);
+            return fail(message.clone(), zone_record, None);
         }
 
         // no items is an empty loop, anything else has to be a list
@@ -975,7 +1163,7 @@ impl<'a, 'c> Runner<'a, 'c> {
             Some(value) if value.is_null() => Vec::new(),
             Some(value) => match value.items() {
                 Some(items) => items,
-                None => return fail(format!("for each needs a list of items, got {}", json_kind(&value.to_json())), zone_record),
+                None => return fail(format!("for each needs a list of items, got {}", json_kind(&value.to_json())), zone_record, None),
             },
         };
         let count = Val::new(items.len() as u32);
@@ -1011,13 +1199,14 @@ impl<'a, 'c> Runner<'a, 'c> {
             let _ = self.finish(zone.input, Ok(item_values), inputs.clone(), BadInputs::new(), &mut item_frame, &mut sink);
             let error = self.run_nodes(Some(zone_index), &mut item_frame, stack, &mut sink, true);
             zone_record.extend(first);
+            let ran = Some(index as u32 + 1);
             if let Some(error) = error {
-                return fail(format!("item {}: {}", index, error), zone_record);
+                return fail(format!("item {}: {}", index, error), zone_record, ran);
             }
 
             // what reached the zone output this item, nothing if the node feeding it didn't run
             let Some(result) = self.gather(zone.output, &item_frame) else {
-                return (Ok(Outputs::new()), zone_record);
+                return (Ok(Outputs::new()), zone_record, ran);
             };
             collected.push(result.iter().find(|(k, _)| &**k == "result").map_or_else(|| null.clone(), |(_, v)| v.clone()));
             if index == 0 {
@@ -1029,7 +1218,7 @@ impl<'a, 'c> Runner<'a, 'c> {
         outputs.set_val("results", Val::list(collected));
         let outputs = Ok(outputs);
         zone_record.push(output_entry(&outputs, first_result));
-        (outputs, zone_record)
+        (outputs, zone_record, Some(items.len() as u32))
     }
 }
 

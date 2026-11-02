@@ -11,7 +11,7 @@ use motionkeys::graph::executors::io::{node_error, NodeFunction, BAD_INPUTS_KEY}
 use motionkeys::midi::MIDINote;
 use motionkeys::utils::animation::{combine_curve_keys, note_curve_keys, BlendKeyframe, ObjectMap};
 use motionkeys::graph::model::{node_specs, Graph, GroupDef, HandleSpec, HandleSpecs, NodeSpec, Position, RfEdge, RfNode};
-use motionkeys::graph::run::{run, Memo, Record, RunCtx};
+use motionkeys::graph::run::{run, Memo, NodeTiming, Record, RunCtx, Status};
 use motionkeys::node_registry::get_node_registry;
 
 /// loads the node specs from default_nodes.json
@@ -614,4 +614,106 @@ fn a_failed_write_is_stale() {
     assert!(record.fresh.is_empty());
     let (record, _, _) = run_memo(&root, &BTreeMap::new(), "", true, memo);
     assert!(record.fresh.is_empty());
+}
+
+// MARK: - Timings
+
+/// for each note: its targets from a group, collected
+fn group_and_zone() -> (Graph, BTreeMap<String, GroupDef>) {
+    let mut root = targets_per_note();
+    root.nodes[0] = node("group-1", json!({ "group_id": "targets", "inputs": { "object_map": object_map() } }));
+    root.edges[0] = RfEdge::new("group-1", "targets", "targets_for_note-1", "targets");
+    (root, BTreeMap::from([("targets".to_string(), targets_group())]))
+}
+
+/// the timing of the node at `path`
+fn timing<'r>(record: &'r Record, path: &str) -> &'r NodeTiming {
+    record.timings.iter().find(|t| t.node == path).unwrap_or_else(|| panic!("no timing for {}", path))
+}
+
+#[test]
+fn every_node_that_runs_is_timed_inside_groups_and_zones() {
+    let (root, groups) = group_and_zone();
+    let (record, error, _) = run_memo(&root, &groups, "", true, Memo::default());
+    assert_eq!(error, None);
+
+    // the group node and its inside, even though it isn't open
+    let group = timing(&record, "group-1");
+    assert_eq!((group.node_type.as_str(), group.label.as_str(), group.cached, group.status), ("group", "Test", false, Status::Ok));
+    assert_eq!((group.group.as_deref(), group.zone.as_deref(), group.iterations), (None, None, None));
+    let inner = timing(&record, "group-1/note_targets-1");
+    assert_eq!((inner.group.as_deref(), inner.cached, inner.status), (Some("group-1"), false, Status::Ok));
+    assert!(group.ms >= inner.ms);
+
+    // the zone ran its 3 notes, the node inside once per note
+    let zone = timing(&record, "for_each_output-1");
+    assert_eq!((zone.cached, zone.iterations, zone.zone.as_deref()), (false, Some(3), None));
+    let inside = timing(&record, "targets_for_note-1");
+    assert_eq!((inside.zone.as_deref(), inside.iterations, inside.label.as_str()), (Some("for_each_output-1"), Some(3), "Targets for Note"));
+    assert!(zone.ms >= inside.ms);
+    assert_eq!(timing(&record, "viewer-1").status, Status::Ok);
+    // the zone's input isn't a node of its own here, the zone is its output
+    assert!(record.timings.iter().all(|t| t.node != "for_each_input-1"));
+}
+
+#[test]
+fn timings_say_what_came_from_the_memo() {
+    let (root, groups) = group_and_zone();
+    let (_, _, memo) = run_memo(&root, &groups, "", true, Memo::default());
+    let (record, _, _) = run_memo(&root, &groups, "", true, memo);
+
+    // the group node runs its inside again, the node in it is given the same values
+    assert!(!timing(&record, "group-1").cached);
+    assert!(timing(&record, "group-1/note_targets-1").cached);
+    // the zone and everything inside it come from the memo, so does the viewer after it
+    let zone = timing(&record, "for_each_output-1");
+    assert_eq!((zone.cached, zone.iterations), (true, None));
+    let inside = timing(&record, "targets_for_note-1");
+    assert_eq!((inside.cached, inside.iterations, inside.ms), (true, None, 0.0));
+    assert!(timing(&record, "viewer-1").cached);
+}
+
+#[test]
+fn timing_the_run_changes_nothing_it_gives() {
+    let (root, groups) = group_and_zone();
+    let (first, _, memo) = run_memo(&root, &groups, "group-1", true, Memo::default());
+    let (second, _, _) = run_memo(&root, &groups, "group-1", true, memo);
+    assert_eq!(first.results, second.results);
+    assert_eq!(first.inputs, second.inputs);
+}
+
+#[test]
+fn a_failure_is_timed_where_it_started() {
+    let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
+    let bad_map = json!({ "animations": {}, "objects": { "Cube": { "missing": [60] } } });
+    let root = graph(vec![node("group-1", json!({ "group_id": "targets", "inputs": { "object_map": bad_map } })), node("viewer-1", json!({}))], &[("group-1", "targets", "viewer-1", "data")]);
+    let (record, _) = run_graph(&root, &groups, true);
+
+    let inner = timing(&record, "group-1/note_targets-1");
+    assert_eq!((inner.status, inner.own_error), (Status::Failed, true));
+    assert!(inner.error.as_deref().unwrap().contains("'missing'"));
+    // the group fails with it, the error isn't its own
+    let group = timing(&record, "group-1");
+    assert_eq!((group.status, group.own_error), (Status::Failed, false));
+    // the viewer never came up
+    assert!(record.timings.iter().all(|t| t.node != "viewer-1"));
+}
+
+#[test]
+fn a_failed_item_fails_the_node_inside_and_the_zone() {
+    let mut root = targets_per_note();
+    root.node_mut("for_each_input-1").unwrap().inputs_mut().insert("items".to_string(), json!([notes(1)[0], "nope"]));
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    let inside = timing(&record, "targets_for_note-1");
+    assert_eq!((inside.status, inside.own_error, inside.iterations), (Status::Failed, true, Some(2)));
+    let zone = timing(&record, "for_each_output-1");
+    assert_eq!((zone.status, zone.own_error, zone.iterations), (Status::Failed, false, Some(2)));
+}
+
+#[test]
+fn a_skipped_writer_and_a_waiting_node_are_timed() {
+    let root = graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": {} } })), node("targets_for_note-1", json!({}))], &[]);
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(timing(&record, "scene_writer-1").status, Status::Skipped);
+    assert_eq!(timing(&record, "targets_for_note-1").status, Status::Waiting);
 }
