@@ -1,7 +1,7 @@
 use crate::command::event;
 use crate::ui::keybinds;
 use tauri::{
-    menu::{Menu, MenuItem, MenuItemBuilder, SubmenuBuilder},
+    menu::{CheckMenuItem, CheckMenuItemBuilder, Menu, MenuItem, MenuItemBuilder, MenuItemKind, SubmenuBuilder},
     AppHandle, Emitter, Manager, Runtime, WebviewWindow,
 };
 
@@ -21,6 +21,8 @@ pub const PANEL_TOGGLE_EVENT: &str = "panel-toggle";
 const AREA_PREFIX: &str = "area.";
 /// the history panel's id
 const HISTORY_PANEL: u32 = 2;
+/// the setting the profiler (each node's time from the last run, over it on the canvas) is on in
+pub const PROFILER_SETTING: &str = "console.profiler";
 
 // a menu item for an app command, with its shortcut from the keymap (ui/keybinds.rs)
 fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> tauri::Result<MenuItem<R>> {
@@ -29,6 +31,27 @@ fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> tauri::Result<
         builder = builder.accelerator(key);
     }
     builder.build(app)
+}
+
+// a menu item for an app command that's on or off, ticked while it's on
+fn check_item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str, checked: bool) -> tauri::Result<CheckMenuItem<R>> {
+    let mut builder = CheckMenuItemBuilder::with_id(id, label).checked(checked);
+    if let Some(key) = keybinds::accelerator(id) {
+        builder = builder.accelerator(key);
+    }
+    builder.build(app)
+}
+
+/// ticks or unticks a check item in the app's menu (a setting changed somewhere else)
+pub fn set_checked<R: Runtime>(app: &AppHandle<R>, id: &str, checked: bool) {
+    let Some(menu) = app.menu() else {
+        return;
+    };
+    for submenu in menu.items().unwrap_or_default().iter().filter_map(MenuItemKind::as_submenu) {
+        if let Some(item) = submenu.get(id).as_ref().and_then(MenuItemKind::as_check_menuitem) {
+            item.set_checked(checked).ok();
+        }
+    }
 }
 
 // a menu item for an area's command, no shortcut since its keys belong to the area
@@ -66,7 +89,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let actual_size = item(app, "actual_size", "Actual Size")?;
     let frame_all = area_item(app, "frame_all", "Frame All")?;
     let frame_selected = area_item(app, "frame_selected", "Frame Selected")?;
-    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).separator().item(&frame_all).item(&frame_selected).build()?;
+    let profiler = check_item(app, "profiler", "Profiler", crate::settings::get_setting(PROFILER_SETTING).as_bool().unwrap_or(false))?;
+    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).separator().item(&frame_all).item(&frame_selected).separator().item(&profiler).build()?;
 
     let group = area_item(app, "group", "Make Group")?;
     let ungroup = area_item(app, "ungroup", "Ungroup")?;
@@ -86,6 +110,10 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 // is focused (the menu used from the background)
 pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::menu::MenuEvent) {
     let id = event.id().as_ref();
+    // a check item ticks itself when it's picked, it shows the setting until the command changes it (a modal can swallow it)
+    if id == "profiler" {
+        set_checked(app, id, crate::settings::get_setting(PROFILER_SETTING).as_bool().unwrap_or(false));
+    }
     match app.webview_windows().into_values().find(|window| window.is_focused().unwrap_or(false)) {
         Some(window) => {
             window.emit_to(window.label(), APP_COMMAND_EVENT, id).ok();
@@ -130,6 +158,12 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         }
         "console_open" => {
             event::open_console(app);
+        }
+        "profiler" => {
+            let on = crate::settings::get_setting(PROFILER_SETTING).as_bool().unwrap_or(false);
+            if let Err(e) = crate::settings::save_setting(app, PROFILER_SETTING, (!on).into()) {
+                eprintln!("Error saving setting {}: {}", PROFILER_SETTING, e);
+            }
         }
         "zoom_in" => {
             crate::ui::windows::step_zoom(app, 1);

@@ -19,11 +19,19 @@ export const GroupContext = createContext<GroupContextValue>({ groups: {}, scope
 
 export const useGroupContext = () => useContext(GroupContext);
 
+// the path of the group node whose graph this is, empty at the top level
+const ScopePathContext = createContext("");
+export const useScopePath = () => useContext(ScopePathContext);
+
 // shows the nodes inside the group node at `path` the values recorded for them, keyed by their own ids,
 // so node components read `executed_results[id]` the same inside a group as at the top level
 export function ScopedState({ path, children }: { path: string; children: React.ReactNode }) {
     const context = useStateContext();
     const state = context.backEndState;
     const scoped = useMemo(() => (path === "" ? state : { ...state, executed_results: scopedValues(state.executed_results, path), executed_inputs: scopedValues(state.executed_inputs, path), stale_writes: scopedPaths(state.stale_writes, path) }), [state, path]);
-    return <StateContext.Provider value={{ ...context, backEndState: scoped }}>{children}</StateContext.Provider>;
+    return (
+        <StateContext.Provider value={{ ...context, backEndState: scoped }}>
+            <ScopePathContext.Provider value={path}>{children}</ScopePathContext.Provider>
+        </StateContext.Provider>
+    );
 }

@@ -3,11 +3,13 @@ import Tool, { CommandTool } from "./Tool";
 import AddNodeMenu from "./AddNodeMenu";
 import { useStateContext } from "../contexts/StateContext";
 import { useEditorState } from "../utils/editorState";
+import { useConsoleSettings } from "../utils/console";
 
 function MenuBar() {
     const { frontEndState, setFrontEndState } = useStateContext();
     // which of the node editor's buttons can run in the graph on screen
     const editor = useEditorState();
+    const profiler = useConsoleSettings().profiler;
 
     // webkit blurs an icon that sits between screen pixels. the right hand buttons are placed from the toolbar's right edge,
     // which does whenever the window's width does, so they move left onto a whole pixel
@@ -81,6 +83,8 @@ function MenuBar() {
                 <CommandTool icon="frame_all" command="area.frame_all" />
                 <CommandTool icon="frame_selected" command="area.frame_selected" />
             </div>
+            <div className="spacer h-5 w-[1px] bg-black mx-1" />
+            <CommandTool icon="profiler" command="profiler" active={profiler} />
 
             {/* right aligned items */}
             <div ref={rightRef} className="ml-auto flex" style={{ marginRight: snap }}>

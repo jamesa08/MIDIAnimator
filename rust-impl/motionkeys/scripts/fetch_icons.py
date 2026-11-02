@@ -46,6 +46,7 @@ SILK = [
     "Arrow Redo",
     "Shape group",
     "Shape ungroup",
+    "Time",
 ]
 
 # Silk icons mirrored left to right: the file and the Silk icon. undo is redo's mirror, Silk's own Arrow Undo has its head at

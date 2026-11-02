@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { memo } from "react";
 import ErrorBoundary from "../components/ErrorBoundary";
+import NodeTime from "../components/nodegraph/NodeTime";
 
 type NodeComponentModule = {
     default: React.ComponentType<any>;
@@ -18,23 +19,26 @@ function convertFileNameToNodeName(fileName: string) {
 }
 
 // a node that throws while drawing shows its error in its place, the graph around it keeps working. it's drawn again
-// when its data changes
+// when its data changes. the profiler's time goes over it
 function guarded(key: string, NodeComponent: React.ComponentType<any>) {
     const Guarded = (props: any) => (
-        <ErrorBoundary
-            name={key}
-            resetKeys={[props.data]}
-            fallback={(error) => (
-                <div className="node node-error node-crashed">
-                    <div className="node-header">
-                        <span>{props.data?.label || key}</span>
+        <>
+            <NodeTime id={props.id} />
+            <ErrorBoundary
+                name={key}
+                resetKeys={[props.data]}
+                fallback={(error) => (
+                    <div className="node node-error node-crashed">
+                        <div className="node-header">
+                            <span>{props.data?.label || key}</span>
+                        </div>
+                        <pre className="node-crashed-message">{error.message}</pre>
                     </div>
-                    <pre className="node-crashed-message">{error.message}</pre>
-                </div>
-            )}
-        >
-            <NodeComponent {...props} />
-        </ErrorBoundary>
+                )}
+            >
+                <NodeComponent {...props} />
+            </ErrorBoundary>
+        </>
     );
     Guarded.displayName = `Guarded(${key})`;
     return Guarded;

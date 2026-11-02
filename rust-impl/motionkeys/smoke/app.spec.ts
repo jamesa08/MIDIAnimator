@@ -190,6 +190,23 @@ test("graph window scrubs and plays", async ({ page }) => {
     await page.keyboard.press("Space");
 });
 
+test("profiler shows each node's time and the toolbar toggles it", async ({ page }) => {
+    // thresholds low enough that the fixture's group is slow and its quick nodes medium on any machine
+    const settings = { ...backend.get_settings, console: { ...backend.get_settings.console, profiler: true, profiler_medium_ms: 0.05, profiler_slow_ms: 1 } };
+    await openWindow(page, { ...backend, get_settings: settings }, "/#/");
+    await expect(page.locator(".react-flow__node .node-time").first()).toBeVisible();
+    await expect(page.locator(".node-time.console-error").first()).toBeVisible();
+    await expect(page.locator(".node-time.console-warn").first()).toBeVisible();
+    await expect(page.locator('.toolbar [data-command="profiler"]')).toHaveClass(/active/);
+    await page.locator('.toolbar [data-command="profiler"]').click();
+    const toggled = () => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "run_app_command" && c.args.id === "profiler"));
+    await expect.poll(toggled).toBe(true);
+    // turned off from the menu, the times go
+    await emitEvent(page, "settings_changed", backend.get_settings);
+    await expect(page.locator(".node-time")).toHaveCount(0);
+    await settle(page);
+});
+
 test("console window filters, finds and shows the run", async ({ page }) => {
     await openWindow(page, backend, "/#/console", "Console");
     // the fixture's run is in the backlog

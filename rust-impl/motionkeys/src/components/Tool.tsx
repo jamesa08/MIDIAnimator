@@ -77,10 +77,11 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
     );
 }
 
-// a button that runs an app or area command, the same as its menu item. faded when it can't run now
-export function CommandTool({ icon, command, disabled = false }: { icon: IconName; command: string; disabled?: boolean }) {
+// a button that runs an app or area command, the same as its menu item. faded when it can't run now, pressed in while
+// what it turns on is on
+export function CommandTool({ icon, command, disabled = false, active = false }: { icon: IconName; command: string; disabled?: boolean; active?: boolean }) {
     return (
-        <div className={`toolbar-button${disabled ? " disabled" : ""}`} data-command={command} onClick={() => runCommand(command)}>
+        <div className={`toolbar-button${disabled ? " disabled" : ""}${active ? " active" : ""}`} data-command={command} onClick={() => runCommand(command)}>
             <Icon name={icon} className="tool-icon" />
         </div>
     );

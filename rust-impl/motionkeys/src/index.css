@@ -1136,6 +1136,36 @@ input.color-picker-slider,
     color: inherit;
 }
 
+/* the profiler's time over a node, in the canvas' line color */
+.node-time {
+    position: absolute;
+    bottom: 100%;
+    left: 2px;
+    margin-bottom: 3px;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    color: var(--console-info);
+}
+
+.node-time.console-debug {
+    color: var(--console-debug);
+}
+
+.node-time.console-warn {
+    color: var(--console-warn);
+}
+
+.node-time.console-error {
+    color: var(--console-error);
+}
+
+.toolbar-button.active {
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    box-shadow: inset 0 0 0 1px var(--chrome-line);
+}
+
 .console-match-current {
     background-color: color-mix(in srgb, var(--console-warn) 70%, transparent);
 }

@@ -12,7 +12,7 @@ import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
 import NoteMapView from "./nodegraph/NoteMapView";
 import { noteMapData } from "../utils/noteMap";
 import { loadPersisted, savePersisted, usePersistedState } from "../utils/persist";
-import { usePendingReveal } from "../utils/console";
+import { useConsoleSettings, usePendingReveal, useRunTimings } from "../utils/console";
 import ConsoleOverlay from "./ConsoleOverlay";
 
 const noop = () => {};
@@ -244,6 +244,9 @@ function TabGraph({ tab }: { tab: string }) {
         closeMap();
         setPath(reveal.node.split(PATH_SEP).slice(0, -1));
     }, [reveal, tab, closeMap]);
+
+    // the profiler shows each node's time from the tab's last run
+    useRunTimings(tab, useConsoleSettings().profiler);
 
     // the console's lines go under the rows of buttons in the corner
     const cornerRows = (crumbs.length > 0 ? 1 : 0) + ((isBuiltin && !mapped) || mapped ? 1 : 0);

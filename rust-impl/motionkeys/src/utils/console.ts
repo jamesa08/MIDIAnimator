@@ -12,7 +12,7 @@ export type Source = "run" | "node" | "blender" | "app" | "rust" | "js";
 // `time` in milliseconds since the unix epoch, `node` a node's path in `tab`, `ms` how long what it's about took
 export type ConsoleEntry = { id: number; time: number; level: Level; source: Source; message: string; node: string | null; tab: string | null; ms: number | null };
 // settings.json "console"
-export type ConsoleSettings = { debug: boolean; overlay: boolean; inline_lines: number; fade_seconds: number };
+export type ConsoleSettings = { debug: boolean; overlay: boolean; inline_lines: number; fade_seconds: number; profiler: boolean; profiler_medium_ms: number; profiler_slow_ms: number };
 // how a node went in a tab's last run, and the run (NodeTiming and RunTimings in src-tauri/src/graph/run.rs and execute.rs)
 export type NodeTiming = { node: string; node_type: string; label: string; cached: boolean; ms: number; status: "ok" | "failed" | "waiting" | "skipped"; error: string | null; group: string | null; zone: string | null; iterations: number | null };
 export type RunTimings = { tab: string; realtime: boolean; ms: number; nodes: NodeTiming[] };
@@ -87,7 +87,7 @@ export function logToConsole(level: Level, message: string) {
 
 // MARK: - Settings
 
-let settings: ConsoleSettings = { debug: false, overlay: true, inline_lines: 5, fade_seconds: 10 };
+let settings: ConsoleSettings = { debug: false, overlay: true, inline_lines: 5, fade_seconds: 10, profiler: false, profiler_medium_ms: 4, profiler_slow_ms: 16 };
 const takeSettings = (all: any) => {
     settings = { ...settings, ...(all?.console ?? {}) };
     changed();
@@ -134,6 +134,11 @@ export function useRunTimings(tab: string, on = true): RunTimings | null {
         };
     }, [tab, on]);
     return useSyncExternalStore(subscribe, () => timings[tab]?.run ?? null);
+}
+
+// how the node at `path` went in the tab's last run, if something follows the tab's runs (useRunTimings)
+export function useNodeTiming(tab: string, path: string): NodeTiming | undefined {
+    return useSyncExternalStore(subscribe, () => timings[tab]?.byNode.get(path));
 }
 
 // MARK: - JS Console

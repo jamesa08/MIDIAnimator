@@ -22,7 +22,8 @@
             { "id": "actual_size", "name": "Actual Size", "keys": ["CmdOrCtrl+0"], "menu": true },
             { "id": "history", "name": "History", "keys": [], "menu": true },
             { "id": "graph", "name": "Graph", "keys": [], "menu": true },
-            { "id": "console_open", "name": "Console", "keys": [], "menu": true }
+            { "id": "console_open", "name": "Console", "keys": [], "menu": true },
+            { "id": "profiler", "name": "Profiler", "keys": [], "menu": true }
         ]
     },
     {

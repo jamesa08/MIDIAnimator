@@ -24,6 +24,9 @@
         "debug": false,
         "overlay": true,
         "inline_lines": 5,
-        "fade_seconds": 10
+        "fade_seconds": 10,
+        "profiler": false,
+        "profiler_medium_ms": 4,
+        "profiler_slow_ms": 16
     }
 }

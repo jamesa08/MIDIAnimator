@@ -99,9 +99,12 @@ pub fn save_setting<R: Runtime>(app: &AppHandle<R>, path: &str, value: Value) ->
         set_path(&mut settings, path, value);
         settings.clone()
     };
-    // debug mode is read from the threads printing, it's kept apart
+    // debug mode is read from the threads printing, it's kept apart. the profiler's menu item shows whether it's on
     if path.starts_with("console") {
         crate::utils::console::sync_settings();
+    }
+    if path == crate::ui::menu::PROFILER_SETTING {
+        crate::ui::menu::set_checked(app, "profiler", get_setting(path).as_bool().unwrap_or(false));
     }
 
     let file = settings_path(app).ok_or("no app config dir")?;

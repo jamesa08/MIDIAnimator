@@ -26,6 +26,7 @@ import shapeGroupHouse from "./silk/shape_group_house.svg?raw";
 import shapeGroupMagnifier from "./silk/shape_group_magnifier.svg?raw";
 import shapeHandlesMagnifier from "./silk/shape_handles_magnifier.svg?raw";
 import controlPlayGreen from "./silk/control_play_green.svg?raw";
+import time from "./silk/time.svg?raw";
 
 const ICONS = {
     scene: sceneData,
@@ -54,6 +55,7 @@ const ICONS = {
     frame_all: shapeGroupMagnifier,
     frame_selected: shapeHandlesMagnifier,
     run: controlPlayGreen,
+    profiler: time,
 };
 
 export type IconName = keyof typeof ICONS;
