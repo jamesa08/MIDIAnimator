@@ -38,3 +38,22 @@ pub fn open_graph<R: Runtime>(app: &AppHandle<R>) {
         eprintln!("Error creating graph window: {:?}", e);
     }
 }
+
+/// the console window (src/windows/Console.tsx), the console's entries and the last run's timings
+pub fn open_console<R: Runtime>(app: &AppHandle<R>) {
+    if let Err(e) = open_window(
+        app,
+        "Console",
+        "/#/console",
+        "Console",
+        WindowOptions {
+            width: 1000.0,
+            height: 560.0,
+            min_size: Some((640.0, 300.0)),
+            live: true,
+            toolbar: true,
+        },
+    ) {
+        eprintln!("Error creating console window: {:?}", e);
+    }
+}

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -13,6 +13,9 @@ export type Source = "run" | "node" | "blender" | "app" | "rust" | "js";
 export type ConsoleEntry = { id: number; time: number; level: Level; source: Source; message: string; node: string | null; tab: string | null; ms: number | null };
 // settings.json "console"
 export type ConsoleSettings = { debug: boolean; overlay: boolean; inline_lines: number; fade_seconds: number };
+// how a node went in a tab's last run, and the run (NodeTiming and RunTimings in src-tauri/src/graph/run.rs and execute.rs)
+export type NodeTiming = { node: string; node_type: string; label: string; cached: boolean; ms: number; status: "ok" | "failed" | "waiting" | "skipped"; error: string | null; group: string | null; zone: string | null; iterations: number | null };
+export type RunTimings = { tab: string; realtime: boolean; ms: number; nodes: NodeTiming[] };
 
 export const LEVELS: Level[] = ["error", "warn", "info", "debug"];
 export const SOURCES: Source[] = ["run", "node", "blender", "app", "rust", "js"];
@@ -25,6 +28,12 @@ const CLEARED_EVENT = "console_cleared";
 const REVEAL_EVENT = "console-reveal";
 // a node that wasn't found by then isn't looked for anymore
 const REVEAL_MS = 3000;
+// sent to every window after a tab ran, payload the tab's id
+const RUN_TIMINGS_EVENT = "run_timings";
+
+// milliseconds with more decimals the shorter they are
+export const duration = (ms: number) => `${ms.toFixed(ms < 10 ? 3 : ms < 100 ? 2 : 1)} ms`;
+
 const label = getCurrentWebviewWindow().label;
 
 const listeners = new Set<() => void>();
@@ -90,6 +99,41 @@ listen("settings_changed", (event: any) => takeSettings(event.payload));
 
 export function useConsoleSettings(): ConsoleSettings {
     return useSyncExternalStore(subscribe, () => settings);
+}
+
+// MARK: - Run Timings
+
+// each tab's last run, and its nodes by path. only read for the tabs something is following
+let timings: Record<string, { run: RunTimings | null; byNode: Map<string, NodeTiming> }> = {};
+const followers = new Map<string, number>();
+let listening = false;
+
+function readTimings(tab: string) {
+    invoke<RunTimings | null>("get_run_timings", { tab })
+        .then((run) => {
+            timings = { ...timings, [tab]: { run, byNode: new Map((run?.nodes ?? []).map((t) => [t.node, t])) } };
+            changed();
+        })
+        .catch((e) => console.error(`Error getting run timings: ${e}`));
+}
+
+// a tab's last run, read again after each of its runs while `on`
+export function useRunTimings(tab: string, on = true): RunTimings | null {
+    useEffect(() => {
+        if (!on || !tab) return;
+        if (!listening) {
+            listening = true;
+            listen<string>(RUN_TIMINGS_EVENT, (event) => followers.has(event.payload) && readTimings(event.payload));
+        }
+        followers.set(tab, (followers.get(tab) ?? 0) + 1);
+        readTimings(tab);
+        return () => {
+            const left = (followers.get(tab) ?? 1) - 1;
+            if (left > 0) followers.set(tab, left);
+            else followers.delete(tab);
+        };
+    }, [tab, on]);
+    return useSyncExternalStore(subscribe, () => timings[tab]?.run ?? null);
 }
 
 // MARK: - JS Console

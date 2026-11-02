@@ -1121,6 +1121,25 @@ input.color-picker-slider,
     color: var(--console-debug);
 }
 
+/* the console window's rows sit on the chrome, not the canvas */
+.console-window {
+    --console-info: currentColor;
+    --console-debug: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.console-row-selected {
+    background-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.console-match {
+    background-color: color-mix(in srgb, var(--console-warn) 30%, transparent);
+    color: inherit;
+}
+
+.console-match-current {
+    background-color: color-mix(in srgb, var(--console-warn) 70%, transparent);
+}
+
 * {
     user-select: none;
 }

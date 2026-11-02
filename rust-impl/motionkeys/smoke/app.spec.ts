@@ -190,6 +190,39 @@ test("graph window scrubs and plays", async ({ page }) => {
     await page.keyboard.press("Space");
 });
 
+test("console window filters, finds and shows the run", async ({ page }) => {
+    await openWindow(page, backend, "/#/console", "Console");
+    // the fixture's run is in the backlog
+    await expect(page.getByText("Run finished", { exact: false }).first()).toBeVisible();
+    // each filter off and on again, the source "Run" comes after the view's
+    for (const name of ["Error", "Warn", "Info", "Debug", "Run", "Node", "Blender", "App", "Rust", "JS"]) {
+        await page.getByRole("button", { name, exact: true }).last().click();
+        await page.getByRole("button", { name, exact: true }).last().click();
+    }
+    // find opens on its key, enter steps through the matches, escape closes it
+    await page.keyboard.press("ControlOrMeta+f");
+    await page.keyboard.type("run");
+    await expect(page.locator("mark.console-match").first()).toBeVisible();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Shift+Enter");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("mark.console-match")).toHaveCount(0);
+    // rows pick and copy
+    await page.getByText("Run finished", { exact: false }).first().click();
+    await page.getByRole("button", { name: "Copy", exact: true }).click();
+    // the run's timings, sorted by each column both ways
+    await page.getByRole("button", { name: "Run", exact: true }).first().click();
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+    for (const header of await page.locator("th").all()) {
+        await header.click();
+        await header.click();
+    }
+    await emitEvent(page, "run_timings", backend.get_state.active_tab);
+    await emitEvent(page, "console_entries", [{ id: 1e9, time: Date.now(), level: "error", source: "node", message: "failed", node: "viewer-1", tab: "tab-1", ms: 1 }]);
+    await emitEvent(page, "console_cleared", null);
+    await settle(page);
+});
+
 // the fixture with only `id` selected and every panel docked
 function withSelected(id: string) {
     const state = backend.get_state;

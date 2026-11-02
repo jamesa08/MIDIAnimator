@@ -7,6 +7,7 @@ import "./index.css";
 import PanelContent from "./components/PanelContent";
 import Settings from "./windows/Settings";
 import Graph from "./windows/Graph";
+import Console from "./windows/Console";
 import DragGhost from "./windows/DragGhost";
 import StateContextProvider from "./contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
@@ -78,6 +79,7 @@ if (rootElement) {
                         <Route path="/panel/:id" element={guarded("Panel", <PanelContent />)} />
                         <Route path="/settings" element={guarded("Settings", <Settings />)} />
                         <Route path="/graph" element={guarded("Graph", <Graph />)} />
+                        <Route path="/console" element={guarded("Console", <Console />)} />
                         <Route path="/drag-ghost" element={guarded("Drag Ghost", <DragGhost />)} />
                     </Routes>
                 </Router>

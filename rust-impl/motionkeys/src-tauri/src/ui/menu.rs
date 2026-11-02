@@ -52,7 +52,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let file_submenu = SubmenuBuilder::new(app, "File").item(&new_tab).item(&open).separator().item(&save).item(&save_as).build()?;
     let history = item(app, "history", "History")?;
     let graph = item(app, "graph", "Graph")?;
-    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).item(&graph).separator().item(&close).build()?;
+    let console = item(app, "console_open", "Console")?;
+    let window_submenu = SubmenuBuilder::new(app, "Window").minimize().separator().item(&history).item(&graph).item(&console).separator().item(&close).build()?;
 
     // undo/redo are ours, the focused window decides between a text field's own undo and the graph's.
     // cut/copy/paste/select all are the native ones so text fields keep working
@@ -126,6 +127,9 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         }
         "graph" => {
             event::open_graph(app);
+        }
+        "console_open" => {
+            event::open_console(app);
         }
         "zoom_in" => {
             crate::ui::windows::step_zoom(app, 1);

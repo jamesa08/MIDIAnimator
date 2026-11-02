@@ -21,7 +21,8 @@
             { "id": "zoom_out", "name": "Zoom Out", "keys": ["CmdOrCtrl+-"], "menu": true },
             { "id": "actual_size", "name": "Actual Size", "keys": ["CmdOrCtrl+0"], "menu": true },
             { "id": "history", "name": "History", "keys": [], "menu": true },
-            { "id": "graph", "name": "Graph", "keys": [], "menu": true }
+            { "id": "graph", "name": "Graph", "keys": [], "menu": true },
+            { "id": "console_open", "name": "Console", "keys": [], "menu": true }
         ]
     },
     {
@@ -63,6 +64,15 @@
             { "id": "jump_to_start", "name": "Jump to Start", "keys": ["Shift+Left"] },
             { "id": "jump_to_end", "name": "Jump to End", "keys": ["Shift+Right"] },
             { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
+        ]
+    },
+    {
+        "id": "console",
+        "name": "Console",
+        "kind": "area",
+        "commands": [
+            { "id": "find", "name": "Find", "keys": ["CmdOrCtrl+F"] },
+            { "id": "close_find", "name": "Close Find", "keys": ["Escape"] }
         ]
     },
     {
@@ -115,6 +125,16 @@
         "name": "Link Drag",
         "kind": "modal",
         "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["RightMouse", "Escape"] }]
+    },
+    {
+        "id": "console_find",
+        "name": "Console Find",
+        "kind": "modal",
+        "commands": [
+            { "id": "next", "name": "Find Next", "keys": ["Enter", "NumEnter"] },
+            { "id": "previous", "name": "Find Previous", "keys": ["Shift+Enter", "Shift+NumEnter"] },
+            { "id": "cancel", "name": "Close", "keys": ["Escape"] }
+        ]
     },
     {
         "id": "dialog",

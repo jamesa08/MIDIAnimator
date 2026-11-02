@@ -25,6 +25,7 @@
     "rete-render-utils": "^2.0.2",
     "styled-components": "^6.1.8",
     "three": "^0.186.1",
+    "virtua": "^0.54.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
