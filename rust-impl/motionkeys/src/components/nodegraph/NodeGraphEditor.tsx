@@ -20,6 +20,7 @@ import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
 import { useFrameView } from "./frameView";
 import { TOOLBAR_ADD_EVENT, setEditorState } from "../../utils/editorState";
+import { Rect, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, withContents } from "../../utils/frames";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -50,8 +51,26 @@ type EditorProps = {
 };
 
 // nodes following the cursor until a click places them (G, Shift+D, adding from the menu). `txn` is the transaction the
-// add or duplicate was made in, placing ends it and cancelling undoes it
+// add or duplicate was made in, placing ends it and cancelling undoes it. `nodes` are the grabbed ones and what the
+// frames among them carry
 type Grab = { txn: string | null; cursorX: number; cursorY: number; nodes: { id: string; x: number; y: number }[] };
+
+// a drag or grab under way: what's moved, the frames' rects when it started (for dropping nodes in them, dropFrames), and for a drag where each dragged node started and which dragged frame carries each node in one
+type MoveSession = { moved: string[]; frames: Map<string, Rect>; starts: Map<string, { x: number; y: number }>; carriedBy: Map<string, string> };
+
+// a move op, with the frames nodes were dropped in
+const moveOp = (positions: Record<string, { x: number; y: number }>, frames: Record<string, string>): Op => ({ op: "move", positions, ...(Object.keys(frames).length > 0 ? { frames } : {}) });
+
+// where the nodes in dragged frames go for these drag changes: as far as the frame they're carried by moved
+const carriedChanges = (session: MoveSession, changes: any[]) => {
+    const moved = new Map(changes.filter((c) => c.type === "position" && c.position && !session.carriedBy.has(c.id)).map((c) => [c.id, c.position]));
+    return [...session.carriedBy]
+        .filter(([id, by]) => moved.has(by) && session.starts.has(id) && session.starts.has(by))
+        .map(([id, by]) => {
+            const [start, from, to] = [session.starts.get(id)!, session.starts.get(by)!, moved.get(by)];
+            return { id, type: "position", position: { x: start.x + to.x - from.x, y: start.y + to.y - from.y } };
+        });
+};
 
 // the right click menu: where it opened (a screen position), what was right clicked, and whether the clipboard had nodes
 type ContextMenuState = { at: { x: number; y: number }; target: "nodes" | "edge" | "pane"; canPaste: boolean };
@@ -142,8 +161,18 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         }
     }, []);
 
-    // sends ops to the backend
-    const apply = useCallback((list: Op[], options: ApplyOptions = {}) => track(list.map((o) => o.op).join(", "), () => ops.apply(list, options)), [ops, track]);
+    // sends ops to the backend, with the sizes the nodes are drawn at for frames to fit around
+    const apply = useCallback(
+        (list: Op[], options: ApplyOptions = {}) => {
+            const sizes = Object.fromEntries(
+                getNodes()
+                    .filter((n) => !isFrame(n) && n.measured?.width && n.measured?.height)
+                    .map((n) => [n.id, { width: n.measured!.width!, height: n.measured!.height! }])
+            );
+            return track(list.map((o) => o.op).join(", "), () => ops.apply(list, { sizes, ...options }));
+        },
+        [ops, track, getNodes]
+    );
 
     // MARK: - Selection
 
@@ -191,15 +220,55 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => cancelAnimationFrame(frame);
     }, [selectionChanged, store, getNodes, getEdges, canEdit, apply]);
 
+    // MARK: - Moving Frames
+
+    // a drag or grab of nodes, it starts with the frames as they're drawn then
+    const moveRef = useRef<MoveSession | null>(null);
+    const beginMove = useCallback(
+        (moved: string[]) => {
+            const nodes = getNodes();
+            // each node in a dragged frame goes with the innermost dragged frame it's in
+            const byId = new Map(nodes.map((n) => [n.id, n]));
+            const movedSet = new Set(moved);
+            const carriedBy = new Map<string, string>();
+            for (const id of withContents(nodes, moved).filter((id) => !movedSet.has(id))) {
+                const by = frameAncestors(byId, id).find((f) => movedSet.has(f));
+                if (by) carriedBy.set(id, by);
+            }
+            const starts = new Map(nodes.filter((n) => movedSet.has(n.id) || carriedBy.has(n.id)).map((n) => [n.id, { ...n.position }]));
+            moveRef.current = { moved, frames: drawnFrames(nodes), starts, carriedBy };
+        },
+        [getNodes]
+    );
+    // the move is over with the nodes at `positions`: the frame each moved node was dropped in, only the ones that change
+    const endMove = useCallback(
+        (positions: Record<string, { x: number; y: number }>) => {
+            const session = moveRef.current;
+            moveRef.current = null;
+            if (!session) return {};
+            const nodes = getNodes().map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n));
+            return dropFrames(nodes, session.moved, session.frames, screenToFlowPosition(mousePositionRef.current, { snapToGrid: false }));
+        },
+        [getNodes, screenToFlowPosition]
+    );
+
     // MARK: - Grab
 
-    // the nodes follow the cursor from `cursor` (flow position) until a click places them
-    const startGrab = useCallback((grabbed: { id: string; position: { x: number; y: number } }[], cursor: { x: number; y: number }, txn: string | null) => {
-        grabRef.current = { txn, cursorX: cursor.x, cursorY: cursor.y, nodes: grabbed.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })) };
-        setGrabbing(true);
-    }, []);
+    // the nodes follow the cursor from `cursor` (flow position) until a click places them, a frame takes what's in it along
+    const startGrab = useCallback(
+        (grabbed: { id: string; position: { x: number; y: number } }[], cursor: { x: number; y: number }, txn: string | null) => {
+            const nodes = getNodes();
+            const at = new Map([...nodes.map((n) => [n.id, n.position] as const), ...grabbed.map((n) => [n.id, n.position] as const)]);
+            const moved = grabbed.map((n) => n.id);
+            const ids = [...new Set([...moved, ...withContents(nodes, moved)])].filter((id) => at.has(id));
+            grabRef.current = { txn, cursorX: cursor.x, cursorY: cursor.y, nodes: ids.map((id) => ({ id, x: at.get(id)!.x, y: at.get(id)!.y })) };
+            beginMove(moved);
+            setGrabbing(true);
+        },
+        [getNodes, beginMove]
+    );
 
-    // places the grabbed nodes where they are: one move, ending the add or duplicate it belongs to
+    // places the grabbed nodes where they are: one move (into frames they land in), ending the add or duplicate it belongs to
     const confirmGrab = useCallback(() => {
         const grab = grabRef.current;
         grabRef.current = null;
@@ -207,8 +276,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (!grab) return;
         const placed = new Map(getNodes().map((n) => [n.id, n.position]));
         const positions = Object.fromEntries(grab.nodes.filter((n) => placed.has(n.id)).map((n) => [n.id, placed.get(n.id)!]));
-        apply([{ op: "move", positions }], grab.txn ? { txn: grab.txn } : {}).then(() => grab.txn && ops.end(grab.txn));
-    }, [getNodes, apply, ops]);
+        apply([moveOp(positions, endMove(positions))], grab.txn ? { txn: grab.txn } : {}).then(() => grab.txn && ops.end(grab.txn));
+    }, [getNodes, apply, ops, endMove]);
 
     // puts the grabbed nodes back, an add or duplicate is undone
     const cancelGrab = useCallback(() => {
@@ -216,6 +285,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         grabRef.current = null;
         setGrabbing(false);
         setMenuOpen(false);
+        moveRef.current = null;
         if (!grab) return;
         if (grab.txn) {
             ops.cancel(grab.txn);
@@ -288,14 +358,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             // delete it) goes straight to it
             if (!document.hasFocus()) getCurrentWindow().setFocus();
 
-            // keep the node under the cursor where it was grabbed
+            // keep the node under the cursor where it was grabbed, in the frame it's dropped on
             const flowPosition = screenToFlowPosition({ x: clientX, y: clientY }, { snapToGrid: false });
-            apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x - offsetX, y: flowPosition.y - offsetY } }] }]);
+            const frame = frameAt(getNodes(), flowPosition);
+            apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x - offsetX, y: flowPosition.y - offsetY }, ...(frame ? { frame } : {}) }] }]);
         };
 
         window.addEventListener(NODE_DROP_EVENT, handleDrop);
         return () => window.removeEventListener(NODE_DROP_EVENT, handleDrop);
-    }, [store, screenToFlowPosition, entries, canEdit, apply]);
+    }, [store, screenToFlowPosition, entries, canEdit, apply, getNodes]);
 
     // Track mouse position
     useEffect(() => {
@@ -415,6 +486,21 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         const selected = getNodes().filter((n) => n.selected && n.type === GROUP);
         if (selected.length === 0) return;
         apply([{ op: "ungroup", nodes: selected.map((n) => n.id) }]);
+    }, [getNodes, apply]);
+
+    // Shift+P: the selected nodes go in a new frame, which becomes the selection
+    const joinInFrame = useCallback(() => {
+        const nodes = selectedIds(getNodes());
+        if (nodes.length > 0) apply([{ op: "join_in_frame", nodes }]);
+    }, [getNodes, apply]);
+
+    // Alt+P: the selected nodes in a frame go out of it, the ones in a frame that's selected too stay in it
+    const removeFromFrame = useCallback(() => {
+        const nodes = getNodes();
+        const byId = new Map(nodes.map((n) => [n.id, n]));
+        const selected = new Set(selectedIds(nodes));
+        const inFrames = nodes.filter((n: any) => n.selected && n.frame && !frameAncestors(byId, n.id).some((f) => selected.has(f))).map((n) => n.id);
+        if (inFrames.length > 0) apply([{ op: "remove_from_frame", nodes: inFrames }]);
     }, [getNodes, apply]);
 
     // what the toolbar's buttons can do here, said by the graph on screen
@@ -562,6 +648,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             ungroup: () => {
                 if (canEdit()) ungroupSelection();
             },
+            join_in_frame: () => {
+                if (canEdit()) joinInFrame();
+            },
+            remove_from_frame: () => {
+                if (canEdit()) removeFromFrame();
+            },
             add_node: () => openAddMenu({ ...mousePositionRef.current }),
             // the selected nodes (a zone as a pair) and edges, edges of deleted nodes go with them.
             // read from the store, the closure's nodes can be a render behind
@@ -573,9 +665,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 if (nodes.length === 0 && edges.length === 0 && sockets.length === 0) return;
                 apply([{ op: "delete", nodes, edges, sockets }]);
             },
+            // a locked frame stays where it is
             grab: () => {
                 if (!editable) return;
-                const selected = getNodes().filter((node) => node.selected);
+                const selected = getNodes().filter((node) => node.selected && !isLocked(node));
                 if (selected.length === 0) return;
                 const { x, y } = mousePositionRef.current;
                 startGrab(selected, screenToFlowPosition({ x, y }, { snapToGrid: false }), null);
@@ -591,10 +684,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const applied = await apply([{ op: "duplicate", nodes: selected, offset: { x: 20, y: 20 } }], { txn });
                 if (applied) startGrab(applied.added, flowPosition, txn);
             },
-            // deselect everything if anything is selected, otherwise select every node
+            // deselect everything if anything is selected, otherwise select every node but the locked frames
             select_all: () => {
                 const hasSelection = getNodes().some((node: any) => node.selected || node.selectedSockets) || getEdges().some((edge) => edge.selected);
-                setNodes((nds) => withSockets(nds, []).map((node) => ({ ...node, selected: !hasSelection })));
+                setNodes((nds) => withSockets(nds, []).map((node) => ({ ...node, selected: !hasSelection && !isLocked(node) })));
                 setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
                 scheduleSelection();
             },
@@ -603,8 +696,16 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     );
 
     // react flow's own drags (box select, dragging a link or a node) take every key until the mouse is let go, so a key
-    // can't open a group or start a grab halfway through one
-    const blockKeys = useCallback(() => blockUntilRelease(), []);
+    // can't open a group or start a grab halfway through one. a node drag is a move: frames take what's in them along,
+    // nodes go in the frames they land in
+    const onNodeDragStart = useCallback(
+        (_event: unknown, _node: unknown, dragged: { id: string }[]) => {
+            blockUntilRelease();
+            beginMove(dragged.map((n) => n.id));
+        },
+        [beginMove]
+    );
+    const onSelectionDragStart = useCallback((event: unknown, dragged: { id: string }[]) => onNodeDragStart(event, null, dragged), [onNodeDragStart]);
     // a link drag cancelled partway through (a right click) drops nowhere: nothing connects and a picked up link goes
     // back. react flow's drag ends at the next mouse move or release, the handlers below do nothing then
     const linkCancelledRef = useRef(false);
@@ -872,6 +973,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             if (!event.shiftKey) {
                 setNodes((nds) => withSockets(nds, []).map((n) => ({ ...n, selected: n.id === node.id })));
                 scheduleSelection();
+            } else if (isFrame(node)) {
+                // react flow doesn't select frames, shift adds or takes one out here
+                setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, selected: !n.selected } : n)));
+                scheduleSelection();
             }
         },
         [setNodes, scheduleSelection]
@@ -880,10 +985,37 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // clicking an edge or the empty graph, or starting a box selection, without shift leaves no socket selected. react
     // flow only deselects the nodes and edges it knows are selected
     const handleEdgeClick = useCallback((event: React.MouseEvent) => !event.shiftKey && clearSockets(), [clearSockets]);
-    const handlePaneClick = useCallback(() => {
-        clickedRef.current = true;
-        clearSockets();
-    }, [clearSockets]);
+    // the innermost frame under the mouse whose empty inside a click selects, a locked one's inside is the graph's
+    const frameUnder = useCallback(
+        (event: React.MouseEvent | MouseEvent) => {
+            const nodes = getNodes();
+            const id = frameAt(nodes, screenToFlowPosition({ x: event.clientX, y: event.clientY }, { snapToGrid: false }), true);
+            return nodes.find((n) => n.id === id) ?? null;
+        },
+        [getNodes, screenToFlowPosition]
+    );
+    // a click on a frame's empty inside selects the frame, shift adds it or takes it out and keeps what was selected
+    // before the press (react flow deselects everything on it). react flow deselects everything again right after the
+    // click, `keepRef` holds what stays selected until then
+    const keepRef = useRef<Set<string> | null>(null);
+    const handlePaneClick = useCallback(
+        (event: React.MouseEvent) => {
+            clickedRef.current = true;
+            clearSockets();
+            const frame = frameUnder(event);
+            if (!frame) return;
+            const before = boxBeforeRef.current;
+            const keep = new Set(event.shiftKey ? [...before.nodes, ...before.edges] : []);
+            if (event.shiftKey && before.nodes.includes(frame.id)) keep.delete(frame.id);
+            else keep.add(frame.id);
+            keepRef.current = keep;
+            queueMicrotask(() => (keepRef.current = null));
+            setNodes((nds) => nds.map((n) => ({ ...n, selected: keep.has(n.id) })));
+            setEdges((eds) => (eds ?? []).map((e) => ({ ...e, selected: keep.has(e.id) })));
+            scheduleSelection();
+        },
+        [clearSockets, frameUnder, setNodes, setEdges, scheduleSelection]
+    );
     // react flow only takes a press on the graph as a click when the mouse didn't move at all, one that moved a pixel was
     // an empty box select. one that ends within the click distance (blender's 3px) is a click too
     const clickedRef = useRef(false);
@@ -892,10 +1024,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         (event: React.MouseEvent) => {
             const press = pressRef.current;
             pressRef.current = null;
-            if (!clickedRef.current && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= CLICK_DISTANCE) handlePaneClick();
+            if (!clickedRef.current && press && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= CLICK_DISTANCE) handlePaneClick(event);
         },
         [handlePaneClick]
     );
+    // react flow's changes without deselecting what a click on a frame keeps
+    const keptChanges = (changes: any[]) => {
+        const keep = keepRef.current;
+        return keep ? changes.filter((c) => !(c.type === "select" && !c.selected && keep.has(c.id))) : changes;
+    };
     // the sockets selected before a box selection with shift, the sockets in the box are added to them
     const boxBaseRef = useRef<SocketRef[]>([]);
     // everything selected before a box selection, cancelling it (a right click partway through) puts that back. react
@@ -932,7 +1069,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [getNodes, setNodes, scheduleSelection]
     );
 
-    // react flow's drag keeps mouse moves from the window, the cursor is taken from the drag
+    // react flow's drag keeps mouse moves from the window, the cursor is taken from the drag (where it drops, dropFrames)
     const handleNodeDrag = useCallback(
         (event: React.MouseEvent | MouseEvent) => {
             mousePositionRef.current = { x: event.clientX, y: event.clientY };
@@ -1002,12 +1139,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         },
         [editable, selectOnly, openContextMenu]
     );
+    // inside a frame it's the frame's menu
     const handlePaneContextMenu = useCallback(
         (event: MouseEvent | React.MouseEvent) => {
             event.preventDefault();
-            openContextMenu(event, "pane");
+            const frame = frameUnder(event);
+            if (frame && !frame.selected) selectOnly(frame.id, null);
+            openContextMenu(event, frame ? "nodes" : "pane");
         },
-        [openContextMenu]
+        [frameUnder, selectOnly, openContextMenu]
     );
     // another tab or group shown closes it
     useEffect(() => {
@@ -1015,18 +1155,20 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     }, [shown]);
 
     // the entries for what was right clicked, named and run like the same commands in the menus and the toolbar. one that
-    // can't run here isn't there. paste and add node go where the menu was opened. joining nodes in a new frame will be
-    // a section of its own after delete
+    // can't run here isn't there. paste and add node go where the menu was opened. frames are a section of their own
+    // after delete, remove from frame only with a node in one selected
     const contextSections = (menu: ContextMenuState): ContextEntry[][] => {
         const entry = (scope: string, id: string, run = () => runEditorCommand(id)): ContextEntry => ({ id, label: commandName(scope, id), run });
         const pasteHere = editable && menu.canPaste && entry("app", "paste", () => paste(menu.at));
         const hasNodes = nodes.length > 0;
+        const inFrame = selectedNodes.some((n: any) => n.frame);
         const sections =
             menu.target === "edge"
                 ? [[entry("node_editor", "delete")]]
                 : menu.target === "nodes"
                   ? [
                         [editable && entry("app", "cut", cut), entry("app", "copy", copy), pasteHere, editable && entry("node_editor", "duplicate"), editable && entry("node_editor", "delete")],
+                        [editable && entry("node_editor", "join_in_frame"), editable && inFrame && entry("node_editor", "remove_from_frame")],
                         [editable && entry("node_editor", "group"), editable && groupCount > 0 && entry("node_editor", "ungroup"), openableCount === 1 && entry("node_editor", "edit_group")],
                     ]
                   : [[editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere], [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")], [!isRoot && entry("node_editor", "exit_group")]];
@@ -1105,39 +1247,43 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [editable, lookup, level.def, apply, store, getEdges]
     );
 
-    // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops
+    // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops.
+    // a dragged frame takes the nodes in it along
     const onNodesChange = useCallback(
-        (changes: any[]) => {
+        (all: any[]) => {
+            const changes = keptChanges(all);
+            const session = moveRef.current;
+            const carried = session ? carriedChanges(session, changes) : [];
             const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
-            setNodes((nds) =>
-                applyNodeChanges(
-                    changes.filter((c) => c.type !== "remove"),
-                    nds
-                )
-            );
+            setNodes((nds) => applyNodeChanges([...changes.filter((c) => c.type !== "remove"), ...carried], nds));
             if (removed.length > 0 && canEdit()) apply([{ op: "delete", nodes: removed }]);
             if (changes.some((c) => c.type === "select")) scheduleSelection();
 
-            // a drag finished
+            // a drag finished, with the nodes the dragged frames carried and the frames nodes were dropped in
             const moved = changes.filter((c) => c.type === "position" && c.dragging === false);
-            if (moved.length > 0 && canEdit()) {
+            if (moved.length > 0) {
                 const current = new Map(getNodes().map((n) => [n.id, n.position]));
-                apply([{ op: "move", positions: Object.fromEntries(moved.map((c) => [c.id, c.position ?? current.get(c.id)])) }]);
+                const positions = Object.fromEntries([...moved, ...carried].map((c) => [c.id, c.position ?? current.get(c.id)]));
+                for (const id of session?.carriedBy.keys() ?? []) positions[id] ??= current.get(id);
+                const frames = endMove(positions);
+                if (canEdit()) apply([moveOp(positions, frames)]);
             }
-            // a resize finished
+            // a resize finished, a frame keeps the size it was given
             for (const change of changes.filter((c) => c.type === "dimensions" && c.resizing === false)) {
                 const node = getNodes().find((n) => n.id === change.id);
                 if (!node || !canEdit()) continue;
                 const width = change.dimensions?.width ?? node.width ?? node.measured?.width;
                 const height = change.dimensions?.height ?? node.height ?? node.measured?.height;
+                if (isFrame(node)) setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, data: { ...n.data, shrink: false } } : n)));
                 if (width && height) apply([{ op: "resize", node: node.id, width, height, position: node.position }]);
             }
         },
-        [setNodes, canEdit, apply, scheduleSelection, getNodes]
+        [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove]
     );
 
     const onEdgesChange = useCallback(
-        (changes: any[]) => {
+        (all: any[]) => {
+            const changes = keptChanges(all);
             const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
             setEdges((eds) =>
                 applyEdgeChanges(
@@ -1200,8 +1346,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onSelectionStart={onSelectionStart}
                 onSelectionEnd={onSelectionEnd}
                 onBoxSockets={onBoxSockets}
-                onNodeDragStart={blockKeys}
-                onSelectionDragStart={blockKeys}
+                onNodeDragStart={onNodeDragStart}
+                onSelectionDragStart={onSelectionDragStart}
                 onNodeClick={handleNodeClickStop}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onEdgeClick={handleEdgeClick}

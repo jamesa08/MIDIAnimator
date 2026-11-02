@@ -9,6 +9,7 @@ import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
+import { FRAME, FRAME_COLOR, isLocked, labelSize, locksSize, shrinks, withContents } from "../utils/frames";
 
 // MARK: - Parameters
 
@@ -57,6 +58,13 @@ const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number", "A
 // output types plain enough to show as text, alone or in a list
 const PLAIN = ["String", "f64", "u8"];
 const plain = (dataType: string) => PLAIN.includes(dataType.startsWith("Array<") ? dataType.slice(6, -1) : dataType);
+// where a frame's label goes along its top
+const LABEL_ALIGNS: Option[] = [
+    { value: "left", label: "Left" },
+    { value: "center", label: "Center" },
+    { value: "right", label: "Right" },
+];
+
 // a list shows comma separated, nothing until the node has run
 const plainText = (value: any): string => (Array.isArray(value) ? value.join(", ") : value === undefined || value === null ? "" : String(value));
 
@@ -184,10 +192,10 @@ function ScrollValue({ children }: { children: ReactNode }) {
     return <span className="properties-scroll px-1.5">{children}</span>;
 }
 
-// a box that's ticked or not, only shown
-function Check({ checked }: { checked: boolean }) {
+// a box that's ticked or not, only shown unless it can be toggled
+function Check({ checked, onToggle }: { checked: boolean; onToggle?: () => void }) {
     return (
-        <span className="properties-check">
+        <span className="properties-check" onClick={onToggle}>
             {checked && (
                 <svg width="9" height="7" viewBox="0 0 9 7">
                     <path d="M0.5 3.5l2.5 2.5 5.5-5.5" fill="none" stroke="currentColor" />
@@ -385,9 +393,29 @@ function Properties() {
         // where a node is, rounded like the canvas shows it
         const x = shared(selected, (node) => Math.round(node.position.x));
         const y = shared(selected, (node) => Math.round(node.position.y));
+        // a style for every selected frame, and a flag of theirs as a box that sets it on all of them
+        const setFrame = (style: Omit<Extract<Op, { op: "set_frame" }>, "op" | "node">) => edit((node) => ({ op: "set_frame", node: node.id, ...style }));
+        const flag = (name: string, get: (frame: any) => boolean, key: "shrink" | "lock_size" | "locked") => {
+            const checked = shared(selected, get) ?? false;
+            return (
+                <Row name={name} readOnly={!editable}>
+                    <Check checked={checked} onToggle={editable ? () => setFrame({ [key]: !checked }) : undefined} />
+                </Row>
+            );
+        };
+
+        // a frame takes what's in it along
         const move = (axis: "x" | "y", v: number | null) => {
             if (v === null || !editable) return;
-            apply([{ op: "move", positions: Object.fromEntries(selected.map((node) => [node.id, { ...node.position, [axis]: v }])) }]).catch((e) => console.error(`Error moving nodes: ${e}`));
+            const nodes: any[] = level.graph.nodes;
+            const positions = Object.fromEntries(
+                selected.flatMap((node) =>
+                    withContents(nodes, [node.id])
+                        .map((id) => nodes.find((n) => n.id === id))
+                        .map((n) => [n.id, { ...n.position, [axis]: n.position[axis] + v - node.position[axis] }])
+                )
+            );
+            apply([{ op: "move", positions }]).catch((e) => console.error(`Error moving nodes: ${e}`));
         };
 
         return (
@@ -429,6 +457,24 @@ function Properties() {
                         ))
                     )}
                 {single?.type === "scene_link" && scene && section("Scene", <SceneTree scene={scene} expanded={expanded} onToggle={toggleRow} />)}
+                {type === FRAME &&
+                    section(
+                        "Frame",
+                        <>
+                            <Row name="Color" readOnly={!editable}>
+                                <TextField value={shared(selected, (node) => node.data?.color ?? FRAME_COLOR) ?? ""} readOnly={!editable} onCommit={(v) => v.trim() && setFrame({ color: v.trim() })} />
+                            </Row>
+                            <Row name="Label Size" readOnly={!editable}>
+                                <NumberField value={shared(selected, labelSize)} readOnly={!editable} onCommit={(v) => v !== null && setFrame({ label_size: v })} />
+                            </Row>
+                            <Row name="Label Position" readOnly={!editable}>
+                                <SelectField value={shared(selected, (node) => node.data?.label_align ?? "left")} options={LABEL_ALIGNS} readOnly={!editable} onChange={(v) => setFrame({ label_align: v })} />
+                            </Row>
+                            {flag("Shrink", shrinks, "shrink")}
+                            {flag("Lock Size", locksSize, "lock_size")}
+                            {flag("Locked", isLocked, "locked")}
+                        </>
+                    )}
                 {section(
                     "Layout",
                     <>

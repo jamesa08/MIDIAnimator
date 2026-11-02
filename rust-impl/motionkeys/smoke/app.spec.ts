@@ -845,6 +845,9 @@ test("splash window", async ({ page }) => {
 // the ops the page has sent to graph_apply
 const sentOps = (page: Page) => page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
 
+// the last op of a kind the page has sent to graph_apply
+const lastOp = async (page: Page, op: string) => (await sentOps(page)).filter((o: any) => o.op === op).at(-1);
+
 // a point of the empty graph where a click gets the pane, outside `away` (a menu open on the graph)
 async function panePoint(page: Page, away?: { x: number; y: number; width: number; height: number }) {
     return page.evaluate((away) => {
@@ -879,7 +882,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a node outside the selection is selected alone, then it's the node's entries. delete runs the editor's delete
     await page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group"]);
     await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["get_midi_track_data-1"], edges: [] });
     await rows.getByText("Delete", { exact: true }).click();
     await expect(menu).toHaveCount(0);
@@ -887,7 +890,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a group node can be ungrouped and opened, escape closes the menu
     await page.locator('.react-flow__node[data-id="evaluate_instrument-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Make Group", "Ungroup", "Edit Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group", "Ungroup", "Edit Group"]);
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 
@@ -902,6 +905,160 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
     await page.keyboard.press("Escape");
     await expect(search).toHaveCount(0);
 
+    await settle(page);
+});
+
+test("frames", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const members = ["get_midi_file-1", "get_midi_track_data-1"];
+    await frameNodes(page, members);
+
+    // shift+p joins the selection in a new frame
+    await page.keyboard.press("Shift+P");
+    await expect.poll(async () => lastOp(page, "join_in_frame")).toEqual({ op: "join_in_frame", nodes: members });
+
+    // the backend sends the frame back: it's drawn under its nodes, fitted around them, with its label
+    const state = backend.get_state;
+    const rf = structuredClone(state.rf_instance);
+    for (const node of rf.nodes) {
+        node.selected = false;
+        if (members.includes(node.id)) node.frame = "frame-1";
+    }
+    // (the fake backend keeps no selection, so nothing's selected in it)
+    rf.nodes.push({ id: "frame-1", type: "frame", position: { x: 0, y: 0 }, width: 100, height: 100, data: { label: "Drums", color: "#999999" } });
+    await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: state.graph_rev + 1, rf_instance: rf });
+    const frame = page.locator('.react-flow__node[data-id="frame-1"]');
+    await expect(frame.locator(".graph-frame-label")).toHaveText("Drums");
+    expect(await frame.locator(".graph-frame-label").evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el).fontWeight])).toEqual(["20px", "700"]);
+    expect(Number(await frame.evaluate((el) => getComputedStyle(el).zIndex))).toBeLessThan(0);
+    const box = (await frame.boundingBox())!;
+    for (const id of members) {
+        const node = (await page.locator(`.react-flow__node[data-id="${id}"]`).boundingBox())!;
+        expect(node.x > box.x && node.y > box.y && node.x + node.width < box.x + box.width && node.y + node.height < box.y + box.height, `${id} isn't inside the frame`).toBe(true);
+    }
+
+    // a click on its empty inside selects it, its right click menu is the selection's
+    const inside = await page.evaluate((box) => {
+        for (let y = box.y + 40; y < box.y + box.height - 5; y += 8) {
+            for (let x = box.x + 5; x < box.x + box.width - 5; x += 8) {
+                if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+            }
+        }
+        throw new Error("no empty point in the frame");
+    }, box);
+    const menu = page.locator(".context-menu");
+    const rows = menu.locator(".context-menu-row");
+    await page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header').click();
+    await page.mouse.click(inside.x, inside.y);
+    await expect(frame).toHaveClass(/selected/);
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["frame-1"] });
+    await page.mouse.click(inside.x, inside.y, { button: "right" });
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group"]);
+    await page.keyboard.press("Escape");
+
+    // a click that moves a pixel selects it too
+    await page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header').click();
+    await expect(frame).not.toHaveClass(/selected/);
+    await page.mouse.move(inside.x, inside.y);
+    await page.mouse.down();
+    await page.mouse.move(inside.x + 1, inside.y + 1);
+    await page.mouse.up();
+    await expect(frame).toHaveClass(/selected/);
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["frame-1"] });
+
+    // a node in it can be taken out, alt+p does the same
+    await page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header').click({ button: "right" });
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Remove from Frame", "Make Group"]);
+    await rows.getByText("Remove from Frame", { exact: true }).click();
+    await expect.poll(async () => lastOp(page, "remove_from_frame")).toEqual({ op: "remove_from_frame", nodes: ["get_midi_file-1"] });
+    await page.mouse.move(inside.x, inside.y);
+    await page.keyboard.press("Alt+P");
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "remove_from_frame").length).toBe(2);
+
+    // double clicking the label renames it
+    const label = frame.locator(".graph-frame-label");
+    await label.dblclick();
+    await frame.locator(".graph-frame-rename").fill("Bass");
+    await page.keyboard.press("Enter");
+    await expect.poll(async () => lastOp(page, "set_label")).toEqual({ op: "set_label", node: "frame-1", label: "Bass" });
+
+    // dragging the label moves the frame and what's in it, as one move
+    const start = (await label.boundingBox())!;
+    await page.mouse.move(start.x + 20, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(start.x + 80, start.y + start.height / 2 + 40, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(async () => lastOp(page, "move")).toBeTruthy();
+    const move = await lastOp(page, "move");
+    expect(Object.keys(move.positions).sort()).toEqual(["frame-1", ...members].sort());
+    const moved = (id: string) => move.positions[id].x - rf.nodes.find((n: any) => n.id === id).position.x;
+    expect(moved("get_midi_file-1")).toBeCloseTo(moved("get_midi_track_data-1"), 3);
+    expect(move.frames).toBeUndefined();
+
+    // a node grabbed and placed with the cursor over the frame joins it
+    rf.nodes.find((n: any) => n.id === "viewer-1").selected = true;
+    await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: state.graph_rev + 2, rf_instance: rf });
+    await expect(page.locator('.react-flow__node[data-id="viewer-1"]')).toHaveClass(/selected/);
+    await page.mouse.move(inside.x, inside.y);
+    await page.keyboard.press("g");
+    await page.mouse.move(inside.x + 10, inside.y + 5, { steps: 3 });
+    await page.mouse.click(inside.x + 10, inside.y + 5);
+    await expect.poll(async () => (await lastOp(page, "move"))?.frames).toEqual({ "viewer-1": "frame-1" });
+
+    // a node dropped on it from the nodes panel goes in it
+    await page.evaluate(({ x, y }) => window.dispatchEvent(new CustomEvent("motionkeys:node-drop", { detail: { nodeType: "viewer", clientX: x, clientY: y, offsetX: 10, offsetY: 10 } })), inside);
+    await expect.poll(async () => (await lastOp(page, "add_nodes"))?.nodes[0].frame).toBe("frame-1");
+
+    // a node dragged out past it stays in it, the frame grows to take it in
+    const header = page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header');
+    const from = (await header.boundingBox())!;
+    const around = (await frame.boundingBox())!;
+    await page.mouse.move(from.x + 10, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 15, from.y + from.height / 2);
+    await page.mouse.move(around.x + around.width + 40, from.y + from.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => Object.keys((await lastOp(page, "move"))?.positions ?? {})).toEqual(["get_midi_file-1"]);
+    expect((await lastOp(page, "move")).frames).toBeUndefined();
+
+    // a box started inside it box-selects, the frame stays out of a box wholly inside it
+    await page.mouse.move(inside.x, inside.y);
+    await page.mouse.down();
+    await page.mouse.move(inside.x + 4, inside.y + 4, { steps: 3 });
+    await expect(page.locator(".react-flow__selection")).toHaveCount(1);
+    await page.mouse.up();
+    await expect(frame).not.toHaveClass(/selected/);
+
+    // a locked frame stays behind the graph: a click inside it doesn't select it and its label doesn't move it, a
+    // click on its label selects it
+    rf.nodes.find((n: any) => n.id === "frame-1").data.locked = true;
+    await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: state.graph_rev + 3, rf_instance: rf });
+    await expect(frame).toHaveClass(/frame-locked/);
+    await expect(frame.locator(".react-flow__resize-control")).toHaveCount(0);
+    const lockedInside = await page.evaluate(
+        (box) => {
+            for (let y = box.y + 50; y < box.y + box.height - 5; y += 8) {
+                for (let x = box.x + 5; x < box.x + box.width - 5; x += 8) {
+                    if (document.elementFromPoint(x, y)?.classList.contains("react-flow__pane")) return { x, y };
+                }
+            }
+            throw new Error("no empty point in the frame");
+        },
+        (await frame.boundingBox())!
+    );
+    await page.mouse.click(lockedInside.x, lockedInside.y);
+    await page.waitForTimeout(200);
+    await expect(frame).not.toHaveClass(/selected/);
+    const moves = (await sentOps(page)).filter((op: any) => op.op === "move").length;
+    const strip = (await label.boundingBox())!;
+    await page.mouse.move(strip.x + 20, strip.y + strip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(strip.x + 80, strip.y + strip.height / 2 + 40, { steps: 6 });
+    await page.mouse.up();
+    await expect(frame).toHaveClass(/selected/);
+    expect((await sentOps(page)).filter((op: any) => op.op === "move").length).toBe(moves);
     await settle(page);
 });
 

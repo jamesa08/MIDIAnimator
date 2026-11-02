@@ -1,5 +1,5 @@
-import { CSSProperties, useEffect, useMemo, useRef } from "react";
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, useStore, useStoreApi } from "@xyflow/react";
+import { CSSProperties, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -8,6 +8,7 @@ import TypedEdge from "./TypedEdge";
 import { useHoldCodes } from "../../utils/keymap";
 import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
+import { boxTakesFrame, isFrame, layoutFrames } from "../../utils/frames";
 
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
@@ -74,6 +75,23 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
         }
         if (changes.length > 0) triggerEdgeChanges(changes);
     }, [selectionRect, store]);
+
+    // react flow leaves frames out (they aren't selectable to it), the box takes one like blender (boxTakesFrame). before
+    // the box is drawn, react flow's own selection deselects them as it goes
+    useLayoutEffect(() => {
+        const { userSelectionActive, transform, nodeLookup, triggerNodeChanges } = store.getState();
+        if (!selectionRect || !userSelectionActive) return;
+        const [tx, ty, zoom] = transform;
+        const box = { x: (selectionRect.x - tx) / zoom, y: (selectionRect.y - ty) / zoom, width: selectionRect.width / zoom, height: selectionRect.height / zoom };
+        const changes: NodeSelectionChange[] = [];
+        for (const node of nodeLookup.values()) {
+            if (!isFrame(node)) continue;
+            const { x, y } = node.internals.positionAbsolute;
+            const selected = boxTakesFrame(node, { x, y, width: node.measured.width ?? 0, height: node.measured.height ?? 0 }, box);
+            if (selected !== !!node.selected) changes.push({ id: node.id, type: "select", selected });
+        }
+        if (changes.length > 0) triggerNodeChanges(changes);
+    });
     return null;
 }
 
@@ -111,9 +129,11 @@ export function useShiftMultiSelection() {
 // how every node graph looks, with no state of its own. the editor passes its nodes and handlers, the frozen parent
 // graph behind an open group passes `frozen` so nothing in it can be touched. `onBoxSockets` gets the sockets a box
 // selects while it's dragged (BoxSelect)
-function NodeGraphCanvas({ frozen = false, children, edges, onBoxSockets, ...props }: ReactFlowProps & { frozen?: boolean; onBoxSockets?: (sockets: SocketRef[]) => void }) {
+function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets, ...props }: ReactFlowProps & { frozen?: boolean; onBoxSockets?: (sockets: SocketRef[]) => void }) {
     // a connection made by a signal tag is drawn as the tags on its sockets (SocketTag), not as a wire
     const shown = useMemo(() => edges?.map((edge: any) => (edge.tagged && !edge.hidden ? { ...edge, hidden: true } : edge)), [edges]);
+    // frames fitted around what's in them by the sizes on screen, the frozen graph has none and draws them where they were saved
+    const shownNodes = useMemo(() => nodes && layoutFrames(nodes, !frozen), [nodes, frozen]);
     // react flow's own keys are off, the keymap runs them (src/utils/keymap.ts). box select is a key held while dragging,
     // react flow tracks that one itself
     const boxSelectKeys = useHoldCodes("node_editor", "box_select");
@@ -139,12 +159,13 @@ function NodeGraphCanvas({ frozen = false, children, edges, onBoxSockets, ...pro
             panOnDrag={!frozen}
             zoomOnScroll={!frozen}
             zoomOnPinch={!frozen}
+            nodes={shownNodes}
             edges={shown}
             {...props}
         >
             <ZoneFrames />
             <CanvasPaper />
-            {!frozen && <BoxSelect nodes={props.nodes} edges={shown} onBoxSockets={onBoxSockets} />}
+            {!frozen && <BoxSelect nodes={shownNodes} edges={shown} onBoxSockets={onBoxSockets} />}
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

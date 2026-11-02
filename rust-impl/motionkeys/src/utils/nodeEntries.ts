@@ -7,13 +7,14 @@ import { StateContext } from "../contexts/StateContext";
 import { loadedNodeSpecs, loadNodeSpecs } from "./node";
 import { FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT, GroupDef, Handle, NEW_SOCKET } from "./groups";
 import { compatible } from "./sockets";
+import { FRAME } from "./frames";
 
 // `key` is what the menus and drops pass around: a node type, or a group id for a group node
 export type NodeEntry = { key: string; label: string; nodeType: string; category: string; data: any };
 
 // node types that aren't added on their own: group nodes are added by their group, for each adds both of its ends,
-// and the group input and output only make sense inside a group
-const NOT_LISTED = new Set(["group", "for_each_output", GROUP_INPUT, GROUP_OUTPUT]);
+// the group input and output only make sense inside a group, and a frame is made around nodes (Shift+P)
+const NOT_LISTED = new Set(["group", "for_each_output", GROUP_INPUT, GROUP_OUTPUT, FRAME]);
 
 const LABELS: Record<string, string> = { [FOR_EACH_INPUT]: "For Each" };
 

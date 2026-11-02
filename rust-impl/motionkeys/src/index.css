@@ -1102,6 +1102,66 @@ img {
     border: 1px solid var(--zone-border);
 }
 
+/* frames (src/nodes/frame.tsx): a soft fill and a thin border in the frame's color under the nodes in it, the label top
+   left in the node header's font. only the label strip and the sides take the mouse, a press inside is the graph's */
+.graph-frame {
+    width: 100%;
+    height: 100%;
+    background: color-mix(in srgb, var(--frame-color) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--frame-color) 60%, transparent);
+}
+
+.react-flow__node.selected .graph-frame {
+    border-color: var(--frame-color);
+    box-shadow: 0 0 0 1px var(--frame-color);
+}
+
+.graph-frame-label {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-weight: bold;
+    color: var(--canvas-line);
+    white-space: nowrap;
+    overflow: hidden;
+    pointer-events: all;
+}
+
+.graph-frame-label > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.graph-frame-rename {
+    width: 100%;
+    font: inherit;
+    border: 1px solid #aaa;
+    border-radius: 3px;
+    padding: 0 3px;
+}
+
+/* a locked frame's label doesn't look like it can be grabbed */
+.react-flow__node.frame-locked {
+    cursor: default;
+}
+
+/* the sides that resize it, wider than they look */
+.graph-frame .react-flow__resize-control.line {
+    pointer-events: all;
+    border-color: transparent;
+    border-width: 0;
+}
+
+.graph-frame .react-flow__resize-control.line.left,
+.graph-frame .react-flow__resize-control.line.right {
+    width: 8px;
+}
+
+.graph-frame .react-flow__resize-control.line.top,
+.graph-frame .react-flow__resize-control.line.bottom {
+    height: 8px;
+}
+
 /* live window resize (utils/liveResize.ts): the canvas' costly parts keep one size for the whole drag, the page's (which
    is the screen's then), on layers of their own that the canvas clips, so only the cards around them are repainted:
    the dots, the paper texture, the frozen graph under an open group, and the nodes and edges. the docked panels move

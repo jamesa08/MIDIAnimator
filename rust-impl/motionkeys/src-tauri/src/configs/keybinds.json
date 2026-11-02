@@ -36,6 +36,8 @@
             { "id": "select_all", "name": "Select All", "keys": ["A"] },
             { "id": "group", "name": "Make Group", "keys": ["Ctrl+G", "CmdOrCtrl+G"] },
             { "id": "ungroup", "name": "Ungroup", "keys": ["Alt+G"] },
+            { "id": "join_in_frame", "name": "Join in New Frame", "keys": ["Shift+P"] },
+            { "id": "remove_from_frame", "name": "Remove from Frame", "keys": ["Alt+P"] },
             { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
             { "id": "exit_group", "name": "Exit Group", "keys": ["Escape"] },
             { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },

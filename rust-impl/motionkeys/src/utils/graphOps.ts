@@ -10,14 +10,14 @@ type XY = { x: number; y: number };
 // one socket of a node (src-tauri/src/graph/sockets.rs)
 export type SocketRef = { node: string; side: "inputs" | "outputs"; socket: string };
 export type Op =
-    | { op: "add_nodes"; nodes: { type: string; data?: any; position: XY }[] }
+    | { op: "add_nodes"; nodes: { type: string; data?: any; position: XY; frame?: string }[] }
     | { op: "delete"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[] }
     | { op: "connect"; from_node: string; from_output: string; to_node: string; to_input: string }
     | { op: "set_inputs"; node: string; inputs: Record<string, any> }
     | { op: "set_tag"; node: string; side: "inputs" | "outputs"; socket: string; name: string }
     | { op: "set_tags"; sockets: SocketRef[]; name: string }
     | { op: "set_label"; node: string; label: string }
-    | { op: "move"; positions: Record<string, XY> }
+    | { op: "move"; positions: Record<string, XY>; frames?: Record<string, string | null> }
     | { op: "resize"; node: string; width: number; height: number; position: XY }
     | { op: "select"; nodes: string[]; edges: string[]; sockets: SocketRef[] }
     | { op: "duplicate"; nodes: string[]; offset: XY }
@@ -25,6 +25,9 @@ export type Op =
     | { op: "cut"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[] }
     | { op: "group"; nodes: string[]; widths: Record<string, number> }
     | { op: "ungroup"; nodes: string[] }
+    | { op: "join_in_frame"; nodes: string[] }
+    | { op: "remove_from_frame"; nodes: string[] }
+    | { op: "set_frame"; node: string; color?: string; shrink?: boolean; lock_size?: boolean; locked?: boolean; label_size?: number; label_align?: string }
     | { op: "rename_socket"; side: "inputs" | "outputs"; id: string; name: string }
     | { op: "remove_socket"; side: "inputs" | "outputs"; id: string }
     | { op: "make_local" }
@@ -38,8 +41,9 @@ export type Applied = { tab: string; graph_rev: number; rf_instance: any; added:
 export const TabContext = createContext<string>("");
 
 // `txn`: ops with the same transaction are one undo step until it's ended or cancelled (a grab after adding or duplicating).
-// `commitToHistory`: false for no undo step (values filled in automatically), true when left out
-export type ApplyOptions = { txn?: string; commitToHistory?: boolean };
+// `commitToHistory`: false for no undo step (values filled in automatically), true when left out. `sizes`: the nodes'
+// sizes on screen, frames fit around them
+export type ApplyOptions = { txn?: string; commitToHistory?: boolean; sizes?: Record<string, { width: number; height: number }> };
 
 // the state with a tab's graph from the backend: only the tab on screen's, and not if the state already has a newer one
 // (graph_rev only goes up)
@@ -83,7 +87,7 @@ export function useGraphOps(scope: string | null) {
             return applied;
         };
         return {
-            apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true }),
+            apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true, sizes: options.sizes ?? null }),
             copy: (nodes: string[]) => invoke("graph_copy", { tab, scope, nodes }),
             cut: (nodes: string[], edges: string[], sockets: SocketRef[]) => edit("graph_cut", { nodes, edges, sockets }),
             paste: (position: XY) => edit("graph_paste", { position }),
