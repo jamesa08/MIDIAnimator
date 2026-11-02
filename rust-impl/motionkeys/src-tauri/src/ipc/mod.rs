@@ -16,6 +16,7 @@ use crate::graph::execute::run_instance;
 use crate::scene_generics;
 use crate::settings::get_setting;
 use crate::state::{relink, update_state, STATE};
+use crate::utils::console::{self, Level, Source};
 use crate::utils::log::log;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -102,6 +103,7 @@ static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
             match stream {
                 Ok(stream) => {
                     log(format!("Blender connected from {}", stream.peer_addr().map_or("unknown".to_string(), |addr| addr.to_string())));
+                    console::log(Level::Info, Source::Blender, "Blender connected");
 
                     // we are connected to the client
                     let mut state = STATE.lock().unwrap();
@@ -295,6 +297,7 @@ fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
     // if disconnected, remove the client from the server
     // clear all previous info, the linked tab stays linked (offline) until Blender is back
     log(format!("Blender disconnected from {}", peer.map_or("unknown".to_string(), |addr| addr.to_string())));
+    console::log(Level::Warn, Source::Blender, "Blender disconnected");
     let mut state = STATE.lock().unwrap();
     state.connected = false;
     state.watched_curves = None;

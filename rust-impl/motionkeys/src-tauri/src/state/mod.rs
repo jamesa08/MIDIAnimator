@@ -12,6 +12,7 @@ use crate::blender::curves::{carry_over_curves, curve_sources, prune_curves, unw
 use crate::blender::scene_data::{compare_scene_data, get_scene_data};
 use crate::graph::execute::{forget_memo, run_instance};
 use crate::scene_generics::Scene;
+use crate::utils::console::{self, Entry, Level, Source};
 
 pub mod graph;
 pub mod history;
@@ -567,8 +568,11 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
     };
 
     // serialize and write the file
-    let json = serde_json::to_string_pretty(&saved_data).map_err(|e| format!("Serialization error: {}", e))?;
-    fs::write(path, json).map_err(|e| format!("File write error: {}", e))?;
+    let written = serde_json::to_string_pretty(&saved_data).map_err(|e| format!("Serialization error: {}", e)).and_then(|json| fs::write(path, json).map_err(|e| format!("File write error: {}", e)));
+    if let Err(e) = written {
+        console::push(Entry::new(Level::Error, Source::App, format!("Couldn't save {}: {}", path, e)).tab(id));
+        return Err(e);
+    }
     {
         let mut state = lock();
         if let Some(instance) = state.instance_mut(id) {
@@ -599,7 +603,8 @@ pub async fn load_project() -> Result<StateView, String> {
 /// opens a project file in a tab of its own, see `open_file`, then links Blender to it or runs it (`start_instance`).
 /// returns the tab
 pub async fn open_project(path: &str) -> Result<String, String> {
-    match open_file(path)? {
+    let opened = open_file(path).inspect_err(|e| console::log(Level::Error, Source::App, format!("Couldn't open {}: {}", path, e)))?;
+    match opened {
         Opened::Already(id) => switch_active_instance(id.clone()).await,
         Opened::New(id) => start_instance(id.clone()).await,
     }
@@ -811,7 +816,7 @@ pub fn move_instance(id: String, index: usize) {
 /// links Blender to a tab (it goes live)
 #[tauri::command]
 pub async fn go_live(id: String) -> Result<(), String> {
-    link(id).await
+    link(id.clone()).await.inspect_err(|e| console::push(Entry::new(Level::Warn, Source::Blender, format!("Couldn't go live: {}", e)).tab(&id)))
 }
 
 /// links Blender to a tab, which then gets Blender's scene changes and is the only one that writes to Blender. the scene
@@ -829,6 +834,8 @@ pub async fn link(id: String) -> Result<(), String> {
         state.connected_instance_id = Some(id.clone());
         // the tab's run tells the tracker what to watch and fetches the curves (blender/curves.rs)
         state.watched_curves = None;
+        let name = state.instance(&id).map(InstanceState::name).unwrap_or_default();
+        console::push(Entry::new(Level::Info, Source::Blender, format!("{} is live", name)).tab(&id));
     }
     update_state();
 
