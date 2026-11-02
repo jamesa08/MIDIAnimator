@@ -99,6 +99,10 @@ pub fn save_setting<R: Runtime>(app: &AppHandle<R>, path: &str, value: Value) ->
         set_path(&mut settings, path, value);
         settings.clone()
     };
+    // debug mode is read from the threads printing, it's kept apart
+    if path.starts_with("console") {
+        crate::utils::console::sync_settings();
+    }
 
     let file = settings_path(app).ok_or("no app config dir")?;
     if let Some(dir) = file.parent() {

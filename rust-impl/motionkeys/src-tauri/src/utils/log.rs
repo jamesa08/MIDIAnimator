@@ -57,6 +57,12 @@ fn timestamp() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
 }
 
+/// a console entry (utils/console.rs) in the log file with a timestamp, without printing it: in debug mode a printed line
+/// comes back to the console
+pub fn write_entry(message: &str) {
+    write_line(&format!("{} {}", timestamp(), message));
+}
+
 // appends a line to the log file, once it's open
 fn write_line(line: &str) {
     if let Some(file) = FILE.lock().unwrap_or_else(PoisonError::into_inner).as_mut() {
@@ -106,7 +112,10 @@ fn capture_output() -> bool {
                 };
                 terminal.write_all(&line).ok();
                 terminal.write_all(b"\n").ok();
-                write_line(&format!("{} {}", timestamp(), String::from_utf8_lossy(&line)));
+                let line = String::from_utf8_lossy(&line);
+                write_line(&format!("{} {}", timestamp(), line));
+                // debug mode streams it to the console too
+                super::console::output_line(name == "stderr", &line);
             }
         });
         if spawned.is_ok() && fd == libc::STDOUT_FILENO {
@@ -117,16 +126,18 @@ fn capture_output() -> bool {
 }
 
 // a panic in a spawned task or thread is otherwise lost. once stderr is captured the default message (thread, location
-// and message) already lands in the log, so the hook only adds a line when it isn't
+// and message) already lands in the log, so the hook only adds a line when it isn't. the console always gets it
 fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        let message = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+        let location = info.location().map_or("unknown".to_string(), |location| location.to_string());
+        let line = format!("panic on thread {}: {} at {}", thread.name().unwrap_or("unnamed"), message, location);
         if !CAPTURED.load(Ordering::Relaxed) {
-            let thread = std::thread::current();
-            let message = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
-            let location = info.location().map_or("unknown".to_string(), |location| location.to_string());
-            log(format!("panic on thread {}: {} at {}", thread.name().unwrap_or("unnamed"), message, location));
+            log(&line);
         }
+        super::console::panicked(line);
         default_hook(info);
     }));
 }

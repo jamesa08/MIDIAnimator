@@ -54,6 +54,7 @@ async fn main() {
         .setup(|app| {
             // log file first, so everything after it is recorded
             log::init(app.handle());
+            motionkeys::utils::console::init(app.handle());
 
             // build and set menu, with the user's keyboard shortcuts
             motionkeys::ui::keybinds::load_keymap(app.handle());
@@ -97,6 +98,7 @@ async fn main() {
             *WINDOW.lock().unwrap() = Some(window);
 
             motionkeys::settings::load_settings(app.handle());
+            motionkeys::utils::console::sync_settings();
             // pages that started loading before the settings did
             for window in app.webview_windows().values() {
                 motionkeys::ui::windows::apply_zoom(window.as_ref());

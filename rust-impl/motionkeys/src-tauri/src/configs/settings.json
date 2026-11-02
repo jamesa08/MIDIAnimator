@@ -19,5 +19,11 @@
         "show_preview": true,
         "preview_shape": "cube",
         "preview_grid": true
+    },
+    "console": {
+        "debug": false,
+        "overlay": true,
+        "inline_lines": 5,
+        "fade_seconds": 10
     }
 }
