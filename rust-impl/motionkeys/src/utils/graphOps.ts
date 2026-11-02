@@ -17,6 +17,7 @@ export type Op =
     | { op: "set_tag"; node: string; side: "inputs" | "outputs"; socket: string; name: string }
     | { op: "set_tags"; sockets: SocketRef[]; name: string }
     | { op: "set_label"; node: string; label: string }
+    | { op: "collapse"; nodes: string[]; collapsed: boolean }
     | { op: "move"; positions: Record<string, XY>; frames?: Record<string, string | null> }
     | { op: "resize"; node: string; width: number; height: number | null; position: XY }
     | { op: "select"; nodes: string[]; edges: string[]; sockets: SocketRef[] }
@@ -106,6 +107,19 @@ export function useSetInputs() {
         (node: string, inputs: Record<string, any>, options: ApplyOptions = {}) => {
             if (!editable) return;
             apply([{ op: "set_inputs", node, inputs }], options).catch((e) => console.error(`set_inputs on ${node}: ${e}`));
+        },
+        [apply, editable]
+    );
+}
+
+// collapses a node to its header or expands it, for node components. nothing happens in a graph that can't be edited
+export function useCollapse() {
+    const { scopeId, editable } = useGroupContext();
+    const { apply } = useGraphOps(scopeId);
+    return useCallback(
+        (node: string, collapsed: boolean) => {
+            if (!editable) return;
+            apply([{ op: "collapse", nodes: [node], collapsed }]).catch((e) => console.error(`collapse ${node}: ${e}`));
         },
         [apply, editable]
     );

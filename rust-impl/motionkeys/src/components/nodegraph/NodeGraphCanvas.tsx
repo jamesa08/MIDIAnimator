@@ -132,8 +132,17 @@ export function useShiftMultiSelection() {
 function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets, ...props }: ReactFlowProps & { frozen?: boolean; onBoxSockets?: (sockets: SocketRef[]) => void }) {
     // a connection made by a signal tag is drawn as the tags on its sockets (SocketTag), not as a wire
     const shown = useMemo(() => edges?.map((edge: any) => (edge.tagged && !edge.hidden ? { ...edge, hidden: true } : edge)), [edges]);
-    // frames fitted around what's in them by the sizes on screen, the frozen graph has none and draws them where they were saved
-    const shownNodes = useMemo(() => nodes && layoutFrames(nodes, !frozen), [nodes, frozen]);
+    // frames fitted around what's in them by the sizes on screen, the frozen graph has none and draws them where they were saved.
+    // a collapsed node is as tall as its header whatever height it was given
+    const shownNodes = useMemo(
+        () =>
+            nodes &&
+            layoutFrames(
+                nodes.map((node: any) => (node.data?.collapsed && node.height !== undefined ? { ...node, height: undefined } : node)),
+                !frozen
+            ),
+        [nodes, frozen]
+    );
     // react flow's own keys are off, the keymap runs them (src/utils/keymap.ts). box select is a key held while dragging,
     // react flow tracks that one itself
     const boxSelectKeys = useHoldCodes("node_editor", "box_select");

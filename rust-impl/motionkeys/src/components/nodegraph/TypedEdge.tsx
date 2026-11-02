@@ -38,7 +38,8 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
     const input = sourceNode ? inputHandle(lookup, sourceNode, sourceHandleId ?? "", scope) : null;
     const to = input ? SOCKET_COLORS[socketCategory(input.data_type)] : SOCKET_COLORS.any;
 
-    // into a multi input, the edge ends at its own slot on the socket, in the order the links were made
+    // into a multi input, the edge ends at its own slot on the socket, in the order the links were made. a collapsed
+    // node's socket is a dot, they all end on it
     const slot = useCallback(
         (s: ReactFlowState) => {
             const into = s.edges.filter((e) => e.source === source && e.sourceHandle === sourceHandleId);
@@ -47,7 +48,7 @@ function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX
         [id, source, sourceHandleId]
     );
     const [index, links] = useStore(slot).split("/").map(Number);
-    const sourceY = input?.multi && index >= 0 ? socketY + multiSlotOffset(index, links) : socketY;
+    const sourceY = input?.multi && index >= 0 && !(sourceNode?.data as any)?.collapsed ? socketY + multiSlotOffset(index, links) : socketY;
     const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
     if (bad) {

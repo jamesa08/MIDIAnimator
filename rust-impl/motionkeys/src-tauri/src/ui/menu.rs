@@ -107,10 +107,12 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let join_in_frame = area_item(app, "join_in_frame", "Join in New Frame")?;
     let remove_from_frame = area_item(app, "remove_from_frame", "Remove from Frame")?;
     let delete_unused = area_item(app, "delete_unused", "Delete Unused Nodes")?;
+    let collapse_all = area_item(app, "collapse_all", "Collapse All")?;
+    let expand_all = area_item(app, "expand_all", "Expand All")?;
     let edit_group = area_item(app, "edit_group", "Edit Group")?;
     let exit_group = area_item(app, "exit_group", "Exit Group")?;
     let exit_to_root = area_item(app, "exit_to_root", "Exit All Groups")?;
-    let node_submenu = SubmenuBuilder::new(app, "Node").item(&group).item(&ungroup).separator().item(&join_in_frame).item(&remove_from_frame).separator().item(&delete_unused).separator().item(&edit_group).item(&exit_group).item(&exit_to_root).build()?;
+    let node_submenu = SubmenuBuilder::new(app, "Node").item(&group).item(&ungroup).separator().item(&join_in_frame).item(&remove_from_frame).separator().item(&delete_unused).separator().item(&collapse_all).item(&expand_all).separator().item(&edit_group).item(&exit_group).item(&exit_to_root).build()?;
 
     let menu = tauri::menu::MenuBuilder::new(app).item(&app_submenu).item(&file_submenu).item(&edit_submenu).item(&view_submenu).item(&node_submenu).item(&window_submenu).build()?;
 

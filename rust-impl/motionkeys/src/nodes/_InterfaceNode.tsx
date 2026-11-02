@@ -9,6 +9,8 @@ import { NEW_SOCKET } from "../utils/groups";
 import ErrorBadge, { useNodeError } from "../components/nodegraph/ErrorBadge";
 import SocketTag from "../components/nodegraph/SocketTag";
 import SocketHandle from "../components/nodegraph/SocketHandle";
+import CollapsedSockets, { collapsedHeight } from "../components/nodegraph/CollapsedSockets";
+import { useCollapse } from "../utils/graphOps";
 
 // window event to rename or remove a socket of the group being edited, the node graph editor applies it.
 // detail: { side: "inputs" | "outputs", id, name? } (no name removes it)
@@ -32,6 +34,9 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
     const sockets = scope?.interface[side] ?? [];
     const [renaming, setRenaming] = useState<string | null>(null);
     const error = useNodeError();
+    // collapsed to its header, its sockets are drawn down the header's ends
+    const collapsed = !preview && data?.collapsed === true;
+    const setCollapsed = useCollapse();
 
     // the group's inputs are outputs of this node and the other way around
     const isOutput = side === "inputs";
@@ -45,53 +50,58 @@ function InterfaceNode({ id, data, side }: { id: string; data: any; side: "input
     const edit = (socket: string, name?: string) => window.dispatchEvent(new CustomEvent(SOCKET_EDIT_EVENT, { detail: { side, id: socket, name } }));
 
     return (
-        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors("interface")}>
-            <NodeHeader label={(!preview && data?.label) || (side === "inputs" ? "Group Input" : "Group Output")}>{error && !preview && <ErrorBadge message={error} size={16} />}</NodeHeader>
+        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}${collapsed ? " node-collapsed" : ""}`} style={{ ...nodeColors("interface"), ...(collapsed ? { minHeight: collapsedHeight(isOutput ? [] : sockets, isOutput ? sockets : []) } : {}) }}>
+            <NodeHeader label={(!preview && data?.label) || (side === "inputs" ? "Group Input" : "Group Output")} collapsed={collapsed} onToggle={!preview && editable ? () => setCollapsed(id, !collapsed) : undefined}>
+                {error && !preview && <ErrorBadge message={error} size={16} />}
+            </NodeHeader>
             <NodeResizeControl minWidth={160} maxWidth={1000} variant={"line" as any} />
-            <div className="node-inner flex flex-col">
-                {rows.map((socket) => (
-                    <div key={socket.id} className={`node-field field-${isOutput ? "outputs" : "inputs"} interface-socket`} style={{ position: "relative", display: "flex", justifyContent: isOutput ? "flex-end" : "flex-start", gap: 4 }}>
-                        {socket.id === NEW_SOCKET ? (
-                            <span>&nbsp;</span>
-                        ) : renaming === socket.id ? (
-                            <input
-                                className="nodrag nopan interface-rename"
-                                autoFocus
-                                defaultValue={socket.name}
-                                onBlur={(e) => {
-                                    setRenaming(null);
-                                    if (e.target.value.trim() && e.target.value !== socket.name) edit(socket.id, e.target.value.trim());
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                    if (e.key === "Escape") setRenaming(null);
-                                    e.stopPropagation();
-                                }}
-                            />
-                        ) : (
-                            <>
-                                {editable && !preview && isOutput && (
-                                    <button className="interface-remove nodrag nopan" onClick={() => edit(socket.id)}>
-                                        ×
-                                    </button>
-                                )}
-                                <span onDoubleClick={() => editable && !preview && setRenaming(socket.id)}>{socket.name}</span>
-                                {editable && !preview && !isOutput && (
-                                    <button className="interface-remove nodrag nopan" onClick={() => edit(socket.id)}>
-                                        ×
-                                    </button>
-                                )}
-                            </>
-                        )}
-                        {preview ? (
-                            <div className={`react-flow__handle react-flow__handle-${isOutput ? "right" : "left"}`} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }}></div>
-                        ) : (
-                            <SocketHandle id={socket.id} side={isOutput ? "outputs" : "inputs"} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }} />
-                        )}
-                        {!preview && data?.[isOutput ? "output_tags" : "input_tags"]?.[socket.id] && <SocketTag side={isOutput ? "outputs" : "inputs"} socket={socket.id} name={data[isOutput ? "output_tags" : "input_tags"][socket.id]} dataType={socket.data_type} />}
-                    </div>
-                ))}
-            </div>
+            {collapsed && <CollapsedSockets inputs={isOutput ? [] : sockets} outputs={isOutput ? sockets : []} />}
+            {!collapsed && (
+                <div className="node-inner flex flex-col">
+                    {rows.map((socket) => (
+                        <div key={socket.id} className={`node-field field-${isOutput ? "outputs" : "inputs"} interface-socket`} style={{ position: "relative", display: "flex", justifyContent: isOutput ? "flex-end" : "flex-start", gap: 4 }}>
+                            {socket.id === NEW_SOCKET ? (
+                                <span>&nbsp;</span>
+                            ) : renaming === socket.id ? (
+                                <input
+                                    className="nodrag nopan interface-rename"
+                                    autoFocus
+                                    defaultValue={socket.name}
+                                    onBlur={(e) => {
+                                        setRenaming(null);
+                                        if (e.target.value.trim() && e.target.value !== socket.name) edit(socket.id, e.target.value.trim());
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                        if (e.key === "Escape") setRenaming(null);
+                                        e.stopPropagation();
+                                    }}
+                                />
+                            ) : (
+                                <>
+                                    {editable && !preview && isOutput && (
+                                        <button className="interface-remove nodrag nopan" onClick={() => edit(socket.id)}>
+                                            ×
+                                        </button>
+                                    )}
+                                    <span onDoubleClick={() => editable && !preview && setRenaming(socket.id)}>{socket.name}</span>
+                                    {editable && !preview && !isOutput && (
+                                        <button className="interface-remove nodrag nopan" onClick={() => edit(socket.id)}>
+                                            ×
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                            {preview ? (
+                                <div className={`react-flow__handle react-flow__handle-${isOutput ? "right" : "left"}`} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }}></div>
+                            ) : (
+                                <SocketHandle id={socket.id} side={isOutput ? "outputs" : "inputs"} type={isOutput ? "target" : "source"} position={isOutput ? Position.Right : Position.Left} style={{ ...(isOutput ? { ...handleStyle, right: "-13px" } : { ...handleStyle, left: "-13px" }), ...(socket.id === NEW_SOCKET ? {} : socketStyle(socket.data_type)) }} />
+                            )}
+                            {!preview && data?.[isOutput ? "output_tags" : "input_tags"]?.[socket.id] && <SocketTag side={isOutput ? "outputs" : "inputs"} socket={socket.id} name={data[isOutput ? "output_tags" : "input_tags"][socket.id]} dataType={socket.data_type} />}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

@@ -9,6 +9,9 @@ import { memo } from "react";
 import ErrorBadge, { SuccessBadge, useNodeError, useStale, useWriteStatus } from "../components/nodegraph/ErrorBadge";
 import SocketTag from "../components/nodegraph/SocketTag";
 import SocketHandle from "../components/nodegraph/SocketHandle";
+import CollapsedSockets, { collapsedHeight } from "../components/nodegraph/CollapsedSockets";
+import { useCollapse } from "../utils/graphOps";
+import { useGroupContext } from "../contexts/GroupContext";
 
 const handleStyle = {
     width: "14px",
@@ -43,6 +46,10 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     const error = useNodeError() ?? write.error;
     // Blender doesn't have what it would write now, its title is italic until it writes
     const stale = useStale() && !preview;
+    // collapsed to its header (the caret, H), its sockets are drawn down the header's ends
+    const collapsed = !preview && data?.collapsed === true;
+    const { editable } = useGroupContext();
+    const setCollapsed = useCollapse();
 
     // the inputs something is connected to, joined so the node only draws again when they change.
     // stored edges are reversed, `source`/`sourceHandle` is the node taking the value and its input
@@ -60,7 +67,10 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
         if (multiInputs && nodeId && !preview) updateNodeInternals(nodeId);
     }, [multiInputs, nodeId, preview, updateNodeInternals]);
 
-    if (nodeData != null) {
+    // the sockets drawn on the expanded node, a collapsed one draws them on its ends
+    const visibleHandles = (side: string) => (nodeData == null ? [] : [...nodeData["handles"][side], ...(dynamicHandles?.[side] ?? [])].filter((handle) => !hidden?.[handle["id"]]));
+
+    if (nodeData != null && !collapsed) {
         const handleTypes = ["outputs", "inputs"];
         for (let handleType of handleTypes) {
             let rfHandleType: boolean = false;
@@ -113,25 +123,29 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     }
 
     return (
-        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}${fill ? " node-fill" : ""}`} style={nodeColors(nodeData?.category)}>
-            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale}>
+        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}${fill && !collapsed ? " node-fill" : ""}${collapsed ? " node-collapsed" : ""}`} style={{ ...nodeColors(nodeData?.category), ...(collapsed ? { minHeight: collapsedHeight(visibleHandles("inputs"), visibleHandles("outputs")) } : {}) }}>
+            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale} collapsed={collapsed} onToggle={!preview && editable && nodeId ? () => setCollapsed(nodeId, !collapsed) : undefined}>
                 {error && !preview && <ErrorBadge message={error} size={16} />}
                 {!error && write.written && !stale && !preview && <SuccessBadge size={16} />}
                 {headerExtra}
             </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
-            {minHeight !== undefined && (
+            {minHeight !== undefined && !collapsed && (
                 <>
                     <NodeResizeControl minWidth={200} maxWidth={1000} minHeight={minHeight} position="bottom" variant="line" />
                     <NodeResizeControl minWidth={200} maxWidth={1000} minHeight={minHeight} position="bottom-right" />
                 </>
             )}
-            <div className="node-inner flex flex-col">
-                {handleObjects.map((handle, index) => (
-                    <React.Fragment key={index}>{handle}</React.Fragment>
-                ))}
-                {children}
-            </div>
+            {collapsed ? (
+                <CollapsedSockets inputs={visibleHandles("inputs")} outputs={visibleHandles("outputs")} />
+            ) : (
+                <div className="node-inner flex flex-col">
+                    {handleObjects.map((handle, index) => (
+                        <React.Fragment key={index}>{handle}</React.Fragment>
+                    ))}
+                    {children}
+                </div>
+            )}
         </div>
     );
 }

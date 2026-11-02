@@ -509,6 +509,20 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (inFrames.length > 0) apply([{ op: "remove_from_frame", nodes: inFrames }]);
     }, [getNodes, apply]);
 
+    // collapses nodes to their headers or expands them, only the ones that change. frames stay as they are
+    const collapse = useCallback(
+        (nodes: any[], collapsed: boolean) => {
+            const changed = nodes.filter((n) => !isFrame(n) && !!n.data?.collapsed !== collapsed).map((n) => n.id);
+            if (changed.length > 0) apply([{ op: "collapse", nodes: changed, collapsed }]);
+        },
+        [apply]
+    );
+    // collapse all and expand all act on the selection, or on every node when nothing is selected
+    const collapseTargets = useCallback(() => {
+        const selected = getNodes().filter((n) => n.selected);
+        return selected.length > 0 ? selected : getNodes();
+    }, [getNodes]);
+
     // the nodes Delete Unused Nodes found, asked about before they go. frames emptied by it stay
     const [unused, setUnused] = useState<string[] | null>(null);
     const deleteUnused = useCallback(() => {
@@ -668,6 +682,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             },
             remove_from_frame: () => {
                 if (canEdit()) removeFromFrame();
+            },
+            // H like blender: the selected nodes collapse, or expand when they all are
+            collapse: () => {
+                const selected = getNodes().filter((n) => n.selected && !isFrame(n));
+                if (canEdit()) collapse(selected, !selected.every((n: any) => n.data?.collapsed));
+            },
+            collapse_all: () => {
+                if (canEdit()) collapse(collapseTargets(), true);
+            },
+            expand_all: () => {
+                if (canEdit()) collapse(collapseTargets(), false);
             },
             add_node: () => openAddMenu({ ...mousePositionRef.current }),
             // the selected nodes (a zone as a pair) and edges, edges of deleted nodes go with them.
@@ -909,7 +934,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         const tick = () => {
             const nodes = getNodes();
             const sizes = nodes.map((n) => `${n.measured?.width}x${n.measured?.height}`).join(",");
-            const empty = store.getState().domNode?.querySelectorAll(".react-flow__node .node-header > span:first-child:empty").length ?? 0;
+            const empty = store.getState().domNode?.querySelectorAll(".react-flow__node .node-header > .node-label:empty").length ?? 0;
             const settled = nodes.every((n) => n.measured?.width) && empty === 0 && sizes === last;
             steady = settled ? steady + 1 : 0;
             last = sizes;
@@ -1213,9 +1238,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                   ? [
                         [editable && entry("app", "cut", cut), entry("app", "copy", copy), pasteHere, editable && entry("node_editor", "duplicate"), editable && entry("node_editor", "delete")],
                         [editable && entry("node_editor", "join_in_frame"), editable && inFrame && entry("node_editor", "remove_from_frame")],
+                        [editable && entry("node_editor", "collapse_all"), editable && entry("node_editor", "expand_all")],
                         [editable && entry("node_editor", "group"), editable && groupCount > 0 && entry("node_editor", "ungroup"), openableCount === 1 && entry("node_editor", "edit_group")],
                     ]
-                  : [[editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere], [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")], [!isRoot && entry("node_editor", "exit_group")]];
+                  : [[editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere], [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")], [editable && hasNodes && entry("node_editor", "collapse_all"), editable && hasNodes && entry("node_editor", "expand_all")], [!isRoot && entry("node_editor", "exit_group")]];
         return sections.map((entries) => entries.filter((e): e is ContextEntry => !!e)).filter((entries) => entries.length > 0);
     };
     const contextEntries = contextMenu ? contextSections(contextMenu) : [];
@@ -1325,12 +1351,14 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const width = change.dimensions?.width ?? node.width ?? node.measured?.width;
                 const height = change.dimensions?.height ?? node.height ?? node.measured?.height;
                 if (isFrame(node)) setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, data: { ...n.data, shrink: false } } : n)));
-                // a viewer without a height of its own keeps growing with what it shows when only its width was dragged
+                // a viewer without a height of its own keeps growing with what it shows when only its width was dragged. a
+                // collapsed node keeps the height it had, it's drawn as tall as its header
                 const start = resizeStartRef.current.get(node.id);
                 resizeStartRef.current.delete(node.id);
                 const stored = (storedRef.current.nodes ?? []).find((n: any) => n.id === node.id);
                 const widthOnly = node.type === VIEWER && stored?.height === undefined && start !== undefined && height !== undefined && Math.abs(height - start) < 1;
-                if (width && height) apply([{ op: "resize", node: node.id, width, height: widthOnly ? null : height, position: node.position }]);
+                const kept = (node.data as any)?.collapsed ? (stored?.height ?? null) : widthOnly ? null : height;
+                if (width && height) apply([{ op: "resize", node: node.id, width, height: kept, position: node.position }]);
             }
         },
         [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove]

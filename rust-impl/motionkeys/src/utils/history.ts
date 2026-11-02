@@ -9,6 +9,8 @@ const LABELS: Record<string, string> = {
     disconnect: "Disconnect",
     set_inputs: "Set Inputs",
     set_label: "Set Label",
+    collapse: "Collapse",
+    expand: "Expand",
     move: "Move",
     resize: "Resize",
     select: "Select",

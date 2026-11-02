@@ -116,7 +116,7 @@ test("selecting each node", async ({ page }) => {
             .nth(i)
             .locator(".node-header, .node")
             .first()
-            .click({ position: { x: 10, y: 6 }, force: true });
+            .click({ position: { x: 30, y: 6 }, force: true });
     }
     await settle(page);
 });
@@ -953,7 +953,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a node outside the selection is selected alone, then it's the node's entries. delete runs the editor's delete
     await page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
     await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["get_midi_track_data-1"], edges: [] });
     await rows.getByText("Delete", { exact: true }).click();
     await expect(menu).toHaveCount(0);
@@ -961,14 +961,14 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a group node can be ungrouped and opened, escape closes the menu
     await page.locator('.react-flow__node[data-id="evaluate_instrument-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group", "Ungroup", "Edit Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group", "Ungroup", "Edit Group"]);
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 
     // the empty graph, add node opens the add menu where it was right clicked
     const empty = await panePoint(page);
     await page.mouse.click(empty.x, empty.y, { button: "right" });
-    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All"]);
+    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All", "Collapse All", "Expand All"]);
     await rows.getByText("Add Node", { exact: true }).click();
     const search = page.getByPlaceholder("Search nodes...");
     await expect(search).toBeFocused();
@@ -1026,7 +1026,7 @@ test("frames", async ({ page }) => {
     await expect(frame).toHaveClass(/selected/);
     await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["frame-1"] });
     await page.mouse.click(inside.x, inside.y, { button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
     await page.keyboard.press("Escape");
 
     // a click that moves a pixel selects it too
@@ -1041,7 +1041,7 @@ test("frames", async ({ page }) => {
 
     // a node in it can be taken out, alt+p does the same
     await page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Remove from Frame", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Remove from Frame", "Collapse All", "Expand All", "Make Group"]);
     await rows.getByText("Remove from Frame", { exact: true }).click();
     await expect.poll(async () => lastOp(page, "remove_from_frame")).toEqual({ op: "remove_from_frame", nodes: ["get_midi_file-1"] });
     await page.mouse.move(inside.x, inside.y);
@@ -1086,9 +1086,9 @@ test("frames", async ({ page }) => {
     const header = page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header');
     const from = (await header.boundingBox())!;
     const around = (await frame.boundingBox())!;
-    await page.mouse.move(from.x + 10, from.y + from.height / 2);
+    await page.mouse.move(from.x + 30, from.y + from.height / 2);
     await page.mouse.down();
-    await page.mouse.move(from.x + 15, from.y + from.height / 2);
+    await page.mouse.move(from.x + 35, from.y + from.height / 2);
     await page.mouse.move(around.x + around.width + 40, from.y + from.height / 2, { steps: 8 });
     await page.mouse.up();
     await expect.poll(async () => Object.keys((await lastOp(page, "move"))?.positions ?? {})).toEqual(["get_midi_file-1"]);
@@ -1369,4 +1369,87 @@ test("a viewer with a height scrolls what doesn't fit", async ({ page }) => {
     expect(sizes.scroll).toBeGreaterThan(sizes.client);
     // other nodes don't get the bottom controls
     await expect(page.locator('.react-flow__node[data-id="scene_link-1"] .react-flow__resize-control.bottom')).toHaveCount(0);
+});
+
+// the fixture with `ids` collapsed, and viewer-1 in a frame
+function withCollapsed(ids: string[]) {
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((node: any) => ({ ...node, selected: false, ...(node.id === "viewer-1" ? { frame: "frame-1" } : {}), data: { ...node.data, ...(ids.includes(node.id) ? { collapsed: true } : {}) } }));
+    nodes.push({ id: "frame-1", type: "frame", position: { x: 0, y: 0 }, data: {}, width: 100, height: 100 });
+    return { ...backend, get_state: { ...state, rf_instance: { ...state.rf_instance, nodes } } };
+}
+
+test("a collapsed node is its header with its sockets down its ends", async ({ page }) => {
+    await openWindow(page, withCollapsed(["viewer-1", "get_midi_track_data-1"]), "/#/");
+    await graphReady(page);
+    await settle(page);
+    const viewer = page.locator('.react-flow__node[data-id="viewer-1"]');
+    const header = (await viewer.locator(".node-header").boundingBox())!;
+    const box = (await viewer.boundingBox())!;
+    await expect(viewer.locator(".node-inner")).toHaveCount(0);
+    expect(box.height).toBeLessThan(header.height + 4);
+
+    // every socket it draws expanded, spread down the ends: the track data's tracks in, its five outputs out. it grows to fit them
+    const track = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
+    await expect(track.locator(".react-flow__handle.source")).toHaveCount(1);
+    await expect(track.locator(".react-flow__handle.target")).toHaveCount(5);
+    const outputs = await track.locator(".react-flow__handle.target").evaluateAll((handles) => handles.map((h) => h.getBoundingClientRect().top));
+    expect(new Set(outputs.map(Math.round)).size).toBe(5);
+    const trackBox = (await track.boundingBox())!;
+    expect(Math.min(...outputs)).toBeGreaterThan(trackBox.y);
+    expect(Math.max(...outputs)).toBeLessThan(trackBox.y + trackBox.height);
+    await expect(viewer.locator(".react-flow__handle")).toHaveCount(1);
+    const socket = (await viewer.locator(".react-flow__handle").boundingBox())!;
+    expect(socket.y + socket.height / 2).toBeCloseTo(header.y + header.height / 2, 0);
+    expect(socket.x + socket.width / 2).toBeCloseTo(box.x, 0);
+    // the edge ends on it
+    const end = await page.locator('.react-flow__edge[data-id="xy-edge__viewer-1data-evaluate_instrument-1keyframes"] path.react-flow__edge-path').evaluate((path: SVGPathElement) => {
+        const point = path.getPointAtLength(0);
+        const ctm = path.getScreenCTM()!;
+        return { x: point.x * ctm.a + ctm.e, y: point.y * ctm.d + ctm.f };
+    });
+    expect(end.y).toBeCloseTo(socket.y + socket.height / 2, 0);
+
+    // its frame fits around the header
+    const frame = (await page.locator('.react-flow__node[data-id="frame-1"]').boundingBox())!;
+    expect(frame.height).toBeLessThan(box.height + 100);
+    expect(frame.y + frame.height).toBeGreaterThanOrEqual(box.y + box.height);
+    await settle(page);
+});
+
+test("collapsing from the caret, H and the menus", async ({ page }) => {
+    await openWindow(page, withCollapsed(["viewer-1"]), "/#/");
+    await graphReady(page);
+    await settle(page);
+    const collapses = async () => (await sentOps(page)).filter((op: any) => op.op === "collapse");
+    const node = page.locator('.react-flow__node[data-id="scene_link-1"]');
+
+    // the caret toggles without selecting or dragging the node
+    const before = (await node.boundingBox())!;
+    await node.locator(".node-caret").click();
+    await expect.poll(collapses).toEqual([{ op: "collapse", nodes: ["scene_link-1"], collapsed: true }]);
+    await page.locator('.react-flow__node[data-id="viewer-1"] .node-caret').click();
+    await expect.poll(async () => (await collapses()).at(-1)).toEqual({ op: "collapse", nodes: ["viewer-1"], collapsed: false });
+    await page.waitForTimeout(300);
+    expect((await sentOps(page)).filter((op: any) => op.op === "select" || op.op === "move")).toEqual([]);
+    await expect(node).not.toHaveClass(/selected/);
+    expect((await node.boundingBox())!.x).toBe(before.x);
+
+    // H on the selection: collapses, or expands when they're all collapsed
+    await node.locator(".node-label").click();
+    await page.mouse.move(before.x + 10, before.y + 10);
+    await page.keyboard.press("h");
+    await expect.poll(async () => (await collapses()).at(-1)).toEqual({ op: "collapse", nodes: ["scene_link-1"], collapsed: true });
+
+    // collapse all with nothing selected acts on every node but the frame and the ones already collapsed
+    await page.keyboard.press("a");
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+    await emitEvent(page, "app-command", "area.collapse_all");
+    await expect.poll(async () => (await collapses()).at(-1)?.nodes?.length).toBe(7);
+    expect((await collapses()).at(-1).nodes).not.toContain("frame-1");
+    expect((await collapses()).at(-1).nodes).not.toContain("viewer-1");
+    // expand all only what's collapsed
+    await emitEvent(page, "app-command", "area.expand_all");
+    await expect.poll(async () => (await collapses()).at(-1)).toEqual({ op: "collapse", nodes: ["viewer-1"], collapsed: false });
+    await settle(page);
 });

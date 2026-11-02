@@ -266,6 +266,49 @@ fn resize_height() {
     assert_eq!(size(&Graph::from_rf(&project).unwrap()), (Some(json!(300.0)), Some(json!(500.0))));
 }
 
+// collapsing is kept on each node and saved, frames stay as they are, and it's one undo step that doesn't change what the
+// graph computes
+#[test]
+fn collapse_state() {
+    let specs = specs();
+    let mut graph = fixture();
+    let collapsed = |graph: &Graph| -> BTreeSet<String> { graph.nodes.iter().filter(|n| n.data.get("collapsed") == Some(&json!(true))).map(|n| n.id.clone()).collect() };
+    run(&mut graph, None, json!([{ "op": "join_in_frame", "nodes": ["viewer-1"] }])).unwrap();
+    let framed = graph.to_rf();
+
+    let op = json!({ "op": "collapse", "nodes": ["viewer-1", "scene_link-1", "frame-1"], "collapsed": true });
+    let before = graph.clone();
+    run(&mut graph, None, json!([op.clone()])).unwrap();
+    assert_eq!(collapsed(&graph), BTreeSet::from(["viewer-1".to_string(), "scene_link-1".to_string()]));
+    let op: Op = serde_json::from_value(op).unwrap();
+    assert_eq!(op.name(), "collapse");
+    assert_eq!(describe(&op, &before, &graph, None, &specs, &[]), "Viewer, Scene Link");
+
+    // saved with the project
+    let mut saved = graph.clone();
+    saved.strip_measured();
+    assert_eq!(collapsed(&saved), collapsed(&graph));
+
+    // only layout, one undo step
+    let diff = Diff::between(&framed, &graph.to_rf());
+    assert!(!diff.affects_output());
+    let mut history = History::default();
+    let mut project = framed.clone();
+    assert!(history.record(diff, Step::new("collapse", Source::Ui)));
+    history.undo(&mut project).unwrap();
+    assert!(collapsed(&Graph::from_rf(&project).unwrap()).is_empty());
+    history.redo(&mut project).unwrap();
+    assert_eq!(collapsed(&Graph::from_rf(&project).unwrap()).len(), 2);
+
+    // expanding takes it off, an unknown node changes nothing
+    let expand: Op = serde_json::from_value(json!({ "op": "collapse", "nodes": [], "collapsed": false })).unwrap();
+    assert_eq!(expand.name(), "expand");
+    run(&mut graph, None, json!([{ "op": "collapse", "nodes": ["viewer-1"], "collapsed": false }])).unwrap();
+    assert_eq!(collapsed(&graph), BTreeSet::from(["scene_link-1".to_string()]));
+    assert!(run(&mut graph, None, json!([{ "op": "collapse", "nodes": ["nope", "scene_link-1"], "collapsed": false }])).is_err());
+    assert_eq!(collapsed(&graph), BTreeSet::from(["scene_link-1".to_string()]));
+}
+
 // a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the
 // node. one being edited stays, and cut and paste brings one back
 #[test]

@@ -395,6 +395,28 @@ img {
     border-bottom: 1px solid var(--node-border, #0f1010);
 }
 
+.node-caret {
+    display: flex;
+    align-items: center;
+    padding: 0 4px 0 0;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+/* a collapsed node is only its header, as tall as its sockets need */
+.node-collapsed {
+    display: flex;
+    flex-direction: column;
+}
+
+.node-collapsed .node-header {
+    flex: 1;
+    border-bottom: none;
+    border-radius: 5px;
+}
+
 /* selected nodes get a thicker border and a little glow in a lighter shade of their own color. a shadow ring instead of a wider border so nothing moves */
 .react-flow__node.selected .node {
     border-color: color-mix(in srgb, var(--node-border, #0f1010) 50%, white);

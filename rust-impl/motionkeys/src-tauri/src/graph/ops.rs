@@ -87,6 +87,11 @@ pub enum Op {
         sockets: Vec<SocketRef>,
         name: String,
     },
+    /// collapses nodes to their headers (Blender's hide) or expands them, frames stay as they are
+    Collapse {
+        nodes: Vec<String>,
+        collapsed: bool,
+    },
     /// the name shown in a node's header instead of its type's, empty goes back to the type's
     SetLabel {
         node: String,
@@ -200,6 +205,13 @@ impl Op {
             Op::SetTags {
                 ..
             } => "set_tags",
+            Op::Collapse {
+                collapsed: true,
+                ..
+            } => "collapse",
+            Op::Collapse {
+                ..
+            } => "expand",
             Op::SetLabel {
                 ..
             } => "set_label",
@@ -375,6 +387,23 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
                 return Err("the empty socket can't be tagged".to_string());
             }
             tags::set_tags(target(project, scope)?, sockets, name)
+        }
+        Op::Collapse {
+            nodes,
+            collapsed,
+        } => {
+            let graph = target(project, scope)?;
+            if let Some(missing) = nodes.iter().find(|id| graph.node(id).is_none()) {
+                return Err(format!("no node '{}'", missing));
+            }
+            for node in graph.nodes.iter_mut().filter(|n| nodes.contains(&n.id) && !n.is_frame()) {
+                if *collapsed {
+                    node.data.insert("collapsed".to_string(), json!(true));
+                } else {
+                    node.data.remove("collapsed");
+                }
+            }
+            Ok(())
         }
         Op::SetLabel {
             node,
@@ -629,6 +658,14 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
         | Op::RemoveFromFrame {
             nodes,
         } => names(before, nodes),
+        // the nodes it changed, not the frames
+        Op::Collapse {
+            nodes,
+            ..
+        } => {
+            let changed: Vec<String> = graph_in(after, scope).map(|g| g.nodes.iter().filter(|n| nodes.contains(&n.id) && !n.is_frame()).map(|n| n.id.clone()).collect()).unwrap_or_default();
+            names(after, &changed)
+        }
         // removed connections are named by the nodes on their ends, tags by their nodes
         Op::Delete {
             nodes,
