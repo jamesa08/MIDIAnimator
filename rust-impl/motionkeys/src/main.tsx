@@ -17,6 +17,10 @@ import { scrollbarWidth } from "./utils/panels";
 import "./utils/keymap";
 import "./utils/editMenu";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { captureConsole } from "./utils/console";
+
+// debug mode sends this window's console output to the console (src/utils/console.ts)
+captureConsole();
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
 function WindowReady() {

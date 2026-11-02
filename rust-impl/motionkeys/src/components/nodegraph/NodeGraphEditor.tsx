@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -6,8 +6,9 @@ import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, appl
 import { XYHandle } from "@xyflow/system";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
-import { GROUP, GroupDef, Level, NOTE_MAP_NODE, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
-import { ApplyOptions, Op, SocketRef, useGraphOps } from "../../utils/graphOps";
+import { GROUP, GroupDef, Level, NOTE_MAP_NODE, PATH_SEP, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
+import { ApplyOptions, Op, SocketRef, TabContext, useGraphOps } from "../../utils/graphOps";
+import { takeReveal, usePendingReveal } from "../../utils/console";
 import { blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
@@ -920,6 +921,24 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             frameView();
         }
     }, [ready, nodesInitialized, rfInstance, getNodes, frameView]);
+
+    // a node in this graph the console asked for (src/utils/console.ts): selected on its own and framed like frame
+    // selected, once this graph is on screen
+    const reveal = usePendingReveal();
+    const tab = useContext(TabContext);
+    useEffect(() => {
+        if (!reveal || reveal.tab !== tab || !ready || !shown) return;
+        const parts = reveal.node.split(PATH_SEP);
+        if (parts.slice(0, -1).join(PATH_SEP) !== path.join(PATH_SEP)) return;
+        takeReveal(reveal.seq);
+        const id = parts[parts.length - 1];
+        const node = getNodes().find((n) => n.id === id);
+        if (!node) return;
+        setNodes((nds) => withSockets(nds, []).map((n) => ({ ...n, selected: n.id === id })));
+        setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: false })));
+        scheduleSelection();
+        frameView([node]);
+    }, [reveal, tab, ready, shown, path, getNodes, setNodes, setEdges, scheduleSelection, frameView]);
 
     // the backend's graph changed (an op came back, undo, an MCP edit): show it.
     // kept from what's on screen: sizes, nodes mid drag or grab where the cursor has them, and the selection while ops

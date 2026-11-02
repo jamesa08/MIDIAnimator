@@ -91,6 +91,7 @@ const SECTIONS = [
     { id: "appearance", name: "Appearance" },
     { id: "panels", name: "Panels" },
     { id: "connection", name: "Blender connection" },
+    { id: "console", name: "Console" },
     { id: "keymap", name: "Keyboard Shortcuts" },
 ] as const;
 type Section = (typeof SECTIONS)[number]["id"];
@@ -139,6 +140,10 @@ function Settings() {
                                 {section === "panels" && <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
                                 {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
+                                {section === "console" && <Toggle id="console-debug" label="Debug mode" description="" checked={settings.console?.debug ?? false} onChange={(checked) => update("console.debug", checked)} />}
+                                {section === "console" && <Toggle id="console-overlay" label="Show on canvas" description="" checked={settings.console?.overlay ?? true} onChange={(checked) => update("console.overlay", checked)} />}
+                                {section === "console" && <NumberInput id="console-inline-lines" label="Lines on canvas" description="" value={typeof settings.console?.inline_lines === "number" ? settings.console.inline_lines : 5} min={1} onChange={(lines) => update("console.inline_lines", lines)} />}
+                                {section === "console" && <NumberInput id="console-fade-seconds" label="Fade after (seconds)" description="" value={typeof settings.console?.fade_seconds === "number" ? settings.console.fade_seconds : 10} min={0} onChange={(seconds) => update("console.fade_seconds", seconds)} />}
                                 {section === "connection" && (
                                     <Row id="save-diagnostics" label="" description="">
                                         <button id="save-diagnostics" className="px-2 h-6 border border-black text-sm hover:bg-zinc-100" onClick={() => invoke("save_diagnostics").catch(console.error)}>

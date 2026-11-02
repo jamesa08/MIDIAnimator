@@ -31,6 +31,7 @@
     --properties-line: #222222;
     --properties-frame: #4a4a4a;
     --properties-dim: #777777;
+    --console-warn: #e8a33a;
 }
 
 body {

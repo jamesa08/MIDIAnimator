@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { logToConsole } from "./console";
 
 // what the main window's status bar shows (src/components/StatusBar.tsx): the keys that do something where the mouse is,
 // and the last thing that happened. other windows have no status bar of their own, they send theirs to the main window
@@ -48,8 +49,9 @@ export function setHints(next: Hint[]) {
     else if (!SILENT.includes(label)) emitTo(MAIN, HINTS_EVENT, next);
 }
 
-// shows `text` until the next message
-export function showStatus(text: string) {
+// shows `text` until the next message. a warning or an error goes to the console too
+export function showStatus(text: string, level?: "warn" | "error") {
+    if (level) logToConsole(level, text);
     if (isMain) takeMessage(text);
     else emitTo(MAIN, MESSAGE_EVENT, text);
 }

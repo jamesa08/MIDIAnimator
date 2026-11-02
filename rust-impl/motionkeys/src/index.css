@@ -235,6 +235,11 @@ img {
     --error-badge: #a32626;
     /* the check on a node writing to Blender whose last write went through */
     --success-badge: #2f8f46;
+    /* console lines by level, on the canvas (info and debug follow the canvas' lines) and in the console window */
+    --console-error: var(--error);
+    --console-warn: #c27a00;
+    --console-info: var(--canvas-line);
+    --console-debug: color-mix(in srgb, var(--canvas-line) 45%, transparent);
     /* chrome shades, themes change these. the window (and the tab strip on it) is darkest, the toolbar and active
        tab lightest, panel headers in between */
     --chrome-tab: #ececec;
@@ -1065,6 +1070,55 @@ input.color-picker-slider,
 /* the group breadcrumbs and buttons in the canvas' top left corner */
 .graph-overlay {
     left: calc(8px + var(--panel-left, 0px));
+}
+
+/* the console's last lines on the canvas, under the corner's buttons and between the docked panels. only a line
+   linked to a node takes the mouse */
+.console-overlay {
+    position: absolute;
+    z-index: 10;
+    left: calc(12px + var(--panel-left, 0px));
+    right: calc(12px + var(--panel-right, 0px));
+    pointer-events: none;
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    line-height: 15px;
+}
+
+.console-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: opacity 0.6s linear;
+}
+
+.console-line-out {
+    opacity: 0;
+}
+
+.console-line-link {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.console-line-link:hover {
+    text-decoration: underline;
+}
+
+.console-error {
+    color: var(--console-error);
+}
+
+.console-warn {
+    color: var(--console-warn);
+}
+
+.console-info {
+    color: var(--console-info);
+}
+
+.console-debug {
+    color: var(--console-debug);
 }
 
 * {

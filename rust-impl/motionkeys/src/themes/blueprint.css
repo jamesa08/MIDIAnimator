@@ -50,6 +50,9 @@
        still shows, like the dark theme */
     --socket-number: #c9d5ec;
     --socket-string: #c9d5ec;
+    /* console lines light enough to read on the blue */
+    --console-error: #ff9c94;
+    --console-warn: #ffcf5c;
 }
 
 body {
