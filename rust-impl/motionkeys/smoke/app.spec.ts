@@ -274,6 +274,27 @@ test("note map opens over the graph and closes", async ({ page }) => {
     await settle(page);
 });
 
+test("a reload keeps the open note map and collapsed sections", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    await expect(page.locator(".note-map-layer")).toBeVisible();
+
+    // the nodes panel's MIDI section collapsed
+    const grids = page.locator(".nodes-panel .nodes-grid");
+    const sections = await grids.count();
+    await page
+        .locator(".nodes-panel .properties-section")
+        .filter({ has: page.getByText("MIDI", { exact: true }) })
+        .click();
+    await expect(grids).toHaveCount(sections - 1);
+
+    // the page is loaded again, the backend is the same
+    await page.reload();
+    await expect(page.locator(".note-map-layer")).toBeVisible();
+    await expect(grids).toHaveCount(sections - 1);
+    await settle(page);
+});
+
 test("note map keeps its nodes when a run sends new results", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();

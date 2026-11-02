@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { THEMES } from "../utils/theme";
 import KeymapEditor from "./KeymapEditor";
+import { usePersistedState } from "../utils/persist";
 
 // the page zooms, the same steps as the view menu's zoom in and out (ZOOM_STEPS in src-tauri/src/ui/windows.rs)
 const ZOOMS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
@@ -97,7 +98,7 @@ type Section = (typeof SECTIONS)[number]["id"];
 // settings live in the backend (src-tauri/src/settings.rs), changes are saved right away
 function Settings() {
     const [settings, setSettings] = useState<any>(null);
-    const [section, setSection] = useState<Section>("appearance");
+    const [section, setSection] = usePersistedState<Section>("settings.section", "appearance");
 
     useEffect(() => {
         invoke("get_settings").then(setSettings);

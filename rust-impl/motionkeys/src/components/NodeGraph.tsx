@@ -11,6 +11,7 @@ import NodeGraphEditor, { ProjectAccess } from "./nodegraph/NodeGraphEditor";
 import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
 import NoteMapView from "./nodegraph/NoteMapView";
 import { noteMapData } from "../utils/noteMap";
+import { loadPersisted, savePersisted, usePersistedState } from "../utils/persist";
 
 const noop = () => {};
 
@@ -102,8 +103,8 @@ function GraphView({ levels, groups, project, shown, covered, fitOnOpen, setPath
 }
 
 // tabs that have been on screen, the first time a tab is shown (a loaded project's) its graph is framed to fit. a tab
-// shown again opens where it was left
-const seenTabs = new Set<string>();
+// shown again opens where it was left, after a reload of the window too
+const seenTabs = new Set<string>(loadPersisted<string[]>("seen_tabs", []));
 
 // the node graph of the tab on screen, each tab gets editors of its own (its edits go to that tab)
 function NodeGraph() {
@@ -132,6 +133,7 @@ function TabGraph({ tab }: { tab: string }) {
     const fitRef = useRef(!seenTabs.has(tab));
     useEffect(() => {
         seenTabs.add(tab);
+        savePersisted("seen_tabs", [...seenTabs]);
     }, [tab]);
 
     useEffect(() => {
@@ -203,7 +205,7 @@ function TabGraph({ tab }: { tab: string }) {
 
     // the Assign Notes to Objects node whose note map is open over the graph on screen, it closes when that graph or
     // the node goes away
-    const [mapNode, setMapNode] = useState<{ path: string; id: string } | null>(null);
+    const [mapNode, setMapNode] = usePersistedState<{ path: string; id: string } | null>(`note_map.${tab}`, null);
     const openMap = useCallback((nodeId: string) => setMapNode({ path: pathKeyRef.current, id: nodeId }), []);
     const closeMap = useCallback(() => setMapNode(null), []);
     const mapped = mapNode && mapNode.path === shownPathKey && pathKey === shownPathKey ? active.graph.nodes?.find((n: any) => n.id === mapNode.id && n.type === NOTE_MAP_NODE) : undefined;

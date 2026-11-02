@@ -12,6 +12,7 @@ import HistoryList from "./HistoryList";
 import PropertiesPanel, { SectionHeader } from "./PropertiesPanel";
 import { CATEGORY_LABELS, nodeColors } from "../styles";
 import { pushModal } from "../utils/keymap";
+import { usePersistedSet } from "../utils/persist";
 
 // where a node from the nodes panel was released, offset is where it was grabbed in node (unscaled) pixels
 export interface PanelNodeDrop {
@@ -208,7 +209,7 @@ const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = fal
         for (const entry of entries) byCategory.set(entry.category, [...(byCategory.get(entry.category) ?? []), entry]);
         return [...byCategory];
     }, [entries]);
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [collapsed, setCollapsed] = usePersistedSet("nodes.collapsed");
     const toggle = (category: string) =>
         setCollapsed((prev) => {
             const next = new Set(prev);

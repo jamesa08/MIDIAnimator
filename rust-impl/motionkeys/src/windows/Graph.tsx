@@ -11,6 +11,7 @@ import CurveCanvas, { CurveCanvasHandle } from "../components/graph/CurveCanvas"
 import ScenePreview, { SHAPES } from "../components/graph/ScenePreview";
 import { useKeymap } from "../utils/keymap";
 import { Icon } from "../icons";
+import { usePersistedSet } from "../utils/persist";
 
 // a box that's ticked or not (PropertiesPanel's Check), clicking it toggles
 function Check({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
@@ -126,7 +127,7 @@ function Graph() {
     const canvas = useRef<CurveCanvasHandle>(null);
 
     const channels = useMemo(() => colorChannels(curves), [curves]);
-    const [hidden, setHidden] = useState<Set<string>>(new Set());
+    const [hidden, setHidden] = usePersistedSet("graph.hidden");
     const shown = useMemo(() => channels.filter((channel) => !hidden.has(channel.key)), [channels, hidden]);
 
     // MARK: Playback

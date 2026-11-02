@@ -11,6 +11,7 @@ import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
 import { ColorField } from "./ColorPicker";
 import { FRAME, FRAME_COLOR, isLocked, labelSize, locksSize, shrinks, withContents } from "../utils/frames";
+import { usePersistedSet } from "../utils/persist";
 
 // MARK: - Parameters
 
@@ -214,9 +215,9 @@ function Properties() {
     const { backEndState: state } = useStateContext();
     const groups = usePanelGroups();
     const specs = useNodeSpecs();
-    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [collapsed, setCollapsed] = usePersistedSet("properties.collapsed");
     // the scene tree's open rows, the scene itself starts open
-    const [expanded, setExpanded] = useState<Set<string>>(new Set(["scene"]));
+    const [expanded, setExpanded] = usePersistedSet("properties.expanded", ["scene"]);
 
     const project = state.rf_instance;
     const openGroup: string = state.open_group ?? "";
