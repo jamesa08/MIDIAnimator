@@ -128,6 +128,9 @@ function dynInner(dataType: string): string {
 
 export type Zone = { input: string; output: string; body: Set<string> };
 
+// room above and below everything in a zone's frame (ZoneFrames.tsx)
+export const ZONE_PAD_Y = 14;
+
 // the for each zones in a graph and the nodes inside each: nodes that depend on the zone input, except the output and
 // anything after it. keep in sync with Runner::find_zones in src-tauri/src/graph/run.rs
 export function findZones(graph: Graph): Zone[] {

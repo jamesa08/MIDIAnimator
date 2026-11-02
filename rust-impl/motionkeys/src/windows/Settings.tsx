@@ -90,6 +90,7 @@ function Choice({ id, label, description, value, options, onChange }: { id: stri
 const SECTIONS = [
     { id: "appearance", name: "Appearance" },
     { id: "panels", name: "Panels" },
+    { id: "node_editor", name: "Node Editor" },
     { id: "connection", name: "Blender connection" },
     { id: "console", name: "Console" },
     { id: "keymap", name: "Keyboard Shortcuts" },
@@ -138,6 +139,21 @@ function Settings() {
                                 {section === "appearance" && <Choice id="appearance-theme" label="Theme" description="How the node graph looks." value={settings.appearance?.theme ?? "light"} options={THEMES.map((theme) => [theme, theme[0].toUpperCase() + theme.slice(1)])} onChange={(theme) => update("appearance.theme", theme)} />}
                                 {section === "appearance" && <Choice id="appearance-zoom" label="UI Scale" description="" value={String(settings.appearance?.zoom ?? 1)} options={ZOOMS.map((zoom) => [String(zoom), `${Math.round(zoom * 100)}%`])} onChange={(zoom) => update("appearance.zoom", Number(zoom))} />}
                                 {section === "panels" && <Toggle id="panels-hide-when-inactive" label="Hide floating panels in the background" description="Floating panels hide while MotionKeys isn't the active app, like Photoshop." checked={settings.panels?.hide_when_inactive ?? false} onChange={(checked) => update("panels.hide_when_inactive", checked)} />}
+                                {section === "node_editor" && (
+                                    <Choice
+                                        id="node-editor-arrange"
+                                        label="Arrange"
+                                        description=""
+                                        value={settings.node_editor?.arrange ?? "network_simplex"}
+                                        options={[
+                                            ["network_simplex", "Network Simplex"],
+                                            ["brandes_koepf", "Brandes-Köpf"],
+                                            ["top_columns", "Top-Aligned Columns"],
+                                            ["top_links", "Top-Aligned Links"],
+                                        ]}
+                                        onChange={(mode) => update("node_editor.arrange", mode)}
+                                    />
+                                )}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
                                 {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
                                 {section === "console" && <Toggle id="console-debug" label="Debug mode" description="" checked={settings.console?.debug ?? false} onChange={(checked) => update("console.debug", checked)} />}

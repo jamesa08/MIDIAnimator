@@ -61,11 +61,11 @@ export function nodeRect(node: any): Rect {
 }
 
 const contains = (r: Rect, p: XY) => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
-const apart = (a: Rect, b: Rect) => a.x >= b.x + b.width || a.x + a.width <= b.x || a.y >= b.y + b.height || a.y + a.height <= b.y;
+export const apart = (a: Rect, b: Rect) => a.x >= b.x + b.width || a.x + a.width <= b.x || a.y >= b.y + b.height || a.y + a.height <= b.y;
 const center = (r: Rect) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
 
 // the box around rects
-function bounds(rects: Rect[]): Rect {
+export function bounds(rects: Rect[]): Rect {
     const x0 = Math.min(...rects.map((r) => r.x));
     const y0 = Math.min(...rects.map((r) => r.y));
     const x1 = Math.max(...rects.map((r) => r.x + r.width));

@@ -968,7 +968,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
     // the empty graph, add node opens the add menu where it was right clicked
     const empty = await panePoint(page);
     await page.mouse.click(empty.x, empty.y, { button: "right" });
-    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All", "Collapse All", "Expand All"]);
+    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All", "Arrange", "Collapse All", "Expand All"]);
     await rows.getByText("Add Node", { exact: true }).click();
     const search = page.getByPlaceholder("Search nodes...");
     await expect(search).toBeFocused();
@@ -1451,5 +1451,57 @@ test("collapsing from the caret, H and the menus", async ({ page }) => {
     // expand all only what's collapsed
     await emitEvent(page, "app-command", "area.expand_all");
     await expect.poll(async () => (await collapses()).at(-1)).toEqual({ op: "collapse", nodes: ["viewer-1"], collapsed: false });
+    await settle(page);
+});
+
+test("arrange moves the selection, or every node, in one op", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const moves = async () => (await sentOps(page)).filter((op: any) => op.op === "move");
+
+    // the fixture has its viewer selected, only it moves
+    await emitEvent(page, "app-command", "area.arrange");
+    await expect.poll(async () => (await moves()).length).toBe(1);
+    expect(Object.keys((await moves())[0].positions)).toEqual(["viewer-1"]);
+
+    // with nothing selected every node does
+    await page.keyboard.press("a");
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(0);
+    await settle(page);
+    await emitEvent(page, "app-command", "area.arrange");
+    await expect.poll(async () => (await moves()).length).toBe(2);
+    const ids = backend.get_state.rf_instance.nodes.map((n: any) => n.id).sort();
+    expect(Object.keys((await moves())[1].positions).sort()).toEqual(ids);
+
+    // each a single apply, one undo step
+    const applies = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply" && c.args.ops.some((op: any) => op.op === "move")));
+    expect(applies.map((c: any) => c.args.ops.length)).toEqual([1, 1]);
+    await settle(page);
+});
+
+test("arrange is in the empty graph's menu", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const point = await panePoint(page);
+    await page.mouse.click(point.x, point.y, { button: "right" });
+    await page.locator(".context-menu-row", { hasText: /^Arrange$/ }).click();
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "move").length).toBe(1);
+    await settle(page);
+});
+
+test("arrange places the columns the way settings say", async ({ page }) => {
+    const settings = { ...backend.get_settings, node_editor: { arrange: "top_columns" } };
+    const nodes = backend.get_state.rf_instance.nodes.map((node: any) => ({ ...node, selected: false }));
+    await openWindow(page, { ...backend, get_settings: settings, get_state: { ...backend.get_state, rf_instance: { ...backend.get_state.rf_instance, nodes } } }, "/#/");
+    await graphReady(page);
+    await settle(page);
+    await emitEvent(page, "app-command", "area.arrange");
+    await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "move").length).toBe(1);
+    // every column starts at the same top
+    const positions: { x: number; y: number }[] = Object.values((await sentOps(page)).find((op: any) => op.op === "move").positions);
+    const top = Math.min(...positions.map((p) => p.y));
+    for (const x of new Set(positions.map((p) => p.x))) expect(Math.min(...positions.filter((p) => p.x === x).map((p) => p.y))).toBe(top);
     await settle(page);
 });

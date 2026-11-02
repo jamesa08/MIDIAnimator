@@ -13,6 +13,9 @@
         "hide_when_inactive": false,
         "nodes_view": "grid"
     },
+    "node_editor": {
+        "arrange": "network_simplex"
+    },
     "graph": {
         "time_units": "seconds",
         "show_handles": true,

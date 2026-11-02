@@ -23,7 +23,9 @@ import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
 import { useFrameView } from "./frameView";
 import { TOOLBAR_ADD_EVENT, setEditorState } from "../../utils/editorState";
-import { Rect, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, withContents } from "../../utils/frames";
+import { Rect, apart, bounds, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, nodeRect, withContents } from "../../utils/frames";
+import { ArrangeMode, arrange } from "../../utils/arrange";
+import { uncoveredRect } from "../../utils/panels";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -523,6 +525,35 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return selected.length > 0 ? selected : getNodes();
     }, [getNodes]);
 
+    // the selected nodes (every node when none are) laid out left to right from their top left, in one move, placed in
+    // their columns the way settings say. the view stays unless they all end up out of it, then they're framed once
+    // they're drawn there
+    const arrangeNodes = useCallback(async () => {
+        const shownNodes = getNodes();
+        const measured = new Map(shownNodes.map((n) => [n.id, n.measured]));
+        const nodes = (storedRef.current.nodes ?? []).map((n: any) => ({ ...n, measured: measured.get(n.id) }));
+        const selected = selectedIds(shownNodes);
+        const sockets = Object.fromEntries([...store.getState().nodeLookup.values()].map((node) => [node.id, socketPoints(node).map((p) => ({ side: p.side, socket: p.socket, y: p.y - node.internals.positionAbsolute.y }))]));
+        const mode = await invoke<any>("get_settings").then(
+            (settings) => settings?.node_editor?.arrange as ArrangeMode,
+            () => undefined
+        );
+        const positions = await arrange(nodes, getEdges(), selected, sockets, mode).catch((e): Record<string, { x: number; y: number }> => {
+            console.error(`arrange: ${e}`);
+            return {};
+        });
+        if (Object.keys(positions).length === 0 || !(await apply([{ op: "move", positions }]))) return;
+
+        const { domNode } = store.getState();
+        if (!domNode) return;
+        const visible = uncoveredRect(domNode);
+        const topLeft = screenToFlowPosition({ x: visible.left, y: visible.top }, { snapToGrid: false });
+        const bottomRight = screenToFlowPosition({ x: visible.left + visible.width, y: visible.top + visible.height }, { snapToGrid: false });
+        const box = bounds(nodes.filter((n) => positions[n.id]).map((n) => ({ ...nodeRect(n), ...positions[n.id] })));
+        if (!apart(box, { ...topLeft, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y })) return;
+        requestAnimationFrame(() => requestAnimationFrame(() => frameView(selected.length > 0 ? getNodes().filter((n) => n.selected) : undefined)));
+    }, [getNodes, getEdges, store, apply, screenToFlowPosition, frameView]);
+
     // the nodes Delete Unused Nodes found, asked about before they go. frames emptied by it stay
     const [unused, setUnused] = useState<string[] | null>(null);
     const deleteUnused = useCallback(() => {
@@ -687,6 +718,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             collapse: () => {
                 const selected = getNodes().filter((n) => n.selected && !isFrame(n));
                 if (canEdit()) collapse(selected, !selected.every((n: any) => n.data?.collapsed));
+            },
+            arrange: () => {
+                if (canEdit()) arrangeNodes();
             },
             collapse_all: () => {
                 if (canEdit()) collapse(collapseTargets(), true);
@@ -1241,7 +1275,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                         [editable && entry("node_editor", "collapse_all"), editable && entry("node_editor", "expand_all")],
                         [editable && entry("node_editor", "group"), editable && groupCount > 0 && entry("node_editor", "ungroup"), openableCount === 1 && entry("node_editor", "edit_group")],
                     ]
-                  : [[editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere], [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")], [editable && hasNodes && entry("node_editor", "collapse_all"), editable && hasNodes && entry("node_editor", "expand_all")], [!isRoot && entry("node_editor", "exit_group")]];
+                  : [
+                        [editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere],
+                        [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")],
+                        [editable && hasNodes && entry("node_editor", "arrange"), editable && hasNodes && entry("node_editor", "collapse_all"), editable && hasNodes && entry("node_editor", "expand_all")],
+                        [!isRoot && entry("node_editor", "exit_group")],
+                    ];
         return sections.map((entries) => entries.filter((e): e is ContextEntry => !!e)).filter((entries) => entries.length > 0);
     };
     const contextEntries = contextMenu ? contextSections(contextMenu) : [];

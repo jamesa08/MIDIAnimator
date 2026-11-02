@@ -42,6 +42,7 @@
             { "id": "join_in_frame", "name": "Join in New Frame", "keys": ["Shift+P"] },
             { "id": "remove_from_frame", "name": "Remove from Frame", "keys": ["Alt+P"] },
             { "id": "collapse", "name": "Collapse", "keys": ["H"] },
+            { "id": "arrange", "name": "Arrange", "keys": [] },
             { "id": "collapse_all", "name": "Collapse All", "keys": [] },
             { "id": "expand_all", "name": "Expand All", "keys": [] },
             { "id": "edit_group", "name": "Edit Group", "keys": ["Tab"] },
