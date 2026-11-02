@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -15,6 +16,7 @@ import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 import TagMenu from "./TagMenu";
+import DeleteUnusedModal from "../DeleteUnusedModal";
 import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 import { multiSlotOffset } from "../../utils/sockets";
@@ -504,6 +506,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (inFrames.length > 0) apply([{ op: "remove_from_frame", nodes: inFrames }]);
     }, [getNodes, apply]);
 
+    // the nodes Delete Unused Nodes found, asked about before they go. frames emptied by it stay
+    const [unused, setUnused] = useState<string[] | null>(null);
+    const deleteUnused = useCallback(() => {
+        if (!unused) return;
+        setUnused(null);
+        apply([{ op: "delete", nodes: unused, keep_frames: true }]);
+    }, [unused, apply]);
+    const cancelUnused = useCallback(() => setUnused(null), []);
+
     // what the toolbar's buttons can do here, said by the graph on screen
     const selectedNodes = nodes.filter((n) => n.selected);
     const selectedCount = selectedNodes.length;
@@ -665,6 +676,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const sockets = selectedSockets(getNodes());
                 if (nodes.length === 0 && edges.length === 0 && sockets.length === 0) return;
                 apply([{ op: "delete", nodes, edges, sockets }]);
+            },
+            // nothing unused, nothing asked
+            delete_unused: async () => {
+                if (!canEdit()) return;
+                const nodes = await ops.unused().catch((e) => {
+                    console.error(`graph_unused: ${e}`);
+                    return [];
+                });
+                if (nodes.length > 0 && shownRef.current) setUnused(nodes);
             },
             // a locked frame stays where it is
             grab: () => {
@@ -1168,9 +1188,11 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         },
         [frameUnder, selectOnly, openContextMenu]
     );
-    // another tab or group shown closes it
+    // another tab or group shown closes it, and the delete unused modal
     useEffect(() => {
-        if (!shown) setContextMenu(null);
+        if (shown) return;
+        setContextMenu(null);
+        setUnused(null);
     }, [shown]);
 
     // the entries for what was right clicked, named and run like the same commands in the menus and the toolbar. one that
@@ -1387,6 +1409,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             />
             <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
             {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}
+            {unused && createPortal(<DeleteUnusedModal count={unused.length} onDelete={deleteUnused} onCancel={cancelUnused} />, document.body)}
             {contextMenu && contextEntries.length > 0 && <ContextMenu key={`${contextMenu.at.x},${contextMenu.at.y}`} position={contextMenu.at} sections={contextEntries} onClose={closeContextMenu} />}
         </>
     );

@@ -240,12 +240,14 @@ pub fn place(graph: &mut Graph, frames: &BTreeMap<String, Option<String>>) -> Re
 }
 
 /// removes nodes (deleting, cutting). a removed frame's nodes stay, in the frame around it like Blender keeps them, and a
-/// frame left with nothing in it goes too. their connections are the caller's
-pub fn remove(graph: &mut Graph, removed: &HashSet<String>) {
+/// frame left with nothing in it goes too unless `keep_emptied`. their connections are the caller's
+pub fn remove(graph: &mut Graph, removed: &HashSet<String>, keep_emptied: bool) {
     release(graph, removed);
     let held: HashSet<String> = graph.nodes.iter().filter(|n| removed.contains(&n.id)).filter_map(RfNode::frame).filter(|f| !removed.contains(*f)).map(str::to_string).collect();
     graph.nodes.retain(|n| !removed.contains(&n.id));
-    drop_emptied(graph, held);
+    if !keep_emptied {
+        drop_emptied(graph, held);
+    }
 }
 
 /// removes the frames among `frames` with nothing left in them, and then the frames around those if that empties them

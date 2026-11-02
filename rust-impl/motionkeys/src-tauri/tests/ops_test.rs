@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use motionkeys::graph::history::{Diff, History, Source, Step};
 use motionkeys::graph::model::{node_specs, Graph, NodeSpec, Position};
 use motionkeys::graph::clipboard;
-use motionkeys::graph::ops::{apply, describe, Added, Ctx, Op};
+use motionkeys::graph::ops::{apply, describe, unused, Added, Ctx, Op};
 use motionkeys::state::{migrate_rf_instance, SavedProject};
 
 /// loads the node specs from default_nodes.json
@@ -192,6 +192,50 @@ fn group_sockets() {
     assert!(!graph.edges.iter().any(|e| e.from_node() == "node_group-1" && e.from_output() == notes));
     assert!(!graph.groups["node_group"].graph.edges.iter().any(|e| e.to_node() == "group_output-1" && e.to_input() == notes));
     assert!(graph.edges.iter().any(|e| e.to_node() == "node_group-1"));
+}
+
+// unused nodes feed no viewer, scene writer or group output. frames, the group input and output and half a used zone
+// never are, and deleting them keeps the frames
+#[test]
+fn unused_nodes() {
+    let specs = specs();
+    let unused = |graph: &Graph, scope: Option<&str>| -> BTreeSet<String> { unused(graph, scope, &specs).unwrap().into_iter().collect() };
+    let set = |ids: &[&str]| -> BTreeSet<String> { ids.iter().map(|id| id.to_string()).collect() };
+    let mut graph = fixture();
+    // everything in the fixture feeds the viewer
+    assert_eq!(unused(&graph, None), set(&[]));
+
+    // a node feeding nothing, in a frame, and a chain feeding nothing
+    run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "get_midi_file", "position": { "x": 0, "y": 0 } }, { "type": "get_midi_track_data", "position": { "x": 300, "y": 0 } }, { "type": "scene_link", "position": { "x": 0, "y": 500 } }] }])).unwrap();
+    run(&mut graph, None, json!([{ "op": "connect", "from_node": "get_midi_file-2", "from_output": "tracks", "to_node": "get_midi_track_data-2", "to_input": "tracks" }, { "op": "join_in_frame", "nodes": ["scene_link-2"] }])).unwrap();
+    assert_eq!(unused(&graph, None), set(&["get_midi_file-2", "get_midi_track_data-2", "scene_link-2"]));
+
+    // a zone with nothing connected goes as a whole. one whose output feeds the viewer keeps its input, and what feeds
+    // that, even with nothing between them
+    run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "for_each_input", "position": { "x": 0, "y": 900 } }] }])).unwrap();
+    assert_eq!(unused(&graph, None), set(&["get_midi_file-2", "get_midi_track_data-2", "scene_link-2", "for_each_input-1", "for_each_output-1"]));
+    run(&mut graph, None, json!([{ "op": "connect", "from_node": "get_midi_track_data-2", "from_output": "notes", "to_node": "for_each_input-1", "to_input": "items" }, { "op": "connect", "from_node": "for_each_output-1", "from_output": "results", "to_node": "viewer-1", "to_input": "data" }])).unwrap();
+    assert_eq!(unused(&graph, None), set(&["scene_link-2", "get_midi_file-1", "get_midi_track_data-1", "evaluate_instrument-1", "assign_notes_to_objects-1", "animation_generator-1", "keyframes_from_object-1", "scene_link-1"]));
+
+    // a group node is an output when its group writes to Blender, even with nothing connected to it
+    run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "scene_writer", "position": { "x": 900, "y": 0 } }] }])).unwrap();
+    run(&mut graph, None, json!([{ "op": "connect", "from_node": "evaluate_instrument-1", "from_output": "keyframes", "to_node": "scene_writer-1", "to_input": "keyframes" }])).unwrap();
+    run(&mut graph, None, json!([{ "op": "group", "nodes": ["scene_writer-1"] }])).unwrap();
+    assert_eq!(unused(&graph, None), set(&["scene_link-2"]));
+    // inside, the group output is an output and the group input is never unused
+    assert_eq!(unused(&graph, Some("node_group")), set(&[]));
+    run(&mut graph, Some("node_group"), json!([{ "op": "add_nodes", "nodes": [{ "type": "viewer", "position": { "x": 0, "y": 0 } }, { "type": "get_midi_file", "position": { "x": 0, "y": 300 } }] }])).unwrap();
+    assert_eq!(unused(&graph, Some("node_group")), set(&["get_midi_file-1"]));
+
+    // a built-in group's graph, everything feeds its group output
+    assert_eq!(unused(&graph, Some("evaluate_instrument")), set(&[]));
+
+    // deleted together their frame stays
+    let ids: Vec<String> = unused(&graph, None).into_iter().collect();
+    run(&mut graph, None, json!([{ "op": "delete", "nodes": ids, "keep_frames": true }])).unwrap();
+    assert!(graph.node("scene_link-2").is_none());
+    assert!(graph.nodes.iter().any(|n| n.is_frame()));
+    assert_eq!(unused(&graph, None), set(&[]));
 }
 
 // a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the

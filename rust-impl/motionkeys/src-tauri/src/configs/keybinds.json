@@ -35,6 +35,7 @@
             { "id": "grab", "name": "Grab", "keys": ["G"] },
             { "id": "duplicate", "name": "Duplicate", "keys": ["Shift+D"] },
             { "id": "delete", "name": "Delete", "keys": ["X", "Backspace", "Delete"] },
+            { "id": "delete_unused", "name": "Delete Unused Nodes", "keys": [] },
             { "id": "select_all", "name": "Select All", "keys": ["A"] },
             { "id": "group", "name": "Make Group", "keys": ["Ctrl+G", "CmdOrCtrl+G"] },
             { "id": "ungroup", "name": "Ungroup", "keys": ["Alt+G"] },

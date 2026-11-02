@@ -93,6 +93,14 @@ pub async fn graph_paste(tab: String, scope: Option<String>, position: Position)
     )
 }
 
+/// the nodes of a tab's graph `scope` that feed no output, Delete Unused Nodes asks before it deletes them
+#[tauri::command]
+pub fn graph_unused(tab: String, scope: Option<String>) -> Result<Vec<String>, String> {
+    let state = lock();
+    let instance = state.instance(&tab).ok_or_else(|| format!("no tab '{}'", tab))?;
+    ops::unused(&Graph::from_rf(&instance.rf_instance)?, scope.as_deref(), &node_specs(&state.default_nodes))
+}
+
 /// whether the system clipboard has copied nodes, the editor's context menu only offers paste when it does
 #[tauri::command]
 pub async fn graph_can_paste() -> bool {

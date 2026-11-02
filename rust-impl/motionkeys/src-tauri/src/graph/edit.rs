@@ -342,7 +342,7 @@ pub fn remove_node(graph: &mut Graph, node: &str) -> Result<EditResult, String> 
     });
     // count how many edges we removed, then remove the node itself. a frame's nodes stay, a frame it was all that was in goes
     let removed_edges = before - graph.edges.len();
-    super::frames::remove(graph, &HashSet::from([id.clone()]));
+    super::frames::remove(graph, &HashSet::from([id.clone()]), false);
 
     // the neighbours are returned so their outlines can be shown after the edit
     Ok(EditResult {

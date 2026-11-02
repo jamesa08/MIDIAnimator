@@ -1264,3 +1264,39 @@ test("right click cancels a modal and opens no menu", async ({ page }) => {
     expect((await sentOps(page)).filter((op: any) => op.op === "connect").length).toBe(connects);
     await settle(page);
 });
+
+test("delete unused nodes asks first", async ({ page }) => {
+    // the fixture has nothing unused, two nodes are made to be
+    await openWindow(page, { ...backend, graph_unused: ["scene_link-1", "keyframes_from_object-1"] }, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const modal = page.getByText("Delete Unused Nodes", { exact: true });
+    const deletes = async () => (await sentOps(page)).filter((op: any) => op.op === "delete");
+
+    // cancel deletes nothing
+    await emitEvent(page, "app-command", "area.delete_unused");
+    await expect(modal).toBeVisible();
+    await expect(page.getByText("Delete 2 unused nodes?", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(modal).toHaveCount(0);
+    expect(await deletes()).toEqual([]);
+
+    // enter deletes them in one op, keeping the frames
+    await emitEvent(page, "app-command", "area.delete_unused");
+    await expect(modal).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(modal).toHaveCount(0);
+    expect(await deletes()).toEqual([{ op: "delete", nodes: ["scene_link-1", "keyframes_from_object-1"], keep_frames: true }]);
+    await settle(page);
+});
+
+test("delete unused nodes with nothing unused shows nothing", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    await emitEvent(page, "app-command", "area.delete_unused");
+    await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "graph_unused"))).toBe(true);
+    await settle(page);
+    await expect(page.getByText("Delete Unused Nodes", { exact: true })).toHaveCount(0);
+    expect((await sentOps(page)).filter((op: any) => op.op === "delete")).toEqual([]);
+});

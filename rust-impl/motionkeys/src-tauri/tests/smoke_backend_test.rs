@@ -13,6 +13,7 @@ use motionkeys::graph::curves::{graph_curves, graph_value_curves};
 use motionkeys::graph::execute::{get_run_timings, run_instance};
 use motionkeys::graph::history::{Source, Step};
 use motionkeys::settings::get_settings;
+use motionkeys::state::graph::graph_unused;
 use motionkeys::state::history::{self, Capture};
 use motionkeys::state::{get_project_status, get_state, lock, migrate_rf_instance, AppState, SavedProject, STATE};
 use motionkeys::ui::keybinds::get_keymap;
@@ -75,6 +76,7 @@ fn dump_backend_for_smoke_test() {
         ("graph_value_curves", serde_json::to_value(value_curves).unwrap()),
         ("console_entries", serde_json::to_value(console_entries()).unwrap()),
         ("get_run_timings", serde_json::to_value(get_run_timings("tab-1".to_string())).unwrap()),
+        ("graph_unused", serde_json::to_value(graph_unused("tab-1".to_string(), None).unwrap()).unwrap()),
     ]);
     std::fs::create_dir_all("../smoke").unwrap();
     std::fs::write("../smoke/backend.json", serde_json::to_string(&backend).unwrap()).unwrap();

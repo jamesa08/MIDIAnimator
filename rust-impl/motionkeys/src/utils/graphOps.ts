@@ -11,7 +11,7 @@ type XY = { x: number; y: number };
 export type SocketRef = { node: string; side: "inputs" | "outputs"; socket: string };
 export type Op =
     | { op: "add_nodes"; nodes: { type: string; data?: any; position: XY; frame?: string }[] }
-    | { op: "delete"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[] }
+    | { op: "delete"; nodes?: string[]; edges?: string[]; sockets?: SocketRef[]; keep_frames?: boolean }
     | { op: "connect"; from_node: string; from_output: string; to_node: string; to_input: string }
     | { op: "set_inputs"; node: string; inputs: Record<string, any> }
     | { op: "set_tag"; node: string; side: "inputs" | "outputs"; socket: string; name: string }
@@ -91,6 +91,7 @@ export function useGraphOps(scope: string | null) {
             copy: (nodes: string[]) => invoke("graph_copy", { tab, scope, nodes }),
             cut: (nodes: string[], edges: string[], sockets: SocketRef[]) => edit("graph_cut", { nodes, edges, sockets }),
             paste: (position: XY) => edit("graph_paste", { position }),
+            unused: () => invoke<string[]>("graph_unused", { tab, scope }),
             end: (txn: string) => invoke("history_end", { tab, txn }),
             cancel: (txn: string) => invoke("history_cancel", { tab, txn }),
         };

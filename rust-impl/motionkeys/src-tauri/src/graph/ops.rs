@@ -3,14 +3,14 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use super::builtin::{all_groups, builtin_groups};
 use super::edit;
 use super::frames::{self, Size};
 use super::sockets::{self, SocketRef};
 use super::tags;
-use super::model::{Graph, GroupDef, HandleSpec, NodeSpec, Position, RfEdge, RfNode, Specs};
+use super::model::{find_spec, Graph, GroupDef, HandleSpec, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::run::{FOR_EACH_INPUT, FOR_EACH_OUTPUT, FRAME, GROUP, GROUP_INPUT, GROUP_OUTPUT};
 
 /// the empty socket on the group input and output, connecting to it adds a socket to the group. keep in sync with NEW_SOCKET in groups.ts
@@ -51,7 +51,7 @@ pub enum Op {
         nodes: Vec<NewNode>,
     },
     /// removes nodes with their connections (a zone as a pair), edges and the tags on sockets (`tags::remove`). a frame
-    /// left with nothing in it goes too
+    /// left with nothing in it goes too, unless `keep_frames` (deleting unused nodes)
     Delete {
         #[serde(default)]
         nodes: Vec<String>,
@@ -59,6 +59,8 @@ pub enum Op {
         edges: Vec<String>,
         #[serde(default)]
         sockets: Vec<SocketRef>,
+        #[serde(default)]
+        keep_frames: bool,
     },
     /// connects an output to an input, replacing what fed the input. `__new__` on the group input or output adds a group socket
     Connect {
@@ -326,8 +328,9 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
             nodes,
             edges,
             sockets,
+            keep_frames,
         } => {
-            delete(target(project, scope)?, nodes, edges, sockets);
+            delete(target(project, scope)?, nodes, edges, sockets, *keep_frames);
             Ok(())
         }
         // what's cut is on the clipboard, a frame's nodes with it
@@ -338,7 +341,7 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
         } => {
             let graph = target(project, scope)?;
             let nodes = frames::with_contents(graph, nodes);
-            delete(graph, &nodes, edges, sockets);
+            delete(graph, &nodes, edges, sockets, false);
             Ok(())
         }
         Op::Connect {
@@ -626,6 +629,7 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             nodes,
             edges,
             sockets,
+            ..
         }
         | Op::Cut {
             nodes,
@@ -799,7 +803,7 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
     Ok(())
 }
 
-fn delete(graph: &mut Graph, nodes: &[String], edges: &[String], sockets: &[SocketRef]) {
+fn delete(graph: &mut Graph, nodes: &[String], edges: &[String], sockets: &[SocketRef], keep_frames: bool) {
     for socket in sockets {
         tags::remove(graph, socket);
     }
@@ -807,9 +811,53 @@ fn delete(graph: &mut Graph, nodes: &[String], edges: &[String], sockets: &[Sock
     let edges: HashSet<&String> = edges.iter().collect();
     // a removed tagged connection takes its input's tag along, or the tag would connect it again
     tags::untag(graph, |e| edges.contains(&e.id));
-    // a deleted frame's nodes stay, a frame they all were in goes
-    frames::remove(graph, &nodes);
+    // a deleted frame's nodes stay, a frame they all were in goes unless frames are kept
+    frames::remove(graph, &nodes, keep_frames);
     graph.edges.retain(|e| !edges.contains(&e.id) && !nodes.contains(e.from_node()) && !nodes.contains(e.to_node()));
+}
+
+// MARK: - Unused Nodes
+
+/// whether a node's results leave the graph: written to Blender (a node that isn't realtime), shown (a viewer) or handed
+/// out of a group (its group output). a group node is one when its group has one inside, at any depth
+fn is_output(node: &RfNode, specs: &[NodeSpec], groups: &BTreeMap<String, GroupDef>, seen: &mut Vec<String>) -> bool {
+    match node.resolved_node_type() {
+        GROUP_OUTPUT => true,
+        GROUP => {
+            // a group can't contain itself, but a broken project could say it does
+            let Some(id) = node.data.get("group_id").and_then(Value::as_str) else {
+                return false;
+            };
+            let Some(def) = groups.get(id).filter(|_| !seen.iter().any(|s| s == id)) else {
+                return false;
+            };
+            seen.push(id.to_string());
+            let found = def.graph.nodes.iter().any(|n| n.resolved_node_type() != GROUP_OUTPUT && is_output(n, specs, groups, seen));
+            seen.pop();
+            found
+        }
+        node_type => find_spec(specs, node_type).is_some_and(|spec| spec.category == "viewer" || !spec.realtime),
+    }
+}
+
+/// the nodes of the graph `scope` that feed no output (`is_output`), like Blender's Delete Unused Nodes. frames and the
+/// group input and output never are, and a zone only as a whole
+pub fn unused(project: &Graph, scope: Option<&str>, specs: &[NodeSpec]) -> Result<Vec<String>, String> {
+    let graph = graph_in(project, scope)?;
+    let groups = all_groups(project);
+    let mut queue: VecDeque<&str> = graph.nodes.iter().filter(|n| is_output(n, specs, &groups, &mut Vec::new())).map(|n| n.id.as_str()).collect();
+    // back along the connections from every output, half a zone brings the other half and what feeds it
+    let mut used: HashSet<&str> = HashSet::new();
+    while let Some(id) = queue.pop_front() {
+        if !used.insert(id) {
+            continue;
+        }
+        queue.extend(graph.edges.iter().filter(|e| e.to_node() == id).map(RfEdge::from_node));
+        if let Some(partner) = graph.node(id).and_then(zone_of) {
+            queue.push_back(partner);
+        }
+    }
+    Ok(graph.nodes.iter().filter(|n| !used.contains(n.id.as_str()) && !n.is_frame() && !matches!(n.resolved_node_type(), GROUP_INPUT | GROUP_OUTPUT)).map(|n| n.id.clone()).collect())
 }
 
 fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut Vec<Added>) -> Result<(), String> {
