@@ -416,6 +416,14 @@ img {
         0 0 14px 4px color-mix(in srgb, var(--error) 60%, transparent);
 }
 
+/* a node that threw while drawing (NodeTypes.tsx), its error in its place */
+.node-crashed-message {
+    margin: 4px 8px 6px;
+    max-width: 320px;
+    white-space: pre-wrap;
+    font-size: 11px;
+}
+
 /* the warning sign on failed nodes and bad connections */
 .error-badge {
     flex: none;

@@ -3,6 +3,7 @@ import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
 import UnsavedChangesModal from "./components/UnsavedChangesModal";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -299,15 +300,22 @@ function App() {
         <div data-live-resize="window" className="wrapper w-screen h-screen overflow-hidden flex flex-col">
             <div data-tauri-drag-region className="head flex-initial">
                 {/* the tabs sit on the window, the active one opens down into the toolbar's card */}
-                <TabBar />
+                <ErrorBoundary name="Tabs">
+                    <TabBar />
+                </ErrorBoundary>
                 <div className="card head-card">
-                    <ToolBar />
+                    <ErrorBoundary name="Toolbar">
+                        <ToolBar />
+                    </ErrorBoundary>
                 </div>
             </div>
             <div ref={contentRef} className="content relative flex flex-auto" style={contentStyle}>
                 <div className="node-graph card flex-grow" data-keymap-area="node_editor">
                     <div data-live-resize="vignette" className="canvas-vignette" />
-                    <NodeGraph />
+                    {/* drawn again when the tab or its graph changes (an undo), it may not throw this time */}
+                    <ErrorBoundary name="Node Graph" resetKeys={[backEndState.active_tab, backEndState.graph_rev]}>
+                        <NodeGraph />
+                    </ErrorBoundary>
                 </div>
                 {(["left", "right"] as const).map((side) => (
                     <div key={side} className={`dock-column dock-width dock-${side}`} style={dockedOn(side) ? {} : { display: "none" }}>
@@ -320,7 +328,9 @@ function App() {
                 {dockHover !== null && <div className={`dock-indicator dock-width dock-${dockHover} card absolute inset-y-3 pointer-events-none z-50 bg-blue-500/20 border-2 border-blue-500 ${dockHover === "right" ? "right-3" : "left-3"}`} />}
             </div>
             <div className="foot flex-initial">
-                <StatusBar />
+                <ErrorBoundary name="Status Bar">
+                    <StatusBar />
+                </ErrorBoundary>
             </div>
             {closePrompt && <UnsavedChangesModal onSave={() => answerClose("save")} onDiscard={() => answerClose("discard")} onCancel={() => answerClose("cancel")} />}
         </div>

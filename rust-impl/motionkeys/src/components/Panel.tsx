@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../utils/node";
 import { PANEL_DOCK_EVENT, PANEL_DRAG_EVENT, PANEL_DROP_EVENT, clientToScreen, ensurePanelWindow, inDockZone, panelSide, sendToMain, showPanelWindow, windowMover, withPoppedOut } from "../utils/panels";
+import ErrorBoundary from "./ErrorBoundary";
 import PanelBody, { PanelHeaderButtons, PanelNodeDrop } from "./PanelBody";
 import { pushModal } from "../utils/keymap";
 
@@ -99,7 +100,9 @@ const Panel: React.FC<PanelProps> = ({ id, name }) => {
                 </button>
             </div>
             <div className="panel-scroll flex-auto">
-                <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
+                <ErrorBoundary name={name}>
+                    <PanelBody id={panelId} onNodeDrop={handleNodeDrop} />
+                </ErrorBoundary>
             </div>
         </div>
     );

@@ -16,6 +16,7 @@ import "./utils/liveResize";
 import { scrollbarWidth } from "./utils/panels";
 import "./utils/keymap";
 import "./utils/editMenu";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // tells the backend this window has drawn, new windows stay invisible until then (src-tauri/src/ui/windows.rs)
 function WindowReady() {
@@ -42,6 +43,19 @@ function ThemeSync() {
     return null;
 }
 
+// errors nothing caught (a throw in an event handler, a rejected invoke without a catch) go to the backend's log too, the
+// console is gone in a release build. they don't take the window down, only one thrown while drawing does (ErrorBoundary)
+window.addEventListener("error", (event) => {
+    invoke("log", { message: `uncaught error in ${window.location.hash || "/"}: ${event.message}\n${event.error?.stack ?? ""}` }).catch(() => {});
+});
+window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason instanceof Error ? `${event.reason.message}\n${event.reason.stack ?? ""}` : String(event.reason);
+    invoke("log", { message: `unhandled rejection in ${window.location.hash || "/"}: ${reason}` }).catch(() => {});
+});
+
+// a window's page in a boundary of its own, so a part that has none of its own shows its error instead of a blank window
+const guarded = (name: string, page: React.ReactNode) => <ErrorBoundary name={name}>{page}</ErrorBoundary>;
+
 // the dock columns and floating panels make room for a scrollbar beside their contents (index.css .dock-width)
 document.documentElement.style.setProperty("--scrollbar-width", `${scrollbarWidth()}px`);
 
@@ -56,11 +70,11 @@ if (rootElement) {
                 <ThemeSync />
                 <Router>
                     <Routes>
-                        <Route path="/" element={<App />} />
-                        <Route path="/panel/:id" element={<PanelContent />} />
-                        <Route path="/settings" element={<Settings />} />
-                        <Route path="/graph" element={<Graph />} />
-                        <Route path="/drag-ghost" element={<DragGhost />} />
+                        <Route path="/" element={guarded("Main Window", <App />)} />
+                        <Route path="/panel/:id" element={guarded("Panel", <PanelContent />)} />
+                        <Route path="/settings" element={guarded("Settings", <Settings />)} />
+                        <Route path="/graph" element={guarded("Graph", <Graph />)} />
+                        <Route path="/drag-ghost" element={guarded("Drag Ghost", <DragGhost />)} />
                     </Routes>
                 </Router>
             </StateContextProvider>
