@@ -5,6 +5,7 @@ import { useModal } from "../utils/keymap";
 import { TOOLBAR_ADD_EVENT, useEditorState } from "../utils/editorState";
 import { NodeEntry } from "../utils/nodeEntries";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../styles";
+import { useButtonTravel } from "./Tool";
 
 // a category's place in the nodes panel's order, ones it doesn't know go last
 const categoryIndex = (category: string) => {
@@ -18,6 +19,7 @@ const categoryIndex = (category: string) => {
 function AddNodeMenu() {
     const { editable, entries } = useEditorState();
     const enabled = editable && !!entries;
+    const travel = useButtonTravel(!enabled);
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState<string | null>(null);
@@ -70,7 +72,7 @@ function AddNodeMenu() {
 
     return (
         <>
-            <div ref={buttonRef} className={`toolbar-button${enabled ? "" : " disabled"}`} data-tool="add_node" onMouseDown={(e) => e.stopPropagation()} onClick={() => (open ? close() : setOpen(true))}>
+            <div ref={buttonRef} className={`toolbar-button${enabled ? "" : " disabled"}${open ? " active" : ""}${travel.className}`} data-tool="add_node" {...travel.handlers} onMouseDown={(e) => e.stopPropagation()} onClick={() => (open ? close() : setOpen(true))}>
                 <Icon name="add" className="tool-icon" />
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="size-2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 9l7 7 7-7" />

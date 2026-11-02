@@ -16,6 +16,7 @@
     --chrome-tab: #1b1b1b;
     --chrome-tab-hover: #222222;
     --chrome-toolbar: #262626;
+    --chrome-toolbar-bottom: #1c1c1c;
     --chrome-header: #333333;
     --chrome-panel: #1e1e1e;
     --chrome-window: #141414;
@@ -23,6 +24,9 @@
     --chrome-add-tab: lightgray;
     --chrome-traffic-light: #3a3a3a;
     --chrome-line: #4a4a4a;
+    --chrome-bevel-light: #4a4a4a;
+    --chrome-bevel-shadow: #0e0e0e;
+    --chrome-bevel-face: #1e1e1e;
     --node-line: #4a4a4a;
     --node-value: #a0a0a0;
     --properties-background: #2b2b2b;
@@ -82,9 +86,9 @@ img[src="logo.webp"] {
     content: url("/logo-dark.webp");
 }
 
-/* the line between the logo and the tools */
+/* the lines between the toolbar's groups, etched: a dark line with the bevel's light one beside it */
 .toolbar .spacer {
-    background-color: #4a4a4a;
+    background-color: var(--chrome-bevel-shadow);
 }
 
 /* MARK: - nodes */

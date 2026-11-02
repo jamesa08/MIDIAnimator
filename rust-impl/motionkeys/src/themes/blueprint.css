@@ -29,6 +29,7 @@
     --chrome-tab: #172448;
     --chrome-tab-hover: var(--blueprint-panel);
     --chrome-toolbar: #22355f;
+    --chrome-toolbar-bottom: #1a2a4d;
     --chrome-header: #30497f;
     --chrome-panel: var(--blueprint-panel);
     --chrome-paper: var(--panel-paper);
@@ -37,6 +38,9 @@
     --chrome-add-tab: lightgray;
     --chrome-traffic-light: #2a3f70;
     --chrome-line: var(--blueprint-line);
+    --chrome-bevel-light: #4a66a3;
+    --chrome-bevel-shadow: #0e1730;
+    --chrome-bevel-face: #1b2b52;
     --node-line: #8193b6;
     --node-value: #c9d5ec;
     --properties-background: var(--blueprint-panel);

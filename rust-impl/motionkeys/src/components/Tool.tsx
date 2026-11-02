@@ -5,7 +5,46 @@ import { useOpenFile, useSaveTab } from "../utils/tabs";
 import { Icon, IconName } from "../icons";
 import { runCommand } from "../utils/keymap";
 
+// a toolbar button's raised and pressed looks (index.css), kept from pointer events. webkit drops :hover for a frame after
+// a click, which flashed the button flat between pressed and raised. a press let go outside the button still ends, and
+// leaving the window (a save dialog) or the button fading forgets the mouse
+export function useButtonTravel(disabled = false) {
+    const [hover, setHover] = useState(false);
+    const [pressed, setPressed] = useState(false);
+    const reset = () => {
+        setHover(false);
+        setPressed(false);
+    };
+    useEffect(() => {
+        window.addEventListener("blur", reset);
+        return () => window.removeEventListener("blur", reset);
+    }, []);
+    useEffect(() => {
+        if (disabled) reset();
+    }, [disabled]);
+    useEffect(() => {
+        if (!pressed) return;
+        const release = () => setPressed(false);
+        window.addEventListener("pointerup", release);
+        return () => window.removeEventListener("pointerup", release);
+    }, [pressed]);
+
+    return {
+        className: `${hover ? " hover" : ""}${hover && pressed ? " pressed" : ""}`,
+        handlers: {
+            onPointerEnter: () => setHover(true),
+            onPointerLeave: () => setHover(false),
+            onPointerDown: (event: React.PointerEvent) => {
+                if (event.button !== 0) return;
+                setHover(true);
+                setPressed(true);
+            },
+        },
+    };
+}
+
 function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
+    const travel = useButtonTravel();
     const { backEndState } = useStateContext();
     const saveTab = useSaveTab();
     const openFile = useOpenFile();
@@ -50,7 +89,8 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
 
     return (
         <div
-            className="toolbar-button"
+            className={`toolbar-button${travel.className}`}
+            {...travel.handlers}
             onClick={async () => {
                 if (type == "run") {
                     if (backEndState.execution_paused) {
@@ -80,8 +120,9 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
 // a button that runs an app or area command, the same as its menu item. faded when it can't run now, pressed in while
 // what it turns on is on
 export function CommandTool({ icon, command, disabled = false, active = false }: { icon: IconName; command: string; disabled?: boolean; active?: boolean }) {
+    const travel = useButtonTravel(disabled);
     return (
-        <div className={`toolbar-button${disabled ? " disabled" : ""}${active ? " active" : ""}`} data-command={command} onClick={() => runCommand(command)}>
+        <div className={`toolbar-button${disabled ? " disabled" : ""}${active ? " active" : ""}${travel.className}`} data-command={command} {...travel.handlers} onClick={() => runCommand(command)}>
             <Icon name={icon} className="tool-icon" />
         </div>
     );
