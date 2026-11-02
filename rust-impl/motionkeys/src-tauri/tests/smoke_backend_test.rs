@@ -10,12 +10,13 @@ use std::collections::HashMap;
 use serde_json::{json, Value};
 use motionkeys::graph::builtin::get_builtin_groups;
 use motionkeys::graph::curves::{graph_curves, graph_value_curves};
-use motionkeys::graph::execute::run_instance;
+use motionkeys::graph::execute::{get_run_timings, run_instance};
 use motionkeys::graph::history::{Source, Step};
 use motionkeys::settings::get_settings;
 use motionkeys::state::history::{self, Capture};
 use motionkeys::state::{get_project_status, get_state, lock, migrate_rf_instance, AppState, SavedProject, STATE};
 use motionkeys::ui::keybinds::get_keymap;
+use motionkeys::utils::console::console_entries;
 use motionkeys::utils::ui::get_build_info;
 
 #[test]
@@ -62,7 +63,19 @@ fn dump_backend_for_smoke_test() {
     let value_curves: HashMap<String, Value> = results.iter().map(|(node, outputs)| (node.clone(), serde_json::to_value(runtime.block_on(graph_value_curves(outputs.clone()))).unwrap())).collect();
 
     // the commands the frontend reads from, by name
-    let backend: HashMap<&str, Value> = HashMap::from([("get_state", view), ("get_history", serde_json::to_value(history::info("tab-1")).unwrap()), ("get_settings", get_settings()), ("get_keymap", serde_json::to_value(get_keymap()).unwrap()), ("get_project_status", serde_json::to_value(get_project_status()).unwrap()), ("get_build_info", serde_json::to_value(get_build_info()).unwrap()), ("get_builtin_groups", serde_json::to_value(get_builtin_groups()).unwrap()), ("graph_curves", serde_json::to_value(curves).unwrap()), ("graph_value_curves", serde_json::to_value(value_curves).unwrap())]);
+    let backend: HashMap<&str, Value> = HashMap::from([
+        ("get_state", view),
+        ("get_history", serde_json::to_value(history::info("tab-1")).unwrap()),
+        ("get_settings", get_settings()),
+        ("get_keymap", serde_json::to_value(get_keymap()).unwrap()),
+        ("get_project_status", serde_json::to_value(get_project_status()).unwrap()),
+        ("get_build_info", serde_json::to_value(get_build_info()).unwrap()),
+        ("get_builtin_groups", serde_json::to_value(get_builtin_groups()).unwrap()),
+        ("graph_curves", serde_json::to_value(curves).unwrap()),
+        ("graph_value_curves", serde_json::to_value(value_curves).unwrap()),
+        ("console_entries", serde_json::to_value(console_entries()).unwrap()),
+        ("get_run_timings", serde_json::to_value(get_run_timings("tab-1".to_string())).unwrap()),
+    ]);
     std::fs::create_dir_all("../smoke").unwrap();
     std::fs::write("../smoke/backend.json", serde_json::to_string(&backend).unwrap()).unwrap();
 }
