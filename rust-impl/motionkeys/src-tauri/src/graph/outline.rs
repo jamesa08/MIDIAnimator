@@ -56,6 +56,24 @@ pub fn outline(ctx: &OutlineCtx, scope: Option<&str>, detail: Detail) -> Result<
     Ok(blocks.join("\n\n"))
 }
 
+/// a frame (only layout, it never runs): its label, the frame it's in and the nodes directly in it
+fn frame_block(ctx: &OutlineCtx, frame: &RfNode) -> String {
+    let mut header = format!("{}  \"Frame\"", frame.id);
+    if let Some(label) = frame.label() {
+        header.push_str(&format!("  label \"{}\"", label));
+    }
+    if let Some(outer) = frame.frame() {
+        header.push_str(&format!("  [in frame {}]", outer));
+    }
+    let members: Vec<&str> = ctx.graph.nodes.iter().filter(|n| n.frame() == Some(frame.id.as_str())).map(|n| n.id.as_str()).collect();
+    let members = if members.is_empty() {
+        "nothing".to_string()
+    } else {
+        members.join(", ")
+    };
+    format!("{}  (layout only, never runs)\n  holds: {}", header, members)
+}
+
 /// one `node_id: message` line per failed node, sorted by id
 pub fn node_errors(results: &HashMap<String, Value>) -> Vec<String> {
     let mut errors: Vec<String> = results.iter().filter_map(|(id, r)| node_error(r).map(|e| format!("{}: {}", id, e))).collect();
@@ -69,6 +87,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     let Some(node) = ctx.graph.node(id) else {
         return format!("{}  (removed)", id);
     };
+    if node.is_frame() {
+        return frame_block(ctx, node);
+    }
     let Some(spec) = ctx.specs.for_node(node) else {
         return format!("{}  (unknown node type '{}')", id, node.resolved_node_type());
     };
@@ -81,6 +102,9 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
     let mut header = format!("{}  \"{}\"", id, spec.name);
     if let Some(label) = node.label() {
         header.push_str(&format!("  label \"{}\"", label));
+    }
+    if let Some(frame) = node.frame() {
+        header.push_str(&format!("  [in frame {}]", frame));
     }
     if let Some(error) = error {
         header.push_str(&format!("  FAILED: {}", error));

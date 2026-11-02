@@ -2,7 +2,7 @@
 // and the error message says what to do instead
 
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::model::{compatible, dyn_inner, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::ops::Side;
@@ -92,7 +92,7 @@ pub fn fill_default_name(graph: &Graph, node: &mut RfNode) {
 /// otherwise to the right of the rightmost node in the graph
 pub fn add_node(graph: &mut Graph, specs: &Specs, node_type: &str, inputs: Option<&Map<String, Value>>, position: Option<Position>, after: Option<&str>) -> Result<EditResult, String> {
     // make sure the node type exists and the inputs are valid before changing anything
-    let Some(spec) = specs.for_type(node_type) else {
+    let Some(spec) = specs.for_type(node_type).filter(|_| node_type != super::run::FRAME) else {
         return Err(format!("unknown node type '{}'; call node_types_list", node_type));
     };
     if let Some(inputs) = inputs {
@@ -340,9 +340,9 @@ pub fn remove_node(graph: &mut Graph, node: &str) -> Result<EditResult, String> 
         }
         !touches
     });
-    // count how many edges we removed, then remove the node itself
+    // count how many edges we removed, then remove the node itself. a frame's nodes stay, a frame it was all that was in goes
     let removed_edges = before - graph.edges.len();
-    graph.nodes.retain(|n| n.id != id);
+    super::frames::remove(graph, &HashSet::from([id.clone()]));
 
     // the neighbours are returned so their outlines can be shown after the edit
     Ok(EditResult {

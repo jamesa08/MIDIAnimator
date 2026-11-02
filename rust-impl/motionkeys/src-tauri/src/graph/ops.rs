@@ -7,10 +7,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::builtin::{all_groups, builtin_groups};
 use super::edit;
+use super::frames::{self, Size};
 use super::sockets::{self, SocketRef};
 use super::tags;
 use super::model::{Graph, GroupDef, HandleSpec, NodeSpec, Position, RfEdge, RfNode, Specs};
-use super::run::{FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT};
+use super::run::{FOR_EACH_INPUT, FOR_EACH_OUTPUT, FRAME, GROUP, GROUP_INPUT, GROUP_OUTPUT};
 
 /// the empty socket on the group input and output, connecting to it adds a socket to the group. keep in sync with NEW_SOCKET in groups.ts
 pub const NEW_SOCKET: &str = "__new__";
@@ -21,7 +22,7 @@ const NODE_WIDTH: f64 = 200.0;
 /// node fields only the UI uses, left out of nodes moved into a new group
 pub(super) const UI_KEYS: &[&str] = &["selected", sockets::SELECTED_SOCKETS, "dragging", "measured", "resizing"];
 
-/// a node to add: its type, data and where it goes. a group node is type `group` with `data.group_id`
+/// a node to add: its type, data, where it goes and the frame it's dropped in. a group node is type `group` with `data.group_id`
 #[derive(Deserialize, Debug, Clone)]
 pub struct NewNode {
     #[serde(rename = "type")]
@@ -29,6 +30,8 @@ pub struct NewNode {
     #[serde(default)]
     pub data: Map<String, Value>,
     pub position: Position,
+    #[serde(default)]
+    pub frame: Option<String>,
 }
 
 /// the sockets of a group: the inputs it takes or the outputs it gives
@@ -47,7 +50,8 @@ pub enum Op {
     AddNodes {
         nodes: Vec<NewNode>,
     },
-    /// removes nodes with their connections (a zone as a pair), edges and the tags on sockets (`tags::remove`)
+    /// removes nodes with their connections (a zone as a pair), edges and the tags on sockets (`tags::remove`). a frame
+    /// left with nothing in it goes too
     Delete {
         #[serde(default)]
         nodes: Vec<String>,
@@ -88,6 +92,9 @@ pub enum Op {
     },
     Move {
         positions: BTreeMap<String, Position>,
+        /// the frame each node dropped in a frame joins, `null` takes it out of its frame
+        #[serde(default)]
+        frames: BTreeMap<String, Option<String>>,
     },
     Resize {
         node: String,
@@ -132,6 +139,20 @@ pub enum Op {
     /// replaces group nodes with the nodes inside their groups
     Ungroup {
         nodes: Vec<String>,
+    },
+    /// puts nodes in a new frame that fits around them (`graph::frames`), the frame becomes the selection
+    JoinInFrame {
+        nodes: Vec<String>,
+    },
+    /// takes nodes out of their frames into the one around it, a frame left empty goes
+    RemoveFromFrame {
+        nodes: Vec<String>,
+    },
+    /// how a frame looks and fits (`frames::Style`)
+    SetFrame {
+        node: String,
+        #[serde(flatten)]
+        style: frames::Style,
     },
     RenameSocket {
         side: Side,
@@ -202,6 +223,15 @@ impl Op {
             Op::Ungroup {
                 ..
             } => "ungroup",
+            Op::JoinInFrame {
+                ..
+            } => "join_in_frame",
+            Op::RemoveFromFrame {
+                ..
+            } => "remove_from_frame",
+            Op::SetFrame {
+                ..
+            } => "set_frame",
             Op::RenameSocket {
                 ..
             } => "rename_socket",
@@ -224,11 +254,12 @@ pub struct Added {
     pub position: Position,
 }
 
-/// what applying an op needs besides the project: the node specs and the last run's results in the edited graph
-/// (for dynamic outputs)
+/// what applying an op needs besides the project: the node specs, the last run's results in the edited graph
+/// (for dynamic outputs) and the sizes the editor measured its nodes at (for fitting frames, may be empty)
 pub struct Ctx<'a> {
     pub specs: &'a [NodeSpec],
     pub results: &'a HashMap<String, Value>,
+    pub sizes: &'a HashMap<String, Size>,
 }
 
 /// applies one op to the graph `scope` (a group id, `None` for the top level). nodes it added go in `added`
@@ -261,6 +292,7 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
     // the specs of the nodes in the edited graph, group input and output get their sockets from the group
     let groups = all_groups(project);
     target(project, scope)?;
+    let layouts = frames::layouts(graph_in(project, scope)?);
     let specs = Specs {
         specs: ctx.specs,
         groups: &groups,
@@ -268,8 +300,17 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
     };
 
     edit_graph(project, scope, op, ctx, &specs, &groups, added)?;
-    // the tagged connections follow whatever the op did to the nodes, tags and edges
-    tags::sync(target(project, scope)?);
+    // the tagged connections follow whatever the op did to the nodes, tags and edges, the frames what it did to the
+    // nodes in them
+    let graph = target(project, scope)?;
+    tags::sync(graph);
+    frames::settle(graph, ctx.sizes, &layouts);
+    // a frame it added is where it was fitted
+    for added in added.iter_mut() {
+        if let Some(frame) = graph.node(&added.id).filter(|n| n.is_frame()) {
+            added.position = frame.position.clone();
+        }
+    }
     Ok(())
 }
 
@@ -283,13 +324,19 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
             nodes,
             edges,
             sockets,
+        } => {
+            delete(target(project, scope)?, nodes, edges, sockets);
+            Ok(())
         }
-        | Op::Cut {
+        // what's cut is on the clipboard, a frame's nodes with it
+        Op::Cut {
             nodes,
             edges,
             sockets,
         } => {
-            delete(target(project, scope)?, nodes, edges, sockets);
+            let graph = target(project, scope)?;
+            let nodes = frames::with_contents(graph, nodes);
+            delete(graph, &nodes, edges, sockets);
             Ok(())
         }
         Op::Connect {
@@ -336,6 +383,7 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
         }
         Op::Move {
             positions,
+            frames,
         } => {
             let graph = target(project, scope)?;
             for (id, position) in positions {
@@ -343,7 +391,7 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
                     node.position = position.clone();
                 }
             }
-            Ok(())
+            frames::place(graph, frames)
         }
         Op::Resize {
             node,
@@ -355,6 +403,10 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
             node.extra.insert("width".to_string(), json!(width));
             node.extra.insert("height".to_string(), json!(height));
             node.position = position.clone();
+            // a frame keeps the size it was given, like Blender turns off Shrink
+            if node.is_frame() {
+                node.data.insert("shrink".to_string(), json!(false));
+            }
             Ok(())
         }
         Op::Select {
@@ -382,6 +434,25 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
         Op::Ungroup {
             nodes,
         } => ungroup(project, scope, groups, nodes, added),
+        Op::JoinInFrame {
+            nodes,
+        } => {
+            let graph = target(project, scope)?;
+            let id = frames::join(graph, nodes)?;
+            select(graph, &HashSet::from([id.as_str()]), &HashSet::new());
+            added.push(Added {
+                position: graph.node(&id).unwrap().position.clone(),
+                id,
+            });
+            Ok(())
+        }
+        Op::RemoveFromFrame {
+            nodes,
+        } => frames::remove_from(target(project, scope)?, nodes),
+        Op::SetFrame {
+            node,
+            style,
+        } => frames::set(target(project, scope)?, node, style),
         Op::MakeLocal
         | Op::RevertGroup
         | Op::RenameSocket {
@@ -399,7 +470,7 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
 // MARK: - Helpers
 
 /// the graph `scope` names, read only: the top level, one of the project's groups or a built-in one
-pub(super) fn graph_in<'a>(project: &'a Graph, scope: Option<&str>) -> Result<&'a Graph, String> {
+pub fn graph_in<'a>(project: &'a Graph, scope: Option<&str>) -> Result<&'a Graph, String> {
     match scope {
         None => Ok(project),
         Some(id) => project.groups.get(id).or_else(|| builtin_groups().get(id)).map(|def| &def.graph).ok_or_else(|| format!("no group '{}'", id)),
@@ -541,6 +612,12 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
         Op::Group {
             nodes,
             ..
+        }
+        | Op::JoinInFrame {
+            nodes,
+        }
+        | Op::RemoveFromFrame {
+            nodes,
         } => names(before, nodes),
         // removed connections are named by the nodes on their ends, tags by their nodes
         Op::Delete {
@@ -572,6 +649,10 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             ..
         }
         | Op::Resize {
+            node,
+            ..
+        }
+        | Op::SetFrame {
             node,
             ..
         } => name(after, node),
@@ -608,6 +689,7 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
         } => name(before, node),
         Op::Move {
             positions,
+            ..
         } => names(after, &positions.keys().cloned().collect::<Vec<_>>()),
         Op::Select {
             nodes,
@@ -640,7 +722,10 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
 
 fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[NewNode], added: &mut Vec<Added>) -> Result<(), String> {
     let mut ids: Vec<String> = Vec::new();
+    // the frame each one was dropped in
+    let mut in_frames: BTreeMap<String, Option<String>> = BTreeMap::new();
     for new in nodes {
+        let first = ids.len();
         // a group id as the type is a group node running it
         let (node_type, mut data) = if specs.groups.contains_key(&new.node_type) {
             (GROUP.to_string(), Map::from_iter([("group_id".to_string(), json!(new.node_type))]))
@@ -668,6 +753,7 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
                 }
             }
             GROUP_INPUT | GROUP_OUTPUT if scope.is_none() => return Err("the group input and output only go inside a group".to_string()),
+            FRAME => return Err("a frame is made around nodes with join_in_frame".to_string()),
             node_type if specs.for_type(node_type).is_none() => return Err(format!("unknown node type '{}'", node_type)),
             _ => {}
         }
@@ -696,7 +782,11 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
             graph.node_mut(&input_id).unwrap().data.insert("zone".to_string(), json!(output_id));
             ids.push(output_id);
         }
+        if new.frame.is_some() {
+            in_frames.extend(ids[first..].iter().map(|id| (id.clone(), new.frame.clone())));
+        }
     }
+    frames::place(graph, &in_frames)?;
 
     // the new nodes become the selection, like blender
     select(graph, &ids.iter().map(String::as_str).collect(), &HashSet::new());
@@ -715,13 +805,16 @@ fn delete(graph: &mut Graph, nodes: &[String], edges: &[String], sockets: &[Sock
     let edges: HashSet<&String> = edges.iter().collect();
     // a removed tagged connection takes its input's tag along, or the tag would connect it again
     tags::untag(graph, |e| edges.contains(&e.id));
-    graph.nodes.retain(|n| !nodes.contains(&n.id));
+    // a deleted frame's nodes stay, a frame they all were in goes
+    frames::remove(graph, &nodes);
     graph.edges.retain(|e| !edges.contains(&e.id) && !nodes.contains(e.from_node()) && !nodes.contains(e.to_node()));
 }
 
 fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut Vec<Added>) -> Result<(), String> {
     let selected = with_zone_partners(graph, nodes);
-    let originals: Vec<RfNode> = graph.nodes.iter().filter(|n| selected.contains(&n.id)).cloned().collect();
+    // a frame brings what's in it
+    let copied: HashSet<String> = frames::with_contents(graph, &selected.iter().cloned().collect::<Vec<_>>()).into_iter().collect();
+    let originals: Vec<RfNode> = graph.nodes.iter().filter(|n| copied.contains(&n.id)).cloned().collect();
     if originals.is_empty() {
         return Err("nothing to duplicate".to_string());
     }
@@ -738,7 +831,8 @@ fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut
         ids.insert(node.id.clone(), copy.id.clone());
         graph.nodes.push(copy);
     }
-    // copied zone ends point at each other's copies, an end whose partner is missing isn't paired
+    // copied zone ends point at each other's copies, an end whose partner is missing isn't paired. a copy in a copied
+    // frame is in the frame's copy, the others stay in the frame they were in
     for new_id in ids.values() {
         let node = graph.node_mut(new_id).unwrap();
         if let Some(partner) = zone_of(node).map(str::to_string) {
@@ -747,6 +841,10 @@ fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut
                 None => node.data.remove("zone"),
             };
         }
+        if let Some(copy) = node.frame().and_then(|f| ids.get(f)) {
+            let copy = copy.clone();
+            node.set_frame(Some(&copy));
+        }
     }
     // the connections between copied nodes
     let edges: Vec<RfEdge> = graph.edges.iter().filter(|e| ids.contains_key(e.from_node()) && ids.contains_key(e.to_node())).map(|e| edge_like(e, &ids[e.from_node()], e.from_output(), &ids[e.to_node()], e.to_input())).collect();
@@ -754,8 +852,9 @@ fn duplicate(graph: &mut Graph, nodes: &[String], offset: &Position, added: &mut
     // copied outputs get tags of their own
     tags::adopt(graph, &ids.values().cloned().collect::<Vec<_>>());
 
+    // the copies of what was selected are, every copy is grabbed
     let copies: Vec<&str> = originals.iter().map(|n| ids[&n.id].as_str()).collect();
-    select(graph, &copies.iter().copied().collect(), &HashSet::new());
+    select(graph, &originals.iter().filter(|n| selected.contains(&n.id)).map(|n| ids[&n.id].as_str()).collect(), &HashSet::new());
     added.extend(copies.iter().map(|id| Added {
         id: id.to_string(),
         position: graph.node(id).unwrap().position.clone(),
@@ -991,11 +1090,16 @@ fn boundary_node(id: &str, node_type: &str, position: Position) -> RfNode {
 /// each outside value used inside gets one input, each inside value used outside gets one output
 fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected: &[String], widths: &HashMap<String, f64>, added: &mut Vec<Added>) -> Result<(), String> {
     let mut graph = target(project, scope)?.clone();
+    // a frame goes into the group with what's in it
+    let selected = frames::with_contents(&graph, selected);
     let selected: HashSet<&str> = selected.iter().map(String::as_str).collect();
     let nodes: Vec<RfNode> = graph.nodes.iter().filter(|n| selected.contains(n.id.as_str())).cloned().collect();
     if nodes.is_empty() {
         return Err("nothing to group".to_string());
     }
+    // the group node goes in the frame the grouped nodes were all in, if they were
+    let outer: HashSet<Option<&str>> = nodes.iter().map(|n| n.frame().filter(|f| !selected.contains(f))).collect();
+    let group_frame = (outer.len() == 1).then(|| outer.into_iter().next().flatten()).flatten().map(str::to_string);
     if nodes.iter().any(|n| n.node_type == GROUP_INPUT || n.node_type == GROUP_OUTPUT) {
         return Err("the group input and output can't be grouped".to_string());
     }
@@ -1078,6 +1182,10 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
     )];
     inside_nodes.extend(nodes.into_iter().map(|mut n| {
         n.extra.retain(|k, _| !UI_KEYS.contains(&k.as_str()));
+        // a frame that stays outside isn't in the group
+        if n.frame().is_some_and(|f| !selected.contains(f)) {
+            n.set_frame(None);
+        }
         n
     }));
     inside_nodes.push(boundary_node(
@@ -1104,7 +1212,7 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
     };
 
     // the group node takes the selection's place and becomes the selection
-    let group_node = RfNode {
+    let mut group_node = RfNode {
         id: group_node_id.clone(),
         node_type: GROUP.to_string(),
         position: Position {
@@ -1114,6 +1222,7 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
         data: Map::from_iter([("group_id".to_string(), json!(group_id)), ("inputs".to_string(), json!({}))]),
         extra: Map::new(),
     };
+    group_node.set_frame(group_frame.as_deref());
     graph.nodes.retain(|n| !selected.contains(n.id.as_str()));
     graph.nodes.push(group_node);
     graph.edges = outer;
@@ -1194,6 +1303,11 @@ fn ungroup_one(graph: &mut Graph, node_id: &str, def: &GroupDef) -> Vec<String> 
             node.id = ids[&n.id].clone();
             if let Some(partner) = zone_of(n).and_then(|z| ids.get(z)) {
                 node.data.insert("zone".to_string(), json!(partner));
+            }
+            // frames come out with what's in them, the rest goes in the frame the group node was in
+            match n.frame() {
+                Some(frame) => node.set_frame(Some(ids.get(frame).map_or(frame, String::as_str))),
+                None => node.set_frame(group_node.frame()),
             }
             node.position = Position {
                 x: group_node.position.x + n.position.x - cx,

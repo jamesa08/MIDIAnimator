@@ -6,6 +6,7 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use super::builtin::{all_groups, migrate};
+use super::frames;
 use super::model::{Graph, GroupDef, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::ops::{graph_in, id_prefix, select, target, with_zone_partners, zone_of, Added, UI_KEYS};
 use super::run::{GROUP, GROUP_INPUT, GROUP_OUTPUT};
@@ -61,10 +62,10 @@ fn group_of(node: &RfNode) -> Option<&str> {
     (node.node_type == GROUP).then(|| node.data.get("group_id").and_then(Value::as_str)).flatten()
 }
 
-/// copies nodes of the graph `scope` (a zone as a pair) with the connections between them, as text
+/// copies nodes of the graph `scope` (a zone as a pair, a frame with what's in it) with the connections between them, as text
 pub fn copy(project: &Graph, scope: Option<&str>, nodes: &[String]) -> Result<String, String> {
     let graph = graph_in(project, scope)?;
-    let ids = with_zone_partners(graph, nodes);
+    let ids: HashSet<String> = frames::with_contents(graph, &with_zone_partners(graph, nodes).into_iter().collect::<Vec<_>>()).into_iter().collect();
     let copied = clean_graph(&Graph {
         nodes: graph.nodes.iter().filter(|n| ids.contains(&n.id)).cloned().collect(),
         edges: graph.edges.iter().filter(|e| ids.contains(e.from_node()) && ids.contains(e.to_node())).cloned().collect(),
@@ -135,9 +136,18 @@ fn free_name(name: &str, taken: &HashSet<String>) -> String {
 }
 
 /// a pasted node's data: only what a node keeps there (its input values checked against its spec, the group it runs,
-/// its zone partner)
+/// its zone partner). a frame keeps its label and its style (`frames::Style`)
 fn clean_data(node: &RfNode, spec: Option<&NodeSpec>) -> Map<String, Value> {
     let mut data = Map::new();
+    if node.is_frame() {
+        let valid: [(&str, fn(&Value) -> bool); 7] = [("label", Value::is_string), ("color", Value::is_string), ("shrink", Value::is_boolean), ("lock_size", Value::is_boolean), ("locked", Value::is_boolean), ("label_size", Value::is_number), ("label_align", Value::is_string)];
+        for (key, valid) in valid {
+            if let Some(value) = node.data.get(key).filter(|v| valid(v)) {
+                data.insert(key.to_string(), value.clone());
+            }
+        }
+        return data;
+    }
     let inputs: Map<String, Value> = node
         .inputs()
         .into_iter()
@@ -246,6 +256,8 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
     let cy = (ys.clone().fold(f64::INFINITY, f64::min) + ys.fold(f64::NEG_INFINITY, f64::max)) / 2.0;
     let graph = target(project, scope)?;
     let mut ids: HashMap<String, String> = HashMap::new();
+    // the frame each pasted node was in when it was copied
+    let mut in_frames: Vec<(String, String)> = Vec::new();
     for mut node in copied.nodes {
         rename(&mut node, &group_ids);
         let fits = match node.node_type.as_str() {
@@ -269,12 +281,21 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
             extra: node.extra.iter().filter(|(k, v)| (k.as_str() == "width" || k.as_str() == "height") && v.is_number()).map(|(k, v)| (k.clone(), v.clone())).collect(),
         };
         ids.insert(node.id.clone(), pasted.id.clone());
+        if let Some(frame) = node.frame() {
+            in_frames.push((pasted.id.clone(), frame.to_string()));
+        }
         graph.nodes.push(pasted);
     }
     if ids.is_empty() {
         return Err("none of the copied nodes can go here".to_string());
     }
 
+    // a node is in the paste of the frame it was in, if that came along
+    for (id, frame) in &in_frames {
+        if let Some(frame) = ids.get(frame) {
+            graph.node_mut(id).unwrap().set_frame(Some(frame));
+        }
+    }
     // zone ends point at each other's copies, an end whose partner didn't come along isn't paired
     for new_id in ids.values() {
         let node = graph.node_mut(new_id).unwrap();

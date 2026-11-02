@@ -13,6 +13,7 @@ use super::{lock, push_graph};
 use crate::graph::builtin::all_groups;
 use crate::graph::history::{Source, Step};
 use crate::graph::clipboard;
+use crate::graph::frames::Size;
 use crate::graph::model::{node_specs, Graph, Position};
 use crate::graph::ops::{self, Added, Ctx, Op};
 use crate::graph::sockets::SocketRef;
@@ -29,10 +30,11 @@ pub struct Applied {
 
 /// applies `ops` to the graph `scope` (a group id, none for the top level) of a tab as one undo step named after the first op.
 /// with `txn` it joins the other steps of that transaction. `commit_to_history` false changes the graph without an undo
-/// step (values filled in automatically). if one op fails nothing changes and the error says why
+/// step (values filled in automatically). `sizes` are the nodes' sizes on screen, frames fit around them. if one op
+/// fails nothing changes and the error says why
 #[tauri::command]
-pub async fn graph_apply(tab: String, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: Option<bool>) -> Result<Applied, String> {
-    apply(&tab, scope, ops, txn, commit_to_history != Some(false))
+pub async fn graph_apply(tab: String, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: Option<bool>, sizes: Option<HashMap<String, Size>>) -> Result<Applied, String> {
+    apply(&tab, scope, ops, txn, commit_to_history != Some(false), &sizes.unwrap_or_default())
 }
 
 /// the system clipboard type copied nodes go under, in place of text. only MotionKeys reads it, pasting them anywhere
@@ -68,6 +70,7 @@ pub async fn graph_cut(tab: String, scope: Option<String>, nodes: Vec<String>, e
         }],
         None,
         true,
+        &HashMap::new(),
     )
 }
 
@@ -86,6 +89,7 @@ pub async fn graph_paste(tab: String, scope: Option<String>, position: Position)
         }],
         None,
         true,
+        &HashMap::new(),
     )
 }
 
@@ -95,7 +99,7 @@ pub async fn graph_can_paste() -> bool {
     ClipboardContext::new().map(|system| system.has(ContentFormat::Other(CLIPBOARD_TYPE.to_string()))).unwrap_or(false)
 }
 
-fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool) -> Result<Applied, String> {
+fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool, sizes: &HashMap<String, Size>) -> Result<Applied, String> {
     let (applied, run) = {
         let mut state = lock();
         let instance = state.instance(tab).ok_or_else(|| format!("no tab '{}'", tab))?;
@@ -109,6 +113,7 @@ fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, co
         let ctx = Ctx {
             specs: &specs,
             results: &results,
+            sizes,
         };
 
         // the project before, for naming what the ops removed

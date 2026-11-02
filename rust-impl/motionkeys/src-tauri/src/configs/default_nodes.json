@@ -495,6 +495,19 @@
         },
 
         {
+            "id": "frame",
+            "name": "Frame",
+            "category": "frame",
+            "description": "A labeled box around nodes, only for organizing them. It never runs.",
+            "executor": "graph",
+            "realtime": true,
+            "handles": {
+                "inputs": [],
+                "outputs": []
+            }
+        },
+
+        {
             "id": "group",
             "name": "Group",
             "category": "group",

@@ -33,6 +33,7 @@ fn run(graph: &mut Graph, scope: Option<&str>, ops: Value) -> Result<Vec<Added>,
     let ctx = Ctx {
         specs: &specs,
         results: &results,
+        sizes: &HashMap::new(),
     };
     let ops: Vec<Op> = serde_json::from_value(ops).unwrap();
     let mut added = Vec::new();

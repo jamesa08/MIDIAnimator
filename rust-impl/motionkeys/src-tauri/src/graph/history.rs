@@ -16,7 +16,7 @@ pub(super) const UI_NODE_KEYS: &[&str] = &["dragging", "measured", "resizing"];
 /// edge fields only the UI cares about
 const UI_EDGE_KEYS: &[&str] = &[];
 /// node and edge fields that change how the graph looks but not what it computes
-const LAYOUT_KEYS: &[&str] = &["position", "selected", "selectedSockets", "width", "height"];
+const LAYOUT_KEYS: &[&str] = &["position", "selected", "selectedSockets", "width", "height", "frame"];
 /// fields of a graph that aren't part of its own record: its nodes, edges and groups are records of their own,
 /// and the viewport (where the graph is looked at) is never recorded
 const GRAPH_KEYS: &[&str] = &["nodes", "edges", "groups", "viewport"];
@@ -261,7 +261,10 @@ impl Diff {
 
     /// true if the change can change what the graph computes, not only where things are or what's selected
     pub fn affects_output(&self) -> bool {
+        // a frame is only layout, adding, changing or removing one changes nothing
+        let frame = |v: &Option<Value>| v.as_ref().and_then(|v| v.get("type")).and_then(Value::as_str) == Some(super::run::FRAME);
         let layout_only = |c: &Change| match (&c.before, &c.after) {
+            _ if c.key.kind == Kind::Node && (frame(&c.before) || frame(&c.after)) => true,
             (Some(Value::Object(before)), Some(Value::Object(after))) if matches!(c.key.kind, Kind::Node | Kind::Edge) => without_layout(before) == without_layout(after),
             _ => false,
         };

@@ -357,6 +357,24 @@ impl RfNode {
         self.data.get("label").and_then(|v| v.as_str()).filter(|label| !label.is_empty())
     }
 
+    /// whether the node is a frame (`graph::frames`), only layout
+    pub fn is_frame(&self) -> bool {
+        self.resolved_node_type() == super::run::FRAME
+    }
+
+    /// the frame the node is in
+    pub fn frame(&self) -> Option<&str> {
+        self.extra.get("frame").and_then(|v| v.as_str())
+    }
+
+    /// puts the node in a frame, or in none
+    pub fn set_frame(&mut self, frame: Option<&str>) {
+        match frame {
+            Some(frame) => self.extra.insert("frame".to_string(), Value::String(frame.to_string())),
+            None => self.extra.remove("frame"),
+        };
+    }
+
     /// values set on the node itself (not coming from a connection)
     pub fn inputs(&self) -> Option<&Map<String, Value>> {
         self.data.get("inputs").and_then(|v| v.as_object())

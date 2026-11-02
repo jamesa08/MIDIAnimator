@@ -40,6 +40,8 @@ pub const GROUP_INPUT: &str = "group_input";
 pub const GROUP_OUTPUT: &str = "group_output";
 pub const FOR_EACH_INPUT: &str = "for_each_input";
 pub const FOR_EACH_OUTPUT: &str = "for_each_output";
+/// a frame around nodes (`graph::frames`), only layout: it never runs
+pub const FRAME: &str = "frame";
 
 /// separates the ids in a node path, `group-1/viewer-2` is `viewer-2` inside the group node `group-1`
 pub const PATH_SEP: char = '/';
@@ -110,8 +112,19 @@ impl<'a> RunCtx<'a> {
         memo
     }
 
-    /// the plan for a graph, each group is planned once per run
+    /// the plan for a graph, each group is planned once per run. frames are only layout, they're left out
     fn plan(&self, graph: &Graph, group_id: Option<&str>) -> Rc<Plan> {
+        let frameless;
+        let graph = if graph.nodes.iter().any(RfNode::is_frame) {
+            frameless = Graph {
+                nodes: graph.nodes.iter().filter(|n| !n.is_frame()).cloned().collect(),
+                edges: graph.edges.clone(),
+                ..Default::default()
+            };
+            &frameless
+        } else {
+            graph
+        };
         let Some(group_id) = group_id else {
             return Rc::new(Plan::new(self, graph, None));
         };

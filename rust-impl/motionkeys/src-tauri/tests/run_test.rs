@@ -155,6 +155,25 @@ fn object_map() -> Value {
 
 // MARK: - Groups
 
+// frames are only layout: one around nodes, at the top level or inside a group, never runs and changes nothing
+#[test]
+fn frames_never_run() {
+    let mut framed = targets_group();
+    framed.graph.nodes.push(node("frame-1", json!({})));
+    framed.graph.nodes[1].set_frame(Some("frame-1"));
+    let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
+    let framed_groups = BTreeMap::from([("targets".to_string(), framed)]);
+    let mut root = graph(vec![node("group-1", json!({ "group_id": "targets", "inputs": { "object_map": object_map() } })), node("viewer-1", json!({}))], &[("group-1", "targets", "viewer-1", "data")]);
+    let (plain, _) = run_with(&root, &groups, "group-1", true);
+    root.nodes.push(node("frame-2", json!({ "label": "Out" })));
+    root.nodes[1].set_frame(Some("frame-2"));
+
+    let (record, error) = run_with(&root, &framed_groups, "group-1", true);
+    assert_eq!(error, None);
+    assert!(!record.results.contains_key("frame-2") && !record.results.contains_key("group-1/frame-1"));
+    assert_eq!(record.results, plain.results);
+}
+
 #[test]
 fn group_runs_its_graph_with_the_group_nodes_inputs() {
     let groups = BTreeMap::from([("targets".to_string(), targets_group())]);
