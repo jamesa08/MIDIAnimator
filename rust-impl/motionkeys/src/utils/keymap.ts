@@ -255,9 +255,10 @@ export function useModal(scope: string | null, handlers: Handlers, active: boole
     }, [scope, active]);
 }
 
-// a drag that takes every key until the mouse button is let go (react flow's box select, link drag, node drag)
-export function blockUntilRelease() {
-    const pop = pushModal(null);
+// a drag that takes every key until the mouse button is let go (react flow's box select, link drag, node drag). with a
+// `scope` it runs the commands it has `handlers` for meanwhile (a right click cancelling a box select)
+export function blockUntilRelease(scope: string | null = null, handlers: Handlers = {}) {
+    const pop = pushModal(scope, handlers);
     const end = () => {
         pop();
         window.removeEventListener("pointerup", end, true);
@@ -458,6 +459,24 @@ function handlePointerDown(event: PointerEvent) {
     handler();
 }
 
+// the event.buttons bit of each event.button
+const BUTTON_BITS = [1, 4, 2];
+
+// a press while another button is held (a right click partway through a box select) fires a mousedown but no
+// pointerdown, the modal's command for it runs from here. one a pointerdown already ran is left alone
+function handleMouseDown(event: MouseEvent) {
+    const modal = modals[modals.length - 1];
+    if (!modal) return;
+    const chorded = (event.buttons & ~(BUTTON_BITS[event.button] ?? 0)) !== 0;
+    if (!chorded || swallowClick || modal.raw) return;
+    const button = MOUSE_BUTTONS[event.button];
+    const command = button && commandFor(modal.scope, combo(event, button));
+    const handler = command && modal.handlers()[command];
+    if (!handler) return;
+    stop(event);
+    handler();
+}
+
 function swallow(event: MouseEvent) {
     if (!swallowClick) return;
     stop(event);
@@ -468,6 +487,7 @@ window.addEventListener("keydown", handleKeyDown, true);
 window.addEventListener("keyup", handleKeyUp, true);
 window.addEventListener("pointerdown", handlePointerDown, true);
 for (const type of ["mousedown", "mouseup", "click", "auxclick", "contextmenu"]) window.addEventListener(type, swallow as EventListener, true);
+window.addEventListener("mousedown", handleMouseDown, true);
 window.addEventListener(
     "mousemove",
     (event) => {

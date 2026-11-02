@@ -91,6 +91,18 @@
         ]
     },
     {
+        "id": "box_select",
+        "name": "Box Select",
+        "kind": "modal",
+        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["RightMouse", "Escape"] }]
+    },
+    {
+        "id": "link_drag",
+        "name": "Link Drag",
+        "kind": "modal",
+        "commands": [{ "id": "cancel", "name": "Cancel", "keys": ["RightMouse", "Escape"] }]
+    },
+    {
         "id": "dialog",
         "name": "Dialog",
         "kind": "modal",

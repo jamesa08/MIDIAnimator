@@ -578,6 +578,18 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // react flow's own drags (box select, dragging a link or a node) take every key until the mouse is let go, so a key
     // can't open a group or start a grab halfway through one
     const blockKeys = useCallback(() => blockUntilRelease(), []);
+    // a link drag cancelled partway through (a right click) drops nowhere: nothing connects and a picked up link goes
+    // back. react flow's drag ends at the next mouse move or release, the handlers below do nothing then
+    const linkCancelledRef = useRef(false);
+    const blockLink = useCallback(() => {
+        linkCancelledRef.current = false;
+        blockUntilRelease("link_drag", {
+            cancel: () => {
+                linkCancelledRef.current = true;
+                store.getState().cancelConnection();
+            },
+        });
+    }, [store]);
     // where a link drag started, letting go without moving is a click on the socket (the first of a double click to tag
     // it), not a link dropped on nothing
     const linkStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -591,9 +603,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             linkStartRef.current = { x: clientX, y: clientY };
             alongRef.current = nodeId && handleId && handleType ? draggedAlong(store.getState().nodeLookup, { node: nodeId, side: handleSide(handleType), socket: handleId }) : [];
             droppedRef.current = null;
-            blockKeys();
+            blockLink();
         },
-        [blockKeys, store]
+        [blockLink, store]
     );
 
     // MARK: - Picking Up Links
@@ -655,7 +667,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
             // dragged from the output end, react flow's reconnect
             let dropped: Connection | null = null;
-            blockKeys();
+            blockLink();
             XYHandle.onPointerDown(mouse, {
                 ...drag,
                 nodeId: picked.target,
@@ -666,9 +678,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 onReconnectEnd: () => {
                     window.removeEventListener("mousemove", follow);
                     if (!moved) return;
-                    // back where it was, nothing changes
+                    // back where it was or cancelled, nothing changes
                     const same = dropped && dropped.source === picked.source && dropped.sourceHandle === picked.sourceHandle && dropped.target === picked.target && dropped.targetHandle === picked.targetHandle;
-                    if (same || !canEdit()) {
+                    if (same || !canEdit() || linkCancelledRef.current) {
                         restore();
                         return;
                     }
@@ -679,7 +691,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         };
         window.addEventListener(PICK_UP_EVENT, handlePickUp);
         return () => window.removeEventListener(PICK_UP_EVENT, handlePickUp);
-    }, [groupId, store, getEdges, setEdges, screenToFlowPosition, blockKeys, canEdit, apply]);
+    }, [groupId, store, getEdges, setEdges, screenToFlowPosition, blockLink, canEdit, apply]);
 
     // Close menu on click outside
     useEffect(() => {
@@ -844,13 +856,25 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     const handlePaneClick = useCallback(() => clearSockets(), [clearSockets]);
     // the sockets selected before a box selection with shift, the sockets in the box are added to them
     const boxBaseRef = useRef<SocketRef[]>([]);
+    // everything selected before a box selection, cancelling it (a right click partway through) puts that back. react
+    // flow's box goes and the moves until the mouse is let go select nothing
+    const boxBeforeRef = useRef<{ nodes: string[]; edges: string[]; sockets: SocketRef[] }>({ nodes: [], edges: [], sockets: [] });
+    const cancelBox = useCallback(() => {
+        if (!store.getState().userSelectionRect) return;
+        const before = boxBeforeRef.current;
+        store.setState({ userSelectionActive: false, userSelectionRect: null });
+        setNodes((nds) => withSockets(nds, before.sockets).map((node) => ({ ...node, selected: before.nodes.includes(node.id) })));
+        setEdges((eds) => (eds ?? []).map((edge) => ({ ...edge, selected: before.edges.includes(edge.id) })));
+        scheduleSelection();
+    }, [store, setNodes, setEdges, scheduleSelection]);
     const onSelectionStart = useCallback(
         (event: React.MouseEvent) => {
             boxBaseRef.current = event.shiftKey ? selectedSockets(getNodes()) : [];
+            boxBeforeRef.current = { nodes: selectedIds(getNodes()), edges: selectedIds(getEdges()), sockets: selectedSockets(getNodes()) };
             if (!event.shiftKey) clearSockets();
-            blockKeys();
+            blockUntilRelease("box_select", { cancel: cancelBox });
         },
-        [getNodes, clearSockets, blockKeys]
+        [getNodes, getEdges, clearSockets, cancelBox]
     );
     // the sockets inside a box selection (NodeGraphCanvas's BoxSelect), while it's dragged
     const onBoxSockets = useCallback(
@@ -886,7 +910,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // connecting to the empty socket on the group input or output adds a group socket, the backend does that
     const onConnect = useCallback(
         (params: Edge | Connection) => {
-            if (!editable) return;
+            if (!editable || linkCancelledRef.current) return;
             // the sockets brought along connect with it when the drag ends
             if (alongRef.current.length > 0) droppedRef.current = params;
             else apply([connectOp(params)]);
@@ -902,6 +926,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const dropped = droppedRef.current;
             alongRef.current = [];
             droppedRef.current = null;
+            if (linkCancelledRef.current) return;
             // one undo step for the link and the ones brought along
             if (dropped) {
                 const output = { node: dropped.target, side: "outputs" as const, socket: dropped.targetHandle ?? "" };
