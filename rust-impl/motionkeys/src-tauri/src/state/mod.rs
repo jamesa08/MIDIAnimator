@@ -580,23 +580,35 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
             instance.mark_saved();
         }
     }
+    crate::settings::note_recent(path);
     // the tab is named after its file now
     update_state();
 
     Ok(path.to_string())
 }
 
-/// asks for a project file and opens it, see `open_project`
+/// asks for a project file and opens it, or opens the recent project at `recent` (File > Open Recent), see `open_project`.
+/// a recent project whose file is gone leaves the list
 #[tauri::command]
-pub async fn load_project() -> Result<StateView, String> {
-    // the window lock is scoped so it's released before loading
-    let file_path = {
-        let window = WINDOW.lock().unwrap_or_else(PoisonError::into_inner);
-        window.as_ref().ok_or("no window")?.dialog().file().set_title("Load Project").add_filter("MotionKeys Project", &["mkproj"]).blocking_pick_file()
+pub async fn load_project(recent: Option<usize>) -> Result<StateView, String> {
+    let path = match recent {
+        Some(index) => crate::settings::recent_projects().get(index).cloned().ok_or_else(|| format!("no recent project {}", index))?,
+        None => {
+            // the window lock is scoped so it's released before loading
+            let file_path = {
+                let window = WINDOW.lock().unwrap_or_else(PoisonError::into_inner);
+                window.as_ref().ok_or("no window")?.dialog().file().set_title("Load Project").add_filter("MotionKeys Project", &["mkproj"]).blocking_pick_file()
+            };
+            file_path.ok_or("Load cancelled")?.to_string()
+        }
     };
-    let path = file_path.ok_or("Load cancelled")?;
 
-    open_project(&path.to_string()).await?;
+    if let Err(e) = open_project(&path).await {
+        if recent.is_some() && !std::path::Path::new(&path).exists() {
+            crate::settings::forget_recent(&path);
+        }
+        return Err(e);
+    }
     Ok(lock().view())
 }
 
@@ -628,7 +640,9 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
     let path = fs::canonicalize(path).map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string());
     let same = |other: &str| fs::canonicalize(other).map(|other| other.to_string_lossy().to_string()).unwrap_or_else(|_| other.to_string()) == path;
     if let Some(instance) = lock().instances.iter().find(|instance| instance.path.as_deref().is_some_and(same)) {
-        return Ok(Opened::Already(instance.id.clone()));
+        let id = instance.id.clone();
+        crate::settings::note_recent(&path);
+        return Ok(Opened::Already(id));
     }
 
     // read and parse the project file
@@ -669,6 +683,7 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
     }
 
     // tell the front end about the new tab and its empty history
+    crate::settings::note_recent(&path);
     update_state();
     history::notify_active();
     Ok(Opened::New(id))

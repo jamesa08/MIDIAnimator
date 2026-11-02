@@ -8,8 +8,10 @@ use tauri::{
 // sent to the main window to close its tab, or the window on the last one
 pub const CLOSE_TAB_EVENT: &str = "close-tab";
 // sent to the main window when open, save or save as is picked from the file menu (or its shortcut), payload "open",
-// "save" or "save_as". the frontend does them for the tab on screen
+// "save" or "save_as", or a recent project's "open_recent.{index}". the frontend does them for the tab on screen
 pub const FILE_EVENT: &str = "menu-file";
+// starts the id of a recent project's menu item, its index in the list follows
+const RECENT_PREFIX: &str = "open_recent.";
 // sent to the focused window when a menu item is picked (or its shortcut pressed), payload the app command's id.
 // the window runs it unless a modal is taking its keys (src/utils/keymap.ts), sending it back to run_app_command when
 // it has no handler of its own
@@ -72,7 +74,15 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let open = item(app, "open", "Open...")?;
     let save = item(app, "save", "Save")?;
     let save_as = item(app, "save_as", "Save As...")?;
-    let file_submenu = SubmenuBuilder::new(app, "File").item(&new_tab).item(&open).separator().item(&save).item(&save_as).build()?;
+    // the recent projects newest first, there but off when there are none
+    let recent = crate::settings::recent_projects();
+    let mut recent_submenu = SubmenuBuilder::new(app, "Open Recent").enabled(!recent.is_empty());
+    for (index, label) in crate::settings::recent_labels(&recent).iter().enumerate() {
+        recent_submenu = recent_submenu.item(&MenuItemBuilder::with_id(format!("{RECENT_PREFIX}{index}"), label).build(app)?);
+    }
+    let clear_recent = MenuItemBuilder::with_id("clear_recent", "Clear Menu").build(app)?;
+    let recent_submenu = recent_submenu.separator().item(&clear_recent).build()?;
+    let file_submenu = SubmenuBuilder::new(app, "File").item(&new_tab).item(&open).item(&recent_submenu).separator().item(&save).item(&save_as).build()?;
     let history = item(app, "history", "History")?;
     let graph = item(app, "graph", "Graph")?;
     let console = item(app, "console_open", "Console")?;
@@ -150,6 +160,12 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         }
         "open" | "save" | "save_as" => {
             app.emit_to("main", FILE_EVENT, id).ok();
+        }
+        id if id.starts_with(RECENT_PREFIX) => {
+            app.emit_to("main", FILE_EVENT, id).ok();
+        }
+        "clear_recent" => {
+            crate::settings::clear_recent();
         }
         "history" => {
             app.emit_to("main", PANEL_TOGGLE_EVENT, HISTORY_PANEL).ok();

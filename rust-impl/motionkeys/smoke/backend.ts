@@ -70,6 +70,9 @@ function install({ backend, label }: { backend: Backend; label: string }) {
                 return Array.from(new TextEncoder().encode(backend.default_nodes_json));
             case "ready":
                 return state;
+            // opening a project (File > Open, Open Recent) gives the state with it shown, the fixture's here
+            case "load_project":
+                return state;
             // the system clipboard isn't dumped, it's whatever the machine had. it always has nodes here
             case "graph_can_paste":
                 return true;

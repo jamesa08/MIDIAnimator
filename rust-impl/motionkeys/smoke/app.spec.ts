@@ -1300,3 +1300,13 @@ test("delete unused nodes with nothing unused shows nothing", async ({ page }) =
     await expect(page.getByText("Delete Unused Nodes", { exact: true })).toHaveCount(0);
     expect((await sentOps(page)).filter((op: any) => op.op === "delete")).toEqual([]);
 });
+
+test("open recent opens the project it names", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    const loads = () => page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "load_project").map((c: any) => c.args));
+    await emitEvent(page, "menu-file", "open_recent.2");
+    await emitEvent(page, "menu-file", "open");
+    await expect.poll(loads).toEqual([{ recent: 2 }, { recent: null }]);
+    await settle(page);
+});

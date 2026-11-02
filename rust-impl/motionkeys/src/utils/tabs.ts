@@ -48,17 +48,21 @@ export function useSaveTab() {
     );
 }
 
-// asks for a project file and opens it in a tab of its own, see load_project in src-tauri/src/state/mod.rs
+// asks for a project file and opens it in a tab of its own, or the recent project at `recent` (File > Open Recent), see
+// load_project in src-tauri/src/state/mod.rs
 export function useOpenFile() {
     const { setBackEndState } = useStateContext();
-    return useCallback(async () => {
-        try {
-            const state = await invoke<any>("load_project");
-            setBackEndState((s: any) => takeState(s, state));
-            const path = state?.tabs?.find((t: any) => t.id === state.active_tab)?.path;
-            if (path) showStatus(`Opened "${fileName(path)}"`);
-        } catch (error) {
-            if (error !== "Load cancelled") console.error("Load failed:", error);
-        }
-    }, [setBackEndState]);
+    return useCallback(
+        async (recent?: number) => {
+            try {
+                const state = await invoke<any>("load_project", { recent: recent ?? null });
+                setBackEndState((s: any) => takeState(s, state));
+                const path = state?.tabs?.find((t: any) => t.id === state.active_tab)?.path;
+                if (path) showStatus(`Opened "${fileName(path)}"`);
+            } catch (error) {
+                if (error !== "Load cancelled") console.error("Load failed:", error);
+            }
+        },
+        [setBackEndState]
+    );
 }

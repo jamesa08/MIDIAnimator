@@ -24,8 +24,10 @@ const FLOATING_HEIGHT = 360;
 const DOCK_MAX_FRACTION = 0.4;
 // how far past the narrowest width a dock column's edge is dragged before the side hides
 const DOCK_HIDE_DETENT = 80;
-// sent to the main window by the file menu (src-tauri/src/ui/menu.rs), payload "open", "save" or "save_as"
+// sent to the main window by the file menu (src-tauri/src/ui/menu.rs), payload "open", "save", "save_as" or a recent
+// project's, RECENT_PREFIX and its index in the list
 const FILE_EVENT = "menu-file";
+const RECENT_PREFIX = "open_recent.";
 
 // shows a floating panel's window: at `frame`, where it was last, or the first time inside the main window's right edge
 async function showFloating(id: number, frame?: { x: number; y: number; width: number; height: number }) {
@@ -116,6 +118,7 @@ function App() {
     useEffect(() => {
         const unlisten = getCurrentWebviewWindow().listen<string>(FILE_EVENT, async ({ payload }) => {
             if (payload === "open") return openFile();
+            if (payload.startsWith(RECENT_PREFIX)) return openFile(Number(payload.slice(RECENT_PREFIX.length)));
             try {
                 await saveTab(undefined, payload === "save_as");
             } catch (error) {

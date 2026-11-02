@@ -56,8 +56,9 @@ async fn main() {
             log::init(app.handle());
             motionkeys::utils::console::init(app.handle());
 
-            // build and set menu, with the user's keyboard shortcuts
+            // build and set menu, with the user's keyboard shortcuts and recent projects
             motionkeys::ui::keybinds::load_keymap(app.handle());
+            motionkeys::settings::load_recent(app.handle());
             let menu = menu::build_menu(app.handle())?;
             app.set_menu(menu)?;
 

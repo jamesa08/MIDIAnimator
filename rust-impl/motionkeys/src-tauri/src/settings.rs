@@ -3,7 +3,8 @@
 
 use lazy_static::lazy_static;
 use serde_json::Value;
-use std::sync::Mutex;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 static DEFAULT_SETTINGS: &str = include_str!("configs/settings.json");
@@ -13,7 +14,12 @@ lazy_static! {
     static ref SETTINGS: Mutex<Value> = Mutex::new(serde_json::from_str(DEFAULT_SETTINGS).expect("invalid configs/settings.json"));
     // only what the user changed, this is what's saved
     static ref USER_SETTINGS: Mutex<Value> = Mutex::new(Value::Object(Default::default()));
+    // projects opened or saved, newest first (File > Open Recent)
+    static ref RECENT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
+
+// the app, for saving the recent projects and rebuilding the menu when a project is opened or saved
+static APP: OnceLock<AppHandle> = OnceLock::new();
 
 fn settings_path<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
     app.path().app_config_dir().ok().map(|dir| dir.join("settings.json"))
@@ -115,4 +121,101 @@ pub fn save_setting<R: Runtime>(app: &AppHandle<R>, path: &str, value: Value) ->
 
     app.emit("settings_changed", &settings).ok();
     Ok(())
+}
+
+// MARK: - Recent Projects
+
+/// how many projects File > Open Recent lists
+pub const RECENT_LIMIT: usize = 10;
+
+fn recent_path<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("recent.json"))
+}
+
+/// puts `path` first in `list`, once, keeping the newest `RECENT_LIMIT`
+pub fn push_recent(list: &mut Vec<String>, path: &str) {
+    list.retain(|p| p != path);
+    list.insert(0, path.to_string());
+    list.truncate(RECENT_LIMIT);
+}
+
+/// what the menu calls each project: its file name, with its folder after it when another one has the same name
+pub fn recent_labels(list: &[String]) -> Vec<String> {
+    let name = |path: &str| Path::new(path).file_name().map_or(path.to_string(), |n| n.to_string_lossy().to_string());
+    let folder = |path: &str| Path::new(path).parent().and_then(Path::file_name).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    list.iter()
+        .map(|path| {
+            if list.iter().filter(|other| name(other) == name(path)).count() > 1 {
+                format!("{} — {}", name(path), folder(path))
+            } else {
+                name(path)
+            }
+        })
+        .collect()
+}
+
+/// the recent projects, newest first
+pub fn recent_projects() -> Vec<String> {
+    RECENT.lock().unwrap().clone()
+}
+
+// called once from setup
+pub fn load_recent(app: &tauri::AppHandle) {
+    APP.set(app.clone()).ok();
+    let Some(path) = recent_path(app) else {
+        return;
+    };
+    let Ok(data) = std::fs::read_to_string(&path) else {
+        return;
+    };
+    match serde_json::from_str::<Vec<String>>(&data) {
+        Ok(list) => *RECENT.lock().unwrap() = list.into_iter().take(RECENT_LIMIT).collect(),
+        Err(e) => eprintln!("ignoring invalid recent projects file {:?}: {}", path, e),
+    }
+}
+
+/// a project was opened or saved, it goes first. the same file through another path is still the same file
+pub fn note_recent(path: &str) {
+    let path = std::fs::canonicalize(path).map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string());
+    change_recent(|list| push_recent(list, &path));
+}
+
+/// a recent project that's gone leaves the list
+pub fn forget_recent(path: &str) {
+    change_recent(|list| list.retain(|p| p != path));
+}
+
+/// File > Open Recent > Clear Menu
+pub fn clear_recent() {
+    change_recent(Vec::clear);
+}
+
+// changes the list, then saves it and rebuilds the menu that shows it. only the list changes without the app (tests)
+fn change_recent(change: impl FnOnce(&mut Vec<String>)) {
+    let list = {
+        let mut recent = RECENT.lock().unwrap();
+        let before = recent.clone();
+        change(&mut recent);
+        if *recent == before {
+            return;
+        }
+        recent.clone()
+    };
+    let Some(app) = APP.get() else {
+        return;
+    };
+    if let Some(file) = recent_path(app) {
+        let written = file.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&file, serde_json::to_string_pretty(&list).unwrap_or_default()));
+        if let Err(e) = written {
+            eprintln!("Error saving recent projects {:?}: {}", file, e);
+        }
+    }
+    let handle = app.clone();
+    app.run_on_main_thread(move || match crate::ui::menu::build_menu(&handle) {
+        Ok(menu) => {
+            handle.set_menu(menu).ok();
+        }
+        Err(e) => eprintln!("Error rebuilding the menu: {}", e),
+    })
+    .ok();
 }
