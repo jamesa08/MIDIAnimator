@@ -15,11 +15,12 @@ use serde_json::{Map, Value};
 
 use crate::graph::edit::{self, EditResult};
 use crate::graph::execute::{execute_graph, panic_message};
-use crate::graph::builtin::all_groups;
+use crate::graph::builtin::{all_groups, builtin_groups};
 use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
 use crate::graph::run::{instance_path, scoped_values};
 use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
 use crate::graph::history::{EntryInfo, Source, Step};
+use crate::graph::ops::{self, graph_in, Ctx, Op};
 use crate::graph::tags;
 use crate::state::history::{self, Capture};
 use crate::state::{open_file, save_project_to, start_instance, update_state, AppState, InstanceState, Opened, STATE};
@@ -36,7 +37,9 @@ graph_execute with write_to_blender=true writes keyframes to Blender. Node ids a
 app_screenshot shows what the UI currently looks like. \
 Each tab is its own .mkproj file with its own graph, undo history and window layout, like a separate instance of the app; \
 every graph tool acts on the tab on screen. app_status lists the tabs, tab_new/tab_switch/tab_close/tab_rename manage them, \
-project_load opens a file in a tab of its own, and tab_go_live links Blender to one: only the live tab gets Blender's scene changes and writes keyframes.";
+project_load opens a file in a tab of its own, and tab_go_live links Blender to one: only the live tab gets Blender's scene changes and writes keyframes. \
+Frames are labeled boxes around nodes for organizing the graph, they never run: graph_join_in_frame makes one, graph_remove_from_frame takes nodes out, \
+graph_set_label names it (or any node) and graph_remove_node removes it, keeping its nodes.";
 
 // returned by every tool when the frontend hasn't called `ready` yet
 const NOT_READY: &str = "app not ready: the MotionKeys window has not finished loading; try again in a moment";
@@ -145,6 +148,37 @@ pub struct SetInputsParams {
     pub node: String,
     /// Input values keyed by input id; merged into the node's values, null unsets one
     pub inputs: Map<String, Value>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
+}
+
+// graph_join_in_frame
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct JoinInFrameParams {
+    /// Nodes to put in the new frame (ids or unique prefixes); nodes inside a frame listed here stay in it
+    pub nodes: Vec<String>,
+    /// The frame's label; omit for none
+    pub label: Option<String>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
+}
+
+// graph_remove_from_frame
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NodesParams {
+    /// Node ids or unique prefixes
+    pub nodes: Vec<String>,
+    /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
+    pub group: Option<String>,
+}
+
+// graph_set_label
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SetLabelParams {
+    /// Node or frame (id or unique prefix)
+    pub node: String,
+    /// The name shown in its header (a frame's label); empty goes back to none
+    pub label: String,
     /// Node group id to work inside (group nodes in graph_outline name theirs); omit for the top-level graph. Editing inside a built-in group gives this project its own copy, shared by every group node using it
     pub group: Option<String>,
 }
@@ -431,6 +465,74 @@ impl MotionKeysMcp {
         self.edit_report(group, &result, &execution)
     }
 
+    /// applies ops the way the editor does (`graph::ops`) as one undo step named `op`, pushes the graph to the UI, re-runs
+    /// the realtime graph if they changed what it computes and reports the nodes they touched. `build` makes the ops from
+    /// the graph they edit (to resolve id prefixes) and says which nodes to report, the ones they add come too
+    async fn apply_ops<F>(&self, op: &str, group: Option<&str>, build: F) -> Result<CallToolResult, McpError>
+    where
+        F: FnOnce(&Graph) -> Result<(Vec<Op>, Vec<String>), String>,
+    {
+        let (result, affects_output) = {
+            let mut state = lock_state();
+            if !state.ready {
+                return tool_error(NOT_READY);
+            }
+            let tab = state.active_instance_id.clone();
+            let mut project = match Graph::from_rf(&state.active().rf_instance) {
+                Ok(graph) => graph,
+                Err(e) => return tool_error(e),
+            };
+            let (mut list, mut touched) = match graph_in(&project, group).and_then(build) {
+                Ok(built) => built,
+                Err(e) => return tool_error(e),
+            };
+            // editing a built-in group gives the project its own copy, like the other edits
+            let made_local = group.is_some_and(|id| !project.groups.contains_key(id) && builtin_groups().contains_key(id));
+            if made_local {
+                list.insert(0, Op::MakeLocal);
+            }
+
+            // every op on the same copy, only kept if they all worked
+            let specs = node_specs(&state.default_nodes);
+            let before = project.clone();
+            let (results, sizes) = (HashMap::new(), HashMap::new());
+            let ctx = Ctx {
+                specs: &specs,
+                results: &results,
+                sizes: &sizes,
+            };
+            let mut added = Vec::new();
+            for o in &list {
+                if let Err(e) = ops::apply(&mut project, group, o, &ctx, &mut added) {
+                    return tool_error(e);
+                }
+            }
+            let main = list.iter().find(|o| !matches!(o, Op::MakeLocal)).unwrap_or(&list[0]);
+            let mut message = format!("{}: {}", op, ops::describe(main, &before, &project, group, &specs, &added));
+            if made_local {
+                message.push_str(&format!("; node group '{}' is now this project's own copy", group.unwrap()));
+            }
+            touched.splice(0..0, added.into_iter().map(|a| a.id));
+            let affects_output = history::commit(&mut state, &tab, project.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(message.clone())));
+            (
+                EditResult {
+                    message,
+                    touched,
+                },
+                affects_output,
+            )
+        };
+
+        // push the new graph to the UI, frames and labels are only layout and run nothing
+        update_state();
+        let execution = if affects_output {
+            run_realtime_if_allowed().await
+        } else {
+            "layout only, nothing to run".to_string()
+        };
+        self.edit_report(group, &result, &execution)
+    }
+
     /// undoes or redoes one step, re-runs the realtime graph and says which step it was
     async fn history_step(&self, redo: bool) -> Result<CallToolResult, McpError> {
         let tab = {
@@ -565,7 +667,8 @@ impl MotionKeysMcp {
                 })
             })
             .collect();
-        let all: Vec<&NodeSpec> = specs.iter().filter(|spec| spec.id != "group").chain(group_specs.iter()).collect();
+        // frames are made with graph_join_in_frame
+        let all: Vec<&NodeSpec> = specs.iter().filter(|spec| spec.id != "group" && spec.id != "frame").chain(group_specs.iter()).collect();
         // one block per node type
         let blocks: Vec<String> = all
             .into_iter()
@@ -756,6 +859,57 @@ impl MotionKeysMcp {
     #[tool(description = "Remove a node and all its connections.", annotations(read_only_hint = false, destructive_hint = true))]
     async fn graph_remove_node(&self, Parameters(params): Parameters<NodeParams>) -> Result<CallToolResult, McpError> {
         self.apply_edit("remove_node", params.group.as_deref(), |graph, _, _| edit::remove_node(graph, &params.node)).await
+    }
+
+    // graph_join_in_frame
+    #[tool(description = "Put nodes in a new frame: a labeled box around them for organizing the graph, it never runs. The frame fits around its nodes and goes inside the innermost frame they share. Returns the frame's id.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn graph_join_in_frame(&self, Parameters(params): Parameters<JoinInFrameParams>) -> Result<CallToolResult, McpError> {
+        self.apply_ops("join_in_frame", params.group.as_deref(), |graph| {
+            let nodes = params.nodes.iter().map(|n| graph.resolve(n)).collect::<Result<Vec<_>, _>>()?;
+            let mut list = vec![Op::JoinInFrame {
+                nodes: nodes.clone(),
+            }];
+            // the new frame's id is the next one, labeled in the same step
+            if let Some(label) = params.label.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+                list.push(Op::SetLabel {
+                    node: graph.next_node_id("frame"),
+                    label: label.to_string(),
+                });
+            }
+            Ok((list, nodes))
+        })
+        .await
+    }
+
+    // graph_remove_from_frame
+    #[tool(description = "Take nodes out of their frames, into the frame around it if there is one. A frame left with nothing in it is removed.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn graph_remove_from_frame(&self, Parameters(params): Parameters<NodesParams>) -> Result<CallToolResult, McpError> {
+        self.apply_ops("remove_from_frame", params.group.as_deref(), |graph| {
+            let nodes = params.nodes.iter().map(|n| graph.resolve(n)).collect::<Result<Vec<_>, _>>()?;
+            Ok((
+                vec![Op::RemoveFromFrame {
+                    nodes: nodes.clone(),
+                }],
+                nodes,
+            ))
+        })
+        .await
+    }
+
+    // graph_set_label
+    #[tool(description = "Set the label of a frame or a node (shown in its header instead of its type's name); an empty label removes it.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn graph_set_label(&self, Parameters(params): Parameters<SetLabelParams>) -> Result<CallToolResult, McpError> {
+        self.apply_ops("set_label", params.group.as_deref(), |graph| {
+            let node = graph.resolve(&params.node)?;
+            Ok((
+                vec![Op::SetLabel {
+                    node: node.clone(),
+                    label: params.label.trim().to_string(),
+                }],
+                vec![node],
+            ))
+        })
+        .await
     }
 
     // MARK: - History Tools
