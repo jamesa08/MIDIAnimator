@@ -373,17 +373,17 @@ fn groups_and_frames() {
     assert_eq!(frame_of(&graph, "get_midi_file-1"), Some("frame-1"));
     assert_eq!(frame_of(&graph, "get_midi_track_data-1"), Some("frame-1"));
 
-    // the frame and its nodes go in, the group node takes their place (ungrouping kept the first group)
+    // the frame and its nodes go in, the group node takes their place (ungrouping dropped the first group, its id is free again)
     run(&mut graph, None, json!([{ "op": "group", "nodes": ["frame-1"] }])).unwrap();
     assert!(graph.node("frame-1").is_none() && graph.node("viewer-1").is_none());
-    assert_eq!(frame_of(&graph, "node_group_2-1"), None);
-    let inside = &graph.groups["node_group_2"].graph;
+    assert_eq!(frame_of(&graph, "node_group-1"), None);
+    let inside = &graph.groups["node_group"].graph;
     assert_eq!(inside.node("viewer-1").unwrap().frame(), Some("frame-1"));
 
     // frames inside a group are edited there, and come out with their nodes
-    run(&mut graph, Some("node_group_2"), json!([{ "op": "join_in_frame", "nodes": ["viewer-1"] }])).unwrap();
-    assert_eq!(graph.groups["node_group_2"].graph.node("frame-2").unwrap().frame(), Some("frame-1"));
-    run(&mut graph, None, json!([{ "op": "ungroup", "nodes": ["node_group_2-1"] }])).unwrap();
+    run(&mut graph, Some("node_group"), json!([{ "op": "join_in_frame", "nodes": ["viewer-1"] }])).unwrap();
+    assert_eq!(graph.groups["node_group"].graph.node("frame-2").unwrap().frame(), Some("frame-1"));
+    run(&mut graph, None, json!([{ "op": "ungroup", "nodes": ["node_group-1"] }])).unwrap();
     assert_eq!(frame_of(&graph, "viewer-1"), Some("frame-2"));
     assert_eq!(frame_of(&graph, "frame-2"), Some("frame-1"));
 }

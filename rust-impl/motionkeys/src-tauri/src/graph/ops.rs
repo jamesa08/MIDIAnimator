@@ -311,6 +311,8 @@ pub fn apply(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, added
             added.position = frame.position.clone();
         }
     }
+    // a group whose last group node it removed goes with it
+    drop_unused_groups(project, scope);
     Ok(())
 }
 
@@ -1036,6 +1038,22 @@ fn remove_socket(project: &mut Graph, scope: Option<&str>, side: Side, id: &str)
         }
     }
     Ok(())
+}
+
+/// drops the project's groups that no group node runs, at the top level or inside a group that's run, like Blender clears
+/// out node groups nothing uses. `keep` (the group being edited) stays, with what it runs
+pub fn drop_unused_groups(project: &mut Graph, keep: Option<&str>) {
+    let groups = all_groups(project);
+    let mut used: HashSet<String> = keep.map(str::to_string).into_iter().collect();
+    let mut graphs: Vec<&Graph> = std::iter::once(&*project).chain(keep.and_then(|id| groups.get(id)).map(|def| &def.graph)).collect();
+    while let Some(graph) = graphs.pop() {
+        for id in graph.nodes.iter().filter(|n| n.resolved_node_type() == GROUP).filter_map(|n| n.data.get("group_id").and_then(Value::as_str)) {
+            if used.insert(id.to_string()) {
+                graphs.extend(groups.get(id).map(|def| &def.graph));
+            }
+        }
+    }
+    project.groups.retain(|id, _| used.contains(id));
 }
 
 fn make_local(project: &mut Graph, scope: Option<&str>) -> Result<(), String> {

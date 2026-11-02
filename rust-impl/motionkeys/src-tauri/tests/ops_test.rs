@@ -8,6 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 use serde_json::{json, Value};
 use motionkeys::graph::history::{Diff, History, Source, Step};
 use motionkeys::graph::model::{node_specs, Graph, NodeSpec, Position};
+use motionkeys::graph::clipboard;
 use motionkeys::graph::ops::{apply, describe, Added, Ctx, Op};
 use motionkeys::state::{migrate_rf_instance, SavedProject};
 
@@ -191,6 +192,58 @@ fn group_sockets() {
     assert!(!graph.edges.iter().any(|e| e.from_node() == "node_group-1" && e.from_output() == notes));
     assert!(!graph.groups["node_group"].graph.edges.iter().any(|e| e.to_node() == "group_output-1" && e.to_input() == notes));
     assert!(graph.edges.iter().any(|e| e.to_node() == "node_group-1"));
+}
+
+// a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the
+// node. one being edited stays, and cut and paste brings one back
+#[test]
+fn unused_groups_go() {
+    let mut graph = fixture();
+    let groups = |graph: &Graph| -> BTreeSet<String> { graph.groups.keys().cloned().collect() };
+    // node_group_2 runs inside node_group, a second node runs node_group
+    run(&mut graph, None, json!([{ "op": "group", "nodes": ["get_midi_file-1"] }])).unwrap();
+    run(&mut graph, Some("node_group"), json!([{ "op": "group", "nodes": ["get_midi_file-1"] }])).unwrap();
+    run(&mut graph, None, json!([{ "op": "duplicate", "nodes": ["node_group-1"], "offset": { "x": 20, "y": 20 } }])).unwrap();
+    assert_eq!(groups(&graph), BTreeSet::from(["node_group".to_string(), "node_group_2".to_string()]));
+
+    // one of two nodes deleted, both groups stay
+    run(&mut graph, None, json!([{ "op": "delete", "nodes": ["node_group-2"] }])).unwrap();
+    assert_eq!(groups(&graph).len(), 2);
+
+    // the last one goes with both, and undo puts them back in one step
+    let before = graph.to_rf();
+    run(&mut graph, None, json!([{ "op": "delete", "nodes": ["node_group-1"] }])).unwrap();
+    assert!(graph.groups.is_empty());
+    let mut history = History::default();
+    let mut project = graph.to_rf();
+    assert!(history.record(Diff::between(&before, &project), Step::new("delete", Source::Ui)));
+    history.undo(&mut project).unwrap();
+    let mut graph = Graph::from_rf(&project).unwrap();
+    assert_eq!(groups(&graph).len(), 2);
+    assert!(graph.node("node_group-1").is_some());
+
+    // ungrouping drops the group whose node it took apart, the one inside comes out with its node
+    run(&mut graph, None, json!([{ "op": "ungroup", "nodes": ["node_group-1"] }])).unwrap();
+    assert_eq!(groups(&graph), BTreeSet::from(["node_group_2".to_string()]));
+
+    // cut and paste: the copy carries the group, it comes back
+    let node = graph.nodes.iter().find(|n| n.data.get("group_id") == Some(&json!("node_group_2"))).unwrap().id.clone();
+    let text = clipboard::copy(&graph, None, &[node.clone()]).unwrap();
+    run(&mut graph, None, json!([{ "op": "cut", "nodes": [node] }])).unwrap();
+    assert!(graph.groups.is_empty());
+    run(&mut graph, None, json!([{ "op": "paste", "text": text, "position": { "x": 0, "y": 0 } }])).unwrap();
+    assert_eq!(groups(&graph).len(), 1);
+
+    // a group edited with nothing running it stays while it's edited (MCP), and goes with the next edit elsewhere
+    let mut graph = fixture();
+    run(&mut graph, None, json!([{ "op": "group", "nodes": ["get_midi_file-1"] }])).unwrap();
+    let mut def = graph.groups["node_group"].clone();
+    def.name = "Spare".to_string();
+    graph.groups.insert("spare".to_string(), def);
+    run(&mut graph, Some("spare"), json!([{ "op": "add_nodes", "nodes": [{ "type": "viewer", "position": { "x": 0, "y": 0 } }] }])).unwrap();
+    assert!(graph.groups.contains_key("spare"));
+    run(&mut graph, None, json!([{ "op": "select", "nodes": [] }])).unwrap();
+    assert_eq!(groups(&graph), BTreeSet::from(["node_group".to_string()]));
 }
 
 // a built-in group is read-only until it's made local, reverting drops the copy

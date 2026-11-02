@@ -452,6 +452,8 @@ impl MotionKeysMcp {
             };
             match outcome {
                 Ok(result) => {
+                    // a group whose last group node was removed goes with it, like the editor's edits
+                    ops::drop_unused_groups(&mut graph, group);
                     history::commit(&mut state, &tab, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
                     result
                 }
