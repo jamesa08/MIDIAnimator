@@ -6,7 +6,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
-use clipboard_rs::{Clipboard, ClipboardContext};
+use clipboard_rs::{Clipboard, ClipboardContext, ContentFormat};
 
 use super::history::{self, Capture};
 use super::{lock, push_graph};
@@ -87,6 +87,12 @@ pub async fn graph_paste(tab: String, scope: Option<String>, position: Position)
         None,
         true,
     )
+}
+
+/// whether the system clipboard has copied nodes, the editor's context menu only offers paste when it does
+#[tauri::command]
+pub async fn graph_can_paste() -> bool {
+    ClipboardContext::new().map(|system| system.has(ContentFormat::Other(CLIPBOARD_TYPE.to_string()))).unwrap_or(false)
 }
 
 fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool) -> Result<Applied, String> {
