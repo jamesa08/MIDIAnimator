@@ -98,10 +98,12 @@ pub enum Op {
         #[serde(default)]
         frames: BTreeMap<String, Option<String>>,
     },
+    /// a node's size, no height lets it be as tall as it draws
     Resize {
         node: String,
         width: f64,
-        height: f64,
+        #[serde(default)]
+        height: Option<f64>,
         position: Position,
     },
     /// the selected nodes, edges and sockets, everything else is deselected
@@ -406,7 +408,10 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
         } => {
             let node = target(project, scope)?.node_mut(node).ok_or_else(|| format!("no node '{}'", node))?;
             node.extra.insert("width".to_string(), json!(width));
-            node.extra.insert("height".to_string(), json!(height));
+            match height {
+                Some(height) => node.extra.insert("height".to_string(), json!(height)),
+                None => node.extra.remove("height"),
+            };
             node.position = position.clone();
             // a frame keeps the size it was given, like Blender turns off Shrink
             if node.is_frame() {

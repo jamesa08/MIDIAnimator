@@ -1310,3 +1310,63 @@ test("open recent opens the project it names", async ({ page }) => {
     await expect.poll(loads).toEqual([{ recent: 2 }, { recent: null }]);
     await settle(page);
 });
+
+// the fixture with viewer-1 given a size of its own
+function withViewerSize(width: number, height: number) {
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((node: any) => (node.id === "viewer-1" ? { ...node, width, height } : node));
+    return { ...backend, get_state: { ...state, rf_instance: { ...state.rf_instance, nodes } } };
+}
+
+test("the viewer's height is dragged from its bottom edge and corner", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const node = page.locator('.react-flow__node[data-id="viewer-1"]');
+    const zoom = async () => Number((await page.locator(".graph-layer .react-flow__viewport").first().getAttribute("style"))!.match(/scale\(([\d.]+)\)/)![1]);
+    const drag = async (selector: string, dx: number, dy: number) => {
+        const control = (await node.locator(selector).boundingBox())!;
+        const [x, y] = [control.x + control.width / 2, control.y + control.height / 2];
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        await page.mouse.move(x + dx, y + dy, { steps: 6 });
+        await page.mouse.up();
+    };
+    const before = (await node.boundingBox())!;
+    const scale = await zoom();
+
+    // taller from the bottom edge, in the graph's units
+    await drag(".react-flow__resize-control.line.bottom", 0, 80);
+    await expect.poll(() => lastOp(page, "resize")).toBeTruthy();
+    const taller = await lastOp(page, "resize");
+    expect(taller.height).toBeCloseTo(before.height / scale + 80 / scale, -1);
+    expect(taller.width).toBeCloseTo(before.width / scale, -1);
+
+    // never shorter than it draws by itself
+    await page.waitForTimeout(300);
+    await drag(".react-flow__resize-control.line.bottom", 0, -200);
+    await expect.poll(async () => (await lastOp(page, "resize")).height).toBeCloseTo(before.height / scale, -1);
+
+    // the corner does both, only the width leaves it as tall as it draws
+    await page.waitForTimeout(300);
+    await drag(".react-flow__resize-control.handle.bottom.right", 40, 40);
+    await expect.poll(async () => (await lastOp(page, "resize")).height).toBeGreaterThan(before.height / scale + 20 / scale);
+    await page.waitForTimeout(300);
+    await drag(".react-flow__resize-control.line.right", 40, 0);
+    await expect.poll(async () => (await lastOp(page, "resize")).height).toBeNull();
+    await settle(page);
+});
+
+test("a viewer with a height scrolls what doesn't fit", async ({ page }) => {
+    await openWindow(page, withViewerSize(400, 200), "/#/");
+    await graphReady(page);
+    await settle(page);
+    const node = page.locator('.react-flow__node[data-id="viewer-1"]');
+    const box = node.locator(".node-viewer");
+    await expect(box).toHaveClass(/nowheel/);
+    const sizes = await box.evaluate((el) => ({ client: el.clientHeight, scroll: el.scrollHeight, card: el.closest<HTMLElement>(".node")!.offsetHeight }));
+    expect(sizes.card).toBe(200);
+    expect(sizes.scroll).toBeGreaterThan(sizes.client);
+    // other nodes don't get the bottom controls
+    await expect(page.locator('.react-flow__node[data-id="scene_link-1"] .react-flow__resize-control.bottom')).toHaveCount(0);
+});

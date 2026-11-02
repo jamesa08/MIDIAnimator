@@ -78,6 +78,9 @@ const carriedChanges = (session: MoveSession, changes: any[]) => {
 // the right click menu: where it opened (a screen position), what was right clicked, and whether the clipboard had nodes
 type ContextMenuState = { at: { x: number; y: number }; target: "nodes" | "edge" | "pane"; canPaste: boolean };
 
+// the node whose height can be dragged too (BaseNode's minHeight)
+const VIEWER = "viewer";
+
 // ids of the selected nodes or edges
 const selectedIds = (items: { id: string; selected?: boolean }[]) => items.filter((i) => i.selected).map((i) => i.id);
 
@@ -1288,11 +1291,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [editable, lookup, level.def, apply, store, getEdges]
     );
 
+    // the height each node being resized had when the resize started
+    const resizeStartRef = useRef(new Map<string, number | undefined>());
+
     // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops.
     // a dragged frame takes the nodes in it along
     const onNodesChange = useCallback(
         (all: any[]) => {
             const changes = keptChanges(all);
+            for (const change of changes.filter((c) => c.type === "dimensions" && c.resizing === true && !resizeStartRef.current.has(c.id))) {
+                resizeStartRef.current.set(change.id, getNodes().find((n) => n.id === change.id)?.measured?.height);
+            }
             const session = moveRef.current;
             const carried = session ? carriedChanges(session, changes) : [];
             const removed = changes.filter((c) => c.type === "remove").map((c) => c.id);
@@ -1316,7 +1325,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const width = change.dimensions?.width ?? node.width ?? node.measured?.width;
                 const height = change.dimensions?.height ?? node.height ?? node.measured?.height;
                 if (isFrame(node)) setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, data: { ...n.data, shrink: false } } : n)));
-                if (width && height) apply([{ op: "resize", node: node.id, width, height, position: node.position }]);
+                // a viewer without a height of its own keeps growing with what it shows when only its width was dragged
+                const start = resizeStartRef.current.get(node.id);
+                resizeStartRef.current.delete(node.id);
+                const stored = (storedRef.current.nodes ?? []).find((n: any) => n.id === node.id);
+                const widthOnly = node.type === VIEWER && stored?.height === undefined && start !== undefined && height !== undefined && Math.abs(height - start) < 1;
+                if (width && height) apply([{ op: "resize", node: node.id, width, height: widthOnly ? null : height, position: node.position }]);
             }
         },
         [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove]

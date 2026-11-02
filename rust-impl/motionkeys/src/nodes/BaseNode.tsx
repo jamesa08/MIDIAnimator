@@ -30,7 +30,9 @@ const handleStyle = {
 /// @param headerExtra: shown at the right end of the header, e.g. the open button on group nodes
 /// @param hideValues: map of inputs whose typed in value isn't shown under them, e.g. scene writer's keyframes
 /// @param children: shown under the handles, e.g. the curve preview on Animation Generator
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode }) {
+/// @param minHeight: the node's height can be dragged from its bottom edge and corner too, down to this, e.g. the viewer
+/// @param fill: the node has a height of its own, its inside takes what's left of it
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children, minHeight, fill }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode; minHeight?: number; fill?: boolean }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -111,13 +113,19 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     }
 
     return (
-        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}`} style={nodeColors(nodeData?.category)}>
+        <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}${fill ? " node-fill" : ""}`} style={nodeColors(nodeData?.category)}>
             <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale}>
                 {error && !preview && <ErrorBadge message={error} size={16} />}
                 {!error && write.written && !stale && !preview && <SuccessBadge size={16} />}
                 {headerExtra}
             </NodeHeader>
             <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
+            {minHeight !== undefined && (
+                <>
+                    <NodeResizeControl minWidth={200} maxWidth={1000} minHeight={minHeight} position="bottom" variant="line" />
+                    <NodeResizeControl minWidth={200} maxWidth={1000} minHeight={minHeight} position="bottom-right" />
+                </>
+            )}
             <div className="node-inner flex flex-col">
                 {handleObjects.map((handle, index) => (
                     <React.Fragment key={index}>{handle}</React.Fragment>

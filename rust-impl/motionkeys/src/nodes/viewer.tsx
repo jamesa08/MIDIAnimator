@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
@@ -92,7 +92,7 @@ export function customStringify(obj: any, options: StringifyOptions = {}): strin
     return renderPretty(obj, 0, new Set());
 }
 
-function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
+function viewer({ id, data, height }: { id: any; data: any; height?: number }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
@@ -129,6 +129,23 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
         }
     }, [state.executed_results, optionsKey]);
 
+    // once it's given a height the text scrolls in what's left of it, it's never shorter than it draws by itself
+    const preview = data === "preview" || data?.preview === true;
+    const fill = height !== undefined && !preview;
+    const boxRef = useRef<HTMLDivElement>(null);
+    const textRef = useRef<HTMLDivElement>(null);
+    const [minHeight, setMinHeight] = useState(0);
+    // the wheel scrolls the text instead of zooming while there's more of it than shows
+    const [overflows, setOverflows] = useState(false);
+    useLayoutEffect(() => {
+        const box = boxRef.current;
+        const card = box?.closest<HTMLElement>(".node");
+        if (!box || !card || !textRef.current) return;
+        const natural = Math.ceil(card.offsetHeight - box.offsetHeight + textRef.current.offsetHeight);
+        if (natural !== minHeight) setMinHeight(natural);
+        if (box.scrollHeight > box.clientHeight !== overflows) setOverflows(!overflows);
+    });
+
     const viewerComponent = (
         <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
@@ -136,8 +153,8 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
                     {copied ? "Copied!" : "Copy"}
                 </button>
             </div>
-            <div className="node-field node-viewer" style={{ fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", textOverflow: "ellipsis" }}>
-                {viewerData}
+            <div ref={boxRef} className={`node-field node-viewer${fill && overflows ? " nowheel" : ""}`} style={{ fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", textOverflow: "ellipsis", ...(fill ? { flex: 1, minHeight: 0, overflowY: "auto" } : {}) }}>
+                <div ref={textRef}>{viewerData}</div>
             </div>
         </>
     );
@@ -148,7 +165,7 @@ function viewer({ id, data, isConnectable }: { id: any; data: any; isConnectable
 
     const hiddenHandles = { max_depth: true, max_keys: true, max_items: true, max_string_length: true, compact_width: true };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} />;
+    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} minHeight={preview ? undefined : minHeight} fill={fill} />;
 }
 
 export default viewer;

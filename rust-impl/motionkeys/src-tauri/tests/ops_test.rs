@@ -238,6 +238,34 @@ fn unused_nodes() {
     assert_eq!(unused(&graph, None), set(&[]));
 }
 
+// a resize keeps the size it was given, without a height the node is as tall as it draws. both undo and are saved
+#[test]
+fn resize_height() {
+    let mut graph = fixture();
+    let start = graph.to_rf();
+    let size = |graph: &Graph| graph.node("viewer-1").map(|n| (n.extra.get("width").cloned(), n.extra.get("height").cloned())).unwrap();
+    run(&mut graph, None, json!([{ "op": "resize", "node": "viewer-1", "width": 300, "height": 500, "position": { "x": 0, "y": 0 } }])).unwrap();
+    assert_eq!(size(&graph), (Some(json!(300.0)), Some(json!(500.0))));
+    let tall = graph.to_rf();
+    run(&mut graph, None, json!([{ "op": "resize", "node": "viewer-1", "width": 320, "height": null, "position": { "x": 0, "y": 0 } }])).unwrap();
+    assert_eq!(size(&graph), (Some(json!(320.0)), None));
+
+    // saved with the project, unlike what the canvas measured
+    let mut saved = Graph::from_rf(&tall).unwrap();
+    saved.strip_measured();
+    assert_eq!(size(&saved), (Some(json!(300.0)), Some(json!(500.0))));
+
+    let mut history = History::default();
+    let mut project = start.clone();
+    assert!(history.record(Diff::between(&start, &tall), Step::new("resize", Source::Ui)));
+    assert!(history.record(Diff::between(&tall, &graph.to_rf()), Step::new("resize", Source::Ui)));
+    history.undo(&mut project).unwrap();
+    history.undo(&mut project).unwrap();
+    assert_eq!(size(&Graph::from_rf(&project).unwrap()), (None, None));
+    history.redo(&mut project).unwrap();
+    assert_eq!(size(&Graph::from_rf(&project).unwrap()), (Some(json!(300.0)), Some(json!(500.0))));
+}
+
 // a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the
 // node. one being edited stays, and cut and paste brings one back
 #[test]

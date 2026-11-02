@@ -524,6 +524,30 @@ img {
     border-right-color: #ffffff00;
 }
 
+.react-flow__resize-control.line.bottom {
+    border-bottom-width: 8px;
+    border-bottom-color: #ffffff00;
+}
+
+.react-flow__resize-control.handle.bottom.right {
+    width: 10px;
+    height: 10px;
+    background: none;
+    border: none;
+}
+
+/* a node given a height of its own (the viewer) fills it, its inside takes what's left */
+.node.node-fill {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.node.node-fill .node-inner {
+    flex: 1;
+    min-height: 0;
+}
+
 .react-flow__nodesselection-rect {
     display: none;
     cursor: default;

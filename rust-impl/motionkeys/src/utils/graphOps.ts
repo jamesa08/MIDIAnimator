@@ -18,7 +18,7 @@ export type Op =
     | { op: "set_tags"; sockets: SocketRef[]; name: string }
     | { op: "set_label"; node: string; label: string }
     | { op: "move"; positions: Record<string, XY>; frames?: Record<string, string | null> }
-    | { op: "resize"; node: string; width: number; height: number; position: XY }
+    | { op: "resize"; node: string; width: number; height: number | null; position: XY }
     | { op: "select"; nodes: string[]; edges: string[]; sockets: SocketRef[] }
     | { op: "duplicate"; nodes: string[]; offset: XY }
     | { op: "paste"; text: string; position: XY }
