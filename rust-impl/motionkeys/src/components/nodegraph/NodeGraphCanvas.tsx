@@ -5,7 +5,8 @@ import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
 import ZoneFrames from "./ZoneFrames";
 import TypedEdge from "./TypedEdge";
-import { useHoldCodes } from "../../utils/keymap";
+import { modalOpen, useHoldCodes } from "../../utils/keymap";
+import { scrollPans } from "../../utils/scroll";
 import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
 import { boxTakesFrame, isFrame, layoutFrames } from "../../utils/frames";
@@ -95,6 +96,43 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
     return null;
 }
 
+// the wheel over a graph. react flow pans for a scroll and zooms for a pinch (a wheel event with ctrl), this takes the
+// scrolls that zoom instead: a mouse wheel (scrollPans), and cmd with a swipe like blender's ctrl. nothing moves while a
+// modal takes the input
+function WheelNavigation() {
+    const store = useStoreApi();
+    const domNode = useStore((s) => s.domNode);
+    useEffect(() => {
+        if (!domNode) return;
+        const handleWheel = (event: WheelEvent) => {
+            // only over the graph itself like react flow's (not the controls or minimap), and not over a part that
+            // scrolls itself (a viewer's text)
+            const target = event.target as Element;
+            if (!target.closest?.(".react-flow__renderer") || target.closest(".nowheel")) return;
+            const stopped = modalOpen();
+            if (!stopped && event.ctrlKey && !event.metaKey) return;
+            if (!stopped && !event.metaKey && scrollPans(event)) return;
+            // react flow never sees it
+            event.preventDefault();
+            event.stopPropagation();
+            if (stopped) return;
+
+            // zoom around the cursor, as fast as react flow's zoom on scroll
+            const { transform, minZoom, maxZoom, panZoom } = store.getState();
+            const [x, y, zoom] = transform;
+            const speed = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 0.05 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 1 : 0.002;
+            const next = Math.min(maxZoom, Math.max(minZoom, zoom * 2 ** (-event.deltaY * speed)));
+            const rect = domNode.getBoundingClientRect();
+            const [px, py] = [event.clientX - rect.left, event.clientY - rect.top];
+            panZoom?.setViewport({ x: px - ((px - x) * next) / zoom, y: py - ((py - y) * next) / zoom, zoom: next });
+        };
+        // capture, so it runs before react flow's
+        domNode.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+        return () => domNode.removeEventListener("wheel", handleWheel, { capture: true });
+    }, [domNode, store]);
+    return null;
+}
+
 // shift multi select for a graph (the editor, a note map), tracked here instead of multiSelectionKeyCode.
 // react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
 // add menu search left multi select stuck on (clicking another node added to the selection).
@@ -168,6 +206,9 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
             panOnDrag={!frozen}
             zoomOnScroll={!frozen}
             zoomOnPinch={!frozen}
+            panOnScroll={!frozen}
+            panOnScrollSpeed={1}
+            zoomActivationKeyCode={null}
             nodes={shownNodes}
             edges={shown}
             {...props}
@@ -175,6 +216,7 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
             <ZoneFrames />
             <CanvasPaper />
             {!frozen && <BoxSelect nodes={shownNodes} edges={shown} onBoxSockets={onBoxSockets} />}
+            {!frozen && <WheelNavigation />}
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

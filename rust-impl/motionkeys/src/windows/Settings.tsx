@@ -154,6 +154,20 @@ function Settings() {
                                         onChange={(mode) => update("node_editor.arrange", mode)}
                                     />
                                 )}
+                                {section === "node_editor" && (
+                                    <Choice
+                                        id="node-editor-scroll"
+                                        label="Scroll"
+                                        description=""
+                                        value={settings.node_editor?.scroll ?? "auto"}
+                                        options={[
+                                            ["auto", "Auto"],
+                                            ["zoom", "Zoom"],
+                                            ["pan", "Pan"],
+                                        ]}
+                                        onChange={(mode) => update("node_editor.scroll", mode)}
+                                    />
+                                )}
                                 {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
                                 {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
                                 {section === "console" && <Toggle id="console-debug" label="Debug mode" description="" checked={settings.console?.debug ?? false} onChange={(checked) => update("console.debug", checked)} />}

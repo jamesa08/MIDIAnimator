@@ -14,7 +14,8 @@
         "nodes_view": "grid"
     },
     "node_editor": {
-        "arrange": "network_simplex"
+        "arrange": "network_simplex",
+        "scroll": "auto"
     },
     "graph": {
         "time_units": "seconds",

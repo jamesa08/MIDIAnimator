@@ -249,6 +249,11 @@ export function pushModal(scope: string | null, handlers: Handlers | (() => Hand
     };
 }
 
+// true while a modal takes the input (a drag, grab, a menu, a dialog)
+export function modalOpen(): boolean {
+    return modals.length > 0;
+}
+
 // a modal while `active`, its handlers can change between renders
 export function useModal(scope: string | null, handlers: Handlers, active: boolean, options: ModalOptions = {}) {
     const handlersRef = useRef(handlers);
