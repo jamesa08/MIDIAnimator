@@ -218,6 +218,14 @@ function TabGraph({ tab }: { tab: string }) {
         },
         [mapNode, groupOps]
     );
+    // the map's linked only view, kept on the node like collapsing it
+    const setMapLinkedOnly = useCallback(
+        (linkedOnly: boolean) => {
+            if (!mapNode) return;
+            groupOps.apply([{ op: "linked_only", node: mapNode.id, linked_only: linkedOnly }]).catch((e) => console.error(`linked_only on ${mapNode.id}: ${e}`));
+        },
+        [mapNode, groupOps]
+    );
     const endMapTxn = useCallback((txn: string) => groupOps.end(txn), [groupOps]);
     const cancelMapTxn = useCallback((txn: string) => groupOps.cancel(txn), [groupOps]);
     const exitMapToRoot = useCallback(() => {
@@ -260,7 +268,7 @@ function TabGraph({ tab }: { tab: string }) {
                     .join(PATH_SEP);
                 return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} covered={!!mapped && key === shownPathKey} fitOnOpen={key === "" && fitRef.current} setPath={setPath} openMap={openMap} onReady={onReady} />;
             })}
-            {mapped && info && <NoteMapView key={mapped.id} node={mapped} info={info} editable={active.groupId === null || isLocal} setInputs={setMapInputs} endTxn={endMapTxn} cancelTxn={cancelMapTxn} onExit={closeMap} onExitToRoot={exitMapToRoot} />}
+            {mapped && info && <NoteMapView key={mapped.id} node={mapped} info={info} editable={active.groupId === null || isLocal} setInputs={setMapInputs} setLinkedOnly={setMapLinkedOnly} endTxn={endMapTxn} cancelTxn={cancelMapTxn} onExit={closeMap} onExitToRoot={exitMapToRoot} />}
             {crumbs.length > 0 && (
                 <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
                     <button className="px-1 italic hover:underline" onClick={toPath(() => setPath([]))}>

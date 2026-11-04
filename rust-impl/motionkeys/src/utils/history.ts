@@ -11,6 +11,8 @@ const LABELS: Record<string, string> = {
     set_label: "Set Label",
     collapse: "Collapse",
     expand: "Expand",
+    linked_only: "Linked Only",
+    all_notes: "All Notes",
     move: "Move",
     resize: "Resize",
     select: "Select",

@@ -309,6 +309,47 @@ fn collapse_state() {
     assert_eq!(collapsed(&graph), BTreeSet::from(["scene_link-1".to_string()]));
 }
 
+// the note map's linked only view is kept on its node and saved, and it's one undo step that doesn't change what the
+// graph computes, like collapsing
+#[test]
+fn linked_only_view() {
+    let specs = specs();
+    let mut graph = fixture();
+    let start = graph.to_rf();
+    let linked_only = |graph: &Graph| graph.node("assign_notes_to_objects-1").unwrap().data.get("linked_only").cloned();
+
+    let op = json!({ "op": "linked_only", "node": "assign_notes_to_objects-1", "linked_only": true });
+    let before = graph.clone();
+    run(&mut graph, None, json!([op.clone()])).unwrap();
+    assert_eq!(linked_only(&graph), Some(json!(true)));
+    let op: Op = serde_json::from_value(op).unwrap();
+    assert_eq!(op.name(), "linked_only");
+    assert_eq!(describe(&op, &before, &graph, None, &specs, &[]), "Assign Notes to Objects");
+
+    // saved with the project
+    let mut saved = graph.clone();
+    saved.strip_measured();
+    assert_eq!(linked_only(&saved), Some(json!(true)));
+
+    // only how it looks, one undo step
+    let diff = Diff::between(&start, &graph.to_rf());
+    assert!(!diff.affects_output());
+    let mut history = History::default();
+    let mut project = start.clone();
+    assert!(history.record(diff, Step::new("linked_only", Source::Ui)));
+    history.undo(&mut project).unwrap();
+    assert_eq!(linked_only(&Graph::from_rf(&project).unwrap()), None);
+    history.redo(&mut project).unwrap();
+    assert_eq!(linked_only(&Graph::from_rf(&project).unwrap()), Some(json!(true)));
+
+    // off takes it off, an unknown node changes nothing
+    let all: Op = serde_json::from_value(json!({ "op": "linked_only", "node": "assign_notes_to_objects-1", "linked_only": false })).unwrap();
+    assert_eq!(all.name(), "all_notes");
+    run(&mut graph, None, json!([{ "op": "linked_only", "node": "assign_notes_to_objects-1", "linked_only": false }])).unwrap();
+    assert_eq!(linked_only(&graph), None);
+    assert!(run(&mut graph, None, json!([{ "op": "linked_only", "node": "nope", "linked_only": true }])).is_err());
+}
+
 // a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the
 // node. one being edited stays, and cut and paste brings one back
 #[test]

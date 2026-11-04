@@ -9,7 +9,7 @@ import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
 import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
-import { MapData, NoteMap, shownMap, unique } from "../../utils/noteMap";
+import { MapData, NoteMap, isLinked, shownMap, unique } from "../../utils/noteMap";
 import { useFrameView } from "./frameView";
 import { setEditorState } from "../../utils/editorState";
 
@@ -94,6 +94,8 @@ type Props = {
     info: MapData;
     editable: boolean;
     setInputs: (inputs: Record<string, any>, options?: ApplyOptions) => Promise<unknown>;
+    // shows only the notes wired to an object, or all of them. kept on the node, it never runs the graph
+    setLinkedOnly: (linkedOnly: boolean) => void;
     // ends or undoes a transaction (adding a note, then grabbing it until a click places it)
     endTxn: (txn: string) => void;
     cancelTxn: (txn: string) => void;
@@ -162,12 +164,31 @@ function NoteMapView(props: Props) {
     );
 }
 
-function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onExit, onExitToRoot }: Props) {
+function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn, cancelTxn, onExit, onExitToRoot }: Props) {
     const mode: string = node.data?.inputs?.mode ?? "rules";
     const { objects, midiNotes } = info;
     const layout = useMemo(() => readLayout(node.data?.inputs?.map_layout), [node.data?.inputs?.map_layout]);
 
     const { map, notes } = useMemo(() => shownMap(mode, info, node.data?.inputs?.note_map), [mode, info, node.data?.inputs?.note_map]);
+
+    // with linked only the notes nothing is wired to are hidden. a note shown while it's on stays until it's switched,
+    // so removing a note's last wire doesn't take it away under the cursor, and notes the map adds or finds show too
+    const linkedOnly = node.data?.linked_only === true;
+    const keptRef = useRef(new Set<number>());
+    const [keptRev, setKeptRev] = useState(0);
+    const visible = useMemo(() => {
+        if (!linkedOnly) {
+            keptRef.current = new Set();
+            return notes;
+        }
+        for (const n of notes) if (isLinked(map, objects, n)) keptRef.current.add(n);
+        return notes.filter((n) => keptRef.current.has(n));
+    }, [linkedOnly, notes, map, objects, keptRev]);
+    const keep = (ns: number[]) => {
+        if (!linkedOnly) return;
+        ns.forEach((n) => keptRef.current.add(n));
+        setKeptRev((rev) => rev + 1);
+    };
 
     // every edit to the wires stores the whole map and switches the node to map mode, one undo step. a note that's gone
     // takes its saved position with it
@@ -186,7 +207,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
     // MARK: - Graph
 
     // notes in a column on the left and objects on the right, unless they were moved. moved ones don't take a row, the
-    // rest close up
+    // rest close up, hidden notes too
     const column = (ids: string[], x: number) => {
         let row = 0;
         return ids.map((id) => {
@@ -195,10 +216,10 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         });
     };
     const built = useMemo<Node[]>(() => {
-        const notesAt = column(notes.map(noteKey), 0);
+        const notesAt = column(visible.map(noteKey), 0);
         const objectsAt = column(objects.map(objectKey), COLUMN);
-        return [...notes.map((n, i) => ({ id: noteKey(n), type: "map_note", position: notesAt[i], data: { note: n, added: !midiNotes.includes(n) } })), ...objects.map((o, i) => ({ id: objectKey(o), type: "map_object", position: objectsAt[i], data: { name: o } }))];
-    }, [notes, objects, midiNotes, layout]);
+        return [...visible.map((n, i) => ({ id: noteKey(n), type: "map_note", position: notesAt[i], data: { note: n, added: !midiNotes.includes(n) } })), ...objects.map((o, i) => ({ id: objectKey(o), type: "map_object", position: objectsAt[i], data: { name: o } }))];
+    }, [visible, objects, midiNotes, layout]);
     const builtWires = useMemo<Edge[]>(() => objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))), [objects, map]);
 
     // react flow's copies, they keep the selection and positions mid drag. a tool can ask for what's selected after its edit
@@ -283,7 +304,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
 
     const selectedNotes = () => nodes.filter((n) => n.selected && isNote(n.id)).map((n) => n.data.note as number);
     const selectedObjects = () => objects.filter((o) => nodes.some((n) => n.selected && n.id === objectKey(o)));
-    const wiredNote = (n: number) => objects.some((o) => map.objects[o]?.includes(n));
+    const wiredNote = (n: number) => isLinked(map, objects, n);
     const wiredObject = (o: string) => !!map.objects[o]?.length;
     const [listText, setListText] = useState("");
     const listNotes = () =>
@@ -323,6 +344,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         const next = copyMap(map);
         next.notes.push(...padded.filter((n) => !notes.includes(n)));
         selectNext.current = new Set([...padded.map(noteKey), ...os.map(objectKey)]);
+        keep(padded);
         commit(next);
     };
 
@@ -335,6 +357,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         next.notes.push(...ns.filter((n) => !notes.includes(n)));
         connect(next, ns, os);
         selectNext.current = new Set();
+        keep(ns);
         commit(next);
     };
 
@@ -440,7 +463,12 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
         (note: number) => {
             setMenu(null);
             if (notes.includes(note)) {
-                setNodes((current) => current.map((n) => ({ ...n, selected: n.id === noteKey(note) })));
+                // one hidden by linked only shows again, selected once it's drawn
+                if (visible.includes(note)) setNodes((current) => current.map((n) => ({ ...n, selected: n.id === noteKey(note) })));
+                else {
+                    selectNext.current = new Set([noteKey(note)]);
+                    keep([note]);
+                }
                 setWires((current) => current.map((w) => ({ ...w, selected: false })));
                 return;
             }
@@ -450,9 +478,10 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
             next.notes.push(note);
             pendingGrab.current = { id: noteKey(note), txn, from };
             selectNext.current = new Set([noteKey(note)]);
+            keep([note]);
             commit(next, { map_layout: { ...layout, [noteKey(note)]: [Math.round(from.x), Math.round(from.y)] } }, { txn });
         },
-        [map, notes, layout, commit]
+        [map, notes, visible, layout, commit, linkedOnly]
     );
     // the added note is grabbed once it's drawn
     useEffect(() => {
@@ -505,8 +534,10 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
     const blockKeys = useCallback(() => blockUntilRelease(), []);
 
     const tool = "px-3 h-6 border border-black bg-white hover:bg-zinc-100";
+    // a button that's black while it's on
+    const pressed = (on: boolean) => `px-3 h-6 border border-black ${on ? "bg-black text-white" : "bg-white hover:bg-zinc-100"}`;
     const modeButton = (value: string, label: string) => (
-        <button className={`px-3 h-6 border border-black ${mode === value ? "bg-black text-white" : "bg-white hover:bg-zinc-100"}`} onClick={() => switchMode(value)}>
+        <button className={pressed(mode === value)} onClick={() => switchMode(value)}>
             {label}
         </button>
     );
@@ -552,6 +583,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
                 </button>
                 <button className={tool} onClick={clear}>
                     Clear
+                </button>
+                <button className={`${pressed(linkedOnly)} ml-2`} onClick={() => editable && setLinkedOnly(!linkedOnly)}>
+                    Linked Only
                 </button>
             </div>
         </>

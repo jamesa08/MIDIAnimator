@@ -52,6 +52,10 @@ export function shownMap(mode: string, info: MapData, noteMap: any): { map: Note
     return { map, notes };
 }
 
+// true if `note` is wired to one of `objects`. with linked only (the node's `linked_only`) the map and its preview show
+// only these
+export const isLinked = (map: NoteMap, objects: string[], note: number) => objects.some((o) => map.objects[o]?.includes(note));
+
 // a stored map as given, anything that isn't one is empty
 export function readMap(value: any): NoteMap {
     const objects: Record<string, number[]> = {};

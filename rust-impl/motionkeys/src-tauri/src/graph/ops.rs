@@ -92,6 +92,12 @@ pub enum Op {
         nodes: Vec<String>,
         collapsed: bool,
     },
+    /// an Assign Notes to Objects node's note map shows only the notes wired to an object, or all of them. only how the
+    /// map looks, like collapsing
+    LinkedOnly {
+        node: String,
+        linked_only: bool,
+    },
     /// the name shown in a node's header instead of its type's, empty goes back to the type's
     SetLabel {
         node: String,
@@ -212,6 +218,13 @@ impl Op {
             Op::Collapse {
                 ..
             } => "expand",
+            Op::LinkedOnly {
+                linked_only: true,
+                ..
+            } => "linked_only",
+            Op::LinkedOnly {
+                ..
+            } => "all_notes",
             Op::SetLabel {
                 ..
             } => "set_label",
@@ -402,6 +415,18 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
                 } else {
                     node.data.remove("collapsed");
                 }
+            }
+            Ok(())
+        }
+        Op::LinkedOnly {
+            node,
+            linked_only,
+        } => {
+            let node = target(project, scope)?.node_mut(node).ok_or_else(|| format!("no node '{}'", node))?;
+            if *linked_only {
+                node.data.insert("linked_only".to_string(), json!(true));
+            } else {
+                node.data.remove("linked_only");
             }
             Ok(())
         }
@@ -701,6 +726,10 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             ..
         }
         | Op::SetFrame {
+            node,
+            ..
+        }
+        | Op::LinkedOnly {
             node,
             ..
         } => name(after, node),

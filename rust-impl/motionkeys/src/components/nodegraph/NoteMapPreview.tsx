@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { HEADER_COLORS, SOCKET_COLORS } from "../../styles";
-import { noteMapData, shownMap } from "../../utils/noteMap";
+import { isLinked, noteMapData, shownMap } from "../../utils/noteMap";
 
 // how wide the notes' bars are (the objects' take a share of the preview for their names), and the smallest their text is
 // drawn (rows too thin for it get none)
@@ -24,13 +24,13 @@ function fitText(text: string, width: number, size: number): string {
 
 // a small picture of Assign Notes to Objects' note map on the node, like the curve previews: its notes on the left with
 // their numbers, its objects on the right with their names and a line for each note an object gets. the same notes and
-// wires the map shows (Tab), in its default columns, squeezed to fit
-function NoteMapPreview({ inputs, results, nodeInputs, height = 80 }: { inputs: any; results: any; nodeInputs: any; height?: number }) {
+// wires the map shows (Tab), in its default columns, squeezed to fit. with linked only, only the notes wired to an object
+function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, height = 80 }: { inputs: any; results: any; nodeInputs: any; linkedOnly?: boolean; height?: number }) {
     const shown = useMemo(() => {
         const info = noteMapData(inputs, results, nodeInputs?.object_group_name);
         const { map, notes } = shownMap(nodeInputs?.mode ?? "rules", info, nodeInputs?.note_map);
-        return { info, map, notes };
-    }, [inputs, results, nodeInputs?.object_group_name, nodeInputs?.mode, nodeInputs?.note_map]);
+        return { info, map, notes: linkedOnly ? notes.filter((n) => isLinked(map, info.objects, n)) : notes };
+    }, [inputs, results, nodeInputs?.object_group_name, nodeInputs?.mode, nodeInputs?.note_map, linkedOnly]);
     const { info, map, notes } = shown;
     const objects = info.objects;
 

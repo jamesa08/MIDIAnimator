@@ -390,6 +390,18 @@ fn an_unchanged_graph_reruns_from_the_memo() {
     assert_eq!(second.inputs, first.inputs);
 }
 
+// a view setting kept in a node's data (collapsed, the note map's linked only) isn't one of its values, the node comes
+// from the memo
+#[test]
+fn a_view_setting_reruns_from_the_memo() {
+    let mut root = targets_per_note();
+    let (_, _, memo) = run_memo(&root, &BTreeMap::new(), "", true, Memo::default());
+    root.node_mut("viewer-1").unwrap().data.insert("linked_only".to_string(), json!(true));
+    root.node_mut("viewer-1").unwrap().data.insert("collapsed".to_string(), json!(true));
+    let (_, _, memo) = run_memo(&root, &BTreeMap::new(), "", true, memo);
+    assert_eq!(memo.hits(), 2);
+}
+
 #[test]
 fn a_changed_value_reruns_what_depends_on_it() {
     let mut root = targets_per_note();

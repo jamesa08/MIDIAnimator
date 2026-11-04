@@ -65,12 +65,14 @@ fn without(object: &Map<String, Value>, keys: &[&str]) -> Value {
     Value::Object(object.iter().filter(|(k, v)| !keys.contains(&k.as_str()) && !(k.as_str() == "selected" && **v == Value::Bool(false))).map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
-/// a node or edge without what only changes how it looks, its label and whether it's collapsed too
+/// a node or edge without what only changes how it looks, its label, whether it's collapsed and whether its note map
+/// shows only linked notes too
 fn without_layout(object: &Map<String, Value>) -> Value {
     let mut value = without(object, LAYOUT_KEYS);
     if let Some(data) = value.get_mut("data").and_then(|d| d.as_object_mut()) {
         data.remove("label");
         data.remove("collapsed");
+        data.remove("linked_only");
     }
     value
 }

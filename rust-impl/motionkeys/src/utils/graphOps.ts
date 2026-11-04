@@ -18,6 +18,7 @@ export type Op =
     | { op: "set_tags"; sockets: SocketRef[]; name: string }
     | { op: "set_label"; node: string; label: string }
     | { op: "collapse"; nodes: string[]; collapsed: boolean }
+    | { op: "linked_only"; node: string; linked_only: boolean }
     | { op: "move"; positions: Record<string, XY>; frames?: Record<string, string | null> }
     | { op: "resize"; node: string; width: number; height: number | null; position: XY }
     | { op: "select"; nodes: string[]; edges: string[]; sockets: SocketRef[] }

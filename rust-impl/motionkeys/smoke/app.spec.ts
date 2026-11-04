@@ -519,6 +519,53 @@ test("map mode hides the note numbers and previews the map", async ({ page }) =>
     await settle(page);
 });
 
+test("linked only hides the notes nothing is wired to", async ({ page }) => {
+    // the fixture in map mode with two of its five notes wired, and linked only on
+    const state = structuredClone(backend.get_state);
+    const assign = () => state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
+    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.002": [62], "Cube.004": [70] }, notes: [65] } };
+    assign().data.linked_only = true;
+    await openWindow(page, { ...backend, get_state: state }, "/#/");
+
+    // the preview shows the wired notes only, every object
+    const preview = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".node-field svg");
+    await expect(preview.locator(`rect[fill="#B8962E"]`)).toHaveCount(2);
+    await expect(preview.locator(`rect[fill="#3E9E72"]`)).toHaveCount(6);
+
+    // the map too, closed up from the top of the column next to the first objects
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    const map = page.locator(".note-map-layer");
+    await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(2);
+    await expect(map.locator('.react-flow__node[data-id^="o:"]')).toHaveCount(6);
+    await expect(map.locator(".react-flow__edge")).toHaveCount(2);
+    const top = async (id: string) => (await map.locator(`.react-flow__node[data-id="${id}"]`).boundingBox())!.y;
+    expect(Math.abs((await top("n:62")) - (await top("o:ANIM_bounce")))).toBeLessThan(1);
+    expect(Math.abs((await top("n:70")) - (await top("o:Cube.001")))).toBeLessThan(1);
+
+    // a note whose last wire goes stays until linked only is switched
+    let rev = state.graph_rev;
+    const send = async () => emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: ++rev, rf_instance: state.rf_instance });
+    assign().data.inputs.note_map = { objects: { "Cube.004": [70] }, notes: [62, 65] };
+    await send();
+    await expect(map.locator(".react-flow__edge")).toHaveCount(1);
+    await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(2);
+
+    // the button switches it on the node, off shows every note
+    await page.getByRole("button", { name: "Linked Only", exact: true }).click();
+    const sent = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(sent).toContainEqual({ op: "linked_only", node: "assign_notes_to_objects-1", linked_only: false });
+    delete assign().data.linked_only;
+    await send();
+    await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(5);
+
+    // on again, only what's wired now
+    assign().data.linked_only = true;
+    await send();
+    await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(1);
+    await expect(map.locator('.react-flow__node[data-id="n:70"]')).toBeVisible();
+    await settle(page);
+});
+
 // the fixture with signal tags: get_midi_track_data-1's notes feed both their inputs by the tag "notes" instead of
 // wires, and "unused" on its pitchwheel output connects nothing
 function withTags() {

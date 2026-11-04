@@ -120,7 +120,7 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     // the note map, small, under the inputs
     return (
         <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton}>
-            <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} />
+            <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} />
         </BaseNode>
     );
 }
