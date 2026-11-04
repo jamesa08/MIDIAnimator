@@ -5,7 +5,7 @@ import { useModal } from "../utils/keymap";
 import { TOOLBAR_ADD_EVENT, useEditorState } from "../utils/editorState";
 import { NodeEntry } from "../utils/nodeEntries";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "../styles";
-import { useButtonTravel } from "./Tool";
+import { useButtonTravel, useCommandTip } from "./Tool";
 
 // a category's place in the nodes panel's order, ones it doesn't know go last
 const categoryIndex = (category: string) => {
@@ -19,8 +19,10 @@ const categoryIndex = (category: string) => {
 function AddNodeMenu() {
     const { editable, entries } = useEditorState();
     const enabled = editable && !!entries;
-    const travel = useButtonTravel(!enabled);
     const [open, setOpen] = useState(false);
+    // no tooltip over the open menu
+    const tip = useCommandTip("area.add_node");
+    const travel = useButtonTravel(!enabled, open ? null : tip);
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState<string | null>(null);
     const buttonRef = useRef<HTMLDivElement>(null);
@@ -77,6 +79,7 @@ function AddNodeMenu() {
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="size-2">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 9l7 7 7-7" />
                 </svg>
+                {travel.tip}
             </div>
 
             {/* on the body so it sits above the panels and the canvas, like the connection menu */}

@@ -925,6 +925,23 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     await settle(page);
 });
 
+test("toolbar buttons show their name while the mouse rests on them", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await expect(page.locator(".react-flow__node").first()).toBeVisible();
+    const tip = page.locator(".toolbar-tooltip");
+    await page.locator('.toolbar [data-command="area.pan_tool"]').hover();
+    await expect(tip).toHaveText("Pan Tool");
+    // the next button's shows at once, a click puts it away
+    await page.locator('.toolbar [data-command="area.zoom_tool"]').hover();
+    await expect(tip).toHaveText("Zoom Tool");
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(tip).toHaveCount(0);
+    await page.locator('.toolbar [data-command="undo"]').hover();
+    await expect(tip).toContainText("Undo");
+    await settle(page);
+});
+
 test("the toolbar's tools take a drag that starts on a node", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');

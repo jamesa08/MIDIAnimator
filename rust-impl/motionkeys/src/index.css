@@ -662,6 +662,25 @@ img {
     translate: 1px 1px;
 }
 
+/* a toolbar button's tooltip (Tool.tsx), dark like the add menu (NodeAddMenu.tsx) */
+.toolbar-tooltip {
+    position: fixed;
+    z-index: 1000;
+    padding: 2px 8px;
+    font-size: 13px;
+    color: white;
+    white-space: nowrap;
+    pointer-events: none;
+    background-color: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 4px;
+}
+
+.toolbar-tooltip-shortcut {
+    font-size: 12px;
+    color: #9a9a9a;
+}
+
 /* lines inside nodes keep their own color */
 .node .border-black {
     border-color: var(--node-line);
