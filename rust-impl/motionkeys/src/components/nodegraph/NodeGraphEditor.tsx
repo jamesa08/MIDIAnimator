@@ -10,10 +10,10 @@ import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, PATH_SEP, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, SocketRef, TabContext, useGraphOps } from "../../utils/graphOps";
 import { takeReveal, usePendingReveal } from "../../utils/console";
-import { blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
+import { addsToSelection, blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
-import NodeGraphCanvas, { CLICK_DISTANCE, useShiftMultiSelection } from "./NodeGraphCanvas";
+import NodeGraphCanvas, { CLICK_DISTANCE, useMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
 import TagMenu from "./TagMenu";
 import DeleteUnusedModal from "../DeleteUnusedModal";
@@ -586,7 +586,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     // MARK: - Sockets and tags
 
-    // a socket clicked: it alone is selected, or it's added to (or taken out of) the selection with shift
+    // a socket clicked: it alone is selected, or it's added to (or taken out of) the selection with shift or cmd
     const selectSocket = useCallback(
         (clicked: SocketRef, add: boolean) => {
             const current = selectedSockets(getNodes());
@@ -916,7 +916,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         return () => window.removeEventListener("mousedown", handleClick);
     }, [menuOpen, closeMenu]);
 
-    useShiftMultiSelection();
+    useMultiSelection();
 
     // react flow measures where a node's sockets are when the node is drawn or changes size. a measurement can land on a
     // node that an update from the backend has just replaced (it happens most on the first frames after a restart),
@@ -1070,12 +1070,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     const handleNodeClickStop = useCallback(
         (event: React.MouseEvent, node: any) => {
-            // If shift key is not held, deselect all other nodes
-            if (!event.shiftKey) {
+            // If shift (or cmd) is not held, deselect all other nodes
+            if (!addsToSelection(event)) {
                 setNodes((nds) => withSockets(nds, []).map((n) => ({ ...n, selected: n.id === node.id })));
                 scheduleSelection();
             } else if (isFrame(node)) {
-                // react flow doesn't select frames, shift adds or takes one out here
+                // react flow doesn't select frames, shift or cmd adds or takes one out here
                 setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, selected: !n.selected } : n)));
                 scheduleSelection();
             }
@@ -1083,9 +1083,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [setNodes, scheduleSelection]
     );
 
-    // clicking an edge or the empty graph, or starting a box selection, without shift leaves no socket selected. react
-    // flow only deselects the nodes and edges it knows are selected
-    const handleEdgeClick = useCallback((event: React.MouseEvent) => !event.shiftKey && clearSockets(), [clearSockets]);
+    // clicking an edge or the empty graph, or starting a box selection, without shift or cmd leaves no socket selected.
+    // react flow only deselects the nodes and edges it knows are selected
+    const handleEdgeClick = useCallback((event: React.MouseEvent) => !addsToSelection(event) && clearSockets(), [clearSockets]);
     // the innermost frame under the mouse whose empty inside a click selects, a locked one's inside is the graph's
     const frameUnder = useCallback(
         (event: React.MouseEvent | MouseEvent) => {
@@ -1095,7 +1095,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         },
         [getNodes, screenToFlowPosition]
     );
-    // a click on a frame's empty inside selects the frame, shift adds it or takes it out and keeps what was selected
+    // a click on a frame's empty inside selects the frame, shift or cmd adds it or takes it out and keeps what was selected
     // before the press (react flow deselects everything on it). react flow deselects everything again right after the
     // click, `keepRef` holds what stays selected until then
     const keepRef = useRef<Set<string> | null>(null);
@@ -1106,8 +1106,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const frame = frameUnder(event);
             if (!frame) return;
             const before = boxBeforeRef.current;
-            const keep = new Set(event.shiftKey ? [...before.nodes, ...before.edges] : []);
-            if (event.shiftKey && before.nodes.includes(frame.id)) keep.delete(frame.id);
+            const add = addsToSelection(event);
+            const keep = new Set(add ? [...before.nodes, ...before.edges] : []);
+            if (add && before.nodes.includes(frame.id)) keep.delete(frame.id);
             else keep.add(frame.id);
             keepRef.current = keep;
             queueMicrotask(() => (keepRef.current = null));
@@ -1134,7 +1135,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         const keep = keepRef.current;
         return keep ? changes.filter((c) => !(c.type === "select" && !c.selected && keep.has(c.id))) : changes;
     };
-    // the sockets selected before a box selection with shift, the sockets in the box are added to them
+    // the sockets selected before a box selection with shift or cmd, the sockets in the box are added to them
     const boxBaseRef = useRef<SocketRef[]>([]);
     // everything selected before a box selection, cancelling it (a right click partway through) puts that back. react
     // flow's box goes and the moves until the mouse is let go select nothing
@@ -1151,9 +1152,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         (event: React.MouseEvent) => {
             clickedRef.current = false;
             pressRef.current = { x: event.clientX, y: event.clientY };
-            boxBaseRef.current = event.shiftKey ? selectedSockets(getNodes()) : [];
+            const add = addsToSelection(event);
+            boxBaseRef.current = add ? selectedSockets(getNodes()) : [];
             boxBeforeRef.current = { nodes: selectedIds(getNodes()), edges: selectedIds(getEdges()), sockets: selectedSockets(getNodes()) };
-            if (!event.shiftKey) clearSockets();
+            if (!add) clearSockets();
             blockUntilRelease("box_select", { cancel: cancelBox });
         },
         [getNodes, getEdges, clearSockets, cancelBox]

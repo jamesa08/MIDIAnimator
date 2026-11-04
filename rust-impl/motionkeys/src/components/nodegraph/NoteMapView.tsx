@@ -7,7 +7,7 @@ import { ApplyOptions } from "../../utils/graphOps";
 import { socketStyle } from "../../utils/sockets";
 import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
-import NodeGraphCanvas, { useShiftMultiSelection } from "./NodeGraphCanvas";
+import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
 import { MapData, NoteMap, shownMap, unique } from "../../utils/noteMap";
 import { useFrameView } from "./frameView";
@@ -499,7 +499,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, endTxn, cancelTxn, onE
 
     // MARK: - Canvas
 
-    useShiftMultiSelection();
+    useMultiSelection();
     const panHeld = useHold("node_editor", "pan");
     // react flow's own drags take every key until the mouse is let go, like the node editor's
     const blockKeys = useCallback(() => blockUntilRelease(), []);

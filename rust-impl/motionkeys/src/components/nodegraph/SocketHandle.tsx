@@ -3,6 +3,7 @@ import { Handle, HandleProps, InternalNode, ReactFlowState, useNodeId, useStore 
 import { useGroupContext } from "../../contexts/GroupContext";
 import { SocketRef } from "../../utils/graphOps";
 import { NEW_SOCKET } from "../../utils/groups";
+import { addsToSelection } from "../../utils/keymap";
 import { CLICK_DISTANCE } from "./NodeGraphCanvas";
 
 // a socket is selected on its own like an edge (src-tauri/src/graph/sockets.rs): a click on it or its tag, or a box
@@ -21,14 +22,14 @@ export function editTag(scope: string | null, node: string, side: Side, socket: 
     window.dispatchEvent(new CustomEvent(TAG_EDIT_EVENT, { detail }));
 }
 
-// window event to select a socket, the node graph editor selects it. `add` keeps the rest of the selection (shift)
+// window event to select a socket, the node graph editor selects it. `add` keeps the rest of the selection (shift or cmd)
 export const SOCKET_SELECT_EVENT = "motionkeys:socket-select";
 export type SocketSelect = { scope: string | null; node: string; side: Side; socket: string; add: boolean };
 
 // selects a socket of a node in the graph `scope`, not its node
 export function selectSocket(scope: string | null, node: string, side: Side, socket: string, event: React.MouseEvent) {
     event.stopPropagation();
-    const detail: SocketSelect = { scope, node, side, socket, add: event.shiftKey };
+    const detail: SocketSelect = { scope, node, side, socket, add: addsToSelection(event) };
     window.dispatchEvent(new CustomEvent(SOCKET_SELECT_EVENT, { detail }));
 }
 

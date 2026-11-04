@@ -130,6 +130,12 @@ export function combo(modifiers: ModifierState | Modifier[], key: string): strin
     return [...MODIFIERS.filter((m) => held.includes(m)), key].join("+");
 }
 
+// whether a click or box select adds to the selection (or takes out of it) instead of replacing it: shift, or cmd as
+// CmdOrCtrl picks it (ctrl off a mac, a mac's ctrl+click is a right click)
+export function addsToSelection(modifiers: ModifierState): boolean {
+    return modifiers.shiftKey || (keymap?.platform === "other" ? modifiers.ctrlKey : modifiers.metaKey);
+}
+
 // a key's modifiers and its key name
 export function splitCombo(key: string): { modifiers: Modifier[]; name: string } {
     const parts = key.split("+");

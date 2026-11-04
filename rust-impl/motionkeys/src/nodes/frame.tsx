@@ -3,6 +3,7 @@ import { NodeResizeControl, useStoreApi } from "@xyflow/react";
 import { useGroupContext } from "../contexts/GroupContext";
 import { useGraphOps } from "../utils/graphOps";
 import { FRAME_COLOR, isLocked, labelHeight, labelSize } from "../utils/frames";
+import { addsToSelection } from "../utils/keymap";
 
 const SIDES = ["top", "right", "bottom", "left"] as const;
 // where the label goes along the top
@@ -27,7 +28,7 @@ function Frame({ id, data, selected }: { id: string; data: any; selected?: boole
 
     // pressing the label selects the frame alone before a drag can start, so it's dragged without what else was selected
     const press = (event: React.MouseEvent) => {
-        if (event.button === 0 && !selected && !event.shiftKey && store.getState().elementsSelectable) store.getState().addSelectedNodes([id]);
+        if (event.button === 0 && !selected && !addsToSelection(event) && store.getState().elementsSelectable) store.getState().addSelectedNodes([id]);
     };
 
     return (

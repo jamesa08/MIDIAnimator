@@ -5,7 +5,7 @@ import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
 import ZoneFrames from "./ZoneFrames";
 import TypedEdge from "./TypedEdge";
-import { modalOpen, useHoldCodes } from "../../utils/keymap";
+import { addsToSelection, modalOpen, useHoldCodes } from "../../utils/keymap";
 import { scrollPans } from "../../utils/scroll";
 import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
@@ -133,11 +133,11 @@ function WheelNavigation() {
     return null;
 }
 
-// shift multi select for a graph (the editor, a note map), tracked here instead of multiSelectionKeyCode.
-// react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
+// multi select for a graph (the editor, a note map) while shift or cmd (ctrl off a mac) is held, tracked here instead
+// of multiSelectionKeyCode. react flow ignores a keyup inside an input, so releasing shift after shift+a focused the
 // add menu search left multi select stuck on (clicking another node added to the selection).
-// reading shiftKey off every key/mouse event means it can't get stuck
-export function useShiftMultiSelection() {
+// reading the modifiers off every key/mouse event (addsToSelection) means it can't get stuck
+export function useMultiSelection() {
     const store = useStoreApi();
     useEffect(() => {
         const setMultiSelection = (active: boolean) => {
@@ -145,7 +145,7 @@ export function useShiftMultiSelection() {
                 store.setState({ multiSelectionActive: active });
             }
         };
-        const handleEvent = (event: KeyboardEvent | MouseEvent) => setMultiSelection(event.shiftKey);
+        const handleEvent = (event: KeyboardEvent | MouseEvent) => setMultiSelection(addsToSelection(event));
         const handleBlur = () => setMultiSelection(false);
 
         // capture phase so it's set before react flow handles the click
