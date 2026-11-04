@@ -22,7 +22,7 @@ import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, 
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
 import { useFrameView } from "./frameView";
-import { TOOLBAR_ADD_EVENT, setEditorState } from "../../utils/editorState";
+import { TOOLBAR_ADD_EVENT, canvasToolCommands, setEditorState } from "../../utils/editorState";
 import { Rect, apart, bounds, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, nodeRect, withContents } from "../../utils/frames";
 import { ArrangeMode, arrange } from "../../utils/arrange";
 import { uncoveredRect } from "../../utils/panels";
@@ -702,6 +702,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             frame_all: () => frameView(),
             // frames everything when nothing is selected
             frame_selected: () => frameView(getNodes().filter((n) => n.selected)),
+            ...canvasToolCommands,
             group: () => {
                 if (canEdit()) groupSelection();
             },

@@ -5,11 +5,12 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { type Hint, setHints } from "./status";
 
 // every key in the app goes through here, one listener per window. the backend owns the keymap (src-tauri/src/ui/keybinds.rs):
-// commands grouped by scope, the app, an area (the node editor) or a modal (grab, the add menu, dialogs). components only
-// say what a command does (useKeymap, useModal), never which key runs it.
+// commands grouped by scope, the app, an area (the node editor), a mode (a canvas tool) or a modal (grab, the add menu,
+// dialogs). components only say what a command does (useKeymap, useModal), never which key runs it.
 // a key goes to the modal on top if there is one, it takes every key and ignores the ones it has no command for. otherwise
-// to the area under the mouse, then the app. keys typed into a text field stay there, and a menu item's own key is left to
-// the menu, which sends it back as an app command (APP_COMMAND_EVENT in ui/menu.rs)
+// to a mode that's on when it has a command for it, then the area under the mouse, then the app. keys typed into a text
+// field stay there, and a menu item's own key is left to the menu, which sends it back as an app command (APP_COMMAND_EVENT
+// in ui/menu.rs)
 
 // true when the element takes typing, it keeps its own keys, undo/redo and clipboard
 export function isTextField(element: Element | null): boolean {
@@ -20,7 +21,7 @@ export function isTextField(element: Element | null): boolean {
 // MARK: - Keymap
 
 export type KeyCommand = { id: string; name: string; keys: string[]; menu: boolean; fixed: boolean; hold: boolean; native: string | null };
-export type KeyScope = { id: string; name: string; kind: "app" | "area" | "modal"; commands: KeyCommand[] };
+export type KeyScope = { id: string; name: string; kind: "app" | "area" | "mode" | "modal"; commands: KeyCommand[] };
 export type Keymap = { preset: string; presets: string[]; builtin: boolean; platform: "mac" | "other"; scopes: KeyScope[] };
 
 let keymap: Keymap | null = null;
@@ -288,6 +289,34 @@ export function blockUntilRelease(scope: string | null = null, handlers: Handler
     window.addEventListener("blur", end);
 }
 
+// MARK: - Modes
+
+// a mode stays on until it's turned off (a canvas tool). unlike a modal it only takes the keys it has commands for,
+// they run before the area's and the app's, every other key goes on as if it weren't there. a modal on top takes them all
+type Mode = { scope: string; handlers: Handlers };
+const modes: Mode[] = [];
+
+// a mode until the returned function is called, the newest one's keys come first
+export function pushMode(scope: string, handlers: Handlers): () => void {
+    const mode: Mode = { scope, handlers };
+    modes.push(mode);
+    refreshHints();
+    return () => {
+        const index = modes.indexOf(mode);
+        if (index >= 0) modes.splice(index, 1);
+        refreshHints();
+    };
+}
+
+// what `key` runs in the modes that are on, none when they have nothing for it
+function modeHandler(key: string): (() => void) | null {
+    for (let i = modes.length - 1; i >= 0; i--) {
+        const command = commandFor(modes[i].scope, key);
+        if (command && modes[i].handlers[command]) return modes[i].handlers[command];
+    }
+    return null;
+}
+
 // MARK: - Holds
 
 // keys held down by name (modifiers too), for holds like pan
@@ -364,6 +393,13 @@ function currentHints(): Hint[] {
         return of.length === modifiers.length && of.every((m) => modifiers.includes(m));
     };
     const hints: Hint[] = [];
+    // the modes' keys first, they come before the area's
+    for (const mode of [...modes].reverse()) {
+        for (const command of commands(mode.scope)) {
+            const key = command.keys.find(same);
+            if (mode.handlers[command.id] && key && !hints.some((h) => h.key === key)) hints.push({ key, name: command.name });
+        }
+    }
     for (const scope of [...areasUnderMouse(), ...(modifiers.length ? ["app"] : [])]) {
         for (const command of commands(scope)) {
             // an area's command shows while something here runs it, holds are read where they're used
@@ -431,6 +467,14 @@ function handleKeyDown(event: KeyboardEvent) {
 
     if (isTextField(event.target as Element)) return;
     if (isNative(key)) return;
+
+    // a mode's own keys, before the area's
+    const modeRun = modeHandler(key);
+    if (modeRun) {
+        stop(event);
+        if (!event.repeat) modeRun();
+        return;
+    }
 
     for (const scope of [...areasUnderMouse(), "app"]) {
         const command = commandFor(scope, key);

@@ -10,6 +10,7 @@ import { scrollPans } from "../../utils/scroll";
 import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
 import { boxTakesFrame, isFrame, layoutFrames } from "../../utils/frames";
+import { CanvasTool, useCanvasTool } from "../../utils/editorState";
 
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
@@ -118,17 +119,51 @@ function WheelNavigation() {
             if (stopped) return;
 
             // zoom around the cursor, as fast as react flow's zoom on scroll
-            const { transform, minZoom, maxZoom, panZoom } = store.getState();
-            const [x, y, zoom] = transform;
             const speed = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 0.05 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 1 : 0.002;
-            const next = Math.min(maxZoom, Math.max(minZoom, zoom * 2 ** (-event.deltaY * speed)));
             const rect = domNode.getBoundingClientRect();
-            const [px, py] = [event.clientX - rect.left, event.clientY - rect.top];
-            panZoom?.setViewport({ x: px - ((px - x) * next) / zoom, y: py - ((py - y) * next) / zoom, zoom: next });
+            zoomAround(store, event.clientX - rect.left, event.clientY - rect.top, store.getState().transform[2] * 2 ** (-event.deltaY * speed));
         };
         // capture, so it runs before react flow's
         domNode.addEventListener("wheel", handleWheel, { capture: true, passive: false });
         return () => domNode.removeEventListener("wheel", handleWheel, { capture: true });
+    }, [domNode, store]);
+    return null;
+}
+
+// the view zoomed to `zoom` (kept within the canvas's limits) with the point (px, py) on the canvas staying put
+function zoomAround(store: ReturnType<typeof useStoreApi>, px: number, py: number, zoom: number) {
+    const { transform, minZoom, maxZoom, panZoom } = store.getState();
+    const [x, y, current] = transform;
+    const next = Math.min(maxZoom, Math.max(minZoom, zoom));
+    panZoom?.setViewport({ x: px - ((px - x) * next) / current, y: py - ((py - y) * next) / current, zoom: next });
+}
+
+// the zoom tool: a left drag zooms around where it was pressed, up zooms in and down out like blender's ctrl+middle drag
+function ZoomDrag() {
+    const store = useStoreApi();
+    const domNode = useStore((s) => s.domNode);
+    useEffect(() => {
+        if (!domNode) return;
+        const handleDown = (event: PointerEvent) => {
+            const pane = (event.target as Element).closest(".react-flow__pane");
+            if (event.button !== 0 || !pane || modalOpen()) return;
+            const rect = domNode.getBoundingClientRect();
+            const [px, py] = [event.clientX - rect.left, event.clientY - rect.top];
+            const [startY, startZoom] = [event.clientY, store.getState().transform[2]];
+            pane.classList.add("zooming");
+            const move = (moved: PointerEvent) => zoomAround(store, px, py, startZoom * 2 ** ((startY - moved.clientY) * 0.01));
+            const end = () => {
+                pane.classList.remove("zooming");
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", end);
+                window.removeEventListener("blur", end);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", end);
+            window.addEventListener("blur", end);
+        };
+        domNode.addEventListener("pointerdown", handleDown);
+        return () => domNode.removeEventListener("pointerdown", handleDown);
     }, [domNode, store]);
     return null;
 }
@@ -164,6 +199,23 @@ export function useMultiSelection() {
     }, [store]);
 }
 
+// a click on the graph does nothing while the pan or zoom tool is on, react flow's pane would clear the selection. the
+// minimap and the zoom buttons still take theirs
+function stopGraphClick(event: React.MouseEvent) {
+    if (!(event.target as Element).closest(".react-flow__pane")) return;
+    event.preventDefault();
+    event.stopPropagation();
+}
+
+// what each tool changes on react flow. pan and zoom keep clicks from the graph, box select's click is the pane's (it clears
+// the selection, or keeps a frame's as a click inside it does)
+const stopClicks = { onClickCapture: stopGraphClick, onContextMenuCapture: stopGraphClick };
+const TOOL_PROPS: Record<Exclude<CanvasTool, "select">, Partial<ReactFlowProps>> = {
+    box_select: {},
+    pan: { panOnDrag: true, selectionKeyCode: null, ...stopClicks },
+    zoom: { selectionOnDrag: false, selectionKeyCode: null, ...stopClicks },
+};
+
 // how every node graph looks, with no state of its own. the editor passes its nodes and handlers, the frozen parent
 // graph behind an open group passes `frozen` so nothing in it can be touched. `onBoxSockets` gets the sockets a box
 // selects while it's dragged (BoxSelect)
@@ -184,6 +236,13 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
     // react flow's own keys are off, the keymap runs them (src/utils/keymap.ts). box select is a key held while dragging,
     // react flow tracks that one itself
     const boxSelectKeys = useHoldCodes("node_editor", "box_select");
+    // a tool other than select takes the left drag anywhere, over nodes too, and nothing can be moved or wired. what's
+    // drawn lets the mouse through to the pane (index.css .canvas-tool), so the tool's cursor shows over nodes, sockets
+    // and edges alike. box select draws react flow's own box from there, a held pan (alt) still pans with any tool
+    const picked = useCanvasTool();
+    const tool = frozen ? "select" : picked;
+    const panHeld = props.panOnDrag === true;
+    const toolProps = tool === "select" ? {} : { ...TOOL_PROPS[tool], className: `${props.className ?? ""} canvas-tool tool-${tool}` };
     return (
         <ReactFlow
             nodeTypes={nodeTypes}
@@ -212,11 +271,13 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
             nodes={shownNodes}
             edges={shown}
             {...props}
+            {...toolProps}
         >
             <ZoneFrames />
             <CanvasPaper />
             {!frozen && <BoxSelect nodes={shownNodes} edges={shown} onBoxSockets={onBoxSockets} />}
             {!frozen && <WheelNavigation />}
+            {tool === "zoom" && !panHeld && <ZoomDrag />}
             {!frozen && (
                 <>
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />

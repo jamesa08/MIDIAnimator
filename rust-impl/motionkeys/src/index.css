@@ -546,6 +546,34 @@ img {
     cursor: default;
 }
 
+/* the canvas's tools (NodeGraphCanvas.tsx): the mouse goes through everything drawn to the pane, which boxes, pans or zooms */
+.react-flow.canvas-tool .react-flow__viewport,
+.react-flow.canvas-tool .react-flow__viewport *,
+.react-flow.canvas-tool .react-flow__nodesselection,
+.react-flow.canvas-tool .react-flow__nodesselection * {
+    pointer-events: none !important;
+}
+
+.react-flow.tool-box_select .react-flow__pane {
+    cursor: crosshair;
+}
+
+.react-flow.tool-pan .react-flow__pane {
+    cursor: grab;
+}
+
+.react-flow.tool-pan .react-flow__pane.dragging {
+    cursor: grabbing;
+}
+
+.react-flow.tool-zoom .react-flow__pane {
+    cursor: zoom-in;
+}
+
+.react-flow.tool-zoom .react-flow__pane.zooming {
+    cursor: ns-resize;
+}
+
 .react-flow__resize-control.line.right {
     border-right-width: 8px;
     border-right-color: #ffffff00;

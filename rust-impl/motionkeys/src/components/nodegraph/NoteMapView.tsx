@@ -11,7 +11,7 @@ import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
 import { MapData, NoteMap, isLinked, shownMap, unique } from "../../utils/noteMap";
 import { useFrameView } from "./frameView";
-import { setEditorState } from "../../utils/editorState";
+import { canvasToolCommands, setEditorState } from "../../utils/editorState";
 
 // the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes wired to the object group's objects,
 // drawn as a graph of small nodes that can be selected and moved like the node editor's. in rules mode it shows what the
@@ -517,6 +517,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
         frame_all: () => frame(),
         // frames everything when nothing is selected
         frame_selected: () => frame(nodesRef.current.filter((n) => n.selected)),
+        ...canvasToolCommands,
     });
 
     // back to map mode keeps the map the node had, a node without one starts from what the rules give

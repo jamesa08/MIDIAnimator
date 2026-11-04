@@ -925,6 +925,54 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     await settle(page);
 });
 
+test("the toolbar's tools take a drag that starts on a node", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
+    await expect(node).toBeVisible();
+    await graphReady(page);
+    await settle(page);
+    const viewport = page.locator(".graph-layer .react-flow__viewport").first();
+    const tool = (name: string) => page.locator(`.toolbar [data-command="area.${name}_tool"]`);
+    const dragFromNode = async (dx: number, dy: number) => {
+        const bounds = (await node.boundingBox())!;
+        await page.mouse.move(bounds.x + 5, bounds.y + 5);
+        await page.mouse.down();
+        await page.mouse.move(bounds.x + 5 + dx, bounds.y + 5 + dy, { steps: 8 });
+        await page.mouse.up();
+    };
+    await expect(tool("select")).toHaveClass(/active/);
+    // where the node is in the graph (selecting it raises it, its style changes)
+    const position = () => node.evaluate((n) => (n as HTMLElement).style.transform);
+    const at = await position();
+
+    // pan moves the view, the node stays where it is in the graph
+    await tool("pan").click();
+    await expect(tool("pan")).toHaveClass(/active/);
+    let before = await viewport.getAttribute("style");
+    await dragFromNode(80, 40);
+    await expect(viewport).not.toHaveAttribute("style", before!);
+    expect(await position()).toBe(at);
+
+    // zoom zooms in with a drag up
+    await tool("zoom").click();
+    before = await viewport.getAttribute("style");
+    await dragFromNode(0, -60);
+    await expect(viewport).not.toHaveAttribute("style", before!);
+    expect(await position()).toBe(at);
+
+    // box select draws a box from on top of the node
+    await tool("box_select").click();
+    const bounds = (await node.boundingBox())!;
+    await dragFromNode(bounds.width + 20, bounds.height + 20);
+    await expect(node).toHaveClass(/selected/);
+    expect(await position()).toBe(at);
+
+    // escape goes back to select
+    await page.keyboard.press("Escape");
+    await expect(tool("select")).toHaveClass(/active/);
+    await settle(page);
+});
+
 test("status bar shows the keys that do something", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await expect(page.locator(".react-flow__node").first()).toBeVisible();

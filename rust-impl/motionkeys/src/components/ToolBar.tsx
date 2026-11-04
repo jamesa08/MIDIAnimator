@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import Tool, { CommandTool } from "./Tool";
 import AddNodeMenu from "./AddNodeMenu";
 import { useStateContext } from "../contexts/StateContext";
-import { useEditorState } from "../utils/editorState";
+import { useCanvasTool, useEditorState } from "../utils/editorState";
 import { useConsoleSettings } from "../utils/console";
 
 function MenuBar() {
     const { frontEndState, setFrontEndState } = useStateContext();
     // which of the node editor's buttons can run in the graph on screen
     const editor = useEditorState();
+    const tool = useCanvasTool();
     const profiler = useConsoleSettings().profiler;
 
     // webkit blurs an icon that sits between screen pixels. the right hand buttons are placed from the toolbar's right edge,
@@ -77,6 +78,13 @@ function MenuBar() {
                 <CommandTool icon="edit_group" command="area.edit_group" disabled={editor.openable !== 1} />
                 <CommandTool icon="exit_group" command="area.exit_group" disabled={!editor.inGroup} />
                 <CommandTool icon="exit_to_root" command="area.exit_to_root" disabled={!editor.inGroup} />
+            </div>
+            <div className="spacer h-5 w-[1px] bg-black mx-1" />
+            <div className="inline-flex">
+                <CommandTool icon="select_tool" command="area.select_tool" active={tool === "select"} />
+                <CommandTool icon="box_select_tool" command="area.box_select_tool" active={tool === "box_select"} />
+                <CommandTool icon="pan_tool" command="area.pan_tool" active={tool === "pan"} />
+                <CommandTool icon="zoom_tool" command="area.zoom_tool" active={tool === "zoom"} />
             </div>
             <div className="spacer h-5 w-[1px] bg-black mx-1" />
             <div className="inline-flex">

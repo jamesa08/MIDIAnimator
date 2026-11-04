@@ -1,7 +1,8 @@
 """fetches the interface's icons into src/icons, only the ones listed below
 
 Blender 2.79 icons come from Blender's source (release/datafiles/blender_icons32), one raw .dat file per icon: a 24 byte
-header (width, height, then four ints) and bottom-up RGBA rows. they're written out as 32px PNGs, shown at 16px
+header (width, height, then four ints) and bottom-up RGBA rows. they're written out as 32px PNGs, shown at 16px. the open
+hand is Blender's pointing hand with its fingers redrawn open
 Silk icons are the SVG redraws of famfamfam Silk (github.com/Simandara/famfamfam-silk-svg). a few are composed here from a
 Silk icon and one of Silk's badges (its decorators), the icon cut away around the badge like Silk's own badged icons
 
@@ -34,6 +35,9 @@ BLENDER = [
     "key_hlt",
     "action",
     "space2",
+    "restrict_select_off",
+    "border_rect",
+    "viewzoom",
 ]
 
 # Silk icon names as the repo spells them, saved lowercase with underscores
@@ -103,6 +107,65 @@ def blender_icon(name):
     return png(width, height, b"".join(reversed(rows)))
 
 
+# Blender's pointing hand (32px) opened: the curled fingers cleared and all four drawn up like its index finger (columns
+# 6-13, its tip in rows 0-3), each the left (x, top row) given. the narrow ones lose a column of their middle. the palm from
+# row 18 down is Blender's (its glove lines and the light rim inside the outline), the fingers above are shaded to carry
+# its grey on up: white at the top left, greying to the bottom right
+OPEN_FINGERS = [(6, 2, False), (12, 0, False), (18, 2, True), (23, 6, True)]
+
+
+def open_hand():
+    data = fetch(BLENDER_URL.format("hand"))
+    size = struct.unpack("<I", data[:4])[0]
+    rows = [data[24 + y * size * 4 : 24 + (y + 1) * size * 4] for y in range(size)]
+    source = b"".join(reversed(rows))
+    image = bytearray(source)
+    get = lambda pixels, x, y: tuple(pixels[(y * size + x) * 4 : (y * size + x) * 4 + 4])
+
+    def put(x, y, pixel):
+        image[(y * size + x) * 4 : (y * size + x) * 4 + 4] = bytes(pixel)
+
+    # above the palm, right of the thumb
+    for y in range(16):
+        for x in range(6 if y < 12 else 8, size):
+            put(x, y, (0, 0, 0, 0))
+    finger = [[get(source, x, y) for x in range(6, 14)] for y in range(5)]
+    for left, top, narrow in OPEN_FINGERS:
+        for row, y in enumerate(range(top, 16)):
+            pixels = finger[min(row, 4)]
+            if narrow:
+                pixels = pixels[:4] + pixels[5:]
+            for i, pixel in enumerate(pixels):
+                under = get(image, left + i, y)
+                # where two fingers meet the outline wins, a fingertip's soft edge never thins one
+                if pixel[3] and not (under[3] > 200 and sum(under[:3]) // 3 < 100) and not (under[3] and sum(under[:3]) < sum(pixel[:3])):
+                    put(left + i, y, pixel)
+    # each finger white on its left, greying to its right more the further down it goes, into the palm
+    def finger_shade(x, y):
+        for left, top, narrow in OPEN_FINGERS:
+            inner = 3 if narrow else 4
+            if left + 2 <= x < left + 2 + inner and top <= y < 18:
+                return (x - left - 2) / (inner - 1) * (10 + 2.5 * (y - top)) * min(1, (18 - y) / 3)
+        return 0
+
+    for y in range(18):
+        for x in range(8, 28):
+            pixel = get(image, x, y)
+            # the rim up the right starts under the pinky, where the curled one ended
+            if pixel[3] > 200 and sum(pixel[:3]) // 3 >= 100 and not (x >= 26 and y >= 16):
+                grey = round(min(255, 231 - 3.2 * (x - 10) - 3.4 * (y - 18)) - finger_shade(x, y))
+                put(x, y, (grey, grey, grey, 255))
+    # the rim fades in up the pinky's right side instead of starting in a step: the outer column from row 10, the inner one
+    # from row 13, so it narrows to a point
+    for y in range(10, 16):
+        for x, start in ((26, 12), (27, 9)):
+            grey = get(image, x, y)[0]
+            rim = min(250, get(source, x, 16)[0] + 2.5 * (16 - y))
+            grey = round(grey + (rim - grey) * max(0, y - start) / (16 - start))
+            put(x, y, (grey, grey, grey, 255))
+    return png(size, size, bytes(image))
+
+
 # an svg's size and what's inside it, its ids prefixed so two can share a file
 def svg_parts(svg, prefix):
     width, height = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg).groups())
@@ -142,6 +205,9 @@ def main():
     for name in BLENDER:
         (ICONS / "blender" / f"{name}.png").write_bytes(blender_icon(name))
         print(f"blender/{name}.png")
+
+    (ICONS / "blender" / "hand_open.png").write_bytes(open_hand())
+    print("blender/hand_open.png")
 
     for name in SILK:
         file = name.lower().replace(" ", "_") + ".svg"

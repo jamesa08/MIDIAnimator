@@ -1,6 +1,7 @@
 // keyboard shortcuts. every command and its default keys live in configs/keybinds.json, grouped by scope: the app, an area
-// (the node editor) or a modal (grab, the add menu, dialogs). a preset only saves the keys it changed, kept in the app config
-// dir with the active preset, so new commands and changed defaults still reach people with presets of their own.
+// (the node editor), a mode (a canvas tool) or a modal (grab, the add menu, dialogs). a preset only saves the keys it
+// changed, kept in the app config dir with the active preset, so new commands and changed defaults still reach people with
+// presets of their own.
 // the frontend dispatches keys (src/utils/keymap.ts), the menu takes its accelerators from here (ui/menu.rs)
 
 use crate::ui::menu;
@@ -45,7 +46,7 @@ pub struct Command {
 pub struct Scope {
     pub id: String,
     pub name: String,
-    /// "app", "area" or "modal"
+    /// "app", "area", "mode" or "modal"
     pub kind: String,
     pub commands: Vec<Command>,
 }

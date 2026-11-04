@@ -11,6 +11,10 @@ import shapekeyData from "./blender/shapekey_data.png";
 import keyHlt from "./blender/key_hlt.png";
 import action from "./blender/action.png";
 import space2 from "./blender/space2.png";
+import restrictSelectOff from "./blender/restrict_select_off.png";
+import borderRect from "./blender/border_rect.png";
+import handOpen from "./blender/hand_open.png";
+import viewzoom from "./blender/viewzoom.png";
 import chartCurve from "./silk/chart_curve.svg?raw";
 import layoutSidebar from "./silk/layout_sidebar.svg?raw";
 import disk from "./silk/disk.svg?raw";
@@ -52,6 +56,10 @@ const ICONS = {
     edit_group: shapeGroupGo,
     exit_group: shapeGroupCome,
     exit_to_root: shapeGroupHouse,
+    select_tool: restrictSelectOff,
+    box_select_tool: borderRect,
+    pan_tool: handOpen,
+    zoom_tool: viewzoom,
     frame_all: shapeGroupMagnifier,
     frame_selected: shapeHandlesMagnifier,
     run: controlPlayGreen,
