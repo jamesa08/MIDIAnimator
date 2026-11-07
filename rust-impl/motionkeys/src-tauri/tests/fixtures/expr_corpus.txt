@@ -1,0 +1,368 @@
+# MotionKeys expression corpus (src/utils/expr.rs). every line: an expression, " => ", then what it gives: a number
+# as python writes it (3 is an int, 3.0 a float) or "error <kind>". the results are python's, and changing one of them
+# is a breaking change: users' expressions would give something else.
+# variables: x=12.5 y=0.8 note=46 vel=100 i=-3 z=0
+
+# what users already write
+y if note == 46 else 0 => 0.8
+x * 2 => 25.0
+y * vel / 127 => 0.6299212598425197
+y if note in [46, 49] else 0 => 0.8
+x + 5 if note == 38 else x => 12.5
+y * ((note - 36) * 0.1) => 0.8
+y * [0, 0.12, 0.23][note - 45] if 45 <= note <= 47 else y => 0.096
+
+# numbers
+3 => 3
+0.5 => 0.5
+.5 => 0.5
+5. => 5.0
+1e-3 => 0.001
+1E3 => 1000.0
+1_000 => 1000
+1_000.5 => 1000.5
+0x1f => 31
+0o17 => 15
+0b101 => 5
+0X_FF => 255
+00 => 0
+0.0 => 0.0
+True => 1
+False => 0
+True + True => 2
+
+# arithmetic precedence
+1 + 2 * 3 => 7
+(1 + 2) * 3 => 9
+2 * 3 + 4 * 5 => 26
+10 - 4 - 3 => 3
+100 / 10 / 5 => 2.0
+2 + 3 * 4 ** 2 => 50
+-2 ** 2 => -4
+(-2) ** 2 => 4
+2 ** -1 => 0.5
+2 ** 3 ** 2 => 512
+-2 ** -2 => -0.25
+- - 3 => 3
++-+3 => -3
+not 1 + 1 => 0
+1 + 2 == 3 => 1
+
+# division
+7 / 2 => 3.5
+-7 / 2 => -3.5
+7 // 2 => 3
+-7 // 2 => -4
+7 // -2 => -4
+-7 // -2 => 3
+7.5 // 2 => 3.0
+-7.5 // 2 => -4.0
+7 // 2.5 => 2.0
+1 // 0.1 => 9.0
+0.0 // 1 => 0.0
+-0.0 // 1 => -0.0
+
+# modulo
+7 % 3 => 1
+-7 % 3 => 2
+7 % -3 => -2
+-7 % -3 => -1
+7.5 % 2 => 1.5
+-7.5 % 2 => 0.5
+7.5 % -2 => -0.5
+5 % 0.1 => 0.09999999999999973
+-1e-20 % 1 => 1.0
+note % 12 => 10
+note // 12 - 1 => 2
+
+# powers
+2 ** 10 => 1024
+2 ** 0.5 => 1.4142135623730951
+4 ** 0.5 => 2.0
+0 ** 0 => 1
+0.0 ** 0 => 1.0
+10 ** -2 => 0.01
+(-8) ** 2 => 64
+(-2.0) ** 3 => -8.0
+1.5 ** 2 => 2.25
+
+# comparisons
+1 < 2 => 1
+2 < 1 => 0
+1 < 2 < 3 => 1
+1 < 3 < 2 => 0
+3 > 2 > 1 => 1
+36 <= note < 60 => 1
+36 <= note < 46 => 0
+1 == 1.0 => 1
+1 != 1.0 => 0
+note == 46 == True => 0
+2 < 3 == 3 => 1
+1 < 2 > 0 => 1
+0 < x <= 100 => 1
+y > 0.5 > 0.1 => 1
+
+# membership
+note in [46, 49] => 1
+note not in [46, 49] => 0
+note in [36, 38, 40] => 0
+note in range(36, 48) => 1
+note in range(36, 46) => 0
+note in range(30, 60, 4) => 1
+note in range(30, 60, 5) => 0
+46.0 in range(40, 50) => 1
+46.5 in range(40, 50) => 0
+note in (46,) => 1
+note in () => 0
+1 in [1.0] => 1
+[1, 2] in [[1, 2], 3] => 1
+
+# logic
+1 and 2 => 2
+0 and 2 => 0
+1 or 2 => 1
+0 or 2 => 2
+0 or 0.0 => 0.0
+not 0 => 1
+not 5 => 0
+not not 5 => 1
+y and note => 46
+z or x => 12.5
+1 if 0 or 3 else 2 => 1
+
+# conditionals
+1 if True else 2 => 1
+1 if False else 2 => 2
+1 if 0 else 2 if 0 else 3 => 3
+1 if 0 else 2 if 1 else 3 => 2
+(1 if 0 else 2) if 1 else 3 => 2
+y if note > 40 and vel > 50 else -y => 0.8
+0 if not note % 2 else 1 => 0
+x if x > 10 else x * 2 if x > 5 else 0 => 12.5
+
+# lists and indexing
+[0, 0.12, 0.23][1] => 0.12
+[0, 0.12, 0.23][-1] => 0.23
+[0, 0.12, 0.23][-3] => 0
+[10, 20, 30][note - 45] => 20
+[x, y, note][2] => 46
+(1, 2, 3)[1] => 2
+[[1, 2], [3, 4]][1][0] => 3
+range(36, 48)[2] => 38
+range(36, 48)[-1] => 47
+range(10, 0, -2)[1] => 8
+[1, 2,][1] => 2
+len([1, 2, 3]) => 3
+len(range(36, 48)) => 12
+len(range(0, 10, 3)) => 4
+len(range(10, 0, -3)) => 4
+len(range(5, 5)) => 0
+len(()) => 0
+
+# built-ins
+abs(-3) => 3
+abs(-3.5) => 3.5
+abs(i) => 3
+min(3, 1, 2) => 1
+max(3, 1, 2) => 3
+min([4, 2, 8]) => 2
+max(range(3, 10, 2)) => 9
+min(range(10, 0, -3)) => 1
+max(1, 2.0) => 2.0
+max(2.0, 2) => 2.0
+max(2, 2.0) => 2
+min(-0.0, 0) => -0.0
+max(x, y, note) => 46
+round(2.5) => 2
+round(3.5) => 4
+round(-2.5) => -2
+round(0.5) => 0
+round(1.5) => 2
+round(2.675, 2) => 2.67
+round(0.125, 2) => 0.12
+round(0.375, 2) => 0.38
+round(2.5, 0) => 2.0
+round(1234.5678, -2) => 1200.0
+round(1250, -2) => 1200
+round(1350, -2) => 1400
+round(-1250, -2) => -1200
+round(7, 2) => 7
+round(7.0, None) => 7
+round(1e300, 2) => 1e+300
+round(-0.5) => 0
+int(3.7) => 3
+int(-3.7) => -3
+int(True) => 1
+int() => 0
+float(3) => 3.0
+float() => 0.0
+bool(0) => 0
+bool(0.5) => 1
+bool([]) => 0
+bool([0]) => 1
+bool() => 0
+sum([1, 2, 3]) => 6
+sum([1, 2.5]) => 3.5
+sum([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]) => 1.0
+sum([1e100, 1.0, -1e100, 1.0]) => 2.0
+sum(range(1, 101)) => 5050
+sum(range(10, 0, -3)) => 22
+sum([1, 2], 10) => 13
+sum([], 0.5) => 0.5
+
+# math
+sqrt(16) => 4.0
+math.sqrt(2) => 1.4142135623730951
+sin(0) => 0.0
+math.sin(pi / 2) => 1.0
+cos(pi) => -1.0
+tan(0) => 0.0
+asin(1) => 1.5707963267948966
+acos(1) => 0.0
+atan(1) => 0.7853981633974483
+atan2(1, 1) => 0.7853981633974483
+math.atan2(-1, -1) => -2.356194490192345
+exp(1) => 2.718281828459045
+log(e) => 1.0
+log(8, 2) => 3.0
+log(100, 10) => 2.0
+log10(1000) => 3.0
+floor(-2.5) => -3
+ceil(-2.5) => -2
+floor(3) => 3
+math.floor(2.9) => 2
+math.ceil(2.1) => 3
+pi => 3.141592653589793
+math.pi => 3.141592653589793
+e => 2.718281828459045
+math.e => 2.718281828459045
+tau => 6.283185307179586
+radians(180) => 3.141592653589793
+degrees(pi) => 180.0
+math.inf > 1e308 => 1
+-inf < 0 => 1
+
+# not python: extras
+clamp(5, 0, 3) => 3
+clamp(-1, 0, 3) => 0
+clamp(1.5, 0, 3) => 1.5
+lerp(0, 10, 0.25) => 2.5
+lerp(2, 4, 0.5) => 3.0
+
+# variables
+x => 12.5
+y => 0.8
+note => 46
+vel => 100
+i => -3
+z => 0
+i * -1 => 3
+x / 2.5 => 5.0
+note * vel => 4600
+
+# run-time errors
+1 / 0 => error zero_division
+1 // 0 => error zero_division
+1 % 0 => error zero_division
+1.0 / 0 => error zero_division
+5.5 // 0.0 => error zero_division
+5.5 % 0.0 => error zero_division
+0 ** -1 => error zero_division
+0.0 ** -2 => error zero_division
+[1, 2, 3][3] => error index
+[1, 2, 3][-4] => error index
+range(5)[5] => error index
+[1, 2][0.5] => error type
+[1, 2][x] => error type
+note[0] => error type
+sqrt(-1) => error domain
+log(0) => error domain
+log(-1) => error domain
+log10(0) => error domain
+log(10, 1) => error zero_division
+asin(2) => error domain
+acos(-1.5) => error domain
+exp(1000) => error overflow
+10.0 ** 400 => error overflow
+int(inf) => error overflow
+round(inf) => error overflow
+floor(inf) => error overflow
+int(inf - inf) => error domain
+range(0, 10, 0) => error domain
+range(1.5) => error type
+min([]) => error domain
+max(range(0)) => error domain
+1 + [2] => error type
+-[1] => error type
+abs([1]) => error type
+len(5) => error type
+5 in 6 => error type
+1 < None => error type
+None + 1 => error type
+sin([1]) => error type
+(-8) ** (1 / 3) => error domain
+2 ** 64 => error overflow
+inf - inf => error not_finite
+1e308 * 10 => error not_finite
+[1, 2] => error not_a_number
+None => error not_a_number
+x if False else None => error not_a_number
+
+# compile errors: names and arguments
+nte => error unknown_name
+nte * 2 => error unknown_name
+foo(1) => error unknown_name
+math.foo => error unknown_name
+math.sinn(1) => error unknown_name
+abs() => error arity
+abs(1, 2) => error arity
+round(1, 2, 3) => error arity
+range() => error arity
+clamp(1, 2) => error arity
+note(1) => error type
+pi(1) => error type
+
+# compile errors: not python
+1 + => error syntax
+(1 + 2 => error syntax
+1 2 => error syntax
+x if note => error syntax
+=> error syntax
+1 $ 2 => error syntax
+012 => error syntax
+1__0 => error syntax
+1_ => error syntax
+1e => error syntax
+0x => error syntax
+not => error syntax
+note not 5 => error syntax
+
+# python has these, this language doesn't
+'a' => error unsupported
+f"{x}" => error unsupported
+lambda: 1 => error unsupported
+[n for n in range(3)] => error unsupported
+sum(n for n in range(3)) => error unsupported
+x.real => error unsupported
+y = 1 => error unsupported
+x += 1 => error unsupported
+(y := 1) => error unsupported
+note & 1 => error unsupported
+note | 1 => error unsupported
+note ^ 1 => error unsupported
+~note => error unsupported
+note << 1 => error unsupported
+note is 46 => error unsupported
+note is not 46 => error unsupported
+[1, 2, 3][1:2] => error unsupported
+round(x, ndigits=1) => error unsupported
+max(*[1, 2]) => error unsupported
+{1: 2} => error unsupported
+{1, 2} => error unsupported
+1j => error unsupported
+x; y => error unsupported
+import math => error unsupported
+abs => error unsupported
+math.sqrt => error unsupported
+math => error unsupported
+x @ y => error unsupported
