@@ -36,6 +36,22 @@ pub struct HandleSpec {
     /// an input's value when nothing is set on the node or connected to it
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<Value>,
+    /// an output that only reads these inputs, it can feed back into the others without a cycle (`partial_output`)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads: Option<Vec<String>>,
+}
+
+/// outputs that only read some of their node's inputs (`reads` in default_nodes.json), by node type and output. read
+/// from the specs built into the app, the graph checks cycles with them without the specs at hand
+static PARTIAL_OUTPUTS: once_cell::sync::Lazy<HashMap<(String, String), Vec<String>>> = once_cell::sync::Lazy::new(|| {
+    let default_nodes: HashMap<String, Value> = serde_json::from_str(include_str!("../configs/default_nodes.json")).unwrap_or_default();
+    node_specs(&default_nodes).into_iter().flat_map(|spec| spec.handles.outputs.into_iter().filter_map(move |h| Some(((spec.id.clone(), h.id), h.reads?)))).collect()
+});
+
+/// the inputs a partial output reads, `None` for an output that reads all of them. connecting a partial output back into
+/// an input it doesn't read isn't a cycle, the run works the output out first (`split_partial_outputs` in run.rs)
+pub fn partial_output(node_type: &str, output: &str) -> Option<&'static [String]> {
+    PARTIAL_OUTPUTS.get(&(node_type.to_string(), output.to_string())).map(Vec::as_slice)
 }
 
 /// the inputs and outputs of a node spec
@@ -179,6 +195,7 @@ pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<Handle
                 hidden: false,
                 multi: false,
                 default: None,
+                reads: None,
             });
         }
     }
@@ -209,6 +226,7 @@ pub fn node_inputs(spec: &NodeSpec, graph: &Graph, node_id: &str) -> Vec<HandleS
                 hidden: false,
                 multi: false,
                 default: None,
+                reads: None,
             });
         }
     }
@@ -575,6 +593,35 @@ impl Graph {
             // queue up every node this one feeds into
             for edge in self.edges_from(&id, None) {
                 queue.push_back(edge.to_node().to_string());
+            }
+        }
+        false
+    }
+
+    /// true if connecting `from_node.from_output` to `to_node.to_input` would make a cycle. it follows sockets, not
+    /// just nodes: an output in `PARTIAL_OUTPUTS` only carries on from the inputs it reads, so a loop back into an
+    /// input it doesn't read isn't a cycle
+    pub fn would_cycle(&self, from_node: &str, from_output: &str, to_node: &str, to_input: &str) -> bool {
+        if from_node == to_node {
+            return true;
+        }
+        let types: HashMap<&str, &str> = self.nodes.iter().map(|n| (n.id.as_str(), n.resolved_node_type())).collect();
+        let carries = |node: &str, output: &str, input: &str| types.get(node).and_then(|t| partial_output(t, output)).is_none_or(|reads| reads.iter().any(|r| r == input));
+
+        // walk from the input the new edge goes into, along every output that input reaches
+        let mut seen: HashSet<(String, String)> = HashSet::new();
+        let mut queue = VecDeque::from([(to_node.to_string(), to_input.to_string())]);
+        while let Some((node, input)) = queue.pop_front() {
+            if node == from_node && carries(&node, from_output, &input) {
+                return true;
+            }
+            if !seen.insert((node.clone(), input.clone())) {
+                continue;
+            }
+            for edge in self.edges_from(&node, None) {
+                if carries(&node, edge.from_output(), &input) {
+                    queue.push_back((edge.to_node().to_string(), edge.to_input().to_string()));
+                }
             }
         }
         false

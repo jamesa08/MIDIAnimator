@@ -98,7 +98,7 @@ pub fn sync(graph: &mut Graph) {
     // tagged inputs that aren't connected yet, a node can't take its own value and a cycle never finishes
     let wanted: Vec<(String, String, String, String)> = graph.nodes.iter().flat_map(|node| tags(node, Side::Inputs).into_iter().map(move |(socket, name)| (node.id.clone(), socket, name))).filter_map(|(to, input, name)| sources.get(&name).map(|(from, output)| (from.clone(), output.clone(), to, input))).collect();
     for (from, output, to, input) in wanted {
-        if from == to || graph.edge_into(&to, &input).is_some() || graph.reaches(&to, &from) {
+        if from == to || graph.edge_into(&to, &input).is_some() || graph.would_cycle(&from, &output, &to, &input) {
             continue;
         }
         let mut edge = RfEdge::new(&from, &output, &to, &input);

@@ -347,6 +347,13 @@
                         "name": "Object Map",
                         "data_type": "ObjectMap",
                         "description": "Mapping of object names to note numbers and animation generators."
+                    },
+                    {
+                        "id": "object_notes",
+                        "name": "Note Map",
+                        "data_type": "HashMap<String, Array<u8>>",
+                        "reads": ["object_groups", "object_group_name", "mode", "midi_notes", "note_numbers", "note_map"],
+                        "description": "Each object's notes, without the animation: { \"Cube.001\": [58], \"Cube.002\": [59] }. It doesn't use the Animation Generator, so it can feed a Note Table that feeds that same generator."
                     }
                 ]
             }

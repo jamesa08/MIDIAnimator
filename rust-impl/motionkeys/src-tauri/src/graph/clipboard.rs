@@ -312,7 +312,7 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
             continue;
         };
         let twice = graph.edges.iter().any(|e| e.to_node() == to && e.to_input() == edge.to_input() && e.from_node() == from && e.from_output() == edge.from_output());
-        if from == to || twice || graph.reaches(to, from) {
+        if from == to || twice || graph.would_cycle(from, edge.from_output(), to, edge.to_input()) {
             continue;
         }
         graph.edges.push(RfEdge::new(from, edge.from_output(), to, edge.to_input()));

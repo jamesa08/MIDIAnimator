@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use super::executors::io::{Conversions, Inputs, NodeFunction, Outputs, Val, BAD_INPUTS_KEY, ERROR_KEY};
-use super::model::{compatible, dyn_index, dyn_inner, find_spec, Graph, GroupDef, HandleSpec, NodeSpec, RfNode, Specs};
+use super::model::{compatible, dyn_index, dyn_inner, find_spec, partial_output, Graph, GroupDef, HandleSpec, NodeSpec, RfEdge, RfNode, Specs};
 
 pub const GROUP: &str = "group";
 pub const GROUP_INPUT: &str = "group_input";
@@ -52,6 +52,9 @@ pub const FRAME: &str = "frame";
 
 /// separates the ids in a node path, `group-1/viewer-2` is `viewer-2` inside the group node `group-1`
 pub const PATH_SEP: char = '/';
+
+/// separates a node's id from the output a stand-in for it gives (`split_partial_outputs`), `assign_notes_to_objects-1#object_notes`
+pub const PARTIAL_SEP: char = '#';
 
 /// input or output id to value
 type Values = Vec<(Arc<str>, Val)>;
@@ -473,9 +476,47 @@ struct Plan {
     zone_of: Vec<Option<usize>>,
 }
 
+/// a connected output that only reads some of its node's inputs (`partial_output`) gets a stand-in node: the same node
+/// with only those inputs, giving the nodes that use the output their value. it runs before the node itself, so the
+/// output can feed back into an input it doesn't read (Assign Notes to Objects' Note Map into a Note Table into its
+/// Animation Generator)
+fn split_partial_outputs<'a>(specs: &[NodeSpec], graph: &'a Graph) -> Cow<'a, Graph> {
+    let partial: Vec<(&RfNode, &str, &[String])> = graph.nodes.iter().flat_map(|node| graph.edges_from(&node.id, None).filter_map(move |e| Some((node, e.from_output(), partial_output(node.resolved_node_type(), e.from_output())?)))).collect();
+    if partial.is_empty() {
+        return Cow::Borrowed(graph);
+    }
+    let mut split = graph.clone();
+    let mut done: HashSet<String> = HashSet::new();
+    for (node, output, reads) in partial {
+        let id = format!("{}{}{}", node.id, PARTIAL_SEP, output);
+        if !done.insert(id.clone()) {
+            continue;
+        }
+        // the node with only the values it reads, named after it and the output
+        let mut stand_in = node.clone();
+        stand_in.id = id.clone();
+        if let Some(inputs) = stand_in.data.get_mut("inputs").and_then(Value::as_object_mut) {
+            inputs.retain(|k, _| reads.contains(k));
+        }
+        let name = node.label().map(str::to_string).or_else(|| find_spec(specs, node.resolved_node_type()).map(|s| s.name.clone())).unwrap_or_default();
+        let output_name = find_spec(specs, node.resolved_node_type()).and_then(|s| s.handles.outputs.iter().find(|h| h.id == output)).map_or(output.to_string(), |h| h.name.clone());
+        stand_in.data.insert("label".to_string(), Value::String(format!("{} › {}", name, output_name)));
+        split.nodes.push(stand_in);
+
+        // what it reads comes in like it does for the node, what uses the output takes it from the stand-in
+        let into: Vec<RfEdge> = graph.edges.iter().filter(|e| e.to_node() == node.id && reads.iter().any(|r| r == e.to_input())).map(|e| RfEdge::new(e.from_node(), e.from_output(), &id, e.to_input())).collect();
+        for edge in split.edges.iter_mut().filter(|e| e.from_node() == node.id && e.from_output() == output) {
+            *edge = RfEdge::new(&id, output, edge.to_node(), edge.to_input());
+        }
+        split.edges.extend(into);
+    }
+    Cow::Owned(split)
+}
+
 impl Plan {
     /// `scope` is the group whose graph this is, `None` for the root graph
     fn new(ctx: &RunCtx, graph: &Graph, scope: Option<&GroupDef>) -> Self {
+        let graph = &*split_partial_outputs(ctx.specs, graph);
         let index: HashMap<&str, usize> = graph.nodes.iter().enumerate().map(|(i, n)| (n.id.as_str(), i)).collect();
         // the sockets of every node, to check the types of its connections
         let specs = Specs {

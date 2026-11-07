@@ -505,7 +505,8 @@ fn note_list_error(objects: &[&Object], group_name: &str, entries: &[String]) ->
 /// "generator": `AnimationGenerator`
 ///
 /// outputs:
-/// "object_map": `ObjectMap`
+/// "object_map": `ObjectMap`,
+/// "object_notes": `HashMap<String, Array<u8>>`, each object's notes, it doesn't read the generator
 
 /*
 # Methods for Assigning MIDI Note Numbers to Objects
@@ -650,6 +651,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     // nothing picked yet, empty object map
     if object_groups.is_empty() || object_group_name.is_empty() {
         outputs.set("object_map", object_map);
+        outputs.set("object_notes", BTreeMap::<String, Vec<u8>>::new());
         return Ok(outputs);
     }
 
@@ -674,6 +676,17 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     } else {
         rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?
     };
+
+    // each object's notes without the animation, the Note Map output. it doesn't read the generator (`reads` in
+    // default_nodes.json), so it can feed a Note Table that feeds the generator
+    let mut object_notes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for (object, note_number) in &pairs {
+        let notes = object_notes.entry(object.name.clone()).or_default();
+        if !notes.contains(note_number) {
+            notes.push(*note_number);
+        }
+    }
+    outputs.set("object_notes", object_notes);
 
     // extra objects (not enough notes) are left out
     for (object, note_number) in &pairs {

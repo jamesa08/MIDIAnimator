@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, getOutgoers, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
+import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
 import { XYHandle } from "@xyflow/system";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
@@ -12,6 +12,7 @@ import { ApplyOptions, Op, SocketRef, TabContext, useGraphOps } from "../../util
 import { takeReveal, usePendingReveal } from "../../utils/console";
 import { addsToSelection, blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
+import { wouldCycle } from "../../utils/sockets";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
 import NodeGraphCanvas, { CLICK_DISTANCE, useMultiSelection } from "./NodeGraphCanvas";
 import NodeAddMenu from "./NodeAddMenu";
@@ -1431,31 +1432,22 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [isRoot, level.graph.viewport]
     );
 
-    // prevent cyclitic connections
+    // prevent cyclitic connections, socket by socket: an output that only reads some inputs can loop back into the others
     const isValidConnection = useCallback(
-        (connection: { target: string; source: string }) => {
+        (connection: { target: string; source: string; targetHandle?: string | null; sourceHandle?: string | null }) => {
             // we are using getNodes and getEdges helpers here
             // to make sure we create isValidConnection function only once
             const nodes = getNodes();
-            const edges = getEdges();
-
-            const target = nodes.find((node) => node.id === connection.target);
-            const hasCycle = (node: any, visited = new Set()) => {
-                if (visited.has(node.id)) return false;
-
-                visited.add(node.id);
-
-                for (const outgoer of getOutgoers(node, nodes, edges)) {
-                    if (outgoer.id === connection.source) return true;
-                    if (hasCycle(outgoer, visited)) return true;
-                }
+            // stored edges are reversed: `target` is the node giving the value, `source` the one taking it
+            const links = getEdges().map((e) => ({ from: e.target, output: e.targetHandle ?? "", to: e.source, input: e.sourceHandle ?? "" }));
+            const reads = (id: string, output: string): string[] | null => {
+                const node = nodes.find((n) => n.id === id);
+                const handle = node && (lookup(node, level.def) as any)?.handles?.outputs?.find((h: any) => h.id === output);
+                return Array.isArray(handle?.reads) ? handle.reads : null;
             };
-
-            // prevent connecting to source node
-            if (target?.id === connection.source) return false;
-            return !hasCycle(target);
+            return !wouldCycle(links, reads, connection.target, connection.targetHandle ?? "", connection.source, connection.sourceHandle ?? "");
         },
-        [getNodes, getEdges]
+        [getNodes, getEdges, lookup, level.def]
     );
 
     return (

@@ -66,3 +66,23 @@ export function compatible(outType: string, inType: string): boolean {
     const inInner = array(inType);
     return outInner !== null && inInner !== null && compatible(outInner, inInner);
 }
+
+// whether connecting `fromOutput` on `fromNode` to `toInput` on `toNode` makes a cycle, socket by socket like the backend
+// (Graph::would_cycle in model.rs). `reads` gives the inputs an output reads when it's a partial output (`reads` in
+// default_nodes.json), null for one that reads them all: it only carries on from those, so a loop back into an input it
+// doesn't read isn't a cycle. `links` go as data flows
+export function wouldCycle(links: { from: string; output: string; to: string; input: string }[], reads: (node: string, output: string) => string[] | null, fromNode: string, fromOutput: string, toNode: string, toInput: string): boolean {
+    if (fromNode === toNode) return true;
+    const carries = (node: string, output: string, input: string) => reads(node, output)?.includes(input) ?? true;
+    const seen = new Set<string>();
+    const queue: [string, string][] = [[toNode, toInput]];
+    while (queue.length > 0) {
+        const [node, input] = queue.shift()!;
+        if (node === fromNode && carries(node, fromOutput, input)) return true;
+        const key = `${node}\n${input}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        for (const l of links) if (l.from === node && carries(node, l.output, input)) queue.push([l.to, l.input]);
+    }
+    return false;
+}

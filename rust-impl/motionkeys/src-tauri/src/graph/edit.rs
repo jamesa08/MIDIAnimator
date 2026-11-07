@@ -220,7 +220,7 @@ pub fn connect(graph: &mut Graph, specs: &Specs, results: &HashMap<String, Value
     if from_id == to_id {
         return Err("cannot connect a node to itself".to_string());
     }
-    if graph.reaches(&to_id, &from_id) {
+    if graph.would_cycle(&from_id, &from_output, &to_id, &to_input) {
         return Err(format!("connecting {} -> {} would create a cycle", from_id, to_id));
     }
     // make sure the types line up

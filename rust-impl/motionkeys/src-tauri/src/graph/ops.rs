@@ -1012,6 +1012,7 @@ fn connect(project: &mut Graph, scope: Option<&str>, specs: &Specs, from_node: &
         let id = socket_id(&handle.name, sockets);
         sockets.push(HandleSpec {
             id: id.clone(),
+            reads: None,
             ..handle
         });
         match side {
@@ -1036,7 +1037,7 @@ fn link(graph: &mut Graph, from_node: &str, from_output: &str, to_node: &str, to
     if from_node == to_node {
         return Err("cannot connect a node to itself".to_string());
     }
-    if graph.reaches(to_node, from_node) {
+    if graph.would_cycle(from_node, from_output, to_node, to_input) {
         return Err(format!("connecting {} -> {} would create a cycle", from_node, to_node));
     }
     // a multi input keeps its other connections, connecting the same output again changes nothing
@@ -1070,6 +1071,7 @@ fn find_handle(handles: &[HandleSpec], id: &str) -> HandleSpec {
             hidden: false,
             multi: false,
             default: None,
+            reads: None,
         },
     }
 }
@@ -1289,6 +1291,7 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
                     let id = socket_id(&handle.name, &outputs);
                     outputs.push(HandleSpec {
                         id: id.clone(),
+                        reads: None,
                         ..handle
                     });
                     output_for.insert(key, id.clone());
