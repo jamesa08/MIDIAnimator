@@ -246,6 +246,47 @@
         },
 
         {
+            "id": "note_table",
+            "name": "Note Table",
+            "category": "animation",
+            "description": "A value per note, from a curve over the notes of a note map (spaced evenly) or a range, with values typed in over it. Gives the expression for Animation Generator's Time Mapper or Amplitude Mapper.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "note_map",
+                        "name": "Note Map",
+                        "data_type": "HashMap<String, Array<u8>>",
+                        "description": "Each object's notes, from Assign Notes to Objects' Note Map: { \"Cube.001\": [58] }. The table has a row per note, with the objects it plays. Unconnected, the table is a range whatever its source is."
+                    },
+                    {
+                        "id": "table",
+                        "name": "Table",
+                        "data_type": "Any",
+                        "hidden": true,
+                        "description": "The table's settings, every field optional: { \"target\": \"amplitude\" | \"time\" (the key's value y, or its time x in frames), \"operation\": \"multiply\" | \"add\" | \"set\", \"source\": \"map\" | \"range\" (the connected note map, or every note from \"from\" to \"to\"), \"from\": 36, \"to\": 47, \"shape\": \"linear\" (\"constant\" gives every note min), \"curve\": \"t ** 2\" (an expression in t, 0 at the first note and 1 at the last, and note), \"min\": 0, \"max\": 1 (the curve goes from min to max), \"overrides\": [{ \"note\": 49, \"value\": 0.7 }], \"fallback\": \"keep\" | \"zero\" | \"value\" (notes not in the table), \"fallback_value\": 0 }."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "expression",
+                        "name": "Expression",
+                        "data_type": "String",
+                        "description": "The expression the table gives, connect it to a mapper."
+                    },
+                    {
+                        "id": "preview",
+                        "name": "Preview",
+                        "data_type": "Any",
+                        "hidden": true,
+                        "description": "The rows and curve the node shows."
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "set_channel",
             "name": "Set Channel",
             "category": "animation",

@@ -50,6 +50,8 @@ const PARAMS: Record<string, Param[]> = {
         { id: "note_map", kind: "text", shown: () => false },
         { id: "map_layout", kind: "text", shown: () => false },
     ],
+    // edited on the node
+    note_table: [{ id: "table", kind: "text", shown: () => false }],
     animation_generator: [
         { id: "time_mapper", kind: "expression", vars: "mapper" },
         { id: "amplitude_mapper", kind: "expression", vars: "mapper" },

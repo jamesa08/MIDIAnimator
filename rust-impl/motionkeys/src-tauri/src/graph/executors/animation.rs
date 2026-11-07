@@ -12,6 +12,7 @@ use super::scene::scene_fps;
 use crate::utils::animation::{combine_curve_keys, note_curve_keys, parse_channel, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
+use crate::utils::note_table::{self, NoteTable};
 
 /// Node: keyframes_from_object
 ///
@@ -291,6 +292,37 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
 
     let mut outputs = Outputs::new();
     outputs.set("generator", generator);
+    Ok(outputs)
+}
+
+/// Node: note_table
+///
+/// inputs:
+/// "note_map": `HashMap<String, Array<u8>>`, each object's notes, from Assign Notes to Objects' Note Map. without one the
+/// table is a range, whatever its source says,
+/// "table": `Any`, the table's settings (utils/note_table.rs `NoteTable`)
+///
+/// outputs:
+/// "expression": `String`, the expression a mapper runs,
+/// "preview": `Any`, the rows and the curve the node shows, hidden
+#[node_registry::node]
+pub fn note_table(note_map: Option<&BTreeMap<String, Vec<u8>>>, table: Option<&Value>) -> NodeResult {
+    // nothing set is the defaults
+    let table: NoteTable = match table {
+        None | Some(Value::Null) => NoteTable::default(),
+        Some(value) => serde_json::from_value(value.clone()).map_err(|e| format!("the table can't be read: {}", e))?,
+    };
+    // the note map is only a source while one is connected, without one the table is a range
+    let mut table = table;
+    if note_map.is_none() {
+        table.source = note_table::Source::Range;
+    }
+    let empty = BTreeMap::new();
+    let preview = note_table::preview(&table, note_map.unwrap_or(&empty))?;
+
+    let mut outputs = Outputs::new();
+    outputs.set("expression", note_table::expression(&table, &preview));
+    outputs.set("preview", serde_json::to_value(&preview).unwrap_or_default());
     Ok(outputs)
 }
 

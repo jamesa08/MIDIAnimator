@@ -1680,3 +1680,107 @@ span.icon {
 .tag-menu-row:hover {
     background-color: #4a7ba7;
 }
+
+.note-table {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 12px 2px;
+}
+
+.note-table-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.note-table-input {
+    box-sizing: border-box;
+    min-width: 0;
+    height: 20px;
+    padding: 0 4px;
+    border: 1px solid #9ca3af;
+    background: white;
+    font: inherit;
+}
+
+.note-table-input.computed {
+    color: #9ca3af;
+}
+
+.note-table-preview {
+    display: block;
+    width: 100%;
+}
+
+.note-table-axis {
+    stroke: #d4d4d8;
+}
+
+.note-table-bar {
+    fill: var(--node-header, #7a7a7a);
+    opacity: 0.45;
+    cursor: pointer;
+}
+
+.note-table-bar.overridden {
+    opacity: 0.75;
+}
+
+.note-table-bar.selected {
+    opacity: 1;
+}
+
+.note-table-curve {
+    fill: none;
+    stroke: black;
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+/* the rows scroll inside the node, the canvas doesn't take the wheel (nowheel) */
+.note-table-rows {
+    max-height: 168px;
+    overflow-y: auto;
+    border-top: 1px solid #e4e4e7;
+}
+
+.note-table-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 0;
+    border-bottom: 1px solid #e4e4e7;
+}
+
+.note-table-row.selected {
+    background: #f4f4f5;
+}
+
+.note-table-note {
+    width: 22px;
+    text-align: right;
+}
+
+.note-table-name {
+    width: 30px;
+    color: #71717a;
+}
+
+.note-table-objects {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #71717a;
+}
+
+.note-table-clear {
+    width: 16px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #71717a;
+    cursor: pointer;
+}

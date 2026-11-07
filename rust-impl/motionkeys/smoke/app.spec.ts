@@ -278,6 +278,15 @@ test("note numbers field keeps what's typed", async ({ page }) => {
     await settle(page);
 });
 
+// the fixture with a Note Table on a note map, and what its last run gave
+function withNoteTable() {
+    const state = structuredClone(withLayout(ALL_DOCKED));
+    const rows = [58, 59, 60, 61].map((note, i) => ({ note, objects: [`Cube.00${i + 1}`], value: i / 3, overridden: false }));
+    state.get_state.rf_instance.nodes.push({ id: "note_table-1", type: "note_table", position: { x: 2400, y: 0 }, data: { inputs: { table: { shape: "linear", curve: "t" } } } });
+    state.get_state.executed_results["note_table-1"] = { expression: "y * ((note - 58) / 3) if 58 <= note <= 61 else y", preview: { rows, curve: [0, 0.5, 1] } };
+    return state;
+}
+
 test("mapper fields check what's typed and set the text", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
@@ -298,6 +307,26 @@ test("an expression that doesn't compile is marked", async ({ page }) => {
     // a red border and the name underlined
     await expect(node.locator("input.font-mono").nth(1)).toHaveCSS("border-color", "rgb(220, 38, 38)");
     await expect(node.locator(".expression-error-mark")).toHaveText("nte");
+    await settle(page);
+});
+
+test("note table shows a row per note and a typed value overrides the curve", async ({ page }) => {
+    await openWindow(page, withNoteTable(), "/#/");
+    await frameNodes(page, ["note_table-1"]);
+    const node = page.locator('.react-flow__node[data-id="note_table-1"]');
+    await expect(node.locator(".note-table-row")).toHaveCount(4);
+    await expect(node.locator(".note-table-row").first()).toContainText("Cube.001");
+    await expect(node.locator(".note-table-bar")).toHaveCount(4);
+    // a value typed in for 60 is an override, the rest of the table is kept
+    const value = node.locator(".note-table-row").nth(2).locator("input");
+    await value.fill("0.9");
+    await value.press("Enter");
+    const sets = (await applied(page)).flat().filter((op: any) => op.op === "set_inputs" && op.node === "note_table-1");
+    expect(sets.at(-1).inputs.table).toMatchObject({ shape: "linear", curve: "t", overrides: [{ note: 60, value: 0.9 }] });
+    // a preset fills in its curve
+    await node.locator("select").nth(3).selectOption("ease_in");
+    const tableSets = (await applied(page)).flat().filter((op: any) => op.op === "set_inputs" && op.node === "note_table-1");
+    expect(tableSets.at(-1).inputs.table).toMatchObject({ shape: "ease_in", curve: "t ** 2" });
     await settle(page);
 });
 
@@ -872,6 +901,30 @@ test("a multi input takes a link dropped anywhere along it", async ({ page }) =>
         await page.mouse.up();
         await expect.poll(async () => (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op === "connect"))).toEqual([[{ op: "connect", from_node: "get_midi_track_data-1", from_output: "notes", to_node: "animation_generator-1", to_input: "note_on_keyframes" }]]);
     }
+    await settle(page);
+});
+
+test("a note table can be wired into the generator its note map comes from", async ({ page }) => {
+    // assign › note map › table, then the table into the generator assign uses: not a cycle, the note map doesn't read it
+    const state = withNoteTable();
+    state.get_state.rf_instance.nodes.find((n: any) => n.id === "note_table-1").position = { x: 1500, y: 600 };
+    state.get_state.rf_instance.edges.push({ id: "xy-edge__note_table-1note_map-assign_notes_to_objects-1object_notes", source: "note_table-1", sourceHandle: "note_map", target: "assign_notes_to_objects-1", targetHandle: "object_notes" });
+    await openWindow(page, state, "/#/");
+    const to = socketOf(page, "animation_generator-1", "amplitude_mapper");
+    await expect(to).toBeVisible();
+    await graphReady(page);
+    await settle(page);
+    await frameNodes(page, ["animation_generator-1", "note_table-1"]);
+    const from = (await socketOf(page, "note_table-1", "expression").boundingBox())!;
+    const box = (await to.boundingBox())!;
+    const before = (await applied(page)).length;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
+    await expect(page.locator(".react-flow__connection")).toHaveClass(/valid/);
+    await page.mouse.up();
+    await expect.poll(async () => (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op === "connect"))).toEqual([[{ op: "connect", from_node: "note_table-1", from_output: "expression", to_node: "animation_generator-1", to_input: "amplitude_mapper" }]]);
     await settle(page);
 });
 

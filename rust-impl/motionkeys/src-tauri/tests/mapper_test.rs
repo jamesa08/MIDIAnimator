@@ -11,6 +11,7 @@ use motionkeys::graph::executors::io::Inputs;
 use motionkeys::midi::MIDINote;
 use motionkeys::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, BlendKeyframe};
 use motionkeys::utils::mapper::NoteContext;
+use motionkeys::utils::note_table::{self, Fallback, NoteTable};
 
 // MARK: - Helpers
 
@@ -72,6 +73,35 @@ fn first_value(amplitude: &str, notes: &[MIDINote], which: usize, fps: Option<f6
         fps,
     };
     note_curve_keys("Cymbal", &gen, &notes[which], &ctx).unwrap()[0].keyframes[0].value
+}
+
+// MARK: - Cymbal choke
+
+#[test]
+fn cymbal_choke_expression_and_table_give_the_same_keys() {
+    // the cymbal (46) and its choke note (52) on one cymbal: the choke's keys go to 0 and overlap next cuts the ringing
+    // cymbal where the choke starts
+    let notes = [note(46, 127, 0.0, 0.05), note(52, 127, 0.3, 0.35)];
+    let expression = generator(json!({ "amplitude_mapper": "y if note == 46 else 0", "animation_overlap": "next" })).unwrap();
+    let keys = pairs(&play(&expression, &notes, Some(24.0)).unwrap());
+    assert_eq!(keys, vec![(0.0, 0.0), (0.1, 1.0), (0.3, 0.0), (0.4, 0.0), (0.8, 0.0)]);
+
+    // the same choke from a Note Table: 46 keeps its value (x1), every other note is 0
+    let table = NoteTable {
+        shape: "constant".into(),
+        min: 1.0,
+        fallback: Fallback::Zero,
+        ..Default::default()
+    };
+    let crash = [("Crash".to_string(), vec![46u8])].into_iter().collect();
+    let text = note_table::expression(&table, &note_table::preview(&table, &crash).unwrap());
+    assert_eq!(text, "y if note == 46 else 0");
+    let tabled = generator(json!({ "amplitude_mapper": text, "animation_overlap": "next" })).unwrap();
+    assert_eq!(pairs(&play(&tabled, &notes, Some(24.0)).unwrap()), keys);
+
+    // without the mapper the choke would hit the cymbal again
+    let plain = generator(json!({ "animation_overlap": "next" })).unwrap();
+    assert_eq!(pairs(&play(&plain, &notes, Some(24.0)).unwrap())[3], (0.4, 1.0));
 }
 
 // MARK: - Time
