@@ -33,6 +33,11 @@ pub fn with_scene<T>(scene: Option<Scene>, curve_sources: BTreeSet<String>, f: i
     result
 }
 
+/// the frames per second of the scene the run is running on, `None` with no scene (Blender isn't linked)
+pub fn scene_fps() -> Option<f64> {
+    SCENE.with(|scene| scene.borrow().as_ref().and_then(|scene| scene.fps))
+}
+
 /// how many objects and keyframes the scene writers wrote so far in the run `with_scene` is running
 pub fn written() -> (usize, usize) {
     WRITTEN.get()

@@ -233,6 +233,20 @@
             "sourceHandle": "object_map",
             "target": "group_input-1",
             "targetHandle": "object_map"
+        },
+        {
+            "id": "xy-edge__note_keyframes-1notes-group_input-1midi_notes",
+            "source": "note_keyframes-1",
+            "sourceHandle": "notes",
+            "target": "group_input-1",
+            "targetHandle": "midi_notes"
+        },
+        {
+            "id": "xy-edge__note_keyframes-1index-for_each_input-1index",
+            "source": "note_keyframes-1",
+            "sourceHandle": "index",
+            "target": "for_each_input-1",
+            "targetHandle": "index"
         }
     ]
 }

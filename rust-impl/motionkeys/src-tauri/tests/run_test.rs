@@ -10,6 +10,7 @@ use motionkeys::graph::builtin::{builtin_groups, migrate};
 use motionkeys::graph::executors::io::{node_error, NodeFunction, BAD_INPUTS_KEY};
 use motionkeys::midi::MIDINote;
 use motionkeys::utils::animation::{combine_curve_keys, note_curve_keys, BlendKeyframe, ObjectMap};
+use motionkeys::utils::mapper::NoteContext;
 use motionkeys::graph::model::{node_specs, Graph, GroupDef, HandleSpec, HandleSpecs, NodeSpec, Position, RfEdge, RfNode};
 use motionkeys::graph::run::{run, Memo, NodeTiming, Record, RunCtx, Status};
 use motionkeys::node_registry::get_node_registry;
@@ -459,9 +460,14 @@ fn nodes_inside_groups_are_memoized_per_group_node() {
 fn reference_keyframes(object_map: &ObjectMap, notes: &[MIDINote]) -> HashMap<String, Vec<BlendKeyframe>> {
     let targets = object_map.note_targets().unwrap();
     let mut chunks = Vec::new();
-    for note in notes {
+    for (index, note) in notes.iter().enumerate() {
+        let ctx = NoteContext {
+            notes,
+            index: Some(index),
+            fps: None,
+        };
         for target in targets.get(&note.note_number).into_iter().flatten() {
-            chunks.extend(note_curve_keys(&target.object, object_map.generator(&target.animation, &target.object).unwrap(), note));
+            chunks.extend(note_curve_keys(&target.object, object_map.generator(&target.animation, &target.object).unwrap(), note, &ctx).unwrap());
         }
     }
     combine_curve_keys(object_map.objects.keys(), chunks).unwrap()
@@ -487,6 +493,24 @@ fn evaluate_instrument_group_matches_reference() {
         assert_eq!(Some(keys), grouped.get(object), "{}", object);
     }
     assert_eq!(expected.len(), grouped.len());
+}
+
+#[test]
+fn evaluate_instrument_group_gives_mappers_the_track() {
+    // mappers reading the notes around each note: the group has to hand note_keyframes the track and the note's index
+    let mut inputs = json!({ "object_map": object_map(), "midi_notes": notes(60) });
+    for generator in inputs["object_map"]["animations"].as_object_mut().unwrap().values_mut() {
+        generator["amplitude_mapper"] = json!("y * (1 + index / 100 + held / 10 + (prev if prev >= 0 else 0) / 1000)");
+        generator["time_mapper"] = json!("x + 3 if note == 62 else x");
+    }
+    let object_map: ObjectMap = serde_json::from_value(inputs["object_map"].clone()).unwrap();
+    let notes: Vec<MIDINote> = serde_json::from_value(inputs["midi_notes"].clone()).unwrap();
+    let expected = serde_json::to_value(reference_keyframes(&object_map, &notes)).unwrap();
+
+    let root = graph(vec![node("group-1", json!({ "group_id": "evaluate_instrument", "inputs": inputs }))], &[]);
+    let (record, error) = run_graph(&root, builtin_groups(), true);
+    assert_eq!(error, None);
+    assert_eq!(record.results["group-1"]["keyframes"], expected);
 }
 
 #[test]

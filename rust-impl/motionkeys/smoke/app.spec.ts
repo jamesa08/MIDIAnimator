@@ -278,6 +278,29 @@ test("note numbers field keeps what's typed", async ({ page }) => {
     await settle(page);
 });
 
+test("mapper fields check what's typed and set the text", async ({ page }) => {
+    await openWindow(page, withLayout(ALL_DOCKED), "/#/");
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    // the time mapper's field, checked while it's typed and set when it's left
+    const field = node.locator("input.font-mono").first();
+    await field.fill("x * 2");
+    await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "check_expression" && c.args.text === "x * 2" && c.args.vars.includes("note")))).toBe(true);
+    await field.press("Enter");
+    const sets = (await applied(page)).flat().filter((op: any) => op.op === "set_inputs");
+    expect(sets).toContainEqual({ op: "set_inputs", node: "animation_generator-1", inputs: { time_mapper: "x * 2" } });
+    await settle(page);
+});
+
+test("an expression that doesn't compile is marked", async ({ page }) => {
+    await openWindow(page, { ...withLayout(ALL_DOCKED), check_expression: { kind: "unknown_name", message: "unknown name 'nte', did you mean 'note'?", start: 5, end: 8 } }, "/#/");
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    await node.locator("input.font-mono").nth(1).fill("y if nte == 46 else 0");
+    // a red border and the name underlined
+    await expect(node.locator("input.font-mono").nth(1)).toHaveCSS("border-color", "rgb(220, 38, 38)");
+    await expect(node.locator(".expression-error-mark")).toHaveText("nte");
+    await settle(page);
+});
+
 test("note map opens over the graph and closes", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();

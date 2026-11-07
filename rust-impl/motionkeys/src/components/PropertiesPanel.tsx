@@ -9,6 +9,8 @@ import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import SceneTree from "./SceneTree";
+import ExpressionField from "./ExpressionField";
+import { mapperText, useMapperVariables } from "../utils/mapper";
 import { ColorField } from "./ColorPicker";
 import { FRAME, FRAME_COLOR, isLocked, labelSize, locksSize, shrinks, withContents } from "../utils/frames";
 import { usePersistedSet } from "../utils/persist";
@@ -21,7 +23,7 @@ type Option = { value: string; label: string };
 
 // an input with an editor of its own instead of the one its type gets, like the widget on the node. `shown` hides it
 // like the node does
-type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" });
+type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" });
 
 // the names of a list of named things, a mistyped connection can hand over anything
 const names = (items: any): Option[] => (Array.isArray(items) ? items.map((item) => item?.name).filter((name) => typeof name === "string") : []).map((name) => ({ value: name, label: name }));
@@ -49,6 +51,8 @@ const PARAMS: Record<string, Param[]> = {
         { id: "map_layout", kind: "text", shown: () => false },
     ],
     animation_generator: [
+        { id: "time_mapper", kind: "expression", vars: "mapper" },
+        { id: "amplitude_mapper", kind: "expression", vars: "mapper" },
         { id: "animation_overlap", kind: "select", options: () => overlapModes.map((mode) => ({ value: mode.id, label: mode.name })) },
         { id: "overlap_blend", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "crossfade" },
     ],
@@ -218,6 +222,8 @@ function Properties() {
     const [collapsed, setCollapsed] = usePersistedSet("properties.collapsed");
     // the scene tree's open rows, the scene itself starts open
     const [expanded, setExpanded] = usePersistedSet("properties.expanded", ["scene"]);
+    // the names mapper expressions can use
+    const mapperVars = useMapperVariables();
 
     const project = state.rf_instance;
     const openGroup: string = state.open_group ?? "";
@@ -374,6 +380,13 @@ function Properties() {
                     break;
                 case "midi_file":
                     field = <MidiFileField value={value} readOnly={!editable} onCommit={set} />;
+                    break;
+                case "expression":
+                    field = (
+                        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+                            <ExpressionField className="font-mono" value={mapperText(value)} vars={mapperVars} readOnly={!editable} onCommit={set} />
+                        </div>
+                    );
                     break;
             }
             return (

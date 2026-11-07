@@ -1,9 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, KeyframePoint};
+use crate::utils::mapper::{Mappers, NoteContext, NoteVars};
 
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
@@ -45,18 +48,49 @@ pub struct AnimationGenerator {
     pub note_on_anchor_point: f64,
     pub note_off_keyframes: Vec<AnimCurve>,
     pub note_off_anchor_point: f64,
-    // mappers are passed through but not used yet
+    /// an expression giving each key's new time in frames, before the note's offset is added. empty changes nothing
+    #[serde(default)]
     pub time_mapper: String,
+    /// an expression giving each key's new value, before velocity intensity. empty changes nothing
+    #[serde(default)]
     pub amplitude_mapper: String,
     pub velocity_intensity: f64,
     pub animation_overlap: String,
     /// crossfade only: seconds to ease from the old animation into the note
     #[serde(default = "default_overlap_blend")]
     pub overlap_blend: f64,
+    /// the mappers compiled, once for every copy of the generator
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub compiled: CompiledMappers,
 }
 
 fn default_overlap_blend() -> f64 {
     DEFAULT_OVERLAP_BLEND
+}
+
+/// a generator's compiled mappers, shared by its copies. made the first time they're needed, a generator read from JSON
+/// compiles them again. copies are always equal, the mappers they come from are compared
+#[derive(Clone, Default)]
+pub struct CompiledMappers(Arc<OnceLock<Result<Mappers, String>>>);
+
+impl PartialEq for CompiledMappers {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl fmt::Debug for CompiledMappers {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CompiledMappers")
+    }
+}
+
+impl AnimationGenerator {
+    /// the time and amplitude mappers, compiled the first time. an error names the mapper
+    pub fn mappers(&self) -> Result<&Mappers, String> {
+        self.compiled.0.get_or_init(|| Mappers::compile(&self.time_mapper, &self.amplitude_mapper)).as_ref().map_err(String::clone)
+    }
 }
 
 /// one object's animations, each with the notes that trigger it, e.g. {"crash": [49], "ride": [51]}
@@ -233,20 +267,26 @@ impl ObjectMap {
     }
 }
 
-/// the keyframes a note plays on an object, offset to the note's time and scaled by its velocity. one per channel the
-/// generator's curves are on, in channel order, channels with no keys are left out
-pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote) -> Vec<CurveKeys> {
+/// the keyframes a note plays on an object, through the generator's mappers, offset to the note's time and scaled by its
+/// velocity. one per channel the generator's curves are on, in channel order, channels with no keys are left out.
+/// `ctx` is the track around the note and the fps, for the mappers
+pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, ctx: &NoteContext) -> Result<Vec<CurveKeys>, String> {
+    let mappers = gen.mappers()?;
+    // the note's mapper variables, held looks at the whole track so it's only counted when it's used
+    let mut vars = (!mappers.is_identity()).then(|| NoteVars::new(note, ctx, mappers.uses("held")));
+
     // note on and note off curves on the same channel play on the same curve
     let mut channels: BTreeMap<(&str, u32), Vec<BlendKeyframe>> = BTreeMap::new();
     for (curves, offset) in [(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point), (&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point)] {
         for curve in curves {
             // use seconds instead of frames, Blender converts to frames with the scene's frame rate. this keeps timing based on the music rather than frame numbers
-            let keys = note_keyframes(&curve.keyframe_points, offset, note.velocity, gen.velocity_intensity, &curve.data_path, curve.array_index);
+            let keys = note_keyframes(&curve.keyframe_points, offset, note.velocity, gen.velocity_intensity, &curve.data_path, curve.array_index, mappers, vars.as_mut(), ctx.fps())?;
             channels.entry((curve.data_path.as_str(), curve.array_index)).or_default().extend(keys);
         }
     }
 
-    channels
+    // a time mapper can put keys out of order, sorting puts them back
+    Ok(channels
         .into_iter()
         .filter(|(_, keyframes)| !keyframes.is_empty())
         .map(|((data_path, array_index), mut keyframes)| {
@@ -260,21 +300,26 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote) 
                 keyframes,
             }
         })
-        .collect()
+        .collect())
 }
 
-/// offsets a generator's keyframes to a note's time and scales them by its velocity
-fn note_keyframes(keyframes: &[KeyframePoint], offset: f64, velocity: u8, velocity_intensity: f64, data_path: &str, array_index: u32) -> Vec<BlendKeyframe> {
-    keyframes
-        .iter()
-        .filter_map(|kf| {
-            let (time, mut value) = co_of(kf)?;
-            if velocity_intensity != 0.0 {
-                value *= velocity as f64 / 127.0 * velocity_intensity;
-            }
-            Some(BlendKeyframe::new(time + offset, value, data_path, array_index))
-        })
-        .collect()
+/// runs a generator's keyframes through its mappers, offsets them to a note's time and scales them by its velocity, in
+/// that order like the old add-on. `vars` is `None` when there are no mappers
+fn note_keyframes(keyframes: &[KeyframePoint], offset: f64, velocity: u8, velocity_intensity: f64, data_path: &str, array_index: u32, mappers: &Mappers, mut vars: Option<&mut NoteVars>, fps: f64) -> Result<Vec<BlendKeyframe>, String> {
+    let mut keys = Vec::with_capacity(keyframes.len());
+    for kf in keyframes {
+        let Some((mut time, mut value)) = co_of(kf) else {
+            continue;
+        };
+        if let Some(vars) = vars.as_deref_mut() {
+            (time, value) = mappers.map(vars, time, value, fps)?;
+        }
+        if velocity_intensity != 0.0 {
+            value *= velocity as f64 / 127.0 * velocity_intensity;
+        }
+        keys.push(BlendKeyframe::new(time + offset, value, data_path, array_index));
+    }
+    Ok(keys)
 }
 
 /// combines each note's keys into its curve in order with the curve's overlap mode, then flattens to one list per object.

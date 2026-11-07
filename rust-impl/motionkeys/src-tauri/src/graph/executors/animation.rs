@@ -8,7 +8,10 @@ use crate::midi::MIDINote;
 use crate::scene_generics::{AnimCurve, Object, ObjectGroup};
 use crate::utils::note_to_name;
 
+use super::scene::scene_fps;
 use crate::utils::animation::{combine_curve_keys, note_curve_keys, parse_channel, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::console::{self, Level, Source};
+use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
 
 /// Node: keyframes_from_object
 ///
@@ -212,7 +215,7 @@ fn quoted(path: &str) -> Option<(String, &str)> {
 /// "note_on_anchor_point": `f64`,
 /// "note_off_keyframes": `Array<FCurveData>`, multi,
 /// "note_off_anchor_point": `f64`,
-/// "time_mapper": `String`,
+/// "time_mapper": `String`, an expression (utils/mapper.rs), typed in or from a Note Table,
 /// "amplitude_mapper": `String`,
 /// "velocity_intensity": `f64`,
 /// "animation_overlap": `String`,
@@ -221,7 +224,7 @@ fn quoted(path: &str) -> Option<(String, &str)> {
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[node_registry::node]
-pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<String>, amplitude_mapper: Option<String>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>) -> NodeResult {
+pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<&Value>, amplitude_mapper: Option<&Value>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>) -> NodeResult {
     // the keyframe curves are optional, an unconnected one is just no keyframes
     let note_on_keyframes = note_on_keyframes.cloned().unwrap_or_default();
     let note_off_keyframes = note_off_keyframes.cloned().unwrap_or_default();
@@ -253,18 +256,38 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         return Err(format!("overlap blend can't be negative, got {}", overlap_blend));
     }
 
+    // a mapper is an expression, nothing set changes nothing. one saved with the expression inside an object (how the
+    // mappers were saved for a while) reads its expression
+    let mapper = |value: Option<&Value>, name: &str| -> Result<String, String> {
+        match value {
+            None | Some(Value::Null) => Ok(String::new()),
+            Some(Value::String(text)) => Ok(text.clone()),
+            Some(Value::Object(saved)) => Ok(saved.get("expression").and_then(Value::as_str).unwrap_or_default().to_string()),
+            Some(other) => Err(format!("{} must be text, got {}", name, other)),
+        }
+    };
+    let time_mapper = mapper(time_mapper, "Time Mapper")?;
+    let amplitude_mapper = mapper(amplitude_mapper, "Amplitude Mapper")?;
+
     let generator = AnimationGenerator {
         name: name.unwrap_or_default(),
         note_on_keyframes,
         note_on_anchor_point: note_on_anchor_point.unwrap_or_default(),
         note_off_keyframes,
         note_off_anchor_point: note_off_anchor_point.unwrap_or_default(),
-        time_mapper: time_mapper.unwrap_or_default(),
-        amplitude_mapper: amplitude_mapper.unwrap_or_default(),
+        time_mapper,
+        amplitude_mapper,
         velocity_intensity: velocity_intensity.unwrap_or_default(),
         animation_overlap,
         overlap_blend,
+        compiled: Default::default(),
     };
+
+    // the mappers compile once here, a mistake in one fails this node
+    let mappers = generator.mappers()?;
+    if mappers.needs_fps() && scene_fps().is_none() {
+        console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': no scene frame rate (Blender isn't linked), the mappers assume {} fps", generator.name, DEFAULT_FPS));
+    }
 
     let mut outputs = Outputs::new();
     outputs.set("generator", generator);
@@ -780,15 +803,22 @@ pub fn targets_for_note(targets: &BTreeMap<u8, Vec<NoteTarget>>, note: &MIDINote
 /// inputs:
 /// "object_map": `ObjectMap`, where the target's animation is looked up,
 /// "target": `NoteTarget`,
-/// "note": `MIDINote`
+/// "note": `MIDINote`,
+/// "notes": `Array<MIDINote>`, the track the note is in, for the mappers' index, gap, prev, next and held,
+/// "index": `f64`, where the note is in `notes`, looked for when it isn't given
 ///
 /// outputs:
 /// "keys": `Array<CurveKeys>`, one per channel the generator plays on, empty when it has no keyframes
 #[node_registry::node]
-pub fn note_keyframes(object_map: &ObjectMap, target: &NoteTarget, note: &MIDINote) -> NodeResult {
+pub fn note_keyframes(object_map: &ObjectMap, target: &NoteTarget, note: &MIDINote, notes: Option<&Vec<MIDINote>>, index: Option<f64>) -> NodeResult {
     let generator = object_map.generator(&target.animation, &target.object)?;
+    let ctx = NoteContext {
+        notes: notes.map(Vec::as_slice).unwrap_or(&[]),
+        index: index.filter(|i| *i >= 0.0).map(|i| i as usize),
+        fps: scene_fps(),
+    };
     let mut outputs = Outputs::new();
-    outputs.set("keys", note_curve_keys(&target.object, generator, note));
+    outputs.set("keys", note_curve_keys(&target.object, generator, note, &ctx)?);
     Ok(outputs)
 }
 

@@ -7,6 +7,9 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
+import { useStore } from "@xyflow/react";
+import ExpressionField from "../components/ExpressionField";
+import { mapperText, useMapperVariables } from "../utils/mapper";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -88,8 +91,23 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
             <></>
         );
 
+    // a mapper is typed in unless something (a Note Table) is connected to it. stored edges are reversed, `source` is the
+    // node taking the value
+    const vars = useMapperVariables();
+    const connected = useStore((s) => s.edges.flatMap((e) => (e.source === id ? [e.sourceHandle] : [])).join("\n")).split("\n");
+    const mapperComponent = (input: "time_mapper" | "amplitude_mapper") =>
+        connected.includes(input) ? (
+            <></>
+        ) : (
+            <div style={{ position: "relative" }}>
+                <ExpressionField className="node-field border border-gray-400 rounded px-2 py-1" value={mapperText(data.inputs?.[input])} vars={vars} onCommit={(text) => setInputs(id, { [input]: text === "" ? null : text })} />
+            </div>
+        );
+
     const uiInject = {
         name: nameComponent,
+        time_mapper: mapperComponent("time_mapper"),
+        amplitude_mapper: mapperComponent("amplitude_mapper"),
         animation_overlap: overlapComponent,
         overlap_blend: blendComponent,
     };

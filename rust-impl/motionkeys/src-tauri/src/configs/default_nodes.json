@@ -202,13 +202,13 @@
                         "id": "time_mapper",
                         "name": "Time Mapper",
                         "data_type": "String",
-                        "description": "Reserved; not used by the executor yet."
+                        "description": "Gives each key's new time in frames, relative to the curve, before the note's offset and velocity intensity, e.g. x * 2 or x + 5 if note == 38 else x. Connect a Note Table, or type one in. Expressions are Python expression syntax (arithmetic, comparisons, and/or/not, a if c else b, lists, in, range, abs/min/max/round/int/float/bool/sum/len, math functions bare or as math.name, plus clamp(v, lo, hi) and lerp(a, b, t)). Empty changes nothing. Variables: x (the key's time in frames, relative to the curve; frames is the same), sec (that time in seconds), y (the key's value), note, vel (0-127), dur and dur_sec (note length in frames and seconds), t and t_sec (the note's start in the song), octave (note // 12 - 1, middle C 60 is 4), pc (note % 12), index (the note's position in its track, from 0), gap and gap_sec (time since the previous note started, inf for the first), prev and next (the previous and next note numbers, -1 when there isn't one), held (notes sounding at the note's start, itself included), fps (the scene's frame rate, 24 with no scene)."
                     },
                     {
                         "id": "amplitude_mapper",
                         "name": "Amplitude Mapper",
                         "data_type": "String",
-                        "description": "Reserved; not used by the executor yet."
+                        "description": "Gives each key's new value before velocity intensity, e.g. y if note == 46 else 0 (a cymbal choke with overlap next) or y * vel / 127. Connect a Note Table, or type one in. Expressions are Python expression syntax (arithmetic, comparisons, and/or/not, a if c else b, lists, in, range, abs/min/max/round/int/float/bool/sum/len, math functions bare or as math.name, plus clamp(v, lo, hi) and lerp(a, b, t)). Empty changes nothing. Variables: x (the key's time in frames, relative to the curve; frames is the same), sec (that time in seconds), y (the key's value), note, vel (0-127), dur and dur_sec (note length in frames and seconds), t and t_sec (the note's start in the song), octave (note // 12 - 1, middle C 60 is 4), pc (note % 12), index (the note's position in its track, from 0), gap and gap_sec (time since the previous note started, inf for the first), prev and next (the previous and next note numbers, -1 when there isn't one), held (notes sounding at the note's start, itself included), fps (the scene's frame rate, 24 with no scene)."
                     },
                     {
                         "id": "velocity_intensity",
@@ -688,7 +688,7 @@
             "id": "note_keyframes",
             "name": "Note Keyframes",
             "category": "animation",
-            "description": "The keyframes one note plays on one target: the generator's keys moved to the note's time and scaled by velocity.",
+            "description": "The keyframes one note plays on one target: the generator's keys through its mappers, moved to the note's time and scaled by velocity.",
             "executor": "rust",
             "realtime": true,
             "handles": {
@@ -710,6 +710,18 @@
                         "name": "Note",
                         "data_type": "MIDINote",
                         "description": "The note that plays it."
+                    },
+                    {
+                        "id": "notes",
+                        "name": "Notes",
+                        "data_type": "Array<MIDINote>",
+                        "description": "The track the note is in, for the mappers' index, gap, prev, next and held. Unconnected, the note is on its own."
+                    },
+                    {
+                        "id": "index",
+                        "name": "Index",
+                        "data_type": "f64",
+                        "description": "Where the note is in Notes, from a For Each's Index. Unconnected, it's looked up."
                     }
                 ],
                 "outputs": [

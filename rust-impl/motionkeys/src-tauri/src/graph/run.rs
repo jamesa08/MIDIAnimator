@@ -185,6 +185,8 @@ pub struct Memo {
     hits: usize,
     /// what each node writing to Blender was given in its last write that went through, by path
     written: HashMap<String, Written>,
+    /// the scene's fps the nodes ran with
+    fps: Option<f64>,
 }
 
 /// the inputs of a write that went through
@@ -207,6 +209,14 @@ struct NodeMemo {
 }
 
 impl Memo {
+    /// a run on a scene with another fps runs every node again: mappers read the fps without it being an input
+    pub fn set_fps(&mut self, fps: Option<f64>) {
+        if self.fps != fps {
+            self.nodes.clear();
+            self.fps = fps;
+        }
+    }
+
     /// how many nodes and zones the last run took from the memo instead of running them
     pub fn hits(&self) -> usize {
         self.hits

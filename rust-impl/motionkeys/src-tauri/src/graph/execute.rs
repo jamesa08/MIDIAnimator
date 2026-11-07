@@ -120,7 +120,8 @@ pub async fn run_instance(id: String, realtime: bool) {
 
     // one run at a time uses the memos, a second one waits. the state isn't locked while this one is
     let mut memo_lock = MEMO.lock().unwrap_or_else(PoisonError::into_inner);
-    let memo = memo_lock.remove(&id).unwrap_or_default();
+    let mut memo = memo_lock.remove(&id).unwrap_or_default();
+    memo.set_fps(scene.as_ref().and_then(|scene| scene.fps));
     let mut ctx = RunCtx::new(&specs, &registry, &groups, realtime).with_memo(memo);
     ctx.inspect = open_group;
 

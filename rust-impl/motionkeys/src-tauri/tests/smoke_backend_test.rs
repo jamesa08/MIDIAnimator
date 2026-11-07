@@ -18,6 +18,7 @@ use motionkeys::state::history::{self, Capture};
 use motionkeys::state::{get_project_status, get_state, lock, migrate_rf_instance, AppState, SavedProject, STATE};
 use motionkeys::ui::keybinds::get_keymap;
 use motionkeys::utils::console::console_entries;
+use motionkeys::utils::mapper::{check_expression, mapper_variables};
 use motionkeys::utils::ui::get_build_info;
 
 #[test]
@@ -77,6 +78,9 @@ fn dump_backend_for_smoke_test() {
         ("console_entries", serde_json::to_value(console_entries()).unwrap()),
         ("get_run_timings", serde_json::to_value(get_run_timings("tab-1".to_string())).unwrap()),
         ("graph_unused", serde_json::to_value(graph_unused("tab-1".to_string(), None).unwrap()).unwrap()),
+        // the mapper fields: their variables and an expression that checks out
+        ("mapper_variables", serde_json::to_value(mapper_variables()).unwrap()),
+        ("check_expression", serde_json::to_value(check_expression("y * vel / 127".to_string(), mapper_variables().iter().map(|v| v.to_string()).collect())).unwrap()),
     ]);
     std::fs::create_dir_all("../smoke").unwrap();
     std::fs::write("../smoke/backend.json", serde_json::to_string(&backend).unwrap()).unwrap();
