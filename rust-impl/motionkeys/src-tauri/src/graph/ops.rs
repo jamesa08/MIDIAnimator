@@ -98,6 +98,12 @@ pub enum Op {
         node: String,
         linked_only: bool,
     },
+    /// which wires an Assign Notes to Objects node's note map and its preview show: "notes", "animations", or both
+    /// (empty). only how the map looks, like linked only
+    MapView {
+        node: String,
+        view: String,
+    },
     /// the name shown in a node's header instead of its type's, empty goes back to the type's
     SetLabel {
         node: String,
@@ -225,6 +231,9 @@ impl Op {
             Op::LinkedOnly {
                 ..
             } => "all_notes",
+            Op::MapView {
+                ..
+            } => "map_view",
             Op::SetLabel {
                 ..
             } => "set_label",
@@ -427,6 +436,21 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
                 node.data.insert("linked_only".to_string(), json!(true));
             } else {
                 node.data.remove("linked_only");
+            }
+            Ok(())
+        }
+        Op::MapView {
+            node,
+            view,
+        } => {
+            if !["", "notes", "animations"].contains(&view.as_str()) {
+                return Err(format!("unknown map view '{}', expected notes, animations or empty for both", view));
+            }
+            let node = target(project, scope)?.node_mut(node).ok_or_else(|| format!("no node '{}'", node))?;
+            if view.is_empty() {
+                node.data.remove("map_view");
+            } else {
+                node.data.insert("map_view".to_string(), json!(view));
             }
             Ok(())
         }
@@ -730,6 +754,10 @@ pub fn describe(op: &Op, before: &Graph, after: &Graph, scope: Option<&str>, spe
             ..
         }
         | Op::LinkedOnly {
+            node,
+            ..
+        }
+        | Op::MapView {
             node,
             ..
         } => name(after, node),

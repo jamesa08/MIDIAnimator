@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
     expand: "Expand",
     linked_only: "Linked Only",
     all_notes: "All Notes",
+    map_view: "Map View",
     move: "Move",
     resize: "Resize",
     select: "Select",

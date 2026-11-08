@@ -350,6 +350,26 @@ fn linked_only_view() {
     assert!(run(&mut graph, None, json!([{ "op": "linked_only", "node": "nope", "linked_only": true }])).is_err());
 }
 
+// the note map's view (notes, animations or both) is kept on its node like linked only, it doesn't change what the
+// graph computes
+#[test]
+fn map_view() {
+    let mut graph = fixture();
+    let start = graph.to_rf();
+    let view = |graph: &Graph| graph.node("assign_notes_to_objects-1").unwrap().data.get("map_view").cloned();
+
+    let op = json!({ "op": "map_view", "node": "assign_notes_to_objects-1", "view": "animations" });
+    run(&mut graph, None, json!([op.clone()])).unwrap();
+    assert_eq!(view(&graph), Some(json!("animations")));
+    assert_eq!(serde_json::from_value::<Op>(op).unwrap().name(), "map_view");
+    assert!(!Diff::between(&start, &graph.to_rf()).affects_output());
+
+    // empty is both, which isn't kept. anything else is an error
+    run(&mut graph, None, json!([{ "op": "map_view", "node": "assign_notes_to_objects-1", "view": "" }])).unwrap();
+    assert_eq!(view(&graph), None);
+    assert!(run(&mut graph, None, json!([{ "op": "map_view", "node": "assign_notes_to_objects-1", "view": "wires" }])).unwrap_err().contains("unknown map view"));
+}
+
 // a group goes once no group node runs it, at the top level or inside a group that's run, in the same undo step as the
 // node. one being edited stays, and cut and paste brings one back
 #[test]
