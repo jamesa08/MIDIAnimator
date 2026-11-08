@@ -6,7 +6,8 @@ import { SocketRef } from "../utils/graphOps";
 import { inputHandle, outputHandle, specLookup } from "../utils/groups";
 import { useNodeSpecs } from "../utils/nodeEntries";
 import { multiSlotOffset, socketCategory } from "../utils/sockets";
-import { draggedAlong, handleSide, sameSocket, socketPoints } from "./nodegraph/SocketHandle";
+import { draggedAlong, handleSide, sameSocket, socketPoints, takesAll } from "./nodegraph/SocketHandle";
+import { useHold } from "../utils/keymap";
 import { connectAlong } from "./nodegraph/connectAlong";
 
 // one link being dragged, in its sockets' colors like a connected edge (TypedEdge): fading from `start`'s color to `end`'s
@@ -43,17 +44,18 @@ export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle
     // a socket's color from its type, a graph whose nodes have no specs (a note map) gives its own as the line's stroke
     const specs = useNodeSpecs();
     const { groups, scope } = useGroupContext();
+    const toOne = useHold("node_editor", "connect_to_one");
     const lookup = useMemo(() => specLookup(Object.fromEntries(specs.map((spec: any) => [spec.id, spec])), groups), [specs, groups]);
 
     const links = useMemo(() => {
         if (!dropOn || !fromNode || !fromHandle?.id || along.length === 0) return [];
         const from = { node: fromNode.id, side: fromSide, socket: fromHandle.id };
         const [output, input] = fromSide === "outputs" ? [from, dropOn] : [dropOn, from];
-        // outputs dropped on a multi input all go into it
+        // outputs dropped on a multi input all go into it, and on a note map's socket with Connect All to One held
         const inputNode = nodeLookup.get(input.node);
-        const multi = fromSide === "outputs" && !!inputNode && !!inputHandle(lookup, inputNode, input.socket, scope).multi;
+        const multi = (toOne && takesAll(nodeLookup, dropOn)) || (fromSide === "outputs" && !!inputNode && !!inputHandle(lookup, inputNode, input.socket, scope).multi);
         return connectAlong(nodeLookup, edges, output, input, along, multi);
-    }, [dropOn?.node, dropOn?.socket, along, nodeLookup, edges, lookup, scope]);
+    }, [dropOn?.node, dropOn?.socket, along, nodeLookup, edges, lookup, scope, toOne]);
 
     // over a multi input the link ends at the slot it will take, under the links it has
     const end = useMemo(() => {

@@ -74,6 +74,10 @@ export function draggedAlong(nodeLookup: Map<string, InternalNode>, from: Socket
     return [...nodeLookup.values()].flatMap(socketPoints).filter((p) => p.side === from.side && !sameSocket(p, from) && selected(nodeLookup.get(p.node)!, p.side, p.socket));
 }
 
+// whether a socket takes every socket dragged along onto it when no other socket is in reach, from either side: a note
+// map node's (data.takes_all)
+export const takesAll = (nodeLookup: Map<string, InternalNode>, socket: SocketRef) => !!(nodeLookup.get(socket.node)?.internals.userNode.data as any)?.takes_all;
+
 // react flow only takes presses on a socket that can start a link, one that picks up its link instead still has to
 const PICK_UP_STYLE = { pointerEvents: "all", cursor: "crosshair" };
 

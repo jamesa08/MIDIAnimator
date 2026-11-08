@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow } from "@xyflow/react";
-import { blockUntilRelease, useHold, useKeymap, useModal } from "../../utils/keymap";
+import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi } from "@xyflow/react";
+import { blockUntilRelease, isHeld, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { ApplyOptions } from "../../utils/graphOps";
 import { socketStyle } from "../../utils/sockets";
 import { SOCKET_COLORS, nodeColors } from "../../styles";
@@ -13,6 +13,8 @@ import { MapData, MapView, NoteMap, isAnimationLinked, isLinked, mapView, shownA
 import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { useFrameView } from "./frameView";
 import { canvasToolCommands, setEditorState } from "../../utils/editorState";
+import { SocketPoint, draggedAlong, handleSide } from "./SocketHandle";
+import { connectAlong } from "./connectAlong";
 
 // the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes and the node's animations wired to the
 // object group's objects, drawn as a graph of small nodes that can be selected and moved like the node editor's. an
@@ -66,6 +68,11 @@ const isObject = (id: string) => id.startsWith("o:");
 // flow's sources are inputs and its targets outputs: a note's and an animation's socket is an output, an object's an
 // input that takes both
 const socket = (dataType: string) => ({ width: 14, height: 14, ...socketStyle(dataType) });
+// each node's one socket. a selected node's socket is selected, so a wire dragged off it brings the other selected
+// nodes' along like the graph's selected sockets. they fill the free sockets from the drop like the graph's, or all
+// connect to the socket it's dropped on with Connect All to One held or when it's the only one in reach (takes_all)
+const OUT = "out";
+const IN = "in";
 
 const NoteNode = memo(({ data }: NodeProps) => (
     // notes the MIDI doesn't play are paler and in italics
@@ -74,7 +81,7 @@ const NoteNode = memo(({ data }: NodeProps) => (
             <span className="flex-1">{noteToName(data.note as number)}</span>
             <span className="note-map-number">{data.note as number}</span>
         </div>
-        <Handle type="target" position={Position.Right} style={socket("MIDINote")} />
+        <Handle type="target" id={OUT} position={Position.Right} style={socket("MIDINote")} />
     </div>
 ));
 
@@ -85,7 +92,7 @@ const AnimationNode = memo(({ data }: NodeProps) => (
         <div className="node-header">
             <span className="flex-1 truncate">{(data.name as string) || "Animation Generator"}</span>
         </div>
-        <Handle type="target" position={Position.Right} style={socket("AnimationGenerator")} />
+        <Handle type="target" id={OUT} position={Position.Right} style={socket("AnimationGenerator")} />
     </div>
 ));
 
@@ -99,7 +106,7 @@ const ObjectNode = memo(({ data }: NodeProps) => (
         <div className="node-header">
             <span className="flex-1 truncate">{data.name as string}</span>
         </div>
-        <Handle type="source" position={Position.Left} style={socket("Array<MIDINote>")} />
+        <Handle type="source" id={IN} position={Position.Left} style={socket("Array<MIDINote>")} />
     </div>
 ));
 
@@ -306,14 +313,17 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     const built = useMemo<Node[]>(() => {
         const at = place(layout);
         return [
-            ...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n) } })),
-            ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !info.animations.includes(a) } })),
-            ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: info.objectNames[o] ?? o } })),
+            ...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n), takes_all: true } })),
+            ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !info.animations.includes(a), takes_all: true } })),
+            ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: info.objectNames[o] ?? o, takes_all: true } })),
         ];
     }, [place, visible, shownAnimationNodes, objects, info.objectNames, midiNotes, info.animations, layout]);
     // the notes' and the animations' wires to the objects, the view's. objects that aren't in the group aren't drawn
     const builtWires = useMemo<Edge[]>(
-        () => [...(showNotes ? objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))) : []), ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), target: animationKey(a) })))],
+        () => [
+            ...(showNotes ? objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), sourceHandle: IN, target: noteKey(n), targetHandle: OUT }))) : []),
+            ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), sourceHandle: IN, target: animationKey(a), targetHandle: OUT }))),
+        ],
         [showNotes, objects, map, shownAnimationNodes]
     );
 
@@ -347,6 +357,8 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     }, [wiresKey]);
     const nodesRef = useRef(nodes);
     nodesRef.current = nodes;
+    // what's drawn: a selected node's socket is selected too
+    const shownNodes = useMemo(() => nodes.map((n) => ({ ...n, selectedSockets: n.selected ? (isObject(n.id) ? { inputs: [IN], outputs: [] } : { inputs: [], outputs: [OUT] }) : undefined })), [nodes]);
 
     // a drag that finished stores where the moved nodes are, in either mode (it doesn't change the map)
     const onNodesChange = useCallback(
@@ -382,25 +394,46 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
 
     // a note's or an animation's socket dragged to an object's (or back) connects them. stored like the graph's edges,
     // the source is the object taking them
+    const wire = (next: NoteMap, source: string, target: string) => {
+        if (!isObject(source)) return;
+        const object = source.slice(2);
+        if (isNote(target)) {
+            const list = (next.objects[object] ??= []);
+            const note = Number(target.slice(2));
+            if (!list.includes(note)) list.push(note);
+        } else if (isAnimation(target)) {
+            const list = (next.animations[target.slice(2)] ??= []);
+            if (!list.includes(object)) list.push(object);
+        }
+    };
+    // the other selected nodes a wire dragged off a selected node brings along, and that wire once it's dropped on a
+    // socket. like the node editor they're all connected to it when the drag ends, one undo step
+    const store = useStoreApi();
+    const alongRef = useRef<SocketPoint[]>([]);
+    const droppedRef = useRef<Connection | null>(null);
     const onConnect = useCallback(
-        ({ source, target }: Connection) => {
-            if (!isObject(source)) return;
-            const object = source.slice(2);
+        (connection: Connection) => {
+            if (alongRef.current.length > 0) return void (droppedRef.current = connection);
             const next = copyMap(map);
-            if (isNote(target)) {
-                const list = (next.objects[object] ??= []);
-                const note = Number(target.slice(2));
-                if (!list.includes(note)) list.push(note);
-            } else if (isAnimation(target)) {
-                const list = (next.animations[target.slice(2)] ??= []);
-                if (!list.includes(object)) list.push(object);
-            } else {
-                return;
-            }
+            wire(next, connection.source, connection.target);
             commit(next);
         },
         [map, commit]
     );
+    const onConnectEnd = useCallback(() => {
+        const along = alongRef.current;
+        const dropped = droppedRef.current;
+        alongRef.current = [];
+        droppedRef.current = null;
+        if (!dropped) return;
+        const { nodeLookup, edges } = store.getState();
+        const output = { node: dropped.target, side: "outputs" as const, socket: OUT };
+        const input = { node: dropped.source, side: "inputs" as const, socket: IN };
+        const next = copyMap(map);
+        wire(next, dropped.source, dropped.target);
+        for (const link of connectAlong(nodeLookup, edges, output, input, along, isHeld("node_editor", "connect_to_one"))) wire(next, link.input.node, link.output.node);
+        commit(next);
+    }, [map, commit, store]);
     const isValidConnection = useCallback((c: Edge | Connection) => isObject(c.source) && (isNote(c.target) || isAnimation(c.target)), []);
 
     // MARK: - Tools
@@ -672,11 +705,13 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         else if (isAnimation(id)) setFront("animations");
     };
     const startConnect = useCallback(
-        (_: any, { nodeId }: { nodeId: string | null }) => {
+        (_: any, { nodeId, handleId, handleType }: { nodeId: string | null; handleId: string | null; handleType: "source" | "target" | null }) => {
             blockKeys();
             setDragColor(wireColor(nodeId ?? ""));
+            alongRef.current = nodeId && handleId && handleType ? draggedAlong(store.getState().nodeLookup, { node: nodeId, side: handleSide(handleType), socket: handleId }) : [];
+            droppedRef.current = null;
         },
-        [blockKeys]
+        [blockKeys, store]
     );
 
     // right click on a node opens its menu, it becomes the selection unless it's in it already. the empty map's menu
@@ -716,7 +751,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         <>
             <NodeGraphCanvas
                 className={`group-canvas${view === "combined" ? ` note-map-front-${front}` : ""}`}
-                nodes={nodes}
+                nodes={shownNodes}
                 edges={wires}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
@@ -724,6 +759,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
+                onConnectEnd={onConnectEnd}
                 isValidConnection={isValidConnection}
                 onConnectStart={startConnect}
                 onSelectionStart={blockKeys}

@@ -55,7 +55,8 @@
             { "id": "pan_tool", "name": "Pan Tool", "keys": [] },
             { "id": "zoom_tool", "name": "Zoom Tool", "keys": [] },
             { "id": "box_select", "name": "Box Select", "keys": ["B"], "hold": true },
-            { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true }
+            { "id": "pan", "name": "Pan", "keys": ["Alt"], "hold": true },
+            { "id": "connect_to_one", "name": "Connect All to One", "keys": ["Shift"], "hold": true }
         ]
     },
     {

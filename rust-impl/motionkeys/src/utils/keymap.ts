@@ -344,6 +344,12 @@ export function useHold(scope: string, command: string): boolean {
     return useSyncExternalStore(subscribeHolds, () => keys.some((key) => held.has(key)));
 }
 
+// the same outside react, read once (a drop)
+export function isHeld(scope: string, command: string): boolean {
+    const keys = keymap?.scopes.find((s) => s.id === scope)?.commands.find((c) => c.id === command)?.keys ?? [];
+    return keys.some((key) => held.has(key));
+}
+
 // the event.code values of the hold command `command` in `scope`, for react flow's own key props
 export function useHoldCodes(scope: string, command: string): string[] {
     const keys =

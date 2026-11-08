@@ -1,6 +1,6 @@
 import { Edge, InternalNode } from "@xyflow/react";
 import { SocketRef } from "../../utils/graphOps";
-import { SocketPoint, sameSocket, socketPoints } from "./SocketHandle";
+import { SocketPoint, sameSocket, socketPoints, takesAll } from "./SocketHandle";
 
 // how far (flow units) from the drop a node can be and still take sockets dragged along with a link
 const ALONG_REACH = 600;
@@ -13,7 +13,8 @@ export type AlongLink = { socket: SocketPoint; target: SocketPoint; output: Sock
 // dropped on node below it then the nearest nodes below, top to bottom. the ones above it fill up the same way, so no
 // two links cross. each takes the next free socket whatever its type, like the dragged link. an input that's already
 // connected or tagged is never taken, nor one that makes a cycle. outputs dropped on a multi input (`multi`) all go into
-// it, top to bottom
+// it, top to bottom, and so do sockets on either side dropped on a note map's socket (takesAll) with Connect All to One
+// held or no other socket in reach
 export function connectAlong(nodeLookup: Map<string, InternalNode>, edges: Edge[], output: SocketRef, input: SocketRef, along: SocketPoint[], multi = false): AlongLink[] {
     if (along.length === 0) return [];
     const points = [...nodeLookup.values()].filter((n) => !n.hidden).flatMap(socketPoints);
@@ -44,14 +45,16 @@ export function connectAlong(nodeLookup: Map<string, InternalNode>, edges: Edge[
         return false;
     };
 
-    // a multi input takes every output that isn't already linked to it and doesn't make a cycle
-    if (multi && side === "outputs") {
-        const linked = (s: SocketRef) => edges.some((e) => e.source === input.node && e.sourceHandle === input.socket && e.target === s.node && e.targetHandle === s.socket);
-        return along
-            .filter((socket) => socket.node !== input.node && !linked(socket) && !reaches(input.node, socket.node))
+    // the dropped on socket takes every one of `sockets` that isn't already linked to it and doesn't make a cycle
+    const intoDrop = (sockets: SocketPoint[]): AlongLink[] => {
+        const ends = (socket: SocketPoint): [SocketRef, SocketRef] => (side === "outputs" ? [socket, drop] : [drop, socket]);
+        const linked = ([out, inp]: [SocketRef, SocketRef]) => edges.some((e) => e.source === inp.node && e.sourceHandle === inp.socket && e.target === out.node && e.targetHandle === out.socket);
+        return sockets
+            .filter((socket) => socket.node !== drop.node && !linked(ends(socket)) && !reaches(ends(socket)[1].node, ends(socket)[0].node))
             .sort((a, b) => a.y - b.y || a.x - b.x)
-            .map((socket) => ({ socket, target: drop, output: socket, input: drop }));
-    }
+            .map((socket) => ({ socket, target: drop, output: ends(socket)[0], input: ends(socket)[1] }));
+    };
+    if (multi) return intoDrop(along);
     const tagged = (s: SocketRef) => !!(nodeLookup.get(s.node)?.data as any)?.input_tags?.[s.socket];
     const taken = new Set([...links.map((l) => key({ node: l.to, side: "inputs", socket: l.input })), ...points.filter((p) => p.side === "inputs" && tagged(p)).map(key), key(output)]);
 
@@ -67,6 +70,7 @@ export function connectAlong(nodeLookup: Map<string, InternalNode>, edges: Edge[
     const own = rows(drop.node);
     const down = [...own.filter((p) => p.y > drop.y), ...others.filter((n) => middle(n) > drop.y).flatMap((n) => rows(n.id))];
     const up = [...own.filter((p) => p.y < drop.y).reverse(), ...others.filter((n) => middle(n) <= drop.y).flatMap((n) => rows(n.id).reverse())];
+    if (down.length === 0 && up.length === 0 && takesAll(nodeLookup, drop)) return intoDrop(along);
 
     const found: AlongLink[] = [];
     const fill = (sockets: SocketPoint[], slots: SocketPoint[]) => {
