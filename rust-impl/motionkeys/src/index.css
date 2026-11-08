@@ -57,12 +57,6 @@
     font-family: "Helvetica", sans-serif;
 }
 
-.blender {
-    background: url(blender.png);
-    background-size: contain;
-    background-repeat: no-repeat;
-}
-
 /* prevent overscroll bounce */
 body {
     overflow: hidden;

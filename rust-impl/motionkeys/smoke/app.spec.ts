@@ -212,7 +212,7 @@ test("console window filters, finds and shows the run", async ({ page }) => {
     // the fixture's run is in the backlog
     await expect(page.getByText("Run finished", { exact: false }).first()).toBeVisible();
     // each filter off and on again, the source "Run" comes after the view's
-    for (const name of ["Error", "Warn", "Info", "Debug", "Run", "Node", "Blender", "App", "Rust", "JS"]) {
+    for (const name of ["Error", "Warn", "Info", "Debug", "Run", "Node", "3D App", "App", "Rust", "JS"]) {
         await page.getByRole("button", { name, exact: true }).last().click();
         await page.getByRole("button", { name, exact: true }).last().click();
     }

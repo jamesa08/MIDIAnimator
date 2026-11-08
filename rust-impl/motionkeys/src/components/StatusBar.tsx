@@ -79,11 +79,14 @@ function StatusBar() {
         if (text) showStatus(text);
     }, [write?.seq]);
 
-    // Blender connecting and going away, not what it was when the app started
+    // the 3D app connecting and going away, not what it was when the app started. the name is gone once it's away, so
+    // the last one is kept
     const connected: boolean | undefined = state?.connected;
     const wasConnected = useRef(connected);
+    const appName = useRef("");
+    if (state?.connected_name) appName.current = state.connected_name;
     useEffect(() => {
-        if (wasConnected.current !== undefined && connected !== undefined && connected !== wasConnected.current) showStatus(connected ? "Blender connected" : "Blender disconnected");
+        if (wasConnected.current !== undefined && connected !== undefined && connected !== wasConnected.current) showStatus(connected ? `${appName.current} connected` : `${appName.current} disconnected`);
         wasConnected.current = connected;
     }, [connected]);
 

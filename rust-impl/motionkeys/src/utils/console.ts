@@ -8,7 +8,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 // (src/components/ConsoleOverlay.tsx) and the console window (src/windows/Console.tsx) show it
 
 export type Level = "error" | "warn" | "info" | "debug";
-export type Source = "run" | "node" | "blender" | "app" | "rust" | "js";
+export type Source = "run" | "node" | "bridge" | "app" | "rust" | "js";
 // `time` in milliseconds since the unix epoch, `node` a node's path in `tab`, `ms` how long what it's about took
 export type ConsoleEntry = { id: number; time: number; level: Level; source: Source; message: string; node: string | null; tab: string | null; ms: number | null };
 // settings.json "console"
@@ -18,7 +18,7 @@ export type NodeTiming = { node: string; node_type: string; label: string; cache
 export type RunTimings = { tab: string; realtime: boolean; ms: number; nodes: NodeTiming[] };
 
 export const LEVELS: Level[] = ["error", "warn", "info", "debug"];
-export const SOURCES: Source[] = ["run", "node", "blender", "app", "rust", "js"];
+export const SOURCES: Source[] = ["run", "node", "bridge", "app", "rust", "js"];
 
 // the backend keeps this many (CAPACITY in console.rs), so does each window
 const CAPACITY = 5000;

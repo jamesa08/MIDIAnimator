@@ -301,7 +301,7 @@ function Properties() {
                     </>
                 )}
                 {section(
-                    "Blender",
+                    "Connection",
                     <>
                         <Row name="File" readOnly>
                             <Value>{state.connected ? state.connected_file_name : ""}</Value>

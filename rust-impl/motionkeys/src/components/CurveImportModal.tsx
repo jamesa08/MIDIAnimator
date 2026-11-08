@@ -6,7 +6,7 @@ interface CurveImportModalProps {
     onCancel: () => void;
 }
 
-// asked before importing the keyframes of objects over the keyframe limit (src-tauri/src/blender/curves.rs)
+// asked before importing the keyframes of objects over the keyframe limit (src-tauri/src/bridge/curves.rs)
 function CurveImportModal({ objects, onImport, onCancel }: CurveImportModalProps) {
     // takes the keys while it's up: cancel, or confirm which imports unless a button is focused (that one's pressed)
     useModal(

@@ -14,7 +14,7 @@ const ROW_HEIGHT = 18;
 // the toolbar's copy button asks the log for its rows
 const COPY_EVENT = "console-copy-rows";
 const LEVEL_NAMES: Record<Level, string> = { error: "Error", warn: "Warn", info: "Info", debug: "Debug" };
-const SOURCE_NAMES: Record<Source, string> = { run: "Run", node: "Node", blender: "Blender", app: "App", rust: "Rust", js: "JS" };
+const SOURCE_NAMES: Record<Source, string> = { run: "Run", node: "Node", bridge: "3D App", app: "App", rust: "Rust", js: "JS" };
 
 // the time of day an entry came, to the millisecond
 function clock(time: number) {

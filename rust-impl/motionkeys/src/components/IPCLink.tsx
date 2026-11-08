@@ -100,7 +100,7 @@ function IPCLink() {
     };
 
     // links Blender to the tab on screen, it checks the scene first (see go_live in src-tauri/src/state/mod.rs)
-    // objects over the keyframe limit the graph picked, imported or left out (src-tauri/src/blender/curves.rs)
+    // objects over the keyframe limit the graph picked, imported or left out (src-tauri/src/bridge/curves.rs)
     const importCurves = () => invoke("accept_curve_import").catch((error) => console.error("Keyframe import failed:", error));
     const skipCurves = () => invoke("reject_curve_import").catch((error) => console.error("Keyframe import failed:", error));
 
@@ -113,7 +113,7 @@ function IPCLink() {
         return (
             <>
                 <div className="text-sm leading-6 wrap-anywhere">
-                    <p>{`${state.connected_application.toProperCase()} version ${state.connected_version}`}</p>
+                    <p>{`${state.connected_name} version ${state.connected_version}`}</p>
                     <p>{`${state.connected_file_name}`}</p>
                     <p>{`Port: ${state.port}`}</p>
                 </div>
@@ -161,7 +161,7 @@ function IPCLink() {
                     <p className="text-sm text-center py-4">
                         Disconnected.
                         <br />
-                        Please connect on Blender to start.
+                        Connect the MotionKeys bridge in your 3D app to start.
                     </p>
                 )}
             </div>
@@ -171,8 +171,10 @@ function IPCLink() {
     return (
         <>
             <div ref={linkRef} data-tauri-drag-region onClick={openMenu} className="ipc-link flex items-center gap-2 pl-3 pr-5 ml-auto">
-                <div className={`${state.connected_application} size-6 ${state.connected ? "" : "hidden"}`} />
-                <div className={`mac-traffic-light ${status.color}`}></div>
+                {/* the icon the connected app's bridge sent. neither it nor the dot shrinks, the dot has nothing in it to
+                    keep it from squashing */}
+                {state.connected && state.connected_icon && <img src={state.connected_icon} className="size-6 shrink-0 object-contain" draggable={false} alt="" />}
+                <div className={`mac-traffic-light shrink-0 ${status.color}`}></div>
                 <span ref={labelRef} className="helvetica font-bold text-[8px] translate-y-px">
                     {status.text}
                 </span>

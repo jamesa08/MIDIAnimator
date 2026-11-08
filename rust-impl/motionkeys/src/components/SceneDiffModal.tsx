@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { useModal } from "../utils/keymap";
 
 interface SceneDiff {
+    // the name of the app the new scene is from
+    app: string;
+    app_change: { saved: string; connected: string } | null;
     missing_objects: string[];
     new_objects: string[];
     missing_collections: string[];
@@ -24,7 +27,7 @@ function SceneDiffModal({ diff, onAccept, onReject, onClose }: SceneDiffModalPro
 
     if (!diff) return null;
 
-    const hasChanges = diff.missing_objects.length > 0 || diff.new_objects.length > 0 || diff.missing_collections.length > 0 || diff.new_collections.length > 0;
+    const hasChanges = !!diff.app_change || diff.missing_objects.length > 0 || diff.new_objects.length > 0 || diff.missing_collections.length > 0 || diff.new_collections.length > 0;
 
     // on the body so it sits above everything, the tab strip it's opened from is its own stacking context
     return createPortal(
@@ -38,7 +41,15 @@ function SceneDiffModal({ diff, onAccept, onReject, onClose }: SceneDiffModalPro
                     </div>
                 ) : (
                     <>
-                        <p className="mb-4 text-gray-700">The Blender scene has changed since the project was saved. Review the changes below:</p>
+                        <p className="mb-4 text-gray-700">The {diff.app} scene has changed since the project was saved. Review the changes below:</p>
+
+                        {diff.app_change && (
+                            <div className="mb-4">
+                                <h3 className="font-semibold text-red-600 mb-2">
+                                    This project was made with {diff.app_change.saved}, but {diff.app_change.connected} is connected
+                                </h3>
+                            </div>
+                        )}
 
                         {diff.missing_objects.length > 0 && (
                             <div className="mb-4">

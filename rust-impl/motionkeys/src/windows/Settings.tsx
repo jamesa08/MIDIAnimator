@@ -91,7 +91,7 @@ const SECTIONS = [
     { id: "appearance", name: "Appearance" },
     { id: "panels", name: "Panels" },
     { id: "node_editor", name: "Node Editor" },
-    { id: "connection", name: "Blender connection" },
+    { id: "connection", name: "Connection" },
     { id: "console", name: "Console" },
     { id: "keymap", name: "Keyboard Shortcuts" },
 ] as const;
@@ -168,8 +168,12 @@ function Settings() {
                                         onChange={(mode) => update("node_editor.scroll", mode)}
                                     />
                                 )}
-                                {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the Blender add-on connects to (1024 to 65535). Set the same port in the add-on's panel. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
-                                {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.blender?.keyframe_import_limit === "number" ? settings.blender.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("blender.keyframe_import_limit", limit)} />}
+                                {section === "connection" && <PortInput id="ipc-port" label="Port" description="Port the MotionKeys bridge in your 3D app connects to (1024 to 65535). Set the same port in the bridge. Applies after restarting MotionKeys." value={typeof settings.ipc?.port === "number" ? settings.ipc.port : 6577} onChange={(port) => update("ipc.port", port)} />}
+                                {section === "connection" && <NumberInput id="keyframe-import-limit" label="Keyframe import limit" description="" value={typeof settings.bridge?.keyframe_import_limit === "number" ? settings.bridge.keyframe_import_limit : 5000} min={0} onChange={(limit) => update("bridge.keyframe_import_limit", limit)} />}
+                                {section === "connection" && <NumberInput id="timeout-get-scene" label="Scene timeout (seconds)" description="" value={typeof settings.ipc?.timeouts?.get_scene === "number" ? settings.ipc.timeouts.get_scene : 10} min={1} onChange={(seconds) => update("ipc.timeouts.get_scene", seconds)} />}
+                                {section === "connection" && <NumberInput id="timeout-watch" label="Keyframes timeout (seconds)" description="" value={typeof settings.ipc?.timeouts?.watch === "number" ? settings.ipc.timeouts.watch : 30} min={1} onChange={(seconds) => update("ipc.timeouts.watch", seconds)} />}
+                                {section === "connection" && <NumberInput id="timeout-write" label="Write timeout (seconds)" description="" value={typeof settings.ipc?.timeouts?.write === "number" ? settings.ipc.timeouts.write : 60} min={1} onChange={(seconds) => update("ipc.timeouts.write", seconds)} />}
+                                {section === "connection" && <NumberInput id="timeout-run-script" label="Script timeout (seconds)" description="" value={typeof settings.ipc?.timeouts?.run_script === "number" ? settings.ipc.timeouts.run_script : 30} min={1} onChange={(seconds) => update("ipc.timeouts.run_script", seconds)} />}
                                 {section === "console" && <Toggle id="console-debug" label="Debug mode" description="" checked={settings.console?.debug ?? false} onChange={(checked) => update("console.debug", checked)} />}
                                 {section === "console" && <Toggle id="console-profiler" label="Profiler" description="" checked={settings.console?.profiler ?? false} onChange={(checked) => update("console.profiler", checked)} />}
                                 {section === "console" && <NumberInput id="console-profiler-medium" label="Profiler yellow (ms)" description="" value={typeof settings.console?.profiler_medium_ms === "number" ? settings.console.profiler_medium_ms : 4} min={0} onChange={(ms) => update("console.profiler_medium_ms", ms)} />}
