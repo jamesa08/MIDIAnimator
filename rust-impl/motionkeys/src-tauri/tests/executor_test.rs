@@ -100,7 +100,7 @@ fn cubes(count: usize) -> serde_json::Value {
 fn assign_by_name(names: &[&str], played: &[u8]) -> BTreeMap<String, serde_json::Value> {
     let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
     let notes: Vec<_> = played.iter().map(|n| json!({ "channel": 0, "note_number": n, "velocity": 100, "time_on": 0.0, "time_off": 1.0 })).collect();
-    let outputs = assign_notes_to_objects(&Inputs::from([("object_groups", group(names)), ("object_group_name", json!("Cubes")), ("midi_notes", json!(notes)), ("generator", generator)])).unwrap().to_json();
+    let outputs = assign_notes_to_objects(&Inputs::from([("object_groups", group(names)), ("object_group_name", json!("Cubes")), ("midi_notes", json!(notes)), ("generator", json!([generator]))])).unwrap().to_json();
     assigned(&outputs).into_iter().collect()
 }
 
@@ -155,7 +155,7 @@ fn assigned(outputs: &serde_json::Value) -> Vec<(String, serde_json::Value)> {
 fn assign_notes_map_mode() {
     let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
     let notes = json!([{ "channel": 0, "note_number": 40, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
-    let inputs = |mode: &str, map: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("generator", generator.clone()), ("mode", json!(mode)), ("note_map", map)]);
+    let inputs = |mode: &str, map: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("generator", json!([generator.clone()])), ("mode", json!(mode)), ("note_map", map)]);
 
     // each object takes its notes from the map, several notes on one object, objects left out of it (or gone from the
     // scene) get nothing, and a note the MIDI doesn't play is fine
@@ -174,10 +174,43 @@ fn assign_notes_map_mode() {
 }
 
 #[test]
+fn assign_notes_plays_several_generators() {
+    let generator = |name: &str, peak: f64| animation_generator(&Inputs::from([("name", json!(name)), ("velocity_intensity", json!(peak))])).unwrap().to_json()["generator"].clone();
+    let (hit, glow) = (generator("hit", 1.0), generator("glow", 2.0));
+    let notes = json!([{ "channel": 0, "note_number": 60, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }, { "channel": 0, "note_number": 61, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
+    let inputs = |generators: serde_json::Value, mode: &str, map: serde_json::Value| Inputs::from([("object_groups", cubes(2)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("generator", generators), ("mode", json!(mode)), ("note_map", map)]);
+    let objects = |outputs: &serde_json::Value| outputs["object_map"]["objects"].clone();
+
+    // rules mode plays every generator on each object's notes, the same one connected twice is one
+    let outputs = assign_notes_to_objects(&inputs(json!([hit, glow, hit]), "rules", json!(null))).unwrap().to_json();
+    assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60], "glow": [60] }, "Cube.001": { "hit": [61], "glow": [61] } }));
+    assert_eq!(outputs["object_map"]["animations"].as_object().unwrap().len(), 2);
+
+    // in map mode each object plays the animations wired to it on its notes. one that isn't connected (old) plays
+    // nothing and an object with no animations wired plays none, its notes still count in the note map. notes come out
+    // sorted
+    let map = json!({ "objects": { "Cube.000": [62, 60], "Cube.001": [61] }, "animations": { "hit": ["Cube.000", "Gone"], "glow": ["Cube.000"], "old": ["Cube.001"] } });
+    let outputs = assign_notes_to_objects(&inputs(json!([hit, glow]), "map", map)).unwrap().to_json();
+    assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60, 62], "glow": [60, 62] }, "Cube.001": {} }));
+    assert_eq!(outputs["object_notes"], json!({ "Cube.000": [60, 62], "Cube.001": [61] }));
+
+    // a map from before animations were wired in it plays every animation on every object
+    let map = json!({ "objects": { "Cube.000": [60], "Cube.001": [61] } });
+    let outputs = assign_notes_to_objects(&inputs(json!([hit, glow]), "map", map)).unwrap().to_json();
+    assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60], "glow": [60] }, "Cube.001": { "hit": [61], "glow": [61] } }));
+
+    // two different generators can't share a name, unnamed ones included
+    let error = assign_notes_to_objects(&inputs(json!([hit, generator("hit", 3.0)]), "rules", json!(null))).unwrap_err();
+    assert!(error.contains("two different animation generators are named 'hit'"), "{}", error);
+    let error = assign_notes_to_objects(&inputs(json!([generator("", 1.0), generator("", 2.0)]), "rules", json!(null))).unwrap_err();
+    assert!(error.contains("have no name"), "{}", error);
+}
+
+#[test]
 fn assign_notes_uses_note_list() {
     let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
     let notes = json!([{ "channel": 0, "note_number": 40, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
-    let inputs = |numbers: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("note_numbers", numbers), ("generator", generator.clone())]);
+    let inputs = |numbers: serde_json::Value| Inputs::from([("object_groups", cubes(3)), ("object_group_name", json!("Cubes")), ("midi_notes", notes.clone()), ("note_numbers", numbers), ("generator", json!([generator.clone()]))]);
 
     // the list is used in object order, as given, connected or typed in
     let expected = [("Cube.000".to_string(), json!([62])), ("Cube.001".to_string(), json!([60])), ("Cube.002".to_string(), json!([61]))];

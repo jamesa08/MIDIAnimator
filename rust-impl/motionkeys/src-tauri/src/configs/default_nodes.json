@@ -365,21 +365,22 @@
                         "id": "generator",
                         "name": "Animation Generator",
                         "data_type": "AnimationGenerator",
-                        "description": "Animation generator applied to every object in the group."
+                        "multi": true,
+                        "description": "Animation generators, any number of them, each with its own name. In rules mode every object plays all of them on its notes. In map mode each object plays the ones wired to it in the note map."
                     },
                     {
                         "id": "note_map",
                         "name": "Note Map",
                         "data_type": "Any",
                         "hidden": true,
-                        "description": "Each object's notes in map mode, drawn by pressing Tab on the node: { \"objects\": { \"Cube\": [60, 62] }, \"notes\": [65] }. \"notes\" are added notes nothing is connected to yet."
+                        "description": "Each object's notes and animations in map mode, drawn by pressing Tab on the node: { \"objects\": { \"Cube\": [60, 62] }, \"animations\": { \"Hit\": [\"Cube\"] }, \"notes\": [65] }. \"animations\" are the objects each animation (a generator's name) plays on, for every note the object has. A map without \"animations\" plays every animation on every object. \"notes\" are added notes nothing is connected to yet."
                     },
                     {
                         "id": "map_layout",
                         "name": "Map Layout",
                         "data_type": "Any",
                         "hidden": true,
-                        "description": "Where notes and objects were moved to in the note map, by id (\"n:60\", \"o:Cube\"): [x, y]. Only the app reads it."
+                        "description": "Where notes, animations and objects were moved to in the note map, by id (\"n:60\", \"a:Hit\", \"o:Cube\"): [x, y]. Only the app reads it."
                     }
                 ],
                 "outputs": [

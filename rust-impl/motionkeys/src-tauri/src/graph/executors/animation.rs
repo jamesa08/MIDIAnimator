@@ -534,11 +534,13 @@ fn note_list_error(objects: &[&Object], group_name: &str, entries: &[String]) ->
 /// "object_group_name": `String`,
 /// "midi_notes": `Array<MIDINote>`,
 /// "note_numbers": `Array<u8>` (or text typed in, see `note_list_entries`),
-/// "generator": `AnimationGenerator`
+/// "generator": `Array<AnimationGenerator>`, multi, keyed by name in the object map and the note map,
+/// "mode": `String`, "rules" or "map",
+/// "note_map": `Any`, the map drawn in the app (`NoteMap`)
 ///
 /// outputs:
 /// "object_map": `ObjectMap`,
-/// "object_notes": `HashMap<String, Array<u8>>`, each object's notes, it doesn't read the generator
+/// "object_notes": `HashMap<String, Array<u8>>`, each object's notes, it doesn't read the generators
 
 /*
 # Methods for Assigning MIDI Note Numbers to Objects
@@ -658,7 +660,7 @@ While this method requires more initial setup, it provides the greatest degree o
 
 */
 #[node_registry::node]
-pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, note_numbers: Option<&Value>, generator: Option<&AnimationGenerator>, mode: Option<&String>, note_map: Option<&Value>) -> NodeResult {
+pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_group_name: Option<&String>, midi_notes: Option<&Vec<MIDINote>>, note_numbers: Option<&Value>, generator: Option<&Vec<AnimationGenerator>>, mode: Option<&String>, note_map: Option<&Value>) -> NodeResult {
     let midi_notes: &[MIDINote] = midi_notes.map(Vec::as_slice).unwrap_or(&[]);
     let object_groups: &[ObjectGroup] = object_groups.map(Vec::as_slice).unwrap_or(&[]);
     let object_group_name = object_group_name.map(String::as_str).unwrap_or("");
@@ -691,48 +693,71 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     let object_group = object_groups.iter().find(|g| g.name == object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
     println!("object group name: {}", object_group_name);
 
-    // every object gets the generator's animation, if one is connected
-    let anim_name = generator.map(|g| g.name.clone());
-    if let Some(generator) = generator {
-        object_map.animations.insert(generator.name.clone(), generator.clone());
+    // the generators connected, by name in connect order. the same one twice is fine, two different ones can't share
+    // a name
+    let mut animations: Vec<&str> = Vec::new();
+    for generator in generator.map(Vec::as_slice).unwrap_or(&[]) {
+        match object_map.animations.get(&generator.name) {
+            Some(existing) if existing != generator => {
+                return Err(if generator.name.is_empty() {
+                    "two different animation generators have no name, name them so the note map can tell them apart".to_string()
+                } else {
+                    format!("two different animation generators are named '{}', rename one of them", generator.name)
+                });
+            }
+            Some(_) => {}
+            None => {
+                object_map.animations.insert(generator.name.clone(), generator.clone());
+                animations.push(&generator.name);
+            }
+        }
     }
 
     // objects pair with notes in name order (Cube_2 before Cube_10), not the order the scene lists them in
     let mut objects: Vec<&Object> = object_group.objects.iter().collect();
     objects.sort_by(|a, b| natural_cmp(&a.name, &b.name));
 
-    // map mode takes each object's notes from the note map drawn in the app, rules mode works them out (methods 1-4)
-    let pairs: Vec<(&Object, u8)> = if map_mode {
-        let saved = parse_note_map(note_map)?;
-        objects.iter().flat_map(|object| saved.objects.get(&object.name).into_iter().flatten().map(move |note| (*object, *note))).collect()
+    // map mode takes each object's notes and animations from the note map drawn in the app, rules mode works the notes
+    // out (methods 1-4) and every object plays every animation
+    let saved = if map_mode {
+        Some(parse_note_map(note_map)?)
     } else {
-        rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?
+        None
+    };
+    let pairs: Vec<(&Object, u8)> = match &saved {
+        Some(saved) => objects.iter().flat_map(|object| saved.objects.get(&object.name).into_iter().flatten().map(move |note| (*object, *note))).collect(),
+        None => rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?,
     };
 
-    // each object's notes without the animation, the Note Map output. it doesn't read the generator (`reads` in
-    // default_nodes.json), so it can feed a Note Table that feeds the generator
+    // each object's notes without the animations, the Note Map output. it doesn't read the generators (`reads` in
+    // default_nodes.json), so it can feed a Note Table that feeds one of them
     let mut object_notes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (object, note_number) in &pairs {
-        let notes = object_notes.entry(object.name.clone()).or_default();
-        if !notes.contains(note_number) {
-            notes.push(*note_number);
-        }
+        add_note(object_notes.entry(object.name.clone()).or_default(), *note_number);
     }
     outputs.set("object_notes", object_notes);
 
-    // extra objects (not enough notes) are left out
+    // extra objects (not enough notes) are left out. in map mode an object plays the animations wired to it, a map from
+    // before they were wired plays every animation on every object
     for (object, note_number) in &pairs {
         let entry = object_map.objects.entry(object.name.clone()).or_default();
-        if let Some(anim_name) = &anim_name {
-            let notes = entry.entry(anim_name.clone()).or_default();
-            if !notes.contains(note_number) {
-                notes.push(*note_number);
+        for name in &animations {
+            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(*name).is_some_and(|objects| objects.contains(&object.name)));
+            if wired {
+                add_note(entry.entry(name.to_string()).or_default(), *note_number);
             }
         }
     }
 
     outputs.set("object_map", object_map);
     Ok(outputs)
+}
+
+/// adds a note to a list of notes, kept in order and without repeats
+fn add_note(notes: &mut Vec<u8>, note: u8) {
+    if let Err(at) = notes.binary_search(&note) {
+        notes.insert(at, note);
+    }
 }
 
 /// the objects' notes by the rules (methods 1-4 above), in name order. `objects` are sorted by name, `used_notes` are
@@ -771,14 +796,17 @@ pub fn rule_pairs<'a>(objects: &[&'a Object], object_group_name: &str, used_note
     Ok(pairs)
 }
 
-/// the note map drawn in the app (src/components/nodegraph/NoteMapView.tsx): each object's notes, and notes added that
-/// nothing is connected to yet
+/// the note map drawn in the app (src/components/nodegraph/NoteMapView.tsx): each object's notes, the objects each
+/// animation is wired to (by the generator's name), and notes added that nothing is connected to yet. a map without
+/// animations is from before they were wired in the map, every animation plays on every object
 #[derive(Deserialize, Default, Debug)]
 pub struct NoteMap {
     #[serde(default)]
     pub objects: BTreeMap<String, Vec<u8>>,
     #[serde(default)]
     pub notes: Vec<u8>,
+    #[serde(default)]
+    pub animations: Option<BTreeMap<String, Vec<String>>>,
 }
 
 fn parse_note_map(value: Option<&Value>) -> Result<NoteMap, String> {
