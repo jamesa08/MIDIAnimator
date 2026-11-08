@@ -1343,7 +1343,7 @@ test("frame color picker", async ({ page }) => {
     await page.locator(".color-field .color-swatch").click();
     const picker = page.locator(".color-popover");
     await expect(picker.locator(".w-color-wheel")).toBeVisible();
-    await expect(picker.locator(".color-picker-slider")).toHaveText(["Hue0.000", "Saturation0.000", "Value0.906"]);
+    await expect(picker.locator(".value-slider")).toHaveText(["Hue0.000", "Saturation0.000", "Value0.906"]);
     await expect(picker.locator(".color-picker-hex input")).toHaveValue("#E7E7E7");
     const wheel = (await picker.locator(".w-color-wheel").boundingBox())!;
     const slider = (await picker.locator(".w-color-saturation").boundingBox())!;
@@ -1360,12 +1360,12 @@ test("frame color picker", async ({ page }) => {
     const handle = (await picker.locator(".w-color-saturation [class*=pointer]").first().boundingBox())!;
     expect(handle.y - slider.y).toBeLessThan(6);
     await picker.getByText("RGB", { exact: true }).click();
-    await expect(picker.locator(".color-picker-slider").first()).toContainText("Red");
+    await expect(picker.locator(".value-slider").first()).toContainText("Red");
     const hex = picker.locator(".color-picker-hex input");
     await hex.fill("#336699");
     await hex.press("Enter");
     await expect.poll(async () => (await colors()).at(-1)).toBe("#336699");
-    await expect(picker.locator(".color-picker-slider")).toHaveText(["Red0.200", "Green0.400", "Blue0.600"]);
+    await expect(picker.locator(".value-slider")).toHaveText(["Red0.200", "Green0.400", "Blue0.600"]);
     const txns = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply" && c.args.ops.some((op: any) => op.op === "set_frame") && c.args.txn).map((c: any) => c.args.txn));
     expect(new Set(txns).size).toBe(1);
     expect(txns[0]).toBeTruthy();

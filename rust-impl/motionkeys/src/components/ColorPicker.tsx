@@ -4,6 +4,7 @@ import Wheel from "@uiw/react-color-wheel";
 import ShadeSlider from "@uiw/react-color-shade-slider";
 import { HsvaColor, hexToHsva, hsvaToHex, hsvaToRgba, rgbaToHsva } from "@uiw/color-convert";
 import { useModal } from "../utils/keymap";
+import { ValueSlider } from "./ValueSlider";
 
 // a color picker like Blender's: a hue and saturation wheel with the value beside it (@uiw/react-color), the color's
 // three channels below as sliders (RGB or HSV), and its hex code. `value` and what `onChange` gets are hex codes (#rrggbb)
@@ -38,49 +39,6 @@ function parseHex(text: string): string | null {
 }
 
 const toHex = (hsva: HsvaColor) => hsvaToHex(hsva).toLowerCase();
-
-// a value from 0 to 1 as a bar filled that far, its name on the left and the number on the right. dragging across it
-// sets it, a double click types it in
-function ValueSlider({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-    const [typing, setTyping] = useState(false);
-    const at = (event: React.PointerEvent<HTMLDivElement>) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        onChange(Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)));
-    };
-    if (typing) {
-        const commit = (text: string) => {
-            setTyping(false);
-            if (text.trim() !== "" && !isNaN(Number(text))) onChange(Math.min(1, Math.max(0, Number(text))));
-        };
-        return (
-            <input
-                className="color-picker-slider"
-                autoFocus
-                defaultValue={value.toFixed(3)}
-                onFocus={(e) => e.target.select()}
-                onBlur={(e) => commit(e.target.value)}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter") e.currentTarget.blur();
-                }}
-            />
-        );
-    }
-    return (
-        <div
-            className="color-picker-slider"
-            onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture(e.pointerId);
-                at(e);
-            }}
-            onPointerMove={(e) => e.currentTarget.hasPointerCapture(e.pointerId) && at(e)}
-            onDoubleClick={() => setTyping(true)}
-        >
-            <div className="color-picker-fill" style={{ width: `${value * 100}%` }} />
-            <span>{label}</span>
-            <span>{value.toFixed(3)}</span>
-        </div>
-    );
-}
 
 // the picker itself, `size` is the wheel's width
 export function ColorPicker({ value, onChange, size = 160 }: { value: string; onChange: (hex: string) => void; size?: number }) {

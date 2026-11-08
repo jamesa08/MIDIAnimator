@@ -1020,7 +1020,7 @@ img {
     border: 1px solid var(--properties-frame);
 }
 
-.color-picker-slider {
+.value-slider {
     position: relative;
     height: 22px;
     display: flex;
@@ -1028,25 +1028,28 @@ img {
     justify-content: space-between;
     padding: 0 8px;
     background-color: var(--properties-background);
-    border-bottom: 1px solid var(--properties-line);
     cursor: ew-resize;
 }
 
-.color-picker-slider:last-child {
+.color-picker-sliders .value-slider {
+    border-bottom: 1px solid var(--properties-line);
+}
+
+.color-picker-sliders .value-slider:last-child {
     border-bottom: none;
 }
 
-.color-picker-slider > span {
+.value-slider > span {
     position: relative;
 }
 
-.color-picker-fill {
+.value-slider-fill {
     position: absolute;
     inset: 0 auto 0 0;
     background-color: var(--properties-frame);
 }
 
-input.color-picker-slider,
+input.value-slider,
 .color-picker-hex input {
     color: inherit;
     font: inherit;
