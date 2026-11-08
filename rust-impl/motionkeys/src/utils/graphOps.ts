@@ -100,14 +100,15 @@ export function useGraphOps(scope: string | null) {
     }, [tab, scope, setBackEndState]);
 }
 
-// sets values on a node's inputs (`null` unsets one), for node components. nothing happens in a graph that can't be edited
+// sets values on a node's inputs (`null` unsets one), for node components. nothing happens in a graph that can't be edited.
+// the promise settles once the backend has it
 export function useSetInputs() {
     const { scopeId, editable } = useGroupContext();
     const { apply } = useGraphOps(scopeId);
     return useCallback(
-        (node: string, inputs: Record<string, any>, options: ApplyOptions = {}) => {
-            if (!editable) return;
-            apply([{ op: "set_inputs", node, inputs }], options).catch((e) => console.error(`set_inputs on ${node}: ${e}`));
+        (node: string, inputs: Record<string, any>, options: ApplyOptions = {}): Promise<unknown> => {
+            if (!editable) return Promise.resolve();
+            return apply([{ op: "set_inputs", node, inputs }], options).catch((e) => console.error(`set_inputs on ${node}: ${e}`));
         },
         [apply, editable]
     );

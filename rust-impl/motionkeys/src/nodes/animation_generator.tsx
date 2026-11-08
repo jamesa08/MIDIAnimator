@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/nodeEntries";
-import { useSetInputs } from "../utils/graphOps";
+import { useGraphOps, useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
 import { useStore } from "@xyflow/react";
 import ExpressionField from "../components/ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
+import { ValueSlider } from "../components/ValueSlider";
+import { useGroupContext } from "../contexts/GroupContext";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -23,36 +25,52 @@ export const overlapModes = [
     { id: "crossfade", name: "Crossfade" },
 ];
 
+// a slider drag: its undo step, the value waiting to be sent and the last one sent
+type Drag = { txn: string; pending: number | null; sent: Promise<unknown> };
+
+// a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
+// that isn't a number is put back
+function NumberField({ value, onCommit, ...props }: { value: number | undefined; onCommit: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+    const [text, setText] = useState<string | number>(value ?? "");
+    useEffect(() => setText(value ?? ""), [value]);
+    const commit = () => {
+        if (text === "") {
+            onCommit(null);
+        } else if (!isNaN(Number(text))) {
+            onCommit(Number(text));
+        } else {
+            setText(value ?? "");
+        }
+    };
+    return (
+        <input
+            type="number"
+            className="node-field nodrag border border-gray-400 rounded px-2 py-1"
+            {...props}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+            }}
+        />
+    );
+}
+
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const nodeData = useNodeSpec("animation_generator");
     const [name, setName] = useState(data.inputs?.name || ""); 
-    const [blend, setBlend] = useState(data.inputs?.overlap_blend ?? "");
 
     useEffect(() => {
         setName(data.inputs?.name || "");
     }, [data.inputs?.name]);
 
-    useEffect(() => {
-        setBlend(data.inputs?.overlap_blend ?? "");
-    }, [data.inputs?.overlap_blend]);
-
     const handleUpdate = useCallback(() => {
         setInputs(id, { name });
     }, [id, name, setInputs]);
-
-    // empty unsets it so the backend default is used, anything that isn't a number is ignored
-    const handleBlendUpdate = useCallback(() => {
-        if (blend === "") {
-            setInputs(id, { overlap_blend: null });
-        } else if (!isNaN(Number(blend))) {
-            setInputs(id, { overlap_blend: Number(blend) });
-        } else {
-            setBlend(data.inputs?.overlap_blend ?? "");
-        }
-    }, [id, data, blend, setInputs]);
 
     const nameComponent = (
         <>
@@ -85,7 +103,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
                 <div className="node-field field-inputs">
                     <span>Blend (s)</span>
                 </div>
-                <input type="number" min="0" step="0.05" className="node-field nodrag border border-gray-400 rounded px-2 py-1" placeholder="0.1" value={blend} onChange={(e) => setBlend(e.target.value)} onBlur={handleBlendUpdate} />
+                <NumberField min="0" step="0.05" placeholder="0.1" value={data.inputs?.overlap_blend} onCommit={(value) => setInputs(id, { overlap_blend: value })} />
             </>
         ) : (
             <></>
@@ -104,10 +122,52 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
             </div>
         );
 
+    // an anchor point is typed in unless something is connected to it, in seconds from the note on or off
+    const anchorComponent = (input: "note_on_anchor_point" | "note_off_anchor_point") => (connected.includes(input) ? <></> : <NumberField step="0.01" placeholder="0" value={data.inputs?.[input]} onCommit={(value) => setInputs(id, { [input]: value })} />);
+
+    // velocity intensity from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
+    // it's dragged to, not what comes back from the backend on the way
+    const { scopeId } = useGroupContext();
+    const { end } = useGraphOps(scopeId);
+    const [intensity, setIntensity] = useState<number>(data.inputs?.velocity_intensity ?? 0);
+    const dragRef = useRef<Drag | null>(null);
+    useEffect(() => {
+        if (!dragRef.current) setIntensity(data.inputs?.velocity_intensity ?? 0);
+    }, [data.inputs?.velocity_intensity]);
+
+    // send the value waiting, in the drag's undo step
+    const flushIntensity = (drag: Drag) => {
+        if (drag.pending !== null) drag.sent = setInputs(id, { velocity_intensity: drag.pending }, { txn: drag.txn });
+        drag.pending = null;
+    };
+    const changeIntensity = (value: number) => {
+        setIntensity(value);
+        const drag = dragRef.current;
+        // typed in, its own undo step
+        if (!drag) {
+            setInputs(id, { velocity_intensity: value });
+            return;
+        }
+        if (drag.pending === null) requestAnimationFrame(() => flushIntensity(drag));
+        drag.pending = value;
+    };
+    // the last value goes out, then the undo step closes
+    const endIntensityDrag = () => {
+        const drag = dragRef.current;
+        dragRef.current = null;
+        if (!drag) return;
+        flushIntensity(drag);
+        drag.sent.finally(() => end(drag.txn));
+    };
+    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" value={intensity} onChange={changeIntensity} onStart={() => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve() })} onEnd={endIntensityDrag} />;
+
     const uiInject = {
         name: nameComponent,
+        note_on_anchor_point: anchorComponent("note_on_anchor_point"),
+        note_off_anchor_point: anchorComponent("note_off_anchor_point"),
         time_mapper: mapperComponent("time_mapper"),
         amplitude_mapper: mapperComponent("amplitude_mapper"),
+        velocity_intensity: intensityComponent,
         animation_overlap: overlapComponent,
         overlap_blend: blendComponent,
     };

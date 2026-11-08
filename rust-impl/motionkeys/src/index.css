@@ -1049,6 +1049,16 @@ img {
     background-color: var(--properties-frame);
 }
 
+/* in a node it's outlined like the node's text boxes, the number centered with no name in it */
+.node .value-slider {
+    box-sizing: border-box;
+    width: calc(100% - 24px);
+    height: 26px;
+    justify-content: center;
+    overflow: hidden;
+    background-color: transparent;
+}
+
 input.value-slider,
 .color-picker-hex input {
     color: inherit;
