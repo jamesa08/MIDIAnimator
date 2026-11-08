@@ -1,4 +1,4 @@
-// the console: what the app did that the user should see (runs, node errors, writes to Blender, Blender coming and
+// the console: what the app did that the user should see (runs, node errors, writes, the 3D app coming and
 // going, files that didn't open or save, panics), kept in a ring buffer the console window (src/windows/Console.tsx)
 // and the canvas overlay read. new entries go to every window as CONSOLE_ENTRIES_EVENT, a few at a time.
 // debug mode (settings.json console.debug) also streams stdout and stderr, every window's js console and a timing
@@ -29,13 +29,13 @@ pub enum Level {
     Debug,
 }
 
-/// where an entry came from: a run, a node in it, the Blender bridge, the app, rust's stdout/stderr or a window's js console
+/// where an entry came from: a run, a node in it, the bridge, the app, rust's stdout/stderr or a window's js console
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     Run,
     Node,
-    Blender,
+    Bridge,
     App,
     Rust,
     Js,

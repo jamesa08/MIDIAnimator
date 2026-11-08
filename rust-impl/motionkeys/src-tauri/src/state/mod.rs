@@ -8,8 +8,8 @@ use std::{collections::HashMap, sync::Mutex};
 use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::blender::curves::{carry_over_curves, curve_sources, prune_curves, unwatch_curves};
-use crate::blender::scene_data::{compare_scene_data, get_scene_data};
+use crate::bridge::curves::{carry_over_curves, curve_sources, prune_curves, unwatch_curves};
+use crate::bridge::scene_data::{compare_scene_data, get_scene};
 use crate::graph::execute::{forget_memo, run_instance};
 use crate::scene_generics::Scene;
 use crate::utils::console::{self, Entry, Level, Source};
@@ -38,9 +38,14 @@ pub struct AppState {
     pub ready: bool,
     pub connected: bool,
     pub default_nodes: HashMap<String, serde_json::Value>,
+    /// the connected app's id from its bridge's hello ("blender"), empty while none is connected
     pub connected_application: String,
+    /// the connected app's display name ("Blender")
+    pub connected_name: String,
     pub connected_version: String,
     pub connected_file_name: String,
+    /// the icon the bridge sent for its app, a data URL
+    pub connected_icon: Option<String>,
     /// goes up every time a tab's graph changes, so the frontend can tell an older graph from a newer one
     pub graph_rev: u64,
     /// goes up with every state sent to the frontend, so it can tell an older state from a newer one
@@ -53,7 +58,7 @@ pub struct AppState {
     pub active_instance_id: String,
     /// the tab Blender is linked to (live). it stays linked while Blender is away, and is linked again when it's back
     pub connected_instance_id: Option<String>,
-    /// the objects Blender's tracker sends keyframes for, the ones the live tab's graph reads (blender/curves.rs). none
+    /// the objects Blender's tracker sends keyframes for, the ones the live tab's graph reads (bridge/curves.rs). none
     /// when it isn't known (a tab just went live, Blender reconnected, the live tab closed), the next sync sends them
     pub watched_curves: Option<BTreeSet<String>>,
     /// the last full run, what it wrote to Blender. none until the first one
@@ -72,15 +77,17 @@ pub struct InstanceState {
     pub path: Option<String>,
     /// the window's layout in this tab (panels, floating windows), the frontend's, saved with the file
     pub layout: serde_json::Value,
-    pub scene_data: HashMap<String, Scene>,
+    /// the scene the tab runs on, the one Blender sent last, none before it's ever linked
+    pub scene: Option<Scene>,
     pub rf_instance: HashMap<String, serde_json::Value>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
     /// paths of the nodes writing to Blender whose last write isn't what the graph gives now, as of the last run
     pub stale_writes: Vec<String>,
-    pub pending_scene_data: Option<HashMap<String, Scene>>,
+    /// the scene waiting for review while the tab is paused
+    pub pending_scene: Option<Scene>,
     pub execution_paused: bool,
-    /// objects over the keyframe limit and their keyframe counts, waiting to be imported or left out (blender/curves.rs)
+    /// objects over the keyframe limit and their keyframe counts, waiting to be imported or left out (bridge/curves.rs)
     pub pending_curve_import: Option<BTreeMap<String, u64>>,
     /// objects over the keyframe limit that were imported, they don't ask again
     pub approved_curves: BTreeSet<String>,
@@ -102,12 +109,12 @@ impl InstanceState {
             label,
             path: None,
             layout: serde_json::Value::Null,
-            scene_data: HashMap::new(),
+            scene: None,
             rf_instance: empty_graph(),
             executed_results: HashMap::new(),
             executed_inputs: HashMap::new(),
             stale_writes: Vec::new(),
-            pending_scene_data: None,
+            pending_scene: None,
             execution_paused: false,
             pending_curve_import: None,
             approved_curves: BTreeSet::new(),
@@ -148,8 +155,10 @@ impl Default for AppState {
             connected: false,
             default_nodes: HashMap::new(),
             connected_application: "".to_string(),
+            connected_name: "".to_string(),
             connected_version: "".to_string(),
             connected_file_name: "".to_string(),
+            connected_icon: None,
             graph_rev: 0,
             state_rev: 0,
             active_instance_id: first.id.clone(),
@@ -235,8 +244,10 @@ impl AppState {
             connected: self.connected,
             default_nodes: self.default_nodes.clone(),
             connected_application: self.connected_application.clone(),
+            connected_name: self.connected_name.clone(),
             connected_version: self.connected_version.clone(),
             connected_file_name: self.connected_file_name.clone(),
+            connected_icon: self.connected_icon.clone(),
             port: crate::ipc::bound_port(),
             state_rev: self.state_rev,
             tabs: self
@@ -252,12 +263,12 @@ impl AppState {
             active_tab: active.id.clone(),
             graph_rev: active.graph_rev,
             rf_instance: active.rf_instance.clone(),
-            scene_data: active.scene_data.clone(),
+            scene: active.scene.clone(),
             executed_results: active.executed_results.clone(),
             executed_inputs: active.executed_inputs.clone(),
             stale_writes: active.stale_writes.clone(),
             last_write: self.last_write.clone(),
-            pending_scene_data: active.pending_scene_data.clone(),
+            pending_scene: active.pending_scene.clone(),
             execution_paused: active.execution_paused,
             pending_curve_import: active.pending_curve_import.clone(),
             open_group: active.open_group.clone(),
@@ -273,8 +284,10 @@ pub struct StateView {
     pub connected: bool,
     pub default_nodes: HashMap<String, serde_json::Value>,
     pub connected_application: String,
+    pub connected_name: String,
     pub connected_version: String,
     pub connected_file_name: String,
+    pub connected_icon: Option<String>,
     /// the port Blender connects to
     pub port: u16,
     pub state_rev: u64,
@@ -282,12 +295,12 @@ pub struct StateView {
     pub active_tab: String,
     pub graph_rev: u64,
     pub rf_instance: HashMap<String, serde_json::Value>,
-    pub scene_data: HashMap<String, Scene>,
+    pub scene: Option<Scene>,
     pub executed_results: HashMap<String, serde_json::Value>,
     pub executed_inputs: HashMap<String, serde_json::Value>,
     pub stale_writes: Vec<String>,
     pub last_write: Option<LastWrite>,
-    pub pending_scene_data: Option<HashMap<String, Scene>>,
+    pub pending_scene: Option<Scene>,
     pub execution_paused: bool,
     pub pending_curve_import: Option<BTreeMap<String, u64>>,
     pub open_group: String,
@@ -367,10 +380,12 @@ pub fn update_state() {
     notify_project_status();
 }
 
-/// a project file, one tab's: its scene data, node graph and window layout
+/// a project file, one tab's: its scene, node graph and window layout
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SavedProject {
-    pub scene_data: HashMap<String, Scene>,
+    /// none in files saved before a tab got one scene, the scene comes back when the tab goes live
+    #[serde(default)]
+    pub scene: Option<Scene>,
     pub rf_instance: HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub layout: serde_json::Value,
@@ -567,12 +582,13 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
         // measures them
         let mut rf_instance = instance.rf_instance.clone();
         if let Ok(mut graph) = crate::graph::model::Graph::from_rf(&instance.rf_instance) {
-            prune_curves(&mut instance.scene_data, &curve_sources(&graph));
+            let sources = curve_sources(&graph, instance.scene.as_ref());
+            prune_curves(&mut instance.scene, &sources);
             graph.strip_measured();
             rf_instance = graph.to_rf();
         }
         SavedProject {
-            scene_data: instance.scene_data.clone(),
+            scene: instance.scene.clone(),
             rf_instance,
             layout: instance.layout.clone(),
         }
@@ -688,7 +704,7 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
         let id = state.next_id();
         let mut instance = InstanceState::new(id.clone(), String::new());
         instance.path = Some(path.clone());
-        instance.scene_data = saved_data.scene_data;
+        instance.scene = saved_data.scene;
         instance.rf_instance = saved_data.rf_instance;
         migrate_rf_instance(&mut instance.rf_instance);
         instance.layout = saved_data.layout;
@@ -744,7 +760,7 @@ pub async fn start_instance(id: String) {
         (state.connected && state.connected_instance_id.as_ref().is_none_or(|linked| *linked == id), instance.execution_paused)
     };
     if link_it {
-        link(id).await.ok();
+        link_or_log(id).await.ok();
     } else if !paused {
         run_instance(id, true).await;
     }
@@ -875,7 +891,12 @@ pub fn move_instance(id: String, index: usize) {
 /// links Blender to a tab (it goes live)
 #[tauri::command]
 pub async fn go_live(id: String) -> Result<(), String> {
-    link(id.clone()).await.inspect_err(|e| console::push(Entry::new(Level::Warn, Source::Blender, format!("Couldn't go live: {}", e)).tab(&id)))
+    link_or_log(id).await
+}
+
+/// `link`, with why it couldn't in the console
+async fn link_or_log(id: String) -> Result<(), String> {
+    link(id.clone()).await.inspect_err(|e| console::push(Entry::new(Level::Warn, Source::Bridge, format!("Couldn't go live: {}", e)).tab(&id)))
 }
 
 /// links Blender to a tab, which then gets Blender's scene changes and is the only one that writes to Blender. the scene
@@ -885,20 +906,21 @@ pub async fn link(id: String) -> Result<(), String> {
     {
         let mut state = lock();
         if !state.connected {
-            return Err("Blender is not connected".to_string());
+            return Err(crate::graph::executors::scene::NOT_CONNECTED.to_string());
         }
         if state.instance(&id).is_none() {
             return Err(format!("no tab '{}'", id));
         }
         state.connected_instance_id = Some(id.clone());
-        // the tab's run tells the tracker what to watch and fetches the curves (blender/curves.rs)
+        // the tab's run tells the tracker what to watch and fetches the curves (bridge/curves.rs)
         state.watched_curves = None;
         let name = state.instance(&id).map(InstanceState::name).unwrap_or_default();
-        console::push(Entry::new(Level::Info, Source::Blender, format!("{} is live", name)).tab(&id));
+        console::push(Entry::new(Level::Info, Source::Bridge, format!("{} is live", name)).tab(&id));
     }
     update_state();
 
-    let mut fresh = get_scene_data().await;
+    // the tab stays live when Blender doesn't answer, the tracker's next update brings the scene
+    let mut fresh = get_scene().await?;
     let run = {
         let mut state = lock();
         // the tab was closed or another one went live while Blender answered
@@ -908,15 +930,15 @@ pub async fn link(id: String) -> Result<(), String> {
         let Some(instance) = state.instance_mut(&id) else {
             return Ok(());
         };
-        // Blender's scene comes without curves, the tab keeps its own until the run fetches them again
-        carry_over_curves(&instance.scene_data, &mut fresh, &BTreeSet::new());
-        if compare_scene_data(&instance.scene_data, &fresh).has_changes() {
-            instance.pending_scene_data = Some(fresh);
+        // Blender's scene only has the curves its tracker watches, the tab keeps its own until the run fetches them again
+        carry_over_curves(&instance.scene, &mut fresh, &BTreeSet::new());
+        if compare_scene_data(instance.scene.as_ref(), &fresh).has_changes() {
+            instance.pending_scene = Some(fresh);
             instance.execution_paused = true;
             println!("Scene data changes detected, execution paused for validation.");
             false
         } else {
-            instance.scene_data = fresh;
+            instance.scene = Some(fresh);
             !instance.execution_paused
         }
     };
@@ -936,5 +958,5 @@ pub async fn relink() {
         }
         state.connected_instance_id.clone().filter(|id| state.instance(id).is_some()).unwrap_or_else(|| state.active_instance_id.clone())
     };
-    link(id).await.ok();
+    link_or_log(id).await.ok();
 }

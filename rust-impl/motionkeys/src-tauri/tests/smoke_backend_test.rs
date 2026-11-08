@@ -44,7 +44,7 @@ fn dump_backend_for_smoke_test() {
         let mut state = lock();
         let tab = state.instance_mut("tab-1").unwrap();
         tab.rf_instance = project.rf_instance.clone();
-        tab.scene_data = project.scene_data;
+        tab.scene = project.scene;
     }
 
     // one step in the history: a node moved

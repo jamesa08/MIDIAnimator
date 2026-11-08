@@ -266,7 +266,7 @@ fn a_run_lands_on_its_tab() {
         state.default_nodes = default_nodes;
         let tab = state.instance_mut("tab-1").unwrap();
         tab.rf_instance = project.rf_instance;
-        tab.scene_data = project.scene_data;
+        tab.scene = project.scene;
     }
     create_instance();
 

@@ -4,9 +4,15 @@
         "zoom": 1
     },
     "ipc": {
-        "port": 6577
+        "port": 6577,
+        "timeouts": {
+            "get_scene": 10,
+            "watch": 30,
+            "write": 60,
+            "run_script": 30
+        }
     },
-    "blender": {
+    "bridge": {
         "keyframe_import_limit": 5000
     },
     "panels": {

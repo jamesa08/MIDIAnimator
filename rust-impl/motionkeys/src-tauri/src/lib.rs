@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
-pub mod blender;
+pub mod bridge;
 
 pub mod command;
 

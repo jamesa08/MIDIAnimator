@@ -1,68 +1,32 @@
-# IPC Python Files
+# Bridge connection
 
-## Components
-### Rust Module: `ipc`
+The `ipc` module talks to the connected 3D app through its bridge (the Blender add-on is the first one). The full protocol is in [`docs/bridge_protocol.md`](../../../../../docs/bridge_protocol.md); this is the short version for working on the Rust side.
 
-The ipc module in Rust handles the communication with Blender. Messages are exchanged in JSON format, structured with the following parameters:
+## Messages
 
-- `sender`: Identifies the sender of the message.
-- `message`: Contains the data or command to be executed.
-- `uuid`: A unique identifier for the message.
-
-### Message Structure
-Messages sent via the `ipc` module under the hood follow this JSON format:
+A bridge connects to `127.0.0.1` on the `ipc.port` setting (6577). Both sides send one JSON object per line:
 
 ```json
-{
-  "sender": "example_sender",
-  "message": "your_message_data_here",
-  "uuid": "unique_message_identifier"
-}
+{"id": "7b1e...", "type": "get_scene", "reply_to": null, "body": {}}
 ```
 
-### Sending a Message
+- `reply_to` is the id of the request a message answers, and `null` for a request or a message sent unasked.
+- The bridge's first message is a `hello` with the protocol versions it speaks, its app's id, name and version, the open file, an icon (a data URL) and its capabilities. MotionKeys answers with a `hello` naming the version both speak (`ipc::PROTOCOL_VERSIONS`), or an `error` with a `code` and closes the connection.
+- One bridge is connected at a time. A second one is turned away (`busy`).
+- After the hello, MotionKeys sends requests (`get_scene`, `watch`, `write`, `run_script`) and the bridge answers each with a reply (`scene`, `curves`, `write_result`, `script_result`) or an `error`. The bridge also sends `scene` unasked when the scene changes, `curves` when the keys of a watched object change, and `info` when the open file's name changes. Curves are `{channel, keys}`, each key `[time, value, interpolation]` or with its two Bezier handles, in seconds (`utils/curve.rs`). A scene (`scene_generics::Scene`) lists each object's channels, with their names, groups, axes and semantic tags: MotionKeys names curves from these and never parses a channel id.
 
-To send a message from Rust and receive the result, use the `ipc::send_message` function. This function is asynchronous, so it must be awaited. Here is a demonstration:
+## Sending a request
 
+`ipc::request` sends a request to the connected bridge and waits for the reply's body, as long as the request's `ipc.timeouts` setting says (`ipc::timeout`). An `error` reply, no bridge or a disconnect come back as `RequestError::Failed`, no reply in time as `RequestError::Timeout`, and `?` turns either into its message:
 
 ```rs
-use motionkeys::structures::ipc;
+use motionkeys::ipc;
+use serde_json::json;
 
-static PYTHON_FILE: &str = include_str!("some_python_file.py");
-
-#[tokio::main]
-async fn main() {
-    let result = match ipc::send_message(PYTHON_FILE.to_string()).await {
-        Some(data) => data,
-        None => {
-            panic!("Error executing");
-        }
-    };
-
-    println!("Result from Blender: {:?}", result);
+async fn scene_name() -> Result<String, String> {
+    let scene = ipc::request("get_scene", json!({})).await?;
+    Ok(scene["name"].as_str().unwrap_or_default().to_string())
 }
 ```
 
-## Python Scripts
-
-Python scripts are used to interact with Blender's Python API (bpy). These scripts are executed within Blender's environment and should follow a specific structure.
-
-### Python Script Requirements
-
-Python scripts should define an `execute()` function, which **must** return a value. There are no specific type requirements for the return value, but it must not be `None`. Scripts can include additional functions, classes, and module imports as needed. The `bpy` module is pre-imported, but can be re-imported if necessary.
-
-Example Python script:
-
-
-```py
-import bpy
-
-def additional_function():
-    pass
-
-def execute():
-    scene = bpy.context.scene
-    return scene.name
-
-```
-
+`ipc::run_script` runs a script in the connected app, when its bridge said in its hello that it runs that language. A Python script for the Blender bridge defines `execute(args)` (or `execute()`) and returns JSON; `bpy` is there without importing it.

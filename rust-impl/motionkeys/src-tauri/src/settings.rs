@@ -46,9 +46,16 @@ pub fn load_settings(app: &tauri::AppHandle) {
         return;
     };
     match serde_json::from_str::<Value>(&data) {
-        Ok(saved) => {
+        Ok(mut saved) => {
+            let migrated = migrate_settings(&mut saved);
             merge(&mut SETTINGS.lock().unwrap(), saved.clone());
             *USER_SETTINGS.lock().unwrap() = saved;
+            // the file gets the new names too
+            if migrated {
+                if let Some(limit) = get_setting("bridge.keyframe_import_limit").as_u64() {
+                    save_setting(app, "bridge.keyframe_import_limit", Value::from(limit)).ok();
+                }
+            }
         }
         Err(e) => eprintln!("ignoring invalid settings file {:?}: {}", path, e),
     }
@@ -57,6 +64,21 @@ pub fn load_settings(app: &tauri::AppHandle) {
     if crate::ipc::valid_port(&get_setting("ipc.port")).is_none() {
         save_setting(app, "ipc.port", Value::from(crate::ipc::DEFAULT_PORT)).ok();
     }
+}
+
+/// moves settings saved under an old name to their new one, true if anything moved. `blender.keyframe_import_limit`
+/// is `bridge.keyframe_import_limit` now, a value saved under the new name wins
+pub fn migrate_settings(saved: &mut Value) -> bool {
+    let Some(old) = saved.get_mut("blender").and_then(Value::as_object_mut).and_then(|blender| blender.remove("keyframe_import_limit")) else {
+        return false;
+    };
+    if saved["blender"].as_object().is_some_and(|blender| blender.is_empty()) {
+        saved.as_object_mut().unwrap().remove("blender");
+    }
+    if saved.get("bridge").and_then(|bridge| bridge.get("keyframe_import_limit")).is_none() {
+        set_path(saved, "bridge.keyframe_import_limit", old);
+    }
+    true
 }
 
 // reads a setting by dotted path, e.g. "panels.hide_when_inactive". null when it doesn't exist

@@ -121,7 +121,7 @@ async fn main() {
             tauri::async_runtime::spawn(async move {
                 log::log("waiting for the front end to be ready");
                 update_state();
-                log::log("front end ready, starting the Blender bridge");
+                log::log("front end ready, starting the bridge server");
                 start_server();
             });
 

@@ -1,42 +1,150 @@
+// the bridge connection (docs/bridge_protocol.md). a bridge (the Blender add-on) connects to 127.0.0.1 on the ipc.port
+// setting and says hello, then the two send each other one JSON message per line: {id, type, reply_to, body}. requests
+// get a reply whose reply_to is the request's id, the bridge also sends the scene unasked when it changes. one bridge is
+// connected at a time, a second one is turned away
+
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::io::{BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex, MutexGuard, Once, PoisonError};
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::Runtime;
 use uuid::Uuid;
 
-use crate::blender::curves::carry_over_curves;
+use crate::bridge::curves::carry_over_curves;
+use crate::bridge::scene_data::compare_scene_data;
 use crate::graph::execute::run_instance;
+use crate::graph::executors::scene::NOT_CONNECTED;
 use crate::scene_generics;
 use crate::settings::get_setting;
 use crate::state::{relink, update_state, STATE};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::log::log;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
-pub struct Message {
-    pub sender: String,
-    pub message: String,
-    pub uuid: String,
+/// the protocol versions this app speaks, oldest first. a bridge says which ones it speaks, the newest both do is used
+pub const PROTOCOL_VERSIONS: &[u32] = &[1];
+
+/// one message, either way
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct Envelope {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// the id of the request this answers, none for a request or a message sent unasked
+    #[serde(default)]
+    pub reply_to: Option<String>,
+    #[serde(default)]
+    pub body: Value,
+}
+
+impl Envelope {
+    pub fn new(kind: &str, body: Value, reply_to: Option<String>) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            kind: kind.to_string(),
+            reply_to,
+            body,
+        }
+    }
+
+    /// the message as it's sent, JSON and a newline
+    pub fn line(&self) -> Vec<u8> {
+        let mut line = serde_json::to_vec(self).unwrap_or_default();
+        line.push(b'\n');
+        line
+    }
+}
+
+/// what a bridge says about itself and its app when it connects
+#[derive(Debug, Deserialize, Clone)]
+pub struct Hello {
+    /// the protocol versions the bridge speaks
+    pub protocol: Vec<u32>,
+    /// the app's id, like "blender"
+    pub app: String,
+    /// the app's name as it's shown, like "Blender"
+    pub app_name: String,
+    #[serde(default)]
+    pub app_version: String,
+    #[serde(default)]
+    pub bridge_version: String,
+    /// the open file's name
+    #[serde(default)]
+    pub file: String,
+    /// the app's icon, a PNG or SVG data URL
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub capabilities: Capabilities,
+}
+
+/// what a bridge can do besides the requests every bridge answers
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct Capabilities {
+    /// it sends the curves of watched objects when they change
+    #[serde(default)]
+    pub watch: bool,
+    /// the script languages it runs (run_script)
+    #[serde(default)]
+    pub scripts: Vec<String>,
+}
+
+/// the newest protocol version the bridge and this app both speak
+pub fn negotiate(theirs: &[u32]) -> Option<u32> {
+    PROTOCOL_VERSIONS.iter().rev().find(|version| theirs.contains(version)).copied()
+}
+
+// an icon bigger than this (decoded) is left out
+const MAX_ICON_BYTES: usize = 64 * 1024;
+
+/// the bridge's icon when it's a PNG or SVG data URL that isn't too big
+pub fn valid_icon(icon: Option<String>) -> Option<String> {
+    let max_base64 = MAX_ICON_BYTES.div_ceil(3) * 4;
+    icon.filter(|icon| ["data:image/png;base64,", "data:image/svg+xml;base64,"].iter().any(|prefix| icon.strip_prefix(prefix).is_some_and(|data| data.len() <= max_base64)))
+}
+
+/// the bridge that said hello
+struct Bridge {
+    connection: u64,
+    app_name: String,
+    capabilities: Capabilities,
+    /// messages are written whole, one at a time
+    writer: Arc<Mutex<TcpStream>>,
 }
 
 struct Server {
-    clients: Arc<Mutex<Vec<TcpStream>>>,
-    message_map: Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>,
+    bridge: Option<Bridge>,
+    /// every open connection, ones that haven't said hello yet too, so `disconnect` closes them all
+    connections: HashMap<u64, TcpStream>,
+    /// requests waiting for their reply, by id
+    pending: HashMap<String, mpsc::Sender<Envelope>>,
 }
+
+static SERVER: Lazy<Mutex<Server>> = Lazy::new(|| {
+    Mutex::new(Server {
+        bridge: None,
+        connections: HashMap::new(),
+        pending: HashMap::new(),
+    })
+});
+
+fn server() -> MutexGuard<'static, Server> {
+    SERVER.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
 pub static DEFAULT_PORT: u16 = 6577;
 
 // the port the server listens on, read from the ipc.port setting once at startup (a changed setting waits for a restart)
 static BOUND_PORT: AtomicU16 = AtomicU16::new(0);
 
-/// the port Blender connects to, 0 before the server starts
+/// the port bridges connect to, 0 before the server starts
 pub fn bound_port() -> u16 {
     BOUND_PORT.load(Ordering::Relaxed)
 }
@@ -61,15 +169,15 @@ fn bind_listener(port: u16) -> Option<TcpListener> {
         match TcpListener::bind(("127.0.0.1", port)) {
             Ok(listener) => {
                 BOUND_PORT.store(port, Ordering::Relaxed);
-                log(format!("Blender bridge listening on 127.0.0.1:{port}"));
+                log(format!("bridge server listening on 127.0.0.1:{port}"));
                 // the connection popover shows the port
                 update_state();
                 return Some(listener);
             }
-            Err(e) if attempt == BIND_ATTEMPTS => log(format!("Blender bridge gave up on 127.0.0.1:{port} after {BIND_ATTEMPTS} attempts: {e}")),
+            Err(e) if attempt == BIND_ATTEMPTS => log(format!("bridge server gave up on 127.0.0.1:{port} after {BIND_ATTEMPTS} attempts: {e}")),
             Err(e) => {
                 if attempt == 1 {
-                    log(format!("Blender bridge could not listen on 127.0.0.1:{port}: {e}, trying again every {}s", BIND_RETRY_DELAY.as_secs()));
+                    log(format!("bridge server could not listen on 127.0.0.1:{port}: {e}, trying again every {}s", BIND_RETRY_DELAY.as_secs()));
                 }
                 thread::sleep(BIND_RETRY_DELAY);
             }
@@ -78,123 +186,156 @@ fn bind_listener(port: u16) -> Option<TcpListener> {
     None
 }
 
-// create a server instance
-// this is a lazy static variable, so it will only be created once
-// and will be shared across all threads
-// this is necessary because the server needs to be accessed across threads, and in other functions
-static SERVER: Lazy<Arc<Mutex<Server>>> = Lazy::new(|| {
-    // create a server instance
-    let server = Server {
-        clients: Arc::new(Mutex::new(Vec::new())),
-        message_map: Arc::new(Mutex::new(HashMap::new())),
-    };
-    let server = Arc::new(Mutex::new(server));
-
-    // clone the server instance to be used in the thread
-    let server_clone = Arc::clone(&server);
-
-    // listens on the configured port, binding (and retrying) happens here so it never holds up the app
-    thread::spawn(move || {
-        let Some(listener) = bind_listener(port()) else {
-            return;
-        };
-        let rt = Runtime::new().unwrap();
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    log(format!("Blender connected from {}", stream.peer_addr().map_or("unknown".to_string(), |addr| addr.to_string())));
-                    console::log(Level::Info, Source::Blender, "Blender connected");
-
-                    // we are connected to the client
-                    let mut state = STATE.lock().unwrap();
-                    state.connected = true;
-                    // scene writers that failed only because Blender wasn't connected aren't red anymore
-                    state.clear_not_connected();
-                    // also need to call get_client_info here to get the connected application info
-                    drop(state);
-                    update_state();
-
-                    let server = Arc::clone(&server_clone);
-                    let server_unwrapped = server.lock().unwrap();
-
-                    // lock the clients list and add the new client
-                    let mut clients = server_unwrapped.clients.lock().unwrap();
-
-                    clients.push(stream.try_clone().unwrap());
-                    drop(clients); // drop lock to avoid deadlock
-
-                    let server_clone = Arc::clone(&server);
-                    // when spawnning a new thread, get the client information as well
-                    // Blender links to the tab it was linked to before, or the tab on screen (it checks the scene first)
-                    rt.spawn(async move {
-                        request_client_info().await;
-                        relink().await;
-                    });
-
-                    thread::spawn(move || {
-                        handle_client(stream, server_clone);
-                    });
-                }
-                Err(e) => {
-                    log(format!("Blender bridge failed to accept a connection: {e}"));
+/// starts listening for bridges, binding (and retrying) happens on its own thread so it never holds up the app
+pub fn start_server() {
+    static STARTED: Once = Once::new();
+    STARTED.call_once(|| {
+        thread::spawn(|| {
+            let Some(listener) = bind_listener(port()) else {
+                return;
+            };
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let connection = NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed);
+                        if let Ok(clone) = stream.try_clone() {
+                            server().connections.insert(connection, clone);
+                        }
+                        thread::spawn(move || handle_client(stream, connection));
+                    }
+                    Err(e) => log(format!("bridge server failed to accept a connection: {e}")),
                 }
             }
-        }
+        });
     });
-    return server;
-});
-
-#[allow(unused_must_use)]
-pub fn start_server() {
-    SERVER.lock().unwrap();
 }
 
-/// closes the connection to Blender, each client's handle_client thread then sees it closed and clears the state
+/// closes the connection to the bridge, each connection's handle_client thread then sees it closed and clears the state
 #[tauri::command]
 pub fn disconnect() {
-    let server = SERVER.lock().unwrap();
-    for client in server.clients.lock().unwrap().iter() {
-        client.shutdown(Shutdown::Both).ok();
+    for stream in server().connections.values() {
+        stream.shutdown(Shutdown::Both).ok();
     }
 }
 
-pub async fn request_client_info() {
-    let script = r"import bpy
-def execute():
-    version = bpy.app.version_string
-    file_name = bpy.data.filepath.split('/')[-1]
-    return {'version': version, 'file_name': file_name}";
+// how long each request waits for its reply when its setting is missing or not a whole number above 0, in seconds
+fn default_timeout(kind: &str) -> u64 {
+    match kind {
+        "get_scene" => 10,
+        "write" => 60,
+        _ => 30,
+    }
+}
 
-    let Some(result) = send_message(script.to_string()).await else {
-        log("Blender didn't answer the client info request");
-        return;
-    };
+/// how long a request waits for its reply, from the ipc.timeouts settings
+pub fn timeout(kind: &str) -> Duration {
+    let seconds = get_setting(&format!("ipc.timeouts.{kind}")).as_u64().filter(|seconds| *seconds > 0);
+    Duration::from_secs(seconds.unwrap_or_else(|| default_timeout(kind)))
+}
 
-    // a quote in the file name makes python's dict repr invalid JSON
-    let map_object: HashMap<String, String> = match serde_json::from_str(&result.replace("'", "\"")) {
-        Ok(map_object) => map_object,
-        Err(e) => {
-            log(format!("couldn't read Blender's client info ({e}): {result}"));
-            return;
+/// why a request got no reply body. `?` turns it into its message
+#[derive(Debug)]
+pub enum RequestError {
+    /// no reply within the request's timeout, the bridge may still be working on it
+    Timeout(String),
+    /// an error reply, no bridge, or a disconnect
+    Failed(String),
+}
+
+impl From<RequestError> for String {
+    fn from(error: RequestError) -> Self {
+        match error {
+            RequestError::Timeout(message) | RequestError::Failed(message) => message,
         }
-    };
-    let version = map_object.get("version").cloned().unwrap_or_default();
-    let file_name = map_object.get("file_name").cloned().unwrap_or_default();
-    log(format!("Blender {version} linked, file {file_name:?}"));
+    }
+}
 
-    let mut state = STATE.lock().unwrap();
-    state.connected_application = "blender".to_string();
-    state.connected_version = version;
-    state.connected_file_name = file_name;
-    drop(state);
-    update_state();
+/// sends a request to the connected bridge and waits for its reply's body, as long as its timeout setting says. an
+/// error reply, no bridge, a timeout or a disconnect are errors
+pub async fn request(kind: &str, body: Value) -> Result<Value, RequestError> {
+    let timeout = timeout(kind);
+    let envelope = Envelope::new(kind, body, None);
+    let (tx, rx) = mpsc::channel();
+    let (writer, app_name) = {
+        let mut server = server();
+        let Some(bridge) = &server.bridge else {
+            return Err(RequestError::Failed(NOT_CONNECTED.to_string()));
+        };
+        let found = (Arc::clone(&bridge.writer), bridge.app_name.clone());
+        // in before the request goes out, a quick reply finds it
+        server.pending.insert(envelope.id.clone(), tx);
+        found
+    };
+
+    // the request's kind goes to the log, the messages are for the user
+    if let Err(e) = write_message(&writer, &envelope) {
+        server().pending.remove(&envelope.id);
+        log(format!("couldn't send the {kind} request to the bridge: {e}"));
+        return Err(RequestError::Failed(format!("couldn't send to {app_name}: {e}")));
+    }
+    let reply = rx.recv_timeout(timeout);
+    server().pending.remove(&envelope.id);
+    match reply {
+        Ok(reply) if reply.kind == "error" => Err(RequestError::Failed(error_text(&reply.body))),
+        Ok(reply) => Ok(reply.body),
+        Err(RecvTimeoutError::Timeout) => {
+            log(format!("the bridge didn't answer the {kind} request within {}s", timeout.as_secs()));
+            Err(RequestError::Timeout(format!("{app_name} didn't answer within {}s", timeout.as_secs())))
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            log(format!("the bridge disconnected before answering the {kind} request"));
+            Err(RequestError::Failed(format!("{app_name} disconnected before answering")))
+        }
+    }
+}
+
+/// what an error message says: its message, and its detail (a traceback) under it
+fn error_text(body: &Value) -> String {
+    let message = body.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+    match body.get("detail").and_then(Value::as_str).filter(|detail| !detail.trim().is_empty()) {
+        Some(detail) => format!("{message}\n{detail}"),
+        None => message.to_string(),
+    }
+}
+
+/// the connected bridge's name for its app, `Blender`, for messages
+pub fn connected_name() -> Option<String> {
+    server().bridge.as_ref().map(|bridge| bridge.app_name.clone())
+}
+
+/// the connected app's name in a message, `the 3D app` when nothing is connected anymore
+pub fn app_name() -> String {
+    connected_name().unwrap_or_else(|| "the 3D app".to_string())
+}
+
+/// whether the connected bridge watches objects and sends their curves (its `watch` capability)
+pub fn bridge_watches() -> bool {
+    server().bridge.as_ref().is_some_and(|bridge| bridge.capabilities.watch)
+}
+
+/// runs a script in the connected app, its result. the bridge has to say in its hello that it runs `language`
+pub async fn run_script(language: &str, source: &str, args: Value) -> Result<Value, String> {
+    let runs = server().bridge.as_ref().map(|bridge| bridge.capabilities.scripts.iter().any(|known| known == language));
+    match runs {
+        None => Err(NOT_CONNECTED.to_string()),
+        Some(false) => Err(format!("the connected app doesn't run {language} scripts")),
+        Some(true) => {
+            let body = request("run_script", json!({ "language": language, "source": source, "args": args })).await?;
+            Ok(body.get("result").cloned().unwrap_or(Value::Null))
+        }
+    }
+}
+
+fn write_message(writer: &Mutex<TcpStream>, envelope: &Envelope) -> std::io::Result<()> {
+    let mut stream = writer.lock().unwrap_or_else(PoisonError::into_inner);
+    stream.write_all(&envelope.line())
 }
 
 /// takes every complete message out of `data`, leaving a trailing partial message for the next read.
 /// both sides end each message with a newline and JSON escapes newlines inside strings,
 /// so a newline always ends a message, even when several arrive in one read.
 /// a line that isn't a valid message is logged and dropped so it can't block the ones after it
-pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
+pub fn take_messages(data: &mut Vec<u8>) -> Vec<Envelope> {
     let mut messages = Vec::new();
     while let Some(end) = data.iter().position(|byte| *byte == b'\n') {
         let line: Vec<u8> = data.drain(..=end).collect();
@@ -202,7 +343,7 @@ pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
         if line.trim().is_empty() {
             continue;
         }
-        match serde_json::from_str::<Message>(&line) {
+        match serde_json::from_str::<Envelope>(&line) {
             Ok(message) => messages.push(message),
             Err(e) => println!("Failed to parse IPC message ({} bytes): {}", line.len(), e),
         }
@@ -210,13 +351,16 @@ pub fn take_messages(data: &mut Vec<u8>) -> Vec<Message> {
     messages
 }
 
-/// makes a scene sent by the Blender tracker the scene data of the tab Blender is linked to, returns the tab if it should
-/// run (it's on screen, a tab in the background runs once it's shown). while the tab is paused for review the scene
-/// becomes its pending scene data instead, so accepting it uses the newest scene. with no tab linked it goes nowhere.
-/// doesn't notify the front end, the caller calls `update_state()`
-pub fn apply_scene_update(message: &str) -> Result<Option<String>, String> {
-    let mut scene_data = serde_json::from_str::<HashMap<String, scene_generics::Scene>>(message).map_err(|e| e.to_string())?;
+/// makes a scene the bridge sent the scene of the tab the bridge is linked to, returns the tab if it should run
+/// (it's on screen, a tab in the background runs once it's shown). while the tab is paused for review the scene becomes
+/// its pending scene instead, so accepting it uses the newest scene. switching to another scene in Blender pauses the
+/// tab for review when the new scene's groups or objects differ. with no tab linked it goes nowhere. doesn't notify the
+/// front end, the caller calls `update_state()`
+pub fn apply_scene_update(body: Value) -> Result<Option<String>, String> {
+    let mut scene = serde_json::from_value::<scene_generics::Scene>(body).map_err(|e| e.to_string())?;
     let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+    scene.app = Some(state.connected_application.clone()).filter(|app| !app.is_empty());
+    scene.app_name = Some(state.connected_name.clone()).filter(|name| !name.is_empty());
     let Some(id) = state.connected_instance_id.clone() else {
         return Ok(None);
     };
@@ -226,164 +370,179 @@ pub fn apply_scene_update(message: &str) -> Result<Option<String>, String> {
         return Ok(None);
     };
     // only the watched objects come with their curves
-    carry_over_curves(&instance.scene_data, &mut scene_data, &watched);
+    carry_over_curves(&instance.scene, &mut scene, &watched);
+    let switched = instance.scene.as_ref().is_some_and(|old| old.key() != scene.key());
+    if switched && compare_scene_data(instance.scene.as_ref(), &scene).has_changes() {
+        instance.execution_paused = true;
+    }
     if instance.execution_paused {
-        instance.pending_scene_data = Some(scene_data);
+        instance.pending_scene = Some(scene);
         return Ok(None);
     }
-    instance.scene_data = scene_data;
+    instance.scene = Some(scene);
     Ok(shown.then_some(id))
 }
 
-// handle a client connection
-fn handle_client(stream: TcpStream, server: Arc<Mutex<Server>>) {
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
-    // taken now, a socket that's been shut down has no peer address
-    let peer = stream.peer_addr().ok();
+/// what a connection's first message gets: its hello and the protocol version both speak, or why it's turned away (an
+/// error code and message). `connected` is the name of the app whose bridge is connected already
+pub fn accept_hello(message: &Envelope, connected: Option<&str>) -> Result<(Hello, u32), (&'static str, String)> {
+    if message.kind != "hello" {
+        return Err(("invalid_message", format!("the bridge has to send hello first, it sent {}", message.kind)));
+    }
+    let hello: Hello = serde_json::from_value(message.body.clone()).map_err(|e| ("invalid_message", format!("couldn't read the bridge's hello: {e}")))?;
+    let Some(version) = negotiate(&hello.protocol) else {
+        let versions = |list: &[u32]| list.iter().map(u32::to_string).collect::<Vec<_>>().join(", ");
+        return Err(("unsupported_version", format!("MotionKeys and the {} bridge don't share a protocol version (MotionKeys: {}, bridge: {}). Update the older one.", hello.app_name, versions(PROTOCOL_VERSIONS), versions(&hello.protocol))));
+    };
+    if let Some(connected) = connected {
+        return Err(("busy", format!("{connected} is already connected to MotionKeys, disconnect it first")));
+    }
+    Ok((hello, version))
+}
 
-    // keep reading messages from the client until the connection is closed
+// a connection, from its hello until it closes
+fn handle_client(stream: TcpStream, connection: u64) {
+    let peer = stream.peer_addr().map_or("unknown".to_string(), |addr| addr.to_string());
+    let Ok(writer) = stream.try_clone() else {
+        server().connections.remove(&connection);
+        return;
+    };
+    let writer = Arc::new(Mutex::new(writer));
+    let mut reader = stream;
+    let mut said_hello = false;
     let mut data = Vec::new();
+    // 64 KiB, scene updates with keyframes are megabytes
+    let mut buf = vec![0; 65536];
 
-    loop {
-        // 64 KiB, each read sleeps after it so scene updates with keyframes (megabytes) would take seconds in small reads
-        let mut buf = [0; 65536];
-
-        match reader.read(&mut buf) {
-            Ok(0) => break, // connection closed
-            Ok(n) => {
-                data.extend_from_slice(&buf[..n]); // add the read bytes to data
-
-                for message in take_messages(&mut data) {
-                    // check if this message is a response to a message we sent
-                    let tx = {
-                        let server_lock = server.lock().unwrap();
-                        let mut message_map = server_lock.message_map.lock().unwrap();
-                        message_map.remove(&message.uuid) // this gets the tx sender from send_message
-                    };
-
-                    if let Some(tx) = tx {
-                        // a response, the sender may have timed out already
-                        tx.send(message.message).ok();
-                    } else if message.message.contains("\"object_groups\"") {
-                        // an unsolicited scene update from the tracker
-                        println!("Received scene update from Blender with UUID: {} ({} bytes)", message.uuid, message.message.len());
-                        match apply_scene_update(&message.message) {
-                            Ok(run) => {
-                                update_state();
-                                // run the realtime graph so nodes like Scene Link pick up the new scene
-                                if let Some(id) = run {
-                                    tauri::async_runtime::spawn(run_instance(id, true));
-                                }
-                            }
-                            Err(e) => println!("Failed to parse scene data JSON: {}", e),
-                        }
-                    } else {
-                        // other unsolicited messages
-                        println!("Received unsolicited message: UUID={}", message.uuid);
-                    }
-                }
-            }
+    'reading: loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
             Err(e) => {
-                log(format!("Blender connection error: {e}"));
-                data.clear();
+                log(format!("bridge connection error: {e}"));
                 break;
             }
-        }
+        };
+        data.extend_from_slice(&buf[..n]);
 
-        // allow a small delay to let other threads allocate the lock
-        thread::sleep(Duration::from_millis(10));
-    }
-
-    // if disconnected, remove the client from the server
-    // clear all previous info, the linked tab stays linked (offline) until Blender is back
-    log(format!("Blender disconnected from {}", peer.map_or("unknown".to_string(), |addr| addr.to_string())));
-    console::log(Level::Warn, Source::Blender, "Blender disconnected");
-    let mut state = STATE.lock().unwrap();
-    state.connected = false;
-    state.watched_curves = None;
-    state.connected_application = "".to_string();
-    state.connected_version = "".to_string();
-    state.connected_file_name = "".to_string();
-    drop(state);
-    update_state();
-
-    let server = server.lock().unwrap();
-    let mut clients = server.clients.lock().unwrap();
-    // shut down sockets (disconnect) go too
-    clients.retain(|c| c.peer_addr().map_or(false, |addr| Some(addr) != peer));
-}
-
-pub async fn send_message(message: String) -> Option<String> {
-    send_message_with_timeout(message, Duration::from_secs(5)).await
-}
-
-/// like `send_message`, but waits up to `timeout` for Blender to respond
-pub async fn send_message_with_timeout(message: String, timeout: Duration) -> Option<String> {
-    // create a message struct
-    let msg_struct = Message {
-        sender: "server".to_string(),
-        message,
-        uuid: Uuid::new_v4().to_string(),
-    };
-
-    let json_msg = serde_json::to_string(&msg_struct).unwrap() + "\n";
-
-    let server = SERVER.lock().unwrap();
-    // send the message to all clients
-    let mut clients = server.clients.lock().unwrap();
-    // nobody to answer, no point waiting out the timeout
-    if clients.is_empty() {
-        return None;
-    }
-    for client in clients.iter_mut() {
-        // a closed client is removed by its handle_client thread
-        write_in_chunks(client, json_msg.as_bytes()).ok();
-    }
-    drop(clients);
-
-    // create a channel to receive the response, and insert it into the message_map
-    let (tx, rx) = mpsc::channel();
-    server.message_map.lock().unwrap().insert(msg_struct.uuid.clone(), tx);
-    drop(server);
-
-    // loop until a response is received or the timeout is reached
-    let mut waited = Duration::ZERO;
-    loop {
-        match rx.try_recv() {
-            Ok(recv_msg) => return Some(recv_msg),
-            Err(_) => {
-                if waited >= timeout {
-                    // no response found
-                    return None;
+        for message in take_messages(&mut data) {
+            if said_hello {
+                handle_message(message);
+                continue;
+            }
+            let connected = server().bridge.as_ref().map(|bridge| bridge.app_name.clone());
+            let accepted = accept_hello(&message, connected.as_deref());
+            match accepted {
+                Ok((hello, version)) => {
+                    welcome(&hello, version, connection, &writer, &message);
+                    said_hello = true;
                 }
-                // wait for a response
-                thread::sleep(Duration::from_millis(100));
-                waited += Duration::from_millis(100);
+                Err((code, reason)) => {
+                    log(format!("turned a bridge away ({peer}): {reason}"));
+                    write_message(&writer, &Envelope::new("error", json!({ "code": code, "message": reason }), Some(message.id.clone()))).ok();
+                    break 'reading;
+                }
             }
         }
     }
-}
 
-#[allow(dead_code)]
-pub fn send_message_without_response(message: Message) {
-    let json_msg = serde_json::to_string(&message).unwrap() + "\n";
-
-    let server = SERVER.lock().unwrap();
-    let mut clients = server.clients.lock().unwrap();
-    for client in clients.iter_mut() {
-        // a closed client is removed by its handle_client thread
-        write_in_chunks(client, json_msg.as_bytes()).ok();
+    // the bridge's requests waiting for a reply fail now instead of waiting out their timeout
+    let was_bridge = {
+        let mut server = server();
+        server.connections.remove(&connection);
+        let was_bridge = server.bridge.as_ref().is_some_and(|bridge| bridge.connection == connection);
+        if was_bridge {
+            server.bridge = None;
+            server.pending.clear();
+        }
+        was_bridge
+    };
+    if !was_bridge {
+        return;
     }
 
-    drop(clients); // drop lock to avoid deadlock
-    drop(server);
+    // the linked tab stays linked (offline) until a bridge is back
+    let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+    log(format!("the bridge disconnected from {peer}"));
+    console::log(Level::Warn, Source::Bridge, format!("{} disconnected", state.connected_name));
+    state.connected = false;
+    state.watched_curves = None;
+    state.connected_application.clear();
+    state.connected_name.clear();
+    state.connected_version.clear();
+    state.connected_file_name.clear();
+    state.connected_icon = None;
+    drop(state);
+    update_state();
 }
 
-// function to write data in 4 KiB chunks
-fn write_in_chunks(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
-    let chunk_size = 4096;
-    for chunk in data.chunks(chunk_size) {
-        stream.write_all(chunk)?;
+// the bridge said hello: it's the connected app now, it gets the version both speak, and the tab it was linked to before
+// (or the one on screen) links to it again
+fn welcome(hello: &Hello, version: u32, connection: u64, writer: &Arc<Mutex<TcpStream>>, message: &Envelope) {
+    server().bridge = Some(Bridge {
+        connection,
+        app_name: hello.app_name.clone(),
+        capabilities: hello.capabilities.clone(),
+        writer: Arc::clone(writer),
+    });
+    let reply = Envelope::new("hello", json!({ "protocol": version, "app": "motionkeys", "app_version": env!("CARGO_PKG_VERSION") }), Some(message.id.clone()));
+    write_message(writer, &reply).ok();
+
+    log(format!("{} {} connected (bridge {}, protocol {version}), file {:?}", hello.app_name, hello.app_version, hello.bridge_version, hello.file));
+    console::log(Level::Info, Source::Bridge, format!("{} connected", hello.app_name));
+    let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+    state.connected = true;
+    state.connected_application = hello.app.clone();
+    state.connected_name = hello.app_name.clone();
+    state.connected_version = hello.app_version.clone();
+    state.connected_file_name = hello.file.clone();
+    state.connected_icon = valid_icon(hello.icon.clone());
+    // scene writers that failed only because nothing was connected aren't red anymore
+    state.clear_not_connected();
+    drop(state);
+    update_state();
+    tauri::async_runtime::spawn(relink());
+}
+
+// a message from the bridge after its hello: a reply goes to the request waiting for it, a scene sent unasked goes to the
+// live tab. messages of a type this app doesn't know are left alone, a newer bridge may send them
+/// takes the hello fields an info event changes: the open file's name
+pub fn apply_info(body: &Value) {
+    if let Some(file) = body.get("file").and_then(Value::as_str) {
+        STATE.lock().unwrap_or_else(PoisonError::into_inner).connected_file_name = file.to_string();
+        update_state();
     }
-    Ok(())
+}
+
+fn handle_message(message: Envelope) {
+    if let Some(reply_to) = &message.reply_to {
+        let waiting = server().pending.remove(reply_to);
+        // the request may have timed out already
+        if let Some(tx) = waiting {
+            tx.send(message).ok();
+        }
+        return;
+    }
+    match message.kind.as_str() {
+        "scene" => match apply_scene_update(message.body) {
+            Ok(run) => {
+                update_state();
+                // run the realtime graph so nodes like Scene Link pick up the new scene
+                if let Some(id) = run {
+                    tauri::async_runtime::spawn(run_instance(id, true));
+                }
+            }
+            Err(e) => log(format!("couldn't read the scene the bridge sent: {e}")),
+        },
+        "info" => apply_info(&message.body),
+        "curves" => {
+            let run = crate::bridge::curves::apply_curves_update(message.body);
+            update_state();
+            if let Some(id) = run {
+                tauri::async_runtime::spawn(run_instance(id, true));
+            }
+        }
+        "error" => log(format!("the bridge: {}", error_text(&message.body))),
+        kind => log(format!("left alone a {kind} message from the bridge")),
+    }
 }

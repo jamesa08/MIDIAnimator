@@ -3,7 +3,7 @@ use std::sync::{Mutex, PoisonError};
 
 use serde::Serialize;
 
-use crate::blender::curves::{curve_sources, sync_curves};
+use crate::bridge::curves::{curve_sources, sync_curves};
 use crate::graph::builtin::all_groups;
 use crate::graph::executors::io::node_error;
 use crate::graph::executors::scene::{with_scene, written};
@@ -84,7 +84,7 @@ pub async fn run_instance(id: String, realtime: bool) {
         };
         // only the live tab writes. with Blender not connected it still runs, so its scene writers show that
         if !realtime && state.connected && !state.is_live(&id) {
-            log(format!("not writing to Blender, {} isn't the live tab", id));
+            log(format!("not writing keyframes, {} isn't the live tab", id));
             return;
         }
         if state.connected {
@@ -102,7 +102,7 @@ pub async fn run_instance(id: String, realtime: bool) {
             )
             .tab(&id),
         );
-        (instance.rf_instance.clone(), instance.scene_data.get("Scene").cloned(), instance.open_group.clone(), node_specs(&state.default_nodes))
+        (instance.rf_instance.clone(), instance.scene.clone(), instance.open_group.clone(), node_specs(&state.default_nodes))
     };
 
     // get current nodes & edges, a graph that can't be read doesn't run at all
@@ -126,7 +126,8 @@ pub async fn run_instance(id: String, realtime: bool) {
     ctx.inspect = open_group;
 
     // failed nodes keep their error in the record, the rest of the graph still ran
-    let ((record, _), (objects, keyframes)) = with_scene(scene, curve_sources(&graph), || (run(&ctx, &graph), written()));
+    let sources = curve_sources(&graph, scene.as_ref());
+    let ((record, _), (objects, keyframes)) = with_scene(scene, sources, || (run(&ctx, &graph), written()));
     memo_lock.insert(id.clone(), ctx.into_memo());
     drop(memo_lock);
 
@@ -232,10 +233,10 @@ fn log_run(id: &str, realtime: bool, total: f64, timings: Vec<NodeTiming>, write
     // the status bar's message for a write (lastWriteMessage in src/components/StatusBar.tsx)
     if let Some(write) = write {
         entries.push(match (&write.error, failed_writer) {
-            (Some(error), Some(writer)) => Entry::new(Level::Error, Source::Blender, format!("Scene Writer failed: {}", error)).node(id, &writer),
-            (Some(error), None) => Entry::new(Level::Error, Source::Blender, format!("Scene Writer failed: {}", error)).tab(id),
-            (None, _) if write.written == 0 => Entry::new(Level::Info, Source::Blender, "Nothing to write").tab(id),
-            (None, _) => Entry::new(Level::Info, Source::Blender, format!("Wrote {} to {} in {} ms", plural(write.keyframes, "keyframe"), plural(write.objects, "object"), write.ms)).tab(id).ms(write.ms as f64),
+            (Some(error), Some(writer)) => Entry::new(Level::Error, Source::Bridge, format!("Scene Writer failed: {}", error)).node(id, &writer),
+            (Some(error), None) => Entry::new(Level::Error, Source::Bridge, format!("Scene Writer failed: {}", error)).tab(id),
+            (None, _) if write.written == 0 => Entry::new(Level::Info, Source::Bridge, "Nothing to write").tab(id),
+            (None, _) => Entry::new(Level::Info, Source::Bridge, format!("Wrote {} to {} in {} ms", plural(write.keyframes, "keyframe"), plural(write.objects, "object"), write.ms)).tab(id).ms(write.ms as f64),
         });
     }
 
