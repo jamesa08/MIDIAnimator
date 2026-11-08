@@ -6,7 +6,8 @@ import { useModal } from "../../utils/keymap";
 export type ContextEntry = { id: string; label: string; run: () => void };
 
 // right clicking the graph, like the shift+a menu: `sections` of entries with a line between them, picking one closes
-// the menu and runs it. it opens at `position`, flipped left or up when it would go past the window's edge
+// the menu and runs it. it opens at `position`, flipped left or up when it would go past the window's edge. it's as wide
+// as its longest entry
 function ContextMenu({ position, sections, onClose }: { position: { x: number; y: number }; sections: ContextEntry[][]; onClose: () => void }) {
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +37,7 @@ function ContextMenu({ position, sections, onClose }: { position: { x: number; y
 
     // on the body so it sits above the floating panels, the canvas is its own stacking context
     return createPortal(
-        <div ref={menuRef} style={{ position: "fixed", left: placed.x, top: placed.y }} className="context-menu bg-[#2a2a2a] border border-[#444] rounded w-[160px] py-1 z-[1000] flex flex-col select-none" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
+        <div ref={menuRef} style={{ position: "fixed", left: placed.x, top: placed.y }} className="context-menu bg-[#2a2a2a] border border-[#444] rounded min-w-[160px] w-max py-1 z-[1000] flex flex-col select-none" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.preventDefault()}>
             {sections.map((entries, index) => (
                 <div key={index} className={index > 0 ? "border-t border-[#444] mt-1 pt-1" : ""}>
                     {entries.map((entry) => (
