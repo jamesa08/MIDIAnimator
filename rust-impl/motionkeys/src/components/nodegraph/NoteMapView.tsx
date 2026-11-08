@@ -206,20 +206,39 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
 
     // MARK: - Graph
 
-    // notes in a column on the left and objects on the right, unless they were moved. moved ones don't take a row, the
-    // rest close up, hidden notes too
-    const column = (ids: string[], x: number) => {
-        let row = 0;
-        return ids.map((id) => {
-            const [lx, ly] = layout[id] ?? [x, row++ * ROW];
-            return { x: lx, y: ly };
-        });
-    };
+    // where each shown node sits with `saved` positions: notes in a column on the left and objects on the right, unless
+    // they were moved. moved ones don't take a row, the rest close up, hidden notes too
+    const place = useCallback(
+        (saved: Layout) => {
+            const column = (ids: string[], x: number) => {
+                let row = 0;
+                return ids.map((id) => {
+                    const [lx, ly] = saved[id] ?? [x, row++ * ROW];
+                    return [id, { x: lx, y: ly }] as const;
+                });
+            };
+            return new Map([...column(visible.map(noteKey), 0), ...column(objects.map(objectKey), COLUMN)]);
+        },
+        [visible, objects]
+    );
+    // a move stores where the moved nodes went, and where the ones that would close up after them are, so nothing else
+    // moves
+    const pin = useCallback(
+        (next: Layout) => {
+            const was = place(layout);
+            const pinned = { ...next };
+            for (const [id, at] of place(next)) {
+                const from = was.get(id)!;
+                if (!(id in next) && (at.x !== from.x || at.y !== from.y)) pinned[id] = [from.x, from.y];
+            }
+            return pinned;
+        },
+        [place, layout]
+    );
     const built = useMemo<Node[]>(() => {
-        const notesAt = column(visible.map(noteKey), 0);
-        const objectsAt = column(objects.map(objectKey), COLUMN);
-        return [...visible.map((n, i) => ({ id: noteKey(n), type: "map_note", position: notesAt[i], data: { note: n, added: !midiNotes.includes(n) } })), ...objects.map((o, i) => ({ id: objectKey(o), type: "map_object", position: objectsAt[i], data: { name: o } }))];
-    }, [visible, objects, midiNotes, layout]);
+        const at = place(layout);
+        return [...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n) } })), ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: o } }))];
+    }, [place, visible, objects, midiNotes, layout]);
     const builtWires = useMemo<Edge[]>(() => objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))), [objects, map]);
 
     // react flow's copies, they keep the selection and positions mid drag. a tool can ask for what's selected after its edit
@@ -270,9 +289,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
                 const p = change.position ?? positions.get(change.id);
                 if (p) next[change.id] = [Math.round(p.x), Math.round(p.y)];
             }
-            setInputs({ map_layout: next });
+            setInputs({ map_layout: pin(next) });
         },
-        [layout, editable, setInputs]
+        [layout, pin, editable, setInputs]
     );
     const onEdgesChange = useCallback(
         (changes: any[]) =>
@@ -426,8 +445,8 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
             const p = placed.get(id);
             if (p) next[id] = [Math.round(p.x), Math.round(p.y)];
         }
-        setInputs({ map_layout: next }, grab.txn ? { txn: grab.txn } : {}).then(() => grab.txn && endTxn(grab.txn));
-    }, [layout, setInputs, endTxn]);
+        setInputs({ map_layout: pin(next) }, grab.txn ? { txn: grab.txn } : {}).then(() => grab.txn && endTxn(grab.txn));
+    }, [layout, pin, setInputs, endTxn]);
 
     // puts the grabbed nodes back, an added note is undone
     const cancelGrab = useCallback(() => {

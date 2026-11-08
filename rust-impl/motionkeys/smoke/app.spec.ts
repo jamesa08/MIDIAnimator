@@ -419,6 +419,33 @@ test("note map keeps its nodes when a run sends new results", async ({ page }) =
     await settle(page);
 });
 
+test("moving a node in the note map leaves the rest where they are", async ({ page }) => {
+    const state = structuredClone(backend.get_state);
+    await openWindow(page, { ...backend, get_state: state }, "/#/");
+    await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
+    const map = page.locator(".note-map-layer");
+    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+    const box = async (id: string) => (await map.locator(`.react-flow__node[data-id="${id}"]`).boundingBox())!;
+
+    // dragging the first object up stores where it went, and where the objects under it are so they don't close up
+    const first = await box("o:ANIM_bounce");
+    const next = await box("o:Cube.001");
+    await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(first.x + first.width / 2, first.y - 60, { steps: 5 });
+    await page.mouse.up();
+    const layout = async () => (await sentOps(page)).filter((op: any) => op.op === "set_inputs" && op.inputs.map_layout).at(-1)?.inputs.map_layout;
+    await expect.poll(async () => Object.keys((await layout()) ?? {}).sort()).toEqual(["o:ANIM_bounce", "o:Cube.001", "o:Cube.002", "o:Cube.003", "o:Cube.004", "o:Cube.005"]);
+
+    // the graph coming back with it keeps them there
+    const assign = state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
+    assign.data.inputs = { ...assign.data.inputs, map_layout: await layout() };
+    await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: state.graph_rev + 1, rf_instance: state.rf_instance });
+    await expect.poll(async () => (await box("o:ANIM_bounce")).y).toBeLessThan(first.y - 40);
+    expect(Math.abs((await box("o:Cube.001")).y - next.y)).toBeLessThan(1);
+    await settle(page);
+});
+
 // the graph on screen is ready: until then it's drawn see-through and takes no clicks (NodeGraph.tsx). a locator's click
 // waits for that, a click at a point with the mouse doesn't, and opacity 0 still counts as visible
 async function graphReady(page: Page) {
