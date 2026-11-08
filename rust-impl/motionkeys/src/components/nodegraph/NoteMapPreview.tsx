@@ -1,11 +1,14 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { HEADER_COLORS, SOCKET_COLORS } from "../../styles";
-import { isLinked, noteMapData, shownMap } from "../../utils/noteMap";
+import { MapView, isAnimationLinked, isLinked, noteMapData, shownAnimations, shownMap } from "../../utils/noteMap";
 
-// how wide the notes' bars are (the objects' take a share of the preview for their names), and the smallest their text is
-// drawn (rows too thin for it get none)
+// how wide the notes' bars are (the objects' and animations' take a share of the preview for their names), and the
+// smallest their text is drawn (rows too thin for it get none)
 const BAR = 26;
 const OBJECT_SHARE = 0.38;
+const ANIMATION_SHARE = 0.22;
+// where an animation's wires end, its own color like the map's (solid over the fade to the object's color)
+const ANIMATION_WIRE_END = SOCKET_COLORS.generator;
 const INSET = 4;
 const MIN_TEXT = 6;
 const TEXT_PAD = 3;
@@ -23,15 +26,18 @@ function fitText(text: string, width: number, size: number): string {
 }
 
 // a small picture of Assign Notes to Objects' note map on the node, like the curve previews: its notes on the left with
-// their numbers, its objects on the right with their names and a line for each note an object gets. the same notes and
-// wires the map shows (Tab), in its default columns, squeezed to fit. with linked only, only the notes wired to an object
-function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, height = 80 }: { inputs: any; results: any; nodeInputs: any; linkedOnly?: boolean; height?: number }) {
+// their numbers and its animations under them, its objects on the right with their names and a line for each note and
+// animation an object gets. the same nodes and wires the map shows (Tab) in its view, in its default columns, squeezed
+// to fit. with linked only, only the notes and animations wired to an object
+function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, view = "combined", height = 80 }: { inputs: any; results: any; nodeInputs: any; linkedOnly?: boolean; view?: MapView; height?: number }) {
     const shown = useMemo(() => {
         const info = noteMapData(inputs, results, nodeInputs?.object_group_name);
         const { map, notes } = shownMap(nodeInputs?.mode ?? "rules", info, nodeInputs?.note_map);
-        return { info, map, notes: linkedOnly ? notes.filter((n) => isLinked(map, info.objects, n)) : notes };
-    }, [inputs, results, nodeInputs?.object_group_name, nodeInputs?.mode, nodeInputs?.note_map, linkedOnly]);
-    const { info, map, notes } = shown;
+        const shownNotes = view === "animations" ? [] : linkedOnly ? notes.filter((n) => isLinked(map, info.objects, n)) : notes;
+        const shownAnimationNames = view === "notes" ? [] : shownAnimations(map, info).filter((a) => !linkedOnly || isAnimationLinked(map, info.objects, a));
+        return { info, map, animations: shownAnimationNames, notes: shownNotes };
+    }, [inputs, results, nodeInputs?.object_group_name, nodeInputs?.mode, nodeInputs?.note_map, linkedOnly, view]);
+    const { info, map, animations, notes } = shown;
     const objects = info.objects;
 
     // drawn in the preview's own pixels so the numbers aren't stretched, its width follows the node's
@@ -47,28 +53,57 @@ function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, heigh
     }, []);
     const inner = height - 2;
 
-    const noteRow = inner / Math.max(notes.length, 1);
+    // the animations take rows under the notes, in the same column
+    const noteRow = inner / Math.max(notes.length + animations.length, 1);
     const objectRow = inner / Math.max(objects.length, 1);
     const noteY = (i: number) => (i + 0.5) * noteRow;
+    const animationY = (i: number) => noteY(notes.length + i);
     const objectY = (i: number) => (i + 0.5) * objectRow;
     const noteRight = INSET + BAR;
     const objectBar = Math.max(BAR, Math.round(width * OBJECT_SHARE));
     const objectLeft = width - INSET - objectBar;
-    const middle = (noteRight + objectLeft) / 2;
+    const animationBar = Math.max(BAR, Math.round(width * ANIMATION_SHARE));
+    const animationRight = INSET + animationBar;
     const textSize = Math.min(9, noteRow * 0.75);
     const objectTextSize = Math.min(9, objectRow * 0.75);
+    // a wire from one bar's right to another's left, like the map's (react flow's bezier). it fades from the color it
+    // starts in to the one it ends in, like the map's wires
+    const gradientBase = `note-map-preview-${useId()}`;
+    let gradients = 0;
+    const wire = (key: string, x1: number, y1: number, x2: number, y2: number, from = SOCKET_COLORS.midi, to = SOCKET_COLORS.midi) => {
+        const dx = x2 - x1;
+        const bend = dx >= 0 ? dx / 2 : 0.25 * 25 * Math.sqrt(-dx);
+        const d = `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+        if (from === to) return <path key={key} d={d} fill="none" stroke={from} strokeWidth={1.5} />;
+        const id = `${gradientBase}-${gradients++}`;
+        return (
+            <g key={key}>
+                <linearGradient id={id} gradientUnits="userSpaceOnUse" x1={x1} y1={y1} x2={x2} y2={y2}>
+                    <stop offset="0%" style={{ stopColor: from }} />
+                    <stop offset="100%" style={{ stopColor: to }} />
+                </linearGradient>
+                <path d={d} fill="none" stroke={`url(#${id})`} strokeWidth={1.5} />
+            </g>
+        );
+    };
 
     return (
         <div ref={boxRef} className="node-field relative border border-[var(--chrome-line)]" style={{ height, background: "var(--graph-background)" }}>
             {width > 0 && (
                 <svg className="absolute inset-0 block" width={width} height={inner}>
-                    {objects.flatMap((o, oi) =>
-                        (map.objects[o] ?? []).map((n) => {
-                            const y1 = noteY(notes.indexOf(n));
-                            const y2 = objectY(oi);
-                            return <path key={`${n}>${o}`} d={`M ${noteRight} ${y1} C ${middle} ${y1}, ${middle} ${y2}, ${objectLeft} ${y2}`} fill="none" stroke={SOCKET_COLORS.midi} strokeWidth={1.5} />;
-                        })
-                    )}
+                    {objects.flatMap((o, oi) => (map.objects[o] ?? []).filter((n) => notes.includes(n)).map((n) => wire(`${n}>${o}`, noteRight, noteY(notes.indexOf(n)), objectLeft, objectY(oi))))}
+                    {animations.flatMap((a, ai) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => wire(`a:${a}>${o}`, animationRight, animationY(ai), objectLeft, objectY(objects.indexOf(o)), SOCKET_COLORS.generator, ANIMATION_WIRE_END)))}
+                    {/* animations whose generator isn't connected are paler, like in the map */}
+                    {animations.map((a, i) => (
+                        <g key={a} opacity={info.animations.includes(a) ? 1 : 0.45}>
+                            <rect x={INSET} y={(notes.length + i) * noteRow + noteRow * 0.15} width={animationBar} height={noteRow * 0.7} fill={HEADER_COLORS.animation} />
+                            {textSize >= MIN_TEXT && (
+                                <text x={INSET + TEXT_PAD} y={animationY(i)} fontSize={textSize} fill="#fff" dominantBaseline="central" fontFamily="Arial, sans-serif">
+                                    {fitText(a, animationBar - TEXT_PAD * 2, textSize)}
+                                </text>
+                            )}
+                        </g>
+                    ))}
                     {/* notes the MIDI doesn't play are paler, like in the map */}
                     {notes.map((n, i) => (
                         <g key={n} opacity={info.midiNotes.includes(n) ? 1 : 0.45}>

@@ -401,7 +401,7 @@ test("note map keeps its nodes when a run sends new results", async ({ page }) =
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
     const map = page.locator(".note-map-layer");
-    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+    await expect(map.locator(".react-flow__node")).toHaveCount(13);
 
     // realtime runs one after another send the results again as new objects, the same or changed. react flow hides a
     // node rebuilt without its measured size until it measures it again, quick rebuilds left them all hidden
@@ -424,7 +424,7 @@ test("moving a node in the note map leaves the rest where they are", async ({ pa
     await openWindow(page, { ...backend, get_state: state }, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
     const map = page.locator(".note-map-layer");
-    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+    await expect(map.locator(".react-flow__node")).toHaveCount(13);
     const box = async (id: string) => (await map.locator(`.react-flow__node[data-id="${id}"]`).boundingBox())!;
 
     // dragging the first object up stores where it went, and where the objects under it are so they don't close up
@@ -511,7 +511,7 @@ test("clicking an edge selects it in every graph", async ({ page }) => {
 
     // and in the note map
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
-    await expect(page.locator(".note-map-layer .react-flow__node")).toHaveCount(12);
+    await expect(page.locator(".note-map-layer .react-flow__node")).toHaveCount(13);
     const wire = page.locator(".note-map-layer .react-flow__edge").nth(2);
     const wirePoint = await edgePoint(wire);
     await page.mouse.click(wirePoint.x, wirePoint.y);
@@ -554,7 +554,7 @@ test("note map box select takes the wires it crosses", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
     const map = page.locator(".note-map-layer");
-    await expect(map.locator(".react-flow__node")).toHaveCount(12);
+    await expect(map.locator(".react-flow__node")).toHaveCount(13);
 
     // a box from empty space above the wires down across the first three, between the notes and the objects
     const note = (await map.locator('.react-flow__node[data-id="n:61"]').boundingBox())!;
@@ -566,7 +566,8 @@ test("note map box select takes the wires it crosses", async ({ page }) => {
     const socket = (await map.locator('.react-flow__node[data-id="n:61"] .react-flow__handle').boundingBox())!;
     await page.mouse.move(x + 30, socket.y + socket.height / 2 + 5, { steps: 8 });
     await page.mouse.up();
-    await expect(map.locator(".react-flow__edge.selected")).toHaveCount(3);
+    // the notes' wires it crosses, the animation's to the objects below them cross it too
+    await expect(map.locator('.react-flow__edge.selected[data-id^="n:"]')).toHaveCount(3);
     await expect(map.locator(".react-flow__node.selected")).toHaveCount(0);
 
     // x removes those wires only, switching the node to map mode
@@ -590,25 +591,123 @@ test("map mode hides the note numbers and previews the map", async ({ page }) =>
     await expect(node.getByText("Note Numbers", { exact: true })).toBeHidden();
     await expect(node.locator('input[type="text"]')).toHaveCount(0);
 
-    // the preview shows the map: a line per note an object gets, the MIDI's 3 notes and the added one, every object
+    // the preview shows the map: a line per note an object gets, the MIDI's 3 notes and the added one, every object, and
+    // the generator's animation on every object (a map from before animations were wired in it)
     const preview = node.locator(".node-field svg");
-    await expect(preview.locator("path")).toHaveCount(5);
+    await expect(preview.locator("path")).toHaveCount(11);
+    await expect(preview.locator(`rect[fill="#C95B6A"]`)).toHaveCount(1);
     await expect(preview.locator(`rect[fill="#B8962E"]`)).toHaveCount(4);
     await expect(preview.locator(`rect[fill="#3E9E72"]`)).toHaveCount(6);
     await settle(page);
 });
 
-test("linked only hides the notes nothing is wired to", async ({ page }) => {
-    // the fixture in map mode with two of its five notes wired, and linked only on
+test("animations wire to objects in the note map", async ({ page }) => {
+    // the fixture in map mode: a note wired to an object, the generator's animation wired to two objects and one whose
+    // generator isn't connected any more
     const state = structuredClone(backend.get_state);
     const assign = () => state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
-    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.002": [62], "Cube.004": [70] }, notes: [65] } };
+    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.001": [60] }, notes: [], animations: { test: ["Cube.002", "Cube.003"], old: ["Cube.004"] } } };
+    await openWindow(page, { ...backend, get_state: state }, "/#/");
+
+    // the preview draws the animations under the notes with a line to each of their objects
+    const node = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" });
+    const preview = node.locator(".node-field svg");
+    await expect(preview.locator(`rect[fill="#C95B6A"]`)).toHaveCount(2);
+    await expect(preview.locator("path")).toHaveCount(4);
+
+    // the map has a node for each, the old one paler, with one socket each
+    await node.locator(".group-open").click();
+    const map = page.locator(".note-map-layer");
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
+    await expect(map.locator('.react-flow__node[data-id="a:old"] .note-map-added')).toBeVisible();
+    await expect(map.locator('.react-flow__node[data-id="a:test"] .react-flow__handle')).toHaveCount(1);
+    await expect(map.locator(".react-flow__edge")).toHaveCount(4);
+
+    // the notes are in front to begin with, the animations dimmed. hovering an animation brings the animations forward
+    // until a note is hovered again, an object changes nothing
+    const opacity = (selector: string) => map.locator(selector).first();
+    await expect(opacity('.react-flow__node[data-id="a:test"]')).toHaveCSS("opacity", "0.3");
+    await expect(opacity('.react-flow__edge[data-id^="a:"]')).toHaveCSS("opacity", "0.3");
+    await expect(opacity('.react-flow__node[data-id="n:60"]')).toHaveCSS("opacity", "1");
+    await map.locator('.react-flow__node[data-id="a:test"]').hover();
+    await expect(opacity('.react-flow__node[data-id="n:60"]')).toHaveCSS("opacity", "0.3");
+    await expect(opacity('.react-flow__edge[data-id^="n:"]')).toHaveCSS("opacity", "0.3");
+    await expect(opacity('.react-flow__node[data-id="a:old"]')).toHaveCSS("opacity", "1");
+    await map.locator('.react-flow__node[data-id="o:Cube.005"]').hover();
+    await expect(opacity('.react-flow__node[data-id="n:60"]')).toHaveCSS("opacity", "0.3");
+    await map.locator('.react-flow__node[data-id="n:60"]').hover();
+    await expect(opacity('.react-flow__node[data-id="a:test"]')).toHaveCSS("opacity", "0.3");
+    await expect(opacity('.react-flow__node[data-id="n:60"]')).toHaveCSS("opacity", "1");
+    const noteMaps = async () => {
+        const ops = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+        return ops.filter((op: any) => op.op === "set_inputs" && op.inputs.note_map).map((op: any) => op.inputs.note_map);
+    };
+    const wired = async (name: string) => [...((await noteMaps()).at(-1)?.animations?.[name] ?? [])].sort();
+
+    // an animation's socket dragged to an object's wires them
+    const from = (await map.locator('.react-flow__node[data-id="a:test"] .react-flow__handle').boundingBox())!;
+    const to = (await map.locator('.react-flow__node[data-id="o:Cube.005"] .react-flow__handle').boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => wired("test")).toEqual(["Cube.002", "Cube.003", "Cube.005"]);
+
+    // right click on an animation, with no object selected it's wired to all of them
+    const objects = ["ANIM_bounce", "Cube.001", "Cube.002", "Cube.003", "Cube.004", "Cube.005"];
+    await map.locator('.react-flow__node[data-id="a:test"] .node-header').click({ button: "right" });
+    const row = page.locator(".context-menu-row", { hasText: "Assign Animation To All Objects" });
+    // the menu is as wide as its entry, nothing is cut off
+    expect(await row.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await row.click();
+    await expect.poll(() => wired("test")).toEqual(objects);
+
+    // the toolbar's says where it goes, the selected objects once there are some
+    await map.locator('.react-flow__node[data-id="a:test"] .node-header').click();
+    await expect(page.getByRole("button", { name: "Assign Animation To All Objects", exact: true })).toBeVisible();
+    await map.locator('.react-flow__node[data-id="o:Cube.001"] .node-header').click({ modifiers: ["Shift"] });
+    await page.getByRole("button", { name: "Assign Animation To Selected Objects", exact: true }).click();
+    await expect.poll(() => wired("test")).toEqual(["Cube.001", "Cube.002", "Cube.003"]);
+
+    // x on the old one takes it out
+    await map.locator('.react-flow__node[data-id="a:old"] .node-header').click();
+    await page.keyboard.press("x");
+    await expect.poll(async () => (await noteMaps()).at(-1)?.animations).toEqual({ test: ["Cube.002", "Cube.003"] });
+
+    // the view buttons set it on the node, and the map and the preview show only what it says
+    await page.getByRole("button", { name: "Animations", exact: true }).click();
+    const sent = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(sent).toContainEqual({ op: "map_view", node: "assign_notes_to_objects-1", view: "animations" });
+    let rev = state.graph_rev;
+    const show = async (view?: string) => {
+        if (view) assign().data.map_view = view;
+        else delete assign().data.map_view;
+        await emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: ++rev, rf_instance: state.rf_instance });
+    };
+    await show("animations");
+    await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(0);
+    await expect(map.locator(".react-flow__edge")).toHaveCount(3);
+    await show("notes");
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(0);
+    await expect(map.locator(".react-flow__edge")).toHaveCount(1);
+    await show();
+    await expect(map.locator(".react-flow__edge")).toHaveCount(4);
+    await settle(page);
+});
+
+test("linked only hides the notes and animations nothing is wired to", async ({ page }) => {
+    // the fixture in map mode with two of its five notes wired, an animation whose generator isn't connected wired and
+    // the generator's not, and linked only on
+    const state = structuredClone(backend.get_state);
+    const assign = () => state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
+    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.002": [62], "Cube.004": [70] }, notes: [65], animations: { old: ["Cube.004"] } } };
     assign().data.linked_only = true;
     await openWindow(page, { ...backend, get_state: state }, "/#/");
 
-    // the preview shows the wired notes only, every object
+    // the preview shows the wired notes and animations only, every object
     const preview = page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".node-field svg");
     await expect(preview.locator(`rect[fill="#B8962E"]`)).toHaveCount(2);
+    await expect(preview.locator(`rect[fill="#C95B6A"]`)).toHaveCount(1);
     await expect(preview.locator(`rect[fill="#3E9E72"]`)).toHaveCount(6);
 
     // the map too, closed up from the top of the column next to the first objects
@@ -616,7 +715,9 @@ test("linked only hides the notes nothing is wired to", async ({ page }) => {
     const map = page.locator(".note-map-layer");
     await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(2);
     await expect(map.locator('.react-flow__node[data-id^="o:"]')).toHaveCount(6);
-    await expect(map.locator(".react-flow__edge")).toHaveCount(2);
+    await expect(map.locator('.react-flow__edge[data-id^="n:"]')).toHaveCount(2);
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(1);
+    await expect(map.locator('.react-flow__node[data-id="a:old"]')).toBeVisible();
     const top = async (id: string) => (await map.locator(`.react-flow__node[data-id="${id}"]`).boundingBox())!.y;
     expect(Math.abs((await top("n:62")) - (await top("o:ANIM_bounce")))).toBeLessThan(1);
     expect(Math.abs((await top("n:70")) - (await top("o:Cube.001")))).toBeLessThan(1);
@@ -624,10 +725,17 @@ test("linked only hides the notes nothing is wired to", async ({ page }) => {
     // a note whose last wire goes stays until linked only is switched
     let rev = state.graph_rev;
     const send = async () => emitEvent(page, "graph_changed", { tab: state.active_tab, graph_rev: ++rev, rf_instance: state.rf_instance });
-    assign().data.inputs.note_map = { objects: { "Cube.004": [70] }, notes: [62, 65] };
+    assign().data.inputs.note_map = { objects: { "Cube.004": [70] }, notes: [62, 65], animations: { test: ["Cube.001"], old: ["Cube.004"] } };
     await send();
-    await expect(map.locator(".react-flow__edge")).toHaveCount(1);
+    await expect(map.locator('.react-flow__edge[data-id^="n:"]')).toHaveCount(1);
     await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(2);
+
+    // an animation shows once it's wired, and stays when its last wire goes like a note
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
+    assign().data.inputs.note_map.animations = { old: ["Cube.004"] };
+    await send();
+    await expect(map.locator('.react-flow__edge[data-id^="a:"]')).toHaveCount(1);
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
 
     // the button switches it on the node, off shows every note
     await page.getByRole("button", { name: "Linked Only", exact: true }).click();
@@ -636,12 +744,15 @@ test("linked only hides the notes nothing is wired to", async ({ page }) => {
     delete assign().data.linked_only;
     await send();
     await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(5);
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
 
     // on again, only what's wired now
     assign().data.linked_only = true;
     await send();
     await expect(map.locator('.react-flow__node[data-id^="n:"]')).toHaveCount(1);
     await expect(map.locator('.react-flow__node[data-id="n:70"]')).toBeVisible();
+    await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(1);
+    await expect(map.locator('.react-flow__node[data-id="a:old"]')).toBeVisible();
     await settle(page);
 });
 

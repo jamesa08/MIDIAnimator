@@ -1376,6 +1376,22 @@ input.value-slider,
     background: color-mix(in srgb, var(--node-header) 55%, var(--canvas-center));
 }
 
+/* the type that isn't in front of the note map, its nodes and the wires from them (NoteMapView.tsx) */
+.note-map-front-notes .react-flow__node[data-id^="a:"],
+.note-map-front-notes .react-flow__edge[data-id^="a:"],
+.note-map-front-animations .react-flow__node[data-id^="n:"],
+.note-map-front-animations .react-flow__edge[data-id^="n:"] {
+    opacity: 0.3;
+}
+
+/* fades them in and out of it */
+.note-map-front-notes .react-flow__node,
+.note-map-front-notes .react-flow__edge,
+.note-map-front-animations .react-flow__node,
+.note-map-front-animations .react-flow__edge {
+    transition: opacity 0.15s ease;
+}
+
 .react-flow__node.open-group-node .node {
     outline: 2px solid #000;
     outline-offset: 2px;

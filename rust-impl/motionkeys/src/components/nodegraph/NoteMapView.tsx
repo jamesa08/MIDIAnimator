@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow } from "@xyflow/react";
 import { blockUntilRelease, useHold, useKeymap, useModal } from "../../utils/keymap";
@@ -9,16 +9,19 @@ import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
 import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
-import { MapData, NoteMap, isLinked, shownMap, unique } from "../../utils/noteMap";
+import { MapData, MapView, NoteMap, isAnimationLinked, isLinked, mapView, shownAnimations, shownMap, unique } from "../../utils/noteMap";
+import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { useFrameView } from "./frameView";
 import { canvasToolCommands, setEditorState } from "../../utils/editorState";
 
-// the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes wired to the object group's objects,
-// drawn as a graph of small nodes that can be selected and moved like the node editor's. in rules mode it shows what the
-// rules gave, the first edit to the wires switches the node to map mode with that as its map. keep in sync with
-// assign_notes_to_objects and NoteMap in src-tauri/src/graph/executors/animation.rs
+// the note map of Assign Notes to Objects, opened with Tab on the node: MIDI notes and the node's animations wired to the
+// object group's objects, drawn as a graph of small nodes that can be selected and moved like the node editor's. an
+// object plays each animation wired to it on each of its notes. in rules mode it shows what the rules gave, every
+// animation on every object, and the first edit to the wires switches the node to map mode with that as its map. the
+// view shows the notes' wires, the animations' or both. keep in sync with assign_notes_to_objects and NoteMap in
+// src-tauri/src/graph/executors/animation.rs
 
-// where notes and objects were moved to, by node id. the ones that weren't stay in their column
+// where notes, animations and objects were moved to, by node id. the ones that weren't stay in their column
 type Layout = Record<string, [number, number]>;
 
 const ROW = 32;
@@ -32,27 +35,36 @@ function readLayout(value: any): Layout {
     return layout;
 }
 
-// the map as it's stored: notes sorted, objects without notes left out
+// the map as it's stored: notes sorted, objects and animations without wires left out. the animations are always
+// stored, a map without them plays every animation on every object
 function cleanMap(map: NoteMap): NoteMap {
     const objects: Record<string, number[]> = {};
     for (const [name, notes] of Object.entries(map.objects)) {
         if (notes.length) objects[name] = unique(notes);
     }
-    return { objects, notes: unique(map.notes) };
+    const animations: Record<string, string[]> = {};
+    for (const [name, on] of Object.entries(map.animations)) {
+        if (on.length) animations[name] = [...new Set(on)];
+    }
+    return { objects, notes: unique(map.notes), animations };
 }
 
-const copyMap = (map: NoteMap): NoteMap => ({ objects: Object.fromEntries(Object.entries(map.objects).map(([name, notes]) => [name, [...notes]])), notes: [...map.notes] });
+const copyLists = <T,>(lists: Record<string, T[]>): Record<string, T[]> => Object.fromEntries(Object.entries(lists).map(([name, items]) => [name, [...items]]));
+const copyMap = (map: NoteMap): NoteMap => ({ objects: copyLists(map.objects), notes: [...map.notes], animations: copyLists(map.animations) });
 
-// node ids: a note and an object
+// node ids: a note, an animation and an object
 const noteKey = (note: number) => `n:${note}`;
+const animationKey = (name: string) => `a:${name}`;
 const objectKey = (name: string) => `o:${name}`;
 const isNote = (id: string) => id.startsWith("n:");
+const isAnimation = (id: string) => id.startsWith("a:");
 const isObject = (id: string) => id.startsWith("o:");
 
 // MARK: - Nodes and Wires
 
-// notes and objects are small nodes, just a header with the graph's socket on it. like the graph, react flow's sources
-// are inputs and its targets outputs: a note's socket is an output, an object's an input
+// notes, animations and objects are small nodes, just a header with the graph's socket on it. like the graph, react
+// flow's sources are inputs and its targets outputs: a note's and an animation's socket is an output, an object's an
+// input that takes both
 const socket = (dataType: string) => ({ width: 14, height: 14, ...socketStyle(dataType) });
 
 const NoteNode = memo(({ data }: NodeProps) => (
@@ -66,6 +78,22 @@ const NoteNode = memo(({ data }: NodeProps) => (
     </div>
 ));
 
+// an animation plays on the objects wired to it, its socket in the generator's color. one whose generator isn't
+// connected any more is paler and in italics, like the notes the MIDI doesn't play
+const AnimationNode = memo(({ data }: NodeProps) => (
+    <div className={`note-map-node node${data.stale ? " note-map-added" : ""}`} style={nodeColors("animation")}>
+        <div className="node-header">
+            <span className="flex-1 truncate">{(data.name as string) || "Animation Generator"}</span>
+        </div>
+        <Handle type="target" position={Position.Right} style={socket("AnimationGenerator")} />
+    </div>
+));
+
+// a map node's socket color, an animation's or a note's and an object's
+const wireColor = (id: string) => (isAnimation(id) ? SOCKET_COLORS.generator : SOCKET_COLORS.midi);
+// the color a wire from a node is drawn in all the way, over the fade between its sockets. an animation's are solid
+const wireOverride = (id: string): string | null => (isAnimation(id) ? SOCKET_COLORS.generator : null);
+
 const ObjectNode = memo(({ data }: NodeProps) => (
     <div className="note-map-node node" style={nodeColors("scene")}>
         <div className="node-header">
@@ -75,18 +103,38 @@ const ObjectNode = memo(({ data }: NodeProps) => (
     </div>
 ));
 
-// a wire like the graph's edges, in the notes' socket color
-function MapWire({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, interactionWidth }: EdgeProps) {
+// a wire like the graph's edges, in the color of the sockets it connects
+function MapWire({ id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, selected, interactionWidth }: EdgeProps) {
     const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+    // like the graph's edges it fades from one socket's color to the other's when they differ, unless the node it comes
+    // from overrides it. react flow's targets are the outputs
+    const gradientId = `map-wire-${useId()}`;
+    const override = wireOverride(target);
+    const from = override ?? wireColor(target);
+    const to = override ?? wireColor(source);
     return (
         <>
-            {selected && <EdgeRing path={path} stroke={lighter(SOCKET_COLORS.midi)} />}
-            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ stroke: SOCKET_COLORS.midi }} />
+            {from !== to && (
+                <defs>
+                    <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={targetX} y1={targetY} x2={sourceX} y2={sourceY}>
+                        <stop offset="0%" style={{ stopColor: from }} />
+                        <stop offset="100%" style={{ stopColor: to }} />
+                    </linearGradient>
+                    {selected && (
+                        <linearGradient id={`${gradientId}-ring`} gradientUnits="userSpaceOnUse" x1={targetX} y1={targetY} x2={sourceX} y2={sourceY}>
+                            <stop offset="0%" style={{ stopColor: lighter(from) }} />
+                            <stop offset="100%" style={{ stopColor: lighter(to) }} />
+                        </linearGradient>
+                    )}
+                </defs>
+            )}
+            {selected && <EdgeRing path={path} stroke={from === to ? lighter(from) : `url(#${gradientId}-ring)`} />}
+            <BaseEdge id={id} path={path} interactionWidth={interactionWidth} style={{ stroke: from === to ? from : `url(#${gradientId})` }} />
         </>
     );
 }
 
-const nodeTypes = { map_note: NoteNode, map_object: ObjectNode };
+const nodeTypes = { map_note: NoteNode, map_animation: AnimationNode, map_object: ObjectNode };
 const edgeTypes = { default: MapWire };
 
 type Props = {
@@ -96,6 +144,8 @@ type Props = {
     setInputs: (inputs: Record<string, any>, options?: ApplyOptions) => Promise<unknown>;
     // shows only the notes wired to an object, or all of them. kept on the node, it never runs the graph
     setLinkedOnly: (linkedOnly: boolean) => void;
+    // shows the notes' wires, the animations' or both, kept on the node like linked only
+    setView: (view: MapView) => void;
     // ends or undoes a transaction (adding a note, then grabbing it until a click places it)
     endTxn: (txn: string) => void;
     cancelTxn: (txn: string) => void;
@@ -164,12 +214,17 @@ function NoteMapView(props: Props) {
     );
 }
 
-function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn, cancelTxn, onExit, onExitToRoot }: Props) {
+function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView, endTxn, cancelTxn, onExit, onExitToRoot }: Props) {
     const mode: string = node.data?.inputs?.mode ?? "rules";
     const { objects, midiNotes } = info;
     const layout = useMemo(() => readLayout(node.data?.inputs?.map_layout), [node.data?.inputs?.map_layout]);
 
     const { map, notes } = useMemo(() => shownMap(mode, info, node.data?.inputs?.note_map), [mode, info, node.data?.inputs?.note_map]);
+    const animations = useMemo(() => shownAnimations(map, info), [map, info]);
+    // the notes' wires, the animations' or both, with the nodes they come from
+    const view = mapView(node.data?.map_view);
+    const showNotes = view !== "animations";
+    const showAnimations = view !== "notes";
 
     // with linked only the notes nothing is wired to are hidden. a note shown while it's on stays until it's switched,
     // so removing a note's last wire doesn't take it away under the cursor, and notes the map adds or finds show too
@@ -177,37 +232,50 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
     const keptRef = useRef(new Set<number>());
     const [keptRev, setKeptRev] = useState(0);
     const visible = useMemo(() => {
+        if (!showNotes) return [];
         if (!linkedOnly) {
             keptRef.current = new Set();
             return notes;
         }
         for (const n of notes) if (isLinked(map, objects, n)) keptRef.current.add(n);
         return notes.filter((n) => keptRef.current.has(n));
-    }, [linkedOnly, notes, map, objects, keptRev]);
+    }, [showNotes, linkedOnly, notes, map, objects, keptRev]);
+    // the animations too, the ones wired to no object are hidden the same way
+    const keptAnimationsRef = useRef(new Set<string>());
+    const shownAnimationNodes = useMemo(() => {
+        if (!showAnimations) return [];
+        if (!linkedOnly) {
+            keptAnimationsRef.current = new Set();
+            return animations;
+        }
+        for (const a of animations) if (isAnimationLinked(map, objects, a)) keptAnimationsRef.current.add(a);
+        return animations.filter((a) => keptAnimationsRef.current.has(a));
+    }, [showAnimations, linkedOnly, animations, map, objects]);
     const keep = (ns: number[]) => {
         if (!linkedOnly) return;
         ns.forEach((n) => keptRef.current.add(n));
         setKeptRev((rev) => rev + 1);
     };
 
-    // every edit to the wires stores the whole map and switches the node to map mode, one undo step. a note that's gone
-    // takes its saved position with it
+    // every edit to the wires stores the whole map and switches the node to map mode, one undo step. a note or an
+    // animation that's gone takes its saved position with it
     const commit = useCallback(
         (next: NoteMap, extra: Record<string, any> = {}, options?: ApplyOptions) => {
             if (!editable) return Promise.resolve();
-            const kept = new Set([...midiNotes, ...next.notes, ...objects.flatMap((o) => next.objects[o] ?? [])].map(noteKey));
+            const stored = cleanMap(next);
+            const kept = new Set([...[...midiNotes, ...stored.notes, ...objects.flatMap((o) => stored.objects[o] ?? [])].map(noteKey), ...[...info.animations, ...Object.keys(stored.animations)].map(animationKey)]);
             const saved: Layout = extra.map_layout ?? layout;
-            const gone = Object.keys(saved).filter((id) => isNote(id) && !kept.has(id));
+            const gone = Object.keys(saved).filter((id) => (isNote(id) || isAnimation(id)) && !kept.has(id));
             if (gone.length) extra = { ...extra, map_layout: Object.fromEntries(Object.entries(saved).filter(([id]) => !gone.includes(id))) };
-            return setInputs({ mode: "map", note_map: cleanMap(next), ...extra }, options);
+            return setInputs({ mode: "map", note_map: stored, ...extra }, options);
         },
-        [editable, setInputs, midiNotes, objects, layout]
+        [editable, setInputs, midiNotes, objects, info.animations, layout]
     );
 
     // MARK: - Graph
 
-    // where each shown node sits with `saved` positions: notes in a column on the left and objects on the right, unless
-    // they were moved. moved ones don't take a row, the rest close up, hidden notes too
+    // where each shown node sits with `saved` positions: notes in a column on the left with the animations under them,
+    // and objects on the right, unless they were moved. moved ones don't take a row, the rest close up, hidden ones too
     const place = useCallback(
         (saved: Layout) => {
             const column = (ids: string[], x: number) => {
@@ -217,9 +285,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
                     return [id, { x: lx, y: ly }] as const;
                 });
             };
-            return new Map([...column(visible.map(noteKey), 0), ...column(objects.map(objectKey), COLUMN)]);
+            return new Map([...column([...visible.map(noteKey), ...shownAnimationNodes.map(animationKey)], 0), ...column(objects.map(objectKey), COLUMN)]);
         },
-        [visible, objects]
+        [visible, shownAnimationNodes, objects]
     );
     // a move stores where the moved nodes went, and where the ones that would close up after them are, so nothing else
     // moves
@@ -237,9 +305,17 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
     );
     const built = useMemo<Node[]>(() => {
         const at = place(layout);
-        return [...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n) } })), ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: o } }))];
-    }, [place, visible, objects, midiNotes, layout]);
-    const builtWires = useMemo<Edge[]>(() => objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))), [objects, map]);
+        return [
+            ...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n) } })),
+            ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !info.animations.includes(a) } })),
+            ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: o } })),
+        ];
+    }, [place, visible, shownAnimationNodes, objects, midiNotes, info.animations, layout]);
+    // the notes' and the animations' wires to the objects, the view's. objects that aren't in the group aren't drawn
+    const builtWires = useMemo<Edge[]>(
+        () => [...(showNotes ? objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))) : []), ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), target: animationKey(a) })))],
+        [showNotes, objects, map, shownAnimationNodes]
+    );
 
     // react flow's copies, they keep the selection and positions mid drag. a tool can ask for what's selected after its edit
     const [nodes, setNodes] = useState<Node[]>(built);
@@ -304,20 +380,28 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
         []
     );
 
-    // a note's socket dragged to an object's (or back) connects them. stored like the graph's edges, the source is the
-    // object taking the note
+    // a note's or an animation's socket dragged to an object's (or back) connects them. stored like the graph's edges,
+    // the source is the object taking them
     const onConnect = useCallback(
         ({ source, target }: Connection) => {
-            if (!isObject(source) || !isNote(target)) return;
+            if (!isObject(source)) return;
+            const object = source.slice(2);
             const next = copyMap(map);
-            const list = (next.objects[source.slice(2)] ??= []);
-            const note = Number(target.slice(2));
-            if (!list.includes(note)) list.push(note);
+            if (isNote(target)) {
+                const list = (next.objects[object] ??= []);
+                const note = Number(target.slice(2));
+                if (!list.includes(note)) list.push(note);
+            } else if (isAnimation(target)) {
+                const list = (next.animations[target.slice(2)] ??= []);
+                if (!list.includes(object)) list.push(object);
+            } else {
+                return;
+            }
             commit(next);
         },
         [map, commit]
     );
-    const isValidConnection = useCallback((c: Edge | Connection) => isObject(c.source) && isNote(c.target), []);
+    const isValidConnection = useCallback((c: Edge | Connection) => isObject(c.source) && (isNote(c.target) || isAnimation(c.target)), []);
 
     // MARK: - Tools
 
@@ -380,7 +464,20 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
         commit(next);
     };
 
-    // the selected wires and everything connected to the selected notes and objects, added notes that are selected go too
+    // the selected animations (or every connected one) to the selected objects (or every object), next to the wires they
+    // have. the toolbar's Assign Animation and the right click menu's
+    const selectedAnimations = () => animations.filter((a) => nodes.some((n) => n.selected && n.id === animationKey(a)));
+    const assign = () => {
+        const as = selectedAnimations().length ? selectedAnimations() : info.animations;
+        const os = selectedObjects().length ? selectedObjects() : objects;
+        if (!as.length || !os.length) return;
+        const next = copyMap(map);
+        for (const a of as) next.animations[a] = [...new Set([...(next.animations[a] ?? []), ...os])];
+        commit(next);
+    };
+
+    // the selected wires and everything connected to the selected notes, animations and objects. added notes that are
+    // selected go too, and animations whose generator isn't connected
     const removeSelected = () => {
         const nodeIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
         const wireIds = new Set(wires.filter((w) => w.selected).map((w) => w.id));
@@ -390,13 +487,24 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
             next.objects[object] = (next.objects[object] ?? []).filter((n) => !wireIds.has(`${noteKey(n)}>${objectKey(object)}`) && !nodeIds.has(noteKey(n)) && !nodeIds.has(objectKey(object)));
         }
         next.notes = next.notes.filter((n) => !nodeIds.has(noteKey(n)));
+        for (const [a, on] of Object.entries(next.animations)) {
+            const key = animationKey(a);
+            next.animations[a] = nodeIds.has(key) ? [] : on.filter((o) => !wireIds.has(`${key}>${objectKey(o)}`) && !nodeIds.has(objectKey(o)));
+        }
         selectNext.current = new Set();
         commit(next);
     };
 
+    // clears what the view shows: the notes' wires and the added notes, the animations' wires, or both
     const clear = () => {
-        if (nodes.some((n) => n.selected) || wires.some((w) => w.selected)) removeSelected();
-        else commit({ objects: {}, notes: [] });
+        if (nodes.some((n) => n.selected) || wires.some((w) => w.selected)) return removeSelected();
+        const next = copyMap(map);
+        if (showNotes) {
+            next.objects = {};
+            next.notes = [];
+        }
+        if (showAnimations) next.animations = {};
+        commit(next);
     };
 
     // MARK: - Grab and Add
@@ -516,8 +624,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
 
     // the node editor's keys, its own commands are off while the map covers it
     useKeymap("node_editor", {
+        // notes are added where they're shown
         add_node: () => {
-            if (editable) setMenu({ ...mouseRef.current });
+            if (editable && showNotes) setMenu({ ...mouseRef.current });
         },
         grab: () => {
             const selected = nodesRef.current.filter((n) => n.selected);
@@ -552,6 +661,42 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
     const panHeld = useHold("node_editor", "pan");
     // react flow's own drags take every key until the mouse is let go, like the node editor's
     const blockKeys = useCallback(() => blockUntilRelease(), []);
+    // a wire being dragged is in the color of the socket it's dragged from
+    const [dragColor, setDragColor] = useState<string>(SOCKET_COLORS.midi);
+    // in the combined view the type the cursor was last over, a note or an animation (or their wires), stays in front and
+    // the other is dimmed. the notes are in front to begin with, objects change nothing
+    const [front, setFront] = useState<"notes" | "animations">("notes");
+    const bringForward = (id: string) => {
+        if (grabRef.current) return;
+        if (isNote(id)) setFront("notes");
+        else if (isAnimation(id)) setFront("animations");
+    };
+    const startConnect = useCallback(
+        (_: any, { nodeId }: { nodeId: string | null }) => {
+            blockKeys();
+            setDragColor(wireColor(nodeId ?? ""));
+        },
+        [blockKeys]
+    );
+
+    // right click on a node opens its menu, it becomes the selection unless it's in it already. the empty map's menu
+    // works on every animation and object, a selection's on what's selected
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const closeContextMenu = useCallback(() => setContextMenu(null), []);
+    const openContextMenu = (event: MouseEvent | React.MouseEvent) => {
+        event.preventDefault();
+        if (editable) setContextMenu({ x: event.clientX, y: event.clientY });
+    };
+    const onNodeContextMenu = (event: React.MouseEvent, clicked: Node) => {
+        if (!clicked.selected && editable) {
+            setNodes((current) => current.map((n) => ({ ...n, selected: n.id === clicked.id })));
+            setWires((current) => current.map((w) => ({ ...w, selected: false })));
+        }
+        openContextMenu(event);
+    };
+    // named for where it goes, the selected objects or all of them
+    const assignLabel = selectedObjects().length ? "Assign Animation To Selected Objects" : "Assign Animation To All Objects";
+    const contextSections: ContextEntry[][] = [[{ id: "assign_animation", label: assignLabel, run: assign }]];
 
     const tool = "px-3 h-6 border border-black bg-white hover:bg-zinc-100";
     // a button that's black while it's on
@@ -561,24 +706,35 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
             {label}
         </button>
     );
+    const viewButton = (value: MapView, label: string) => (
+        <button className={pressed(view === value)} onClick={() => editable && value !== view && setView(value)}>
+            {label}
+        </button>
+    );
 
     return (
         <>
             <NodeGraphCanvas
-                className="group-canvas"
+                className={`group-canvas${view === "combined" ? ` note-map-front-${front}` : ""}`}
                 nodes={nodes}
                 edges={wires}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
-                connectionLineStyle={{ stroke: SOCKET_COLORS.midi }}
+                connectionLineStyle={{ stroke: dragColor }}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 isValidConnection={isValidConnection}
-                onConnectStart={blockKeys}
+                onConnectStart={startConnect}
                 onSelectionStart={blockKeys}
                 onNodeDragStart={blockKeys}
                 onSelectionDragStart={blockKeys}
+                onNodeContextMenu={onNodeContextMenu}
+                onNodeMouseEnter={(_, entered) => bringForward(entered.id)}
+                onEdgeMouseEnter={(_, wire) => bringForward(wire.id)}
+                onSelectionContextMenu={openContextMenu}
+                onPaneContextMenu={openContextMenu}
+                onContextMenu={(event) => event.preventDefault()}
                 panOnDrag={panHeld ? true : [1]}
                 nodesDraggable={editable}
                 nodesConnectable={editable}
@@ -586,6 +742,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
                 fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
             />
             {menu && <NoteAddBox position={menu} onAdd={addFromMenu} onClose={closeMenu} />}
+            {contextMenu && <ContextMenu position={contextMenu} sections={contextSections} onClose={closeContextMenu} />}
             <div className="graph-overlay absolute top-9 z-10 flex items-center gap-1 h-6 font-[Arial,sans-serif] text-xs select-none">
                 <div className="flex">
                     {modeButton("rules", "Rules")}
@@ -604,8 +761,19 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, endTxn,
                 <button className={tool} onClick={clear}>
                     Clear
                 </button>
+            </div>
+            {/* a second row: what the map shows, and the animations' tool */}
+            <div className="graph-overlay absolute top-16 z-10 flex items-center gap-1 h-6 font-[Arial,sans-serif] text-xs select-none">
+                <div className="flex">
+                    {viewButton("notes", "Notes")}
+                    {viewButton("animations", "Animations")}
+                    {viewButton("combined", "Combined")}
+                </div>
                 <button className={`${pressed(linkedOnly)} ml-2`} onClick={() => editable && setLinkedOnly(!linkedOnly)}>
                     Linked Only
+                </button>
+                <button className={`${tool} ml-2`} onClick={assign}>
+                    {assignLabel}
                 </button>
             </div>
         </>

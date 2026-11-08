@@ -10,7 +10,7 @@ import { ApplyOptions, TabContext, useGraphOps } from "../utils/graphOps";
 import NodeGraphEditor, { ProjectAccess } from "./nodegraph/NodeGraphEditor";
 import NodeGraphCanvas from "./nodegraph/NodeGraphCanvas";
 import NoteMapView from "./nodegraph/NoteMapView";
-import { noteMapData } from "../utils/noteMap";
+import { MapView, noteMapData } from "../utils/noteMap";
 import { loadPersisted, savePersisted, usePersistedState } from "../utils/persist";
 import { useConsoleSettings, usePendingReveal, useRunTimings } from "../utils/console";
 import ConsoleOverlay from "./ConsoleOverlay";
@@ -226,6 +226,14 @@ function TabGraph({ tab }: { tab: string }) {
         },
         [mapNode, groupOps]
     );
+    // which wires the map shows, kept on the node like linked only. both isn't kept
+    const setMapView = useCallback(
+        (view: MapView) => {
+            if (!mapNode) return;
+            groupOps.apply([{ op: "map_view", node: mapNode.id, view: view === "combined" ? "" : view }]).catch((e) => console.error(`map_view on ${mapNode.id}: ${e}`));
+        },
+        [mapNode, groupOps]
+    );
     const endMapTxn = useCallback((txn: string) => groupOps.end(txn), [groupOps]);
     const cancelMapTxn = useCallback((txn: string) => groupOps.cancel(txn), [groupOps]);
     const exitMapToRoot = useCallback(() => {
@@ -256,8 +264,8 @@ function TabGraph({ tab }: { tab: string }) {
     // the profiler shows each node's time from the tab's last run
     useRunTimings(tab, useConsoleSettings().profiler);
 
-    // the console's lines go under the rows of buttons in the corner
-    const cornerRows = (crumbs.length > 0 ? 1 : 0) + ((isBuiltin && !mapped) || mapped ? 1 : 0);
+    // the console's lines go under the rows of buttons in the corner, the note map has two
+    const cornerRows = (crumbs.length > 0 ? 1 : 0) + (mapped ? 2 : isBuiltin ? 1 : 0);
 
     return (
         <div className={`node-graph-stack${mapped ? " note-map-open" : ""}`}>
@@ -268,7 +276,7 @@ function TabGraph({ tab }: { tab: string }) {
                     .join(PATH_SEP);
                 return <GraphView key={key} levels={viewLevels} groups={groups} project={project} shown={key === shownPathKey} covered={!!mapped && key === shownPathKey} fitOnOpen={key === "" && fitRef.current} setPath={setPath} openMap={openMap} onReady={onReady} />;
             })}
-            {mapped && info && <NoteMapView key={mapped.id} node={mapped} info={info} editable={active.groupId === null || isLocal} setInputs={setMapInputs} setLinkedOnly={setMapLinkedOnly} endTxn={endMapTxn} cancelTxn={cancelMapTxn} onExit={closeMap} onExitToRoot={exitMapToRoot} />}
+            {mapped && info && <NoteMapView key={mapped.id} node={mapped} info={info} editable={active.groupId === null || isLocal} setInputs={setMapInputs} setLinkedOnly={setMapLinkedOnly} setView={setMapView} endTxn={endMapTxn} cancelTxn={cancelMapTxn} onExit={closeMap} onExitToRoot={exitMapToRoot} />}
             {crumbs.length > 0 && (
                 <div className="graph-overlay absolute top-2 z-10 flex items-center h-6 font-[Arial,sans-serif] text-xs select-none">
                     <button className="px-1 italic hover:underline" onClick={toPath(() => setPath([]))}>

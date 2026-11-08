@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";
+import { mapView } from "../utils/noteMap";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
@@ -120,7 +121,7 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     // the note map, small, under the inputs
     return (
         <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton}>
-            <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} />
+            <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} />
         </BaseNode>
     );
 }
