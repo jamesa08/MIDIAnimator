@@ -8,9 +8,9 @@ export type Segment = { kind: "bezier"; c1: Point; c2: Point; to: Point } | { ki
 // `handles`: each key's left and right handle, null on a side that isn't a bezier
 export type Drawing = { keys: Point[]; handles: [Point | null, Point | null][]; segments: Segment[]; slope_before: number; slope_after: number };
 
-// a curve in the list. `data_path` and `array_index`: the property it animates. `extend`: drawn on past its ends.
-// `pieces`: one curve, or one curve's keys from separate notes
-export type CurveChannel = { id: string; group: string; name: string; axis: string | null; data_path: string; array_index: number; extend: boolean; pieces: Drawing[] };
+// a curve in the list. `semantic`: what it moves (`position.x`, docs/bridge_protocol.md §8.5), with its object's euler
+// order. `extend`: drawn on past its ends. `pieces`: one curve, or one curve's keys from separate notes
+export type CurveChannel = { id: string; group: string; name: string; axis: string | null; semantic: string | null; rotation_order: string | null; extend: boolean; pieces: Drawing[] };
 
 export type NodeCurves = { node: string; channels: CurveChannel[] };
 

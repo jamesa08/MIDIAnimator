@@ -308,9 +308,9 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         return [
             ...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n) } })),
             ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !info.animations.includes(a) } })),
-            ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: o } })),
+            ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: info.objectNames[o] ?? o } })),
         ];
-    }, [place, visible, shownAnimationNodes, objects, midiNotes, info.animations, layout]);
+    }, [place, visible, shownAnimationNodes, objects, info.objectNames, midiNotes, info.animations, layout]);
     // the notes' and the animations' wires to the objects, the view's. objects that aren't in the group aren't drawn
     const builtWires = useMemo<Edge[]>(
         () => [...(showNotes ? objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), target: noteKey(n) }))) : []), ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), target: animationKey(a) })))],

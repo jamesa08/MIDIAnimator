@@ -116,7 +116,7 @@ function Graph() {
         };
     }, []);
     const setFramesSetting = (on: boolean) => invoke("set_setting", { path: "graph.time_units", value: on ? "frames" : "seconds" }).catch((e) => console.error(`Error saving setting graph.time_units: ${e}`));
-    const scene = state.scene_data?.["Scene"] ?? Object.values(state.scene_data ?? {})[0];
+    const scene = state.scene;
     const fps: number = typeof (scene as any)?.fps === "number" && (scene as any).fps > 0 ? (scene as any).fps : 24;
     const toggleHandles = () => invoke("set_setting", { path: "graph.show_handles", value: !showHandles }).catch((e) => console.error(`Error saving setting graph.show_handles: ${e}`));
     const togglePreview = () => invoke("set_setting", { path: "graph.show_preview", value: !showPreview }).catch((e) => console.error(`Error saving setting graph.show_preview: ${e}`));

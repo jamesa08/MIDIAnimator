@@ -1,5 +1,5 @@
-// the graph window's 3d preview: a shape (a cube, a cymbal) moved by the shown curves at the playhead, drawn with
-// three.js. Blender's axes (z up), so curves' values go on as they are
+// the graph window's 3d preview: a shape (a cube, a cymbal) moved by the shown curves at the playhead, by their
+// semantic tags, drawn with three.js. z up and radians (a scene's axes aren't read yet), so values go on as they are
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import * as THREE from "three";
@@ -29,29 +29,51 @@ function shapeGeometries(id: string): THREE.BufferGeometry[] {
     return geometries;
 }
 
-// the properties a shape can show and how many values each has
-const PROPERTIES = { location: 3, rotation_euler: 3, rotation_quaternion: 4, scale: 3 };
+// the semantic tags a shape can show (docs/bridge_protocol.md §8.5): the part of its transform and which value
+const TAGS: Record<string, [Part, number]> = {
+    "position.x": ["position", 0],
+    "position.y": ["position", 1],
+    "position.z": ["position", 2],
+    "rotation.x": ["rotation", 0],
+    "rotation.y": ["rotation", 1],
+    "rotation.z": ["rotation", 2],
+    "quaternion.w": ["quaternion", 0],
+    "quaternion.x": ["quaternion", 1],
+    "quaternion.y": ["quaternion", 2],
+    "quaternion.z": ["quaternion", 3],
+    "scale.x": ["scale", 0],
+    "scale.y": ["scale", 1],
+    "scale.z": ["scale", 2],
+};
+// the euler orders a bridge can send, `XYZ` turns about x first
+const ORDERS = ["XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX"];
 // the grid's size and how many lines across it
 const GRID_SIZE = 20;
 const GRID_DIVISIONS = 20;
 
-// where the shape is, Blender's object properties. `quaternion` when a curve turns it by quaternion, like an object in
-// quaternion rotation mode
-type Transform = { location: number[]; rotation_euler: number[]; rotation_quaternion: number[]; scale: number[]; quaternion: boolean };
+type Part = "position" | "rotation" | "quaternion" | "scale";
+// where the shape is. `usesQuaternion` when a curve turns it by quaternion. `order`: its euler order
+type Transform = Record<Part, number[]> & { usesQuaternion: boolean; order: string };
 
-// the shape's transform at `time` in seconds: the first shown channel for each value, the rest left at Blender's defaults
+// the shape's transform at `time` in seconds: the first shown channel for each value, the rest left at the defaults.
+// the order is the first rotation channel's object's
 function transformAt(channels: ShownChannel[], time: number): Transform {
-    const transform: Transform = { location: [0, 0, 0], rotation_euler: [0, 0, 0], rotation_quaternion: [1, 0, 0, 0], scale: [1, 1, 1], quaternion: false };
+    const transform: Transform = { position: [0, 0, 0], rotation: [0, 0, 0], quaternion: [1, 0, 0, 0], scale: [1, 1, 1], usesQuaternion: false, order: "XYZ" };
     const set = new Set<string>();
+    let ordered = false;
     for (const channel of channels) {
-        const property = channel.data_path as keyof typeof PROPERTIES;
-        const id = `${property}[${channel.array_index}]`;
-        if (!(property in PROPERTIES) || channel.array_index >= PROPERTIES[property] || set.has(id)) continue;
+        const tag = channel.semantic ? TAGS[channel.semantic] : undefined;
+        if (!tag || set.has(channel.semantic!)) continue;
         const value = channelValue(channel, time);
         if (value === null) continue;
-        transform[property][channel.array_index] = value;
-        transform.quaternion ||= property === "rotation_quaternion";
-        set.add(id);
+        const [part, index] = tag;
+        transform[part][index] = value;
+        transform.usesQuaternion ||= part === "quaternion";
+        if (part === "rotation" && !ordered && channel.rotation_order && ORDERS.includes(channel.rotation_order)) {
+            transform.order = channel.rotation_order;
+            ordered = true;
+        }
+        set.add(channel.semantic!);
     }
     return transform;
 }
@@ -203,15 +225,16 @@ function ScenePreview({ channels, time, shape, showGrid }: ScenePreviewProps) {
         if (!current) return;
         const transform = transformAt(channels, time);
         const { object } = current;
-        object.position.set(transform.location[0], transform.location[1], transform.location[2]);
+        object.position.set(transform.position[0], transform.position[1], transform.position[2]);
         object.scale.set(transform.scale[0], transform.scale[1], transform.scale[2]);
-        if (transform.quaternion) {
-            // blender's quaternions are w, x, y, z
-            const [w, x, y, z] = transform.rotation_quaternion;
+        if (transform.usesQuaternion) {
+            // quaternions are w, x, y, z
+            const [w, x, y, z] = transform.quaternion;
             object.quaternion.set(x, y, z, w).normalize();
         } else {
-            // blender's XYZ turns about x first, three.js names its orders by their matrices, the reverse
-            object.rotation.set(transform.rotation_euler[0], transform.rotation_euler[1], transform.rotation_euler[2], "ZYX");
+            // three.js names an order by its matrices, the reverse of the order they turn in
+            const order = [...transform.order].reverse().join("") as THREE.EulerOrder;
+            object.rotation.set(transform.rotation[0], transform.rotation[1], transform.rotation[2], order);
         }
         current.render();
     }, [channels, time]);

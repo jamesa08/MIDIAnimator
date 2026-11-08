@@ -13,6 +13,7 @@ import ExpressionField from "./ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
 import { ColorField } from "./ColorPicker";
 import { FRAME, FRAME_COLOR, isLocked, labelSize, locksSize, shrinks, withContents } from "../utils/frames";
+import { findGroup, findObject, groupOptions, objectOptions } from "../utils/objectGroups";
 import { usePersistedSet } from "../utils/persist";
 
 // MARK: - Parameters
@@ -26,6 +27,7 @@ type Option = { value: string; label: string };
 type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" });
 
 // the names of a list of named things, a mistyped connection can hand over anything
+const list = (items: any): any[] => (Array.isArray(items) ? items : []);
 const names = (items: any): Option[] => (Array.isArray(items) ? items.map((item) => item?.name).filter((name) => typeof name === "string") : []).map((name) => ({ value: name, label: name }));
 
 // each node type's inputs with an editor of their own (src/nodes), the rest get one by their type
@@ -33,11 +35,11 @@ const PARAMS: Record<string, Param[]> = {
     get_midi_file: [{ id: "file_path", kind: "midi_file" }],
     get_midi_track_data: [{ id: "track_name", kind: "select", options: ({ executed }) => names(executed?.tracks) }],
     keyframes_from_object: [
-        { id: "object_group_name", kind: "select", options: ({ executed }) => names(executed?.object_groups) },
-        { id: "object_name", kind: "select", options: ({ node, executed }) => names((Array.isArray(executed?.object_groups) ? executed.object_groups : []).find((g: any) => g?.name === node.data?.inputs?.object_group_name)?.objects) },
+        { id: "object_group_name", kind: "select", options: ({ executed }) => groupOptions(list(executed?.object_groups)) },
+        { id: "object_name", kind: "select", options: ({ node, executed }) => objectOptions(list(findGroup(list(executed?.object_groups), node.data?.inputs?.object_group_name)?.objects)) },
     ],
     assign_notes_to_objects: [
-        { id: "object_group_name", kind: "select", options: ({ executed }) => names(executed?.object_groups) },
+        { id: "object_group_name", kind: "select", options: ({ executed }) => groupOptions(list(executed?.object_groups)) },
         {
             id: "mode",
             kind: "select",
@@ -329,7 +331,7 @@ function Properties() {
         const inputs = (spec?.handles.inputs ?? []).filter((handle) => !handle.data_type.startsWith("Dyn<") && selected.every((node) => custom(handle.id)?.shown?.(node) ?? true));
         const label = shared(selected, (node) => node.data?.label ?? "");
         // the scene Scene Link gives (graph/execute.rs)
-        const scene = state.scene_data?.["Scene"];
+        const scene = state.scene;
         const name = shared(selected, typeName);
 
         // what feeds an input: `Node › Output`, or null when nothing is connected to it.
@@ -404,11 +406,13 @@ function Properties() {
         // the notes Assign Notes to Objects gave each object on the last run, from every animation, like the old add-on's
         // dialog (Object: Cube_60 => Note: 60/C3). a mistyped connection can hand over anything
         const objectMap = single?.type === "assign_notes_to_objects" ? executedResults[single.id]?.object_map?.objects : undefined;
+        // the map is by object id, shown by name
+        const mapObjects = single ? list(findGroup(list(executedInputs[single.id]?.object_groups), single.data?.inputs?.object_group_name)?.objects) : [];
         const objectNotes =
             objectMap && typeof objectMap === "object"
                 ? Object.entries(objectMap)
-                      .map(([object, animations]: [string, any]) => [object, [...new Set(Object.values(animations ?? {}).flat())].filter((n): n is number => typeof n === "number")] as const)
-                      .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                      .map(([object, animations]: [string, any]) => [object, findObject(mapObjects, object)?.name ?? object, [...new Set(Object.values(animations ?? {}).flat())].filter((n): n is number => typeof n === "number")] as const)
+                      .sort(([, a], [, b]) => a.localeCompare(b, undefined, { numeric: true }))
                 : null;
 
         // where a node is, rounded like the canvas shows it
@@ -471,8 +475,8 @@ function Properties() {
                     objectNotes.length > 0 &&
                     section(
                         "ObjectMap",
-                        objectNotes.map(([object, notes]) => (
-                            <Row key={object} name={object} readOnly>
+                        objectNotes.map(([object, name, notes]) => (
+                            <Row key={object} name={name} readOnly>
                                 <ScrollValue>{notes.map((n) => `${n}/${noteToName(n)}`).join(", ")}</ScrollValue>
                             </Row>
                         ))

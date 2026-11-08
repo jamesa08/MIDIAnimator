@@ -6,14 +6,12 @@ import CurvePreview from "../components/graph/CurvePreview";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
+import { findGroup, findObject, groupKey, groupOptions, objectOptions } from "../utils/objectGroups";
 import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
 
-// an animated channel of the object, see Channel in src-tauri/src/graph/executors/animation.rs
-type Channel = { id: string; group: string; name: string };
-
-// object channels show just their name, the others their group too
-const OBJECT_GROUP = "Object";
-const channelLabel = (c: Channel) => (c.group === OBJECT_GROUP ? c.name : `${c.group} › ${c.name}`);
+// a channel of the object with keyframes, see ChannelOption in src-tauri/src/graph/executors/animation.rs. `name`: in its
+// group's list, `label`: the output's name
+type Channel = { id: string; group: string; name: string; label: string };
 
 function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
@@ -29,18 +27,22 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     // a mistyped connection can hand us a non-array, so don't trust the shape
     const objectGroups: any[] = Array.isArray(executedInputs?.["object_groups"]) ? executedInputs["object_groups"] : [];
-    const objectGroupNames: string[] = objectGroups.map((g: any) => g?.name);
+    const groups = groupOptions(objectGroups);
 
-    const selectedGroupName: string = data.inputs?.object_group_name || objectGroupNames[0] || "";
+    // the pick is the group's id, a pick saved before groups had ids is its name and turns into the id
+    const pickedGroup = findGroup(objectGroups, data.inputs?.object_group_name);
+    const selectedGroupName: string = (pickedGroup ? groupKey(pickedGroup) : data.inputs?.object_group_name) || groups[0]?.value || "";
 
-    const objectNames: string[] = objectGroups.find((g: any) => g?.name === selectedGroupName)?.objects?.map?.((o: any) => o?.name) ?? [];
+    // the object's pick is its id too, a name typed in turns into the id
+    const groupObjects: any[] = Array.isArray(findGroup(objectGroups, selectedGroupName)?.objects) ? findGroup(objectGroups, selectedGroupName).objects : [];
+    const objects = objectOptions(groupObjects);
+    const pickedObject = findObject(groupObjects, data.inputs?.object_name);
+    const selectedObjectName: string = (pickedObject ? pickedObject.id : data.inputs?.object_name) || objects[0]?.value || "";
 
-    const selectedObjectName: string = data.inputs?.object_name || objectNames[0] || "";
-
-    // a picked name the scene doesn't have (anymore) stays listed, so the dropdown shows it and picking a real one changes it
-    const withSelected = (names: string[], selected: string) => (!selected || names.includes(selected) ? names : [selected, ...names]);
-    const groupOptions = withSelected(objectGroupNames, selectedGroupName);
-    const objectOptions = withSelected(objectNames, selectedObjectName);
+    // a pick the scene doesn't have (anymore) stays listed, so the dropdown shows it and picking a real one changes it
+    const withSelected = (options: { value: string; label: string }[], selected: string) => (!selected || options.some((o) => o.value === selected) ? options : [{ value: selected, label: selected }, ...options]);
+    const groupChoices = withSelected(groups, selectedGroupName);
+    const objectChoices = withSelected(objects, selectedObjectName);
 
     // the picked channels, one output each
     const channels: string[] = Array.isArray(data.inputs?.channels) ? data.inputs.channels : [];
@@ -52,7 +54,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     const available = lastAvailable.current;
 
     // a picked channel the object doesn't have (anymore) shows its id
-    const channelFor = (channel: string): Channel => available.find((c) => c.id === channel) ?? { id: channel, group: OBJECT_GROUP, name: channel };
+    const channelFor = (channel: string): Channel => available.find((c) => c.id === channel) ?? { id: channel, group: "", name: channel, label: channel };
 
     // outputs something is connected to keep their socket too, e.g. a project opened with this node failing.
     // stored edges are reversed, `target`/`targetHandle` is the node giving the value and its output
@@ -66,7 +68,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         });
     const unpicked = [...new Set(connections.map((c) => c.output))].filter((output) => output !== "dyn_output" && !channels.includes(output));
 
-    const outputs = [...channels.map((channel) => ({ id: channel, name: channelLabel(channelFor(channel)), data_type: "Array<Keyframe>" })), ...unpicked.map((output) => ({ id: output, name: output, data_type: "Array<Keyframe>" }))];
+    const outputs = [...channels.map((channel) => ({ id: channel, name: channelFor(channel).label, data_type: "Array<Keyframe>" })), ...unpicked.map((output) => ({ id: output, name: output, data_type: "Array<Keyframe>" }))];
 
     // sockets moved between rows without the node changing size, so react flow has to measure them again
     const outputsKey = outputs.map((o) => o.id).join("\n");
@@ -77,7 +79,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     useEffect(() => {
         console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
         // filled in automatically, not an undo step
-        if (selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) {
+        if ((selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) || (selectedObjectName && selectedObjectName !== data.inputs?.object_name)) {
             setInputs(id, { object_group_name: selectedGroupName, object_name: selectedObjectName }, { commitToHistory: false });
         }
     }, [selectedGroupName, selectedObjectName]);
@@ -114,19 +116,24 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         );
     };
 
-    // the object's channels as dropdown options, by group
+    // the object's channels as dropdown options, by group. channels the bridge doesn't list have none
     const channelOptions = (options: Channel[]) =>
-        [...new Set(options.map((c) => c.group))].map((group) => (
-            <optgroup key={group} label={group}>
-                {options
-                    .filter((c) => c.group === group)
-                    .map((c) => (
-                        <option key={c.id} value={c.id}>
-                            {c.name}
-                        </option>
-                    ))}
-            </optgroup>
-        ));
+        [...new Set(options.map((c) => c.group))].map((group) => {
+            const items = options
+                .filter((c) => c.group === group)
+                .map((c) => (
+                    <option key={c.id} value={c.id}>
+                        {c.name}
+                    </option>
+                ));
+            return group ? (
+                <optgroup key={group} label={group}>
+                    {items}
+                </optgroup>
+            ) : (
+                items
+            );
+        });
 
     // a row's dropdown: the object's channels, without the ones other rows picked
     const channelSelect = (channel: string, index: number) => {
@@ -161,16 +168,16 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     // the old group's object isn't in the new one, so the object goes back to the new group's first
     const changeGroup = (groupName: string) => {
-        const firstObject = objectGroups.find((g: any) => g?.name === groupName)?.objects?.[0]?.name ?? "";
+        const firstObject = findGroup(objectGroups, groupName)?.objects?.[0]?.id ?? "";
         setInputs(id, { object_group_name: groupName, object_name: firstObject });
     };
 
     const objectGroupNameComponent = (
         <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => changeGroup(e.target.value)}>
-            {groupOptions.length > 0 ? (
-                groupOptions.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
+            {groupChoices.length > 0 ? (
+                groupChoices.map((group, i) => (
+                    <option key={i} value={group.value}>
+                        {group.label}
                     </option>
                 ))
             ) : (
@@ -181,10 +188,10 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     const objectNameComponent = (
         <select className="node-field nodrag nopan" value={selectedObjectName} onChange={(e) => setInputs(id, { object_name: e.target.value })}>
-            {objectOptions.length > 0 ? (
-                objectOptions.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
+            {objectChoices.length > 0 ? (
+                objectChoices.map((object, i) => (
+                    <option key={i} value={object.value}>
+                        {object.label}
                     </option>
                 ))
             ) : (

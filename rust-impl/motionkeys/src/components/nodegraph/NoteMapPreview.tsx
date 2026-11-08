@@ -120,7 +120,7 @@ function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, view 
                             <rect x={objectLeft} y={i * objectRow + objectRow * 0.15} width={objectBar} height={objectRow * 0.7} fill={HEADER_COLORS.scene} />
                             {objectTextSize >= MIN_TEXT && (
                                 <text x={objectLeft + TEXT_PAD} y={objectY(i)} fontSize={objectTextSize} fill="#fff" dominantBaseline="central" fontFamily="Arial, sans-serif">
-                                    {fitText(o, objectBar - TEXT_PAD * 2, objectTextSize)}
+                                    {fitText(info.objectNames[o] ?? o, objectBar - TEXT_PAD * 2, objectTextSize)}
                                 </text>
                             )}
                         </g>

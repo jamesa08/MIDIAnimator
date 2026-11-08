@@ -1,3 +1,4 @@
+import { findGroup } from "./objectGroups";
 // the note map of Assign Notes to Objects as data: what it shows, read from the node's inputs and its last run. no
 // components here, the node's preview (NoteMapPreview.tsx) and the map (NoteMapView.tsx) both read it. keep in sync with
 // assign_notes_to_objects and NoteMap in src-tauri/src/graph/executors/animation.rs
@@ -5,10 +6,10 @@
 // each object's notes, the objects each animation plays on (by the generator's name), and notes added that nothing is
 // connected to yet
 export type NoteMap = { objects: Record<string, number[]>; notes: number[]; animations: Record<string, string[]> };
-// what the map shows from the node's last run: its object group's objects in name order, the MIDI's notes, the
-// connected animations' names in connect order, and each object's notes the node gave (what the rules gave, in rules
-// mode)
-export type MapData = { objects: string[]; midiNotes: number[]; animations: string[]; assigned: Record<string, number[]> };
+// what the map shows from the node's last run: its object group's objects (their ids) in name order with their names,
+// the MIDI's notes, the connected animations' names in connect order, and each object's notes the node gave (what the
+// rules gave, in rules mode). objects are kept by id everywhere, the map too, and shown by name
+export type MapData = { objects: string[]; objectNames: Record<string, string>; midiNotes: number[]; animations: string[]; assigned: Record<string, number[]> };
 // which wires the map and its preview show, kept on the node as `map_view` (unset is both)
 export type MapView = "notes" | "animations" | "combined";
 
@@ -22,11 +23,13 @@ export const mapView = (value: any): MapView => (value === "notes" || value === 
 
 // the inputs and outputs the node ran with, a mistyped connection can hand over anything
 export function noteMapData(inputs: any, results: any, groupName: string | undefined): MapData {
-    const group = list(inputs?.object_groups).find((g) => g?.name === groupName);
-    const objects = list(group?.objects)
-        .map((o) => o?.name)
-        .filter((name) => typeof name === "string")
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const group = findGroup(list(inputs?.object_groups), groupName);
+    const named = list(group?.objects)
+        .filter((o) => typeof o?.id === "string")
+        .map((o) => ({ id: o.id as string, name: typeof o.name === "string" ? (o.name as string) : (o.id as string) }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const objects = named.map((o) => o.id);
+    const objectNames = Object.fromEntries(named.map((o) => [o.id, o.name]));
     const midiNotes = unique(
         list(inputs?.midi_notes)
             .map((n) => n?.note_number)
@@ -44,7 +47,7 @@ export function noteMapData(inputs: any, results: any, groupName: string | undef
             assigned[name] = unique(Object.values(played ?? {}).flatMap(notesIn));
         }
     }
-    return { objects, midiNotes, animations, assigned };
+    return { objects, objectNames, midiNotes, animations, assigned };
 }
 
 // what the map shows: the rules' result in rules mode, the stored map (`noteMap`, the node's note_map) in map mode, and

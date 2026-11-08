@@ -24,7 +24,9 @@ export function customStringify(obj: any, options: StringifyOptions = {}): strin
     const primitive = (val: any): string => {
         if (val === null || typeof val === "undefined") return "";
         if (typeof val === "string") return `"${truncate(val)}"`;
-        if (typeof val === "number" || typeof val === "boolean") return String(val);
+        // fractions to 6 significant digits, keys and handles are full of thirds
+        if (typeof val === "number") return Number.isInteger(val) ? String(val) : String(Number(val.toPrecision(6)));
+        if (typeof val === "boolean") return String(val);
         if (typeof val === "function") return `[Function ${val.name || "anonymous"}]`;
         if (typeof val === "symbol") return val.toString();
         return "";

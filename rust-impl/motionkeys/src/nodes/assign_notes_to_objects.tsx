@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";
+import { findGroup, groupKey, groupOptions } from "../utils/objectGroups";
 import { mapView } from "../utils/noteMap";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
@@ -27,8 +28,10 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     // the object groups the node ran with, like Keyframes from Object. a mistyped connection can hand over anything
     const objectGroups: any[] = Array.isArray(state?.executed_inputs?.[id]?.object_groups) ? state.executed_inputs[id].object_groups : [];
-    const objectGroupNames: string[] = objectGroups.map((g: any) => g?.name);
-    const selectedGroupName: string = data.inputs?.object_group_name || objectGroupNames[0] || "";
+    const groups = groupOptions(objectGroups);
+    // the pick is the group's id, a pick saved before groups had ids is its name and turns into the id
+    const pickedGroup = findGroup(objectGroups, data.inputs?.object_group_name);
+    const selectedGroupName: string = (pickedGroup ? groupKey(pickedGroup) : data.inputs?.object_group_name) || groups[0]?.value || "";
 
     // the first group is picked until one is, filled in automatically, not an undo step
     useEffect(() => {
@@ -55,10 +58,10 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     const objectGroupNameComponent = (
         <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
-            {objectGroupNames.length > 0 ? (
-                objectGroupNames.map((name, i) => (
-                    <option key={i} value={name}>
-                        {name}
+            {groups.length > 0 ? (
+                groups.map((group, i) => (
+                    <option key={i} value={group.value}>
+                        {group.label}
                     </option>
                 ))
             ) : (

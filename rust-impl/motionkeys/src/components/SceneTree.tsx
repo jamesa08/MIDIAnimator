@@ -1,4 +1,5 @@
 import { Icon, IconName } from "../icons";
+import { channelLabel, channelTitle } from "../utils/objectGroups";
 
 // MARK: - Items
 
@@ -7,50 +8,49 @@ type Item = { key: string; icon: IconName; label: string; value?: string; childr
 
 const list = (value: any): any[] => (Array.isArray(value) ? value : []);
 const num = (value: any): string => (typeof value === "number" ? value.toFixed(2) : "");
-const vector = (v: any, f: (n: any) => string = num): string => (v ? [v.x, v.y, v.z].map(f).join(", ") : "");
+const vector = (v: any, f: (n: any) => string = num): string => list(v).map(f).join(", ");
 const degrees = (n: any): string => (typeof n === "number" ? `${((n * 180) / Math.PI).toFixed(1)}°` : "");
 // keyframe times come in seconds
 const seconds = (n: any): string => (typeof n === "number" ? `${Number(n.toFixed(2))}s` : "");
 
-// shape keys come as Blender reprs, `bpy.data.shape_keys['Key'].key_blocks["Basis"]`
-const shapeKeyName = (repr: string): string => /\[["']([^"'\]]*)["']\]$/.exec(repr)?.[1] ?? repr;
-
-// a curve named like Blender's graph editor names it: `X Location`, `Value (Pressed)`
-const AXES = ["X", "Y", "Z", "W"];
-const PROPERTIES: Record<string, string> = { location: "Location", rotation_euler: "Euler Rotation", rotation_quaternion: "Quaternion Rotation", scale: "Scale" };
-function curveName(curve: any): string {
-    const path: string = curve?.data_path ?? "";
-    const index: number = curve?.array_index ?? 0;
-    if (PROPERTIES[path]) return `${AXES[index] ?? index} ${PROPERTIES[path]}`;
-    const key = /^key_blocks\["(.*)"\]\.value$/.exec(path);
-    if (key) return `Value (${key[1]})`;
-    return `${path}[${index}]`;
-}
-
-function objectItem(object: any, key: string): Item {
+// `inDegrees`: the scene's rotations are in degrees already, not radians
+function objectItem(object: any, key: string, inDegrees: boolean): Item {
     return {
         key,
         icon: "object",
         label: object?.name ?? "",
         children: () => {
-            const items: Item[] = [
-                {
+            const items: Item[] = [];
+            const transform = object?.transform;
+            if (transform) {
+                items.push({
                     key: `${key}/transform`,
                     icon: "transform",
                     label: "Transform",
                     children: () => [
-                        { key: `${key}/position`, icon: "position", label: "Position", value: vector(object.position) },
-                        { key: `${key}/rotation`, icon: "rotation", label: "Rotation", value: vector(object.rotation, degrees) },
-                        { key: `${key}/scale`, icon: "scale", label: "Scale", value: vector(object.scale) },
+                        { key: `${key}/position`, icon: "position", label: "Position", value: vector(transform.position) },
+                        { key: `${key}/rotation`, icon: "rotation", label: "Rotation", value: vector(transform.rotation, inDegrees ? (n) => (typeof n === "number" ? `${n.toFixed(1)}°` : "") : degrees) },
+                        { key: `${key}/scale`, icon: "scale", label: "Scale", value: vector(transform.scale) },
                     ],
-                },
-            ];
+                });
+            }
 
-            // the reference key isn't one of the keys
-            const shapes = object?.blend_shapes;
-            const names = [shapes?.reference, ...list(shapes?.keys)].filter((name) => typeof name === "string").map(shapeKeyName);
-            if (names.length) {
-                items.push({ key: `${key}/shape_keys`, icon: "shape_keys", label: "Shape Keys", children: () => names.map((name, i) => ({ key: `${key}/shape_keys/${i}`, icon: "shape_key", label: name })) });
+            // the channels the bridge lists, by their groups
+            const channels = list(object?.channels).filter((channel) => typeof channel?.id === "string");
+            if (channels.length) {
+                const groups = [...new Set(channels.map((channel) => `${channel.group ?? ""}`))];
+                items.push({
+                    key: `${key}/channels`,
+                    icon: "fcurve",
+                    label: "Channels",
+                    children: () =>
+                        groups.map((group) => ({
+                            key: `${key}/channels/${group}`,
+                            icon: "group",
+                            label: group,
+                            children: () => channels.filter((channel) => `${channel.group ?? ""}` === group).map((channel) => ({ key: `${key}/channels/${group}/${channel.id}`, icon: "fcurve", label: channelTitle(channel) })),
+                        })),
+                });
             }
 
             const curves = list(object?.anim_curves);
@@ -63,8 +63,8 @@ function objectItem(object: any, key: string): Item {
                         curves.map((curve, i) => ({
                             key: `${key}/animation/${i}`,
                             icon: "fcurve",
-                            label: curveName(curve),
-                            children: () => list(curve?.keyframe_points).map((point, j) => ({ key: `${key}/animation/${i}/${j}`, icon: "keyframe", label: seconds(point?.co?.[0]), value: num(point?.co?.[1]) })),
+                            label: channelLabel(object, typeof curve?.channel === "string" ? curve.channel : ""),
+                            children: () => list(curve?.keys).map((point, j) => ({ key: `${key}/animation/${i}/${j}`, icon: "keyframe", label: seconds(point?.[0]), value: num(point?.[1]) })),
                         })),
                 });
             }
@@ -83,7 +83,7 @@ function sceneItem(scene: any): Item {
                 key: `scene/${i}`,
                 icon: "collection",
                 label: group?.name ?? "",
-                children: () => list(group?.objects).map((object, j) => objectItem(object, `scene/${i}/${j}`)),
+                children: () => list(group?.objects).map((object, j) => objectItem(object, `scene/${i}/${j}`, scene?.axes?.angle_unit === "degrees")),
             })),
     };
 }
