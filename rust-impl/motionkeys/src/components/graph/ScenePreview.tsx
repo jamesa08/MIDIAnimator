@@ -210,7 +210,8 @@ function ScenePreview({ channels, time, shape, showGrid }: ScenePreviewProps) {
             const [w, x, y, z] = transform.rotation_quaternion;
             object.quaternion.set(x, y, z, w).normalize();
         } else {
-            object.rotation.set(transform.rotation_euler[0], transform.rotation_euler[1], transform.rotation_euler[2]);
+            // blender's XYZ turns about x first, three.js names its orders by their matrices, the reverse
+            object.rotation.set(transform.rotation_euler[0], transform.rotation_euler[1], transform.rotation_euler[2], "ZYX");
         }
         current.render();
     }, [channels, time]);
