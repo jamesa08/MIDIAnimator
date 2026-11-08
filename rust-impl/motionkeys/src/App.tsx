@@ -2,7 +2,7 @@ import TabBar from "./components/TabBar";
 import ToolBar from "./components/ToolBar";
 import Panel from "./components/Panel";
 import StatusBar from "./components/StatusBar";
-import UnsavedChangesModal from "./components/UnsavedChangesModal";
+import { UnsavedChangesPrompt, askUnsaved } from "./components/UnsavedChangesModal";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -81,13 +81,6 @@ function App() {
         };
     }, []);
 
-    // the unsaved changes prompt while the window is closing, it resolves to what was picked
-    const [closePrompt, setClosePrompt] = useState<((answer: "save" | "discard" | "cancel") => void) | null>(null);
-    const answerClose = (answer: "save" | "discard" | "cancel") => {
-        closePrompt?.(answer);
-        setClosePrompt(null);
-    };
-
     // closing the main window asks about each tab with unsaved changes first (showing it), the app quits once it's gone.
     // cancelling, or cancelling a save dialog, keeps the window open
     useEffect(() => {
@@ -96,7 +89,7 @@ function App() {
             const { unsaved_tabs } = await invoke<{ unsaved_tabs: string[] }>("get_project_status");
             for (const id of unsaved_tabs) {
                 await invoke("switch_active_instance", { id });
-                const answer = await new Promise<"save" | "discard" | "cancel">((resolve) => setClosePrompt(() => resolve));
+                const answer = await askUnsaved();
                 if (answer === "cancel") return;
                 if (answer === "save") {
                     try {
@@ -335,7 +328,7 @@ function App() {
                     <StatusBar />
                 </ErrorBoundary>
             </div>
-            {closePrompt && <UnsavedChangesModal onSave={() => answerClose("save")} onDiscard={() => answerClose("discard")} onCancel={() => answerClose("cancel")} />}
+            <UnsavedChangesPrompt />
         </div>
     );
 }
