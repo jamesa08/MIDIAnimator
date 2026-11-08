@@ -1,38 +1,38 @@
 # Scene change tracker for MotionKeys Bridge
-# Detects important scene changes and sends updates via the Server singleton
+# Detects important scene changes and sends updates via the Server singleton: the scene when its layout changes, the
+# curves of watched objects when their keys change
 
 import bpy
-from bpy_extras import anim_utils
-
-# action slots came in Blender 4.4. from then on the old action.fcurves API only reaches a legacy slot the object isn't
-# assigned to, so keys written through it never animate, and reading it can miss the slot the object uses
-SLOTTED_ACTIONS = bpy.app.version >= (4, 4, 0)
 from bpy.app.handlers import persistent
-import json
+from mathutils import Quaternion
+import math
 import time
-import uuid
 from . core import Server
+from .animation import fcurves_of, get_enums, object_channels, object_curves, object_fcurves, scene_fps, shape_keys_of
 
-# the scene as last sent, compared on every depsgraph update
+# the scene's layout as last sent, compared on every depsgraph update
 _last_structure = None
-_last_values = None
 
-# the objects MotionKeys reads keyframes from, only these send their curves (set_watched_objects)
+# the objects MotionKeys reads curves from (set_watched_objects)
 _watched = set()
+# what MotionKeys has of each watched object: {name: (signature, curves)}, curves None when it got them some other
+# way. a curves event sends the objects whose curves differ from these
+_sent = {}
+# the watched objects' signatures at the last depsgraph update, a change restarts the debounce
+_seen = {}
 
 # Debounce variables
-_last_value_change_time = 0
-_values_pending = False
-_debounce_interval = 0.5  # seconds to wait after the last transform or keyframe change before sending update
+_last_curves_change_time = 0
+_curves_pending = False
+_debounce_interval = 0.5  # seconds to wait after the last keyframe change before sending the curves
 _timer_registered = False  # Track if our timer is registered
 
-def generate_uuid():
-    """Generate a unique UUID for each message."""
-    return str(uuid.uuid4())
-
 def get_structure_signature():
-    """The scene layout: every collection's children and objects in order, and each object's name, parent, visibility and actions.
-    Any change here is sent right away."""
+    """The layout of the scene the user is working in: its name and frame rate, every collection's children and
+    objects in order, and what each object's channels are listed from (object_layout). Any change here is sent right
+    away, switching scenes too. Transforms aren't in it, moving an object never sends the scene. It runs on every
+    depsgraph update, so it only reads attributes, no data paths are resolved."""
+    scene = bpy.context.scene
     collections = []
 
     def walk(key, collection):
@@ -40,260 +40,283 @@ def get_structure_signature():
         for child in collection.children:
             walk(child.name, child)
 
-    for scene in bpy.data.scenes:
-        walk(scene.name, scene.collection)
+    walk(scene.name, scene.collection)
 
-    objects = tuple(
-        (obj.name, obj.parent.name if obj.parent else None, obj.visible_get(), action_name(obj), action_name(getattr(obj.data, "shape_keys", None)))
-        for obj in bpy.data.objects
+    objects = tuple(object_layout(obj) for obj in scene.objects)
+    return (scene.name, scene_fps(scene), tuple(collections), objects)
+
+def object_layout(obj):
+    """An object's name, parent and visibility, and everything its channel list comes from: its actions, their
+    F-curves and whether each has keys, its shape keys' names, its bones' names, the rotation modes of the object and
+    its bones, and once it's animated the names of its and its bones' custom properties."""
+    shape_keys = shape_keys_of(obj)
+    fcurves = fcurves_layout(obj)
+    # a custom property's F-curve is listed under the property's key, once the property is renamed it's raw
+    animated = bool(fcurves)
+    return (
+        obj.name,
+        obj.parent.name if obj.parent else None,
+        obj.visible_get(),
+        obj.rotation_mode,
+        action_name(obj),
+        fcurves,
+        tuple(obj.keys()) if animated else None,
+        action_name(shape_keys),
+        fcurves_layout(shape_keys),
+        tuple(block.name for block in shape_keys.key_blocks) if shape_keys else None,
+        tuple((bone.name, bone.rotation_mode, tuple(bone.keys()) if animated else None) for bone in obj.pose.bones) if obj.pose else None,
     )
-    return (tuple(collections), objects)
+
+def fcurves_layout(id_data):
+    """The data path and index of each F-curve of an object's or shape keys' action, and whether it has keys."""
+    return tuple((fcurve.data_path, fcurve.array_index, len(fcurve.keyframe_points) > 0) for fcurve in fcurves_of(id_data))
 
 def action_name(id_data):
     """The name of the action on an object or shape keys, None without one."""
     anim_data = id_data.animation_data if id_data else None
     return anim_data.action.name if anim_data and anim_data.action else None
 
-def get_values_signature():
-    """Values that change continuously while dragging: transforms, and the keyframes of watched objects.
-    Changes are sent once they settle."""
-    values = []
-    for obj in bpy.data.objects:
-        values.append((obj.name, tuple(obj.location), tuple(obj.rotation_euler), tuple(obj.scale)))
-        if obj.name in _watched:
-            for fcurve in FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj):
-                values.append((obj.name, fcurve.data_path, fcurve.array_index, keyframes_signature(fcurve)))
-    return tuple(values)
+def watched_signatures():
+    """The keys of the watched objects in the scene, by object name. They change continuously while dragging, so
+    changes are sent once they settle. Transforms aren't watched: they go out with the scene, but moving an object
+    doesn't send it."""
+    scene = bpy.context.scene
+    fps = scene_fps(scene)
+    signatures = {}
+    for name in _watched:
+        obj = scene.objects.get(name)
+        if obj is not None:
+            signatures[name] = object_signature(obj, fps)
+    return signatures
+
+def object_signature(obj, fps):
+    """Everything an object's curves are made from: its F-curves' keys and modifiers, and the frame rate that turns
+    frames into seconds."""
+    return (fps, tuple((fcurve.data_path, fcurve.array_index, keyframes_signature(fcurve), modifiers_signature(fcurve)) for fcurve in object_fcurves(obj)))
 
 def keyframes_signature(fcurve):
-    """An F-curve's keys, handles and interpolations as flat tuples. foreach_get reads them in one go, an object with
-    thousands of keys is compared on every depsgraph update"""
+    """An F-curve's keys, handles, interpolations and easings as flat tuples. foreach_get reads them in one go, an
+    object with thousands of keys is compared on every depsgraph update"""
     points = fcurve.keyframe_points
     signature = []
-    for prop, size in (("co", 2), ("handle_left", 2), ("handle_right", 2), ("interpolation", 1)):
+    for prop, size in (("co", 2), ("handle_left", 2), ("handle_right", 2), ("back", 1), ("amplitude", 1), ("period", 1)):
         values = [0] * (len(points) * size)
         points.foreach_get(prop, values)
         signature.append(tuple(values))
+    for prop in ("interpolation", "easing"):
+        signature.append(tuple(get_enums(points, prop)))
     return tuple(signature)
 
-def set_watched_objects(names):
-    """Sets the objects MotionKeys reads keyframes from. their curves go out with every scene update from now on"""
-    global _watched, _last_values
+# modifier settings that only change how it's shown
+UI_PROPERTIES = {"rna_type", "name", "show_expanded", "active", "is_valid"}
+
+def rna_signature(struct):
+    """The settings of a modifier (or one of its control points) as a tuple."""
+    values = []
+    for prop in struct.bl_rna.properties:
+        if prop.identifier in UI_PROPERTIES or prop.type == "POINTER":
+            continue
+        value = getattr(struct, prop.identifier)
+        if prop.type == "COLLECTION":
+            value = tuple(rna_signature(item) for item in value)
+        elif isinstance(value, set):
+            value = tuple(sorted(value))
+        elif not isinstance(value, (bool, int, float, str)):
+            value = tuple(value)
+        values.append(value)
+    return tuple(values)
+
+def modifiers_signature(fcurve):
+    """An F-curve's modifiers and their settings, a Noise modifier's strength changes the curve too."""
+    return tuple(rna_signature(modifier) for modifier in fcurve.modifiers)
+
+def set_watched_objects(names, sent):
+    """Sets the objects MotionKeys reads curves from, their curves go out when their keys change. `sent` holds the
+    curves MotionKeys was just sent. The others it already has: their changes still to send stay pending."""
+    global _watched, _sent, _seen
     _watched = set(names)
-    # MotionKeys already has their curves, the new signature isn't a change to send
-    _last_values = get_values_signature()
+    scene = bpy.context.scene
+    fps = scene_fps(scene)
+    previous = _sent
+    _sent = {}
+    for name in _watched:
+        obj = scene.objects.get(name)
+        if name in sent:
+            _sent[name] = (object_signature(obj, fps), sent[name])
+        elif name in previous:
+            _sent[name] = previous[name]
+        elif obj is not None:
+            _sent[name] = (object_signature(obj, fps), None)
+    _seen = watched_signatures()
 
-def shape_keys_from_object(obj):
-    """gets shape keys from object"""
-    if obj is None: return [], None
-    if obj.type not in ("MESH", "CURVE", "LATTICE"): return [], None
-    if obj.data.shape_keys is None: return [], None
+# the group of the objects linked straight to the scene collection, outside every collection. collections' ids start
+# with "collection:", so a collection named like it never takes its place
+SCENE_GROUP = "Scene group"
+SCENE_GROUP_ID = "scene"
 
-    reference = obj.data.shape_keys.reference_key
-    return list(obj.data.shape_keys.key_blocks)[1:], reference
+def collection_group_id(collection):
+    """A collection's group id for MotionKeys."""
+    return f"collection:{collection.name}"
 
-def frames_to_sec(frames, fps):
-    """Converts frames to seconds based on the given frames per second."""
-    return frames / fps
+# Blender's axes: z up, right-handed, rotations in radians
+AXES = {"up": "z", "handedness": "right", "angle_unit": "radians"}
 
-def scene_fps(scene):
-    """The scene's frame rate with its base (29.97 is 30 / 1.001), the same one the scene writer converts with."""
-    return scene.render.fps / scene.render.fps_base
+# the rotation modes that are Euler angles, named by their order
+EULER_ORDERS = {"XYZ", "XZY", "YXZ", "YZX", "ZXY", "ZYX"}
 
-def FCurvesFromObject(obj):
-    """Gets FCurves from an object."""
-    if obj.animation_data is None: return []
-    if obj.animation_data.action is None: return []
-    
-    if not SLOTTED_ACTIONS:
-        return list(obj.animation_data.action.fcurves)
-    else:
-        anim_data = obj.animation_data
-        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
-        return list(channelbag.fcurves) if channelbag else []
+def rotation_order(obj):
+    """The Euler order of an object's rotation, XYZ for one in quaternion or axis-angle mode."""
+    return obj.rotation_mode if obj.rotation_mode in EULER_ORDERS else "XYZ"
 
-def ShapeKeyFCurvesFromObject(obj):
-    """Gets the FCurves of an object's shape keys, their data paths are like `key_blocks["Smile"].value`."""
-    shape_keys = getattr(obj.data, "shape_keys", None)
-    if shape_keys is None or shape_keys.animation_data is None: return []
-    if shape_keys.animation_data.action is None: return []
+def euler_rotation(obj):
+    """An object's rotation as Euler angles in its rotation order, converted to XYZ from a quaternion or axis-angle."""
+    if obj.rotation_mode == "QUATERNION":
+        return obj.rotation_quaternion.to_euler("XYZ")
+    if obj.rotation_mode == "AXIS_ANGLE":
+        angle, x, y, z = obj.rotation_axis_angle
+        return Quaternion((x, y, z), angle).to_euler("XYZ")
+    return obj.rotation_euler
 
-    if not SLOTTED_ACTIONS:
-        return list(shape_keys.animation_data.action.fcurves)
-    else:
-        anim_data = shape_keys.animation_data
-        channelbag = anim_utils.action_get_channelbag_for_slot(anim_data.action, anim_data.action_slot)
-        return list(channelbag.fcurves) if channelbag else []
+def finite(values):
+    """A vector as a list, a number that isn't finite is 0 so the scene stays valid JSON."""
+    return [value if math.isfinite(value) else 0.0 for value in values]
 
-def get_fcurve_data(fcurve):
-    """Converts an FCurve into a dictionary representation."""
-    fps = scene_fps(bpy.context.scene)
-    # times in seconds: the keys, their handles and the elastic period
-    keyframe_points = [
-        {
-            "amplitude": key.amplitude,
-            "back": key.back,
-            "easing": key.easing, 
-            "handle_left": [frames_to_sec(key.handle_left[0], fps), key.handle_left[1]],
-            "handle_left_type": key.handle_left_type,
-            "handle_right": [frames_to_sec(key.handle_right[0], fps), key.handle_right[1]],
-            "handle_right_type": key.handle_right_type,
-            "interpolation": key.interpolation,
-            "co": [frames_to_sec(key.co[0], fps), key.co[1]],
-            "period": frames_to_sec(key.period, fps)
-        }
-        for key in fcurve.keyframe_points
-    ]
-    
+def get_object_data(obj):
+    """An object as MotionKeys' Scene has it: its transform for display and the channels it can be written to. Its
+    curves go out on their own (handlers.watch, send_curves_update)."""
     return {
-        "array_index": fcurve.array_index,
-        "auto_smoothing": fcurve.auto_smoothing,
-        "data_path": fcurve.data_path,
-        "extrapolation": fcurve.extrapolation,
-        "keyframe_points": keyframe_points,
-        "range": [frames_to_sec(fcurve.range()[0], fps), frames_to_sec(fcurve.range()[1], fps)],
+        # the object's id for MotionKeys, object names are unique in a file
+        "id": obj.name,
+        "name": obj.name,
+        "rotation_order": rotation_order(obj),
+        "transform": {"position": finite(obj.location), "rotation": finite(euler_rotation(obj)), "scale": finite(obj.scale)},
+        "channels": object_channels(obj),
     }
 
-def get_all_objects_in_collection(collection, objects=None):
+def get_all_objects_in_collection(collection, built, objects=None):
+    """The objects of a collection and its nested collections. `built` holds the objects already built, an object in
+    several groups is built once."""
     if objects is None:
         objects = []
-    
+
     for obj in collection.objects:
-        keys, ref = shape_keys_from_object(obj)
-        obj_data = {
-            "name": obj.name,
-            "position": list(obj.location),
-            "rotation": list(obj.rotation_euler),
-            "scale": list(obj.scale),
-            "blend_shapes": {
-                "keys": [repr(key) for key in keys if key is not None],
-                "reference": repr(ref) if ref is not None else None
-            },
-            "anim_curves": [],
-        }
-        
-        if obj.name in _watched:
-            fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
-            obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
-        
-        objects.append(obj_data)
-    
+        objects.append(built_object(obj, built))
+
     for child in collection.children:
-        objects = get_all_objects_in_collection(child, objects)
+        get_all_objects_in_collection(child, built, objects)
 
     return objects
 
-def execute():
-    """Generates a JSON representation of the current scene data matching Rust structs."""
-    scene_data = {}
+def built_object(obj, built):
+    """An object's data, built the first time it's asked for."""
+    if obj.name not in built:
+        built[obj.name] = get_object_data(obj)
+    return built[obj.name]
 
-    for scene in bpy.data.scenes:
-        scene_key = f"{scene.name}"
-        object_groups = []
+def build_scene():
+    """The scene the user is working in, in the shape of MotionKeys' Scene. Each top-level collection is a group
+    with its nested collections' objects in it, the objects outside every collection come last in their own group."""
+    scene = bpy.context.scene
+    groups = []
+    built = {}
 
-        for collection in scene.collection.children:
-            # Prepare objects, changing "location" to "position"
-            objects = []
-            for obj in collection.objects:
-                keys, ref = shape_keys_from_object(obj)
-                obj_data = {
-                    "name": obj.name,
-                    "position": list(obj.location),  # Changed from "location" to "position"
-                    "rotation": list(obj.rotation_euler),
-                    "scale": list(obj.scale),
-                    "blend_shapes": {
-                        "keys": [repr(key) for key in keys if key is not None],
-                        "reference": repr(ref) if ref is not None else None
-                    },
-                    "anim_curves": [],
-                }
-                
-                if obj.name in _watched:
-                    fcurves = FCurvesFromObject(obj) + ShapeKeyFCurvesFromObject(obj)
-                    obj_data["anim_curves"] = [get_fcurve_data(fcurve) for fcurve in fcurves]
-                
-                objects.append(obj_data)
-            
-            # Add objects from child collections
-            for child in collection.children:
-                objects = get_all_objects_in_collection(child, objects)
-            
-            object_group = {
-                "name": collection.name,
-                "objects": objects
-            }
-            object_groups.append(object_group)
-            
-        scene_data[scene_key] = {
-            "name": scene.name,
-            "object_groups": object_groups,
-            "fps": scene_fps(scene)
-        }
-            
-    return json.dumps(scene_data)
+    for collection in scene.collection.children:
+        groups.append({"id": collection_group_id(collection), "name": collection.name, "objects": get_all_objects_in_collection(collection, built)})
 
-def send_scene_update(scene_data, change_type=None, changed_data=None):
-    """Send scene data through the socket server."""
+    if scene.collection.objects:
+        groups.append({"id": SCENE_GROUP_ID, "name": SCENE_GROUP, "objects": [built_object(obj, built) for obj in scene.collection.objects]})
+
+    return {"id": scene.name, "name": scene.name, "fps": scene_fps(scene), "axes": AXES, "object_groups": groups}
+
+def send_scene_update(change_type):
+    """Sends the scene to MotionKeys, unasked."""
     server = Server()
     if server.connected:
         try:
-            # Generate a unique UUID for each message
-            message_uuid = generate_uuid()
-            print(f"Sending scene update with UUID: {message_uuid}")
-            server.send_message(scene_data, message_uuid)
+            print(f"Sending scene update ({change_type})")
+            server.send("scene", build_scene())
         except Exception as e:
             print(f"Failed to send scene update: {e}")
 
-def check_pending_transforms():
-    """Send the scene once transforms and keyframes stopped changing for the debounce interval."""
-    global _values_pending
+def send_curves_update():
+    """Sends a curves event with every watched object whose curves changed since MotionKeys last got them."""
+    scene = bpy.context.scene
+    fps = scene_fps(scene)
+    updates = {}
+    changed = {}
+    for name in _watched:
+        obj = scene.objects.get(name)
+        if obj is None:
+            continue
+        signature = object_signature(obj, fps)
+        sent_signature, sent_curves = _sent.get(name, (None, None))
+        if signature == sent_signature:
+            continue
+        curves = object_curves(obj, fps)
+        updates[name] = (signature, curves)
+        # keys moved and moved back, or a change that leaves the curves as they were, isn't sent
+        if curves != sent_curves:
+            changed[name] = curves
 
-    if _values_pending and (time.time() - _last_value_change_time) > _debounce_interval:
-        _values_pending = False
-        print("Sending pending transform changes")
-        send_scene_update(execute(), "transform_change")
+    server = Server()
+    if changed:
+        if not server.connected:
+            return
+        try:
+            print(f"Sending curves update ({len(changed)} objects)")
+            server.send("curves", {"objects": changed})
+        except Exception as e:
+            # MotionKeys didn't get them, they're still changes
+            print(f"Failed to send curves update: {e}")
+            return
+    _sent.update(updates)
+
+def check_pending_curves():
+    """Send the changed curves once keys stopped changing for the debounce interval."""
+    global _curves_pending
+
+    if _curves_pending and (time.time() - _last_curves_change_time) > _debounce_interval:
+        _curves_pending = False
+        send_curves_update()
         return True
     return False
 
 @persistent
 def detect_important_changes(scene, depsgraph):
-    """Send the scene when anything in it changed: layout changes right away, transforms and keyframes once they settle."""
-    global _last_structure, _last_values, _last_value_change_time, _values_pending
+    """Send the scene right away when its layout changed, and the curves of watched objects once their keys settle."""
+    global _last_structure, _seen, _last_curves_change_time, _curves_pending
 
     if not depsgraph:
         return
 
     structure = get_structure_signature()
-    values = get_values_signature()
-
     if structure != _last_structure:
         _last_structure = structure
-        _last_values = values
-        # the full scene goes out now, it includes any pending transforms
-        _values_pending = False
         print("Important change detected: scene_change")
-        send_scene_update(execute(), "scene_change")
-    elif values != _last_values:
-        # debounced, the timer sends it
-        _last_values = values
-        _last_value_change_time = time.time()
-        _values_pending = True
+        send_scene_update("scene_change")
 
-# Add a timer function to check for pending transforms
-def check_transforms_timer():
-    check_pending_transforms()
+    signatures = watched_signatures()
+    if signatures != _seen:
+        # debounced, the timer sends it
+        _seen = signatures
+        _last_curves_change_time = time.time()
+        _curves_pending = True
+
+# Add a timer function to check for pending curves
+def check_curves_timer():
+    check_pending_curves()
     return 0.1  # Check every 0.1 seconds
 
 def initialize_trackers():
     """Record the current scene and send it."""
-    global _last_structure, _last_values, _values_pending
+    global _last_structure, _seen, _curves_pending
 
     _last_structure = get_structure_signature()
-    _last_values = get_values_signature()
-    _values_pending = False
+    _seen = watched_signatures()
+    _curves_pending = False
 
     # Send initial state
-    send_scene_update(execute(), "initial_state", None)
+    send_scene_update("initial_state")
 
 def register_tracker():
     """Register the scene change tracker."""
@@ -308,10 +331,10 @@ def register_tracker():
     # Register to update events
     bpy.app.handlers.depsgraph_update_post.append(detect_important_changes)
     
-    # Add timer for transform checks
+    # Add timer for curve checks
     try:
         # Safe timer registration
-        bpy.app.timers.register(check_transforms_timer, persistent=True)
+        bpy.app.timers.register(check_curves_timer, persistent=True)
         _timer_registered = True
     except Exception as e:
         print(f"Error registering timer: {e}")
@@ -330,7 +353,7 @@ def unregister_tracker():
     try:
         # Safe timer unregistration - directly unregister by function reference
         if _timer_registered:
-            bpy.app.timers.unregister(check_transforms_timer)
+            bpy.app.timers.unregister(check_curves_timer)
         _timer_registered = False
     except Exception as e:
         # Timer might not be registered, which is fine

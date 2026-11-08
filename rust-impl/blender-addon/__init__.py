@@ -14,7 +14,7 @@
 from __future__ import annotations
 from . ui import VIEW3D_PT_server_link, SCENE_OT_connect_to_server, SCENE_OT_disconnect_from_server
 from . src.tracker import SCENE_OT_StartSceneTracker, SCENE_OT_StopSceneTracker
-from . src.core import Server
+from . src.core import Server, register_file_handlers, unregister_file_handlers
 import bpy
 
 bl_info = {
@@ -48,6 +48,7 @@ def register():
         bpy.utils.register_class(bpyClass)
 
     bpy.types.Scene.motionkeys_port = bpy.props.IntProperty(name="Port", description="Port of the MotionKeys server, must match the port in MotionKeys' settings", default=6577, min=1024, max=65535)
+    register_file_handlers()
         
 
 def unregister():
@@ -55,6 +56,7 @@ def unregister():
         bpy.utils.unregister_class(bpyClass)
 
     del bpy.types.Scene.motionkeys_port
+    unregister_file_handlers()
     
     # close the client connection when the addon is unregistered
     client = Server()
