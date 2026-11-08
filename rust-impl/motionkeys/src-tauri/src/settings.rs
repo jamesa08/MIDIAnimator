@@ -174,9 +174,14 @@ pub fn load_recent(app: &tauri::AppHandle) {
     }
 }
 
-/// a project was opened or saved, it goes first. the same file through another path is still the same file
+/// a file's real path, the same file through another path is still the same file. a file that isn't there keeps its path
+pub fn real_path(path: &str) -> String {
+    std::fs::canonicalize(path).map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string())
+}
+
+/// a project was opened or saved, it goes first (by its real path)
 pub fn note_recent(path: &str) {
-    let path = std::fs::canonicalize(path).map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string());
+    let path = real_path(path);
     change_recent(|list| push_recent(list, &path));
 }
 

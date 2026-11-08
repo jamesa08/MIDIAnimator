@@ -197,9 +197,6 @@ fn opening_a_file_takes_an_untouched_tab_or_adds_one() {
     assert!(history::info(&opened).entries.is_empty());
     assert!(!get_project_status().unsaved);
 
-    // the same file again just finds its tab
-    assert_eq!(open_file(&path).unwrap(), Opened::Already(opened.clone()));
-
     // a tab that's in use stays, the file goes into a new tab after it
     let other = temp_path("other");
     save_instance_to(&opened, &other).unwrap();
@@ -212,6 +209,48 @@ fn opening_a_file_takes_an_untouched_tab_or_adds_one() {
     assert_eq!(active(), second);
     std::fs::remove_file(&path).ok();
     std::fs::remove_file(&other).ok();
+}
+
+#[test]
+fn opening_an_open_file_reads_it_again_in_its_place() {
+    let _guard = reset();
+    edit("tab-1", &["viewer-1", "viewer-2"]);
+    let path = temp_path("reopen");
+    save_instance_to("tab-1", &path).unwrap();
+    {
+        let mut state = STATE.lock().unwrap();
+        state.connected_instance_id = Some("tab-1".to_string());
+    }
+    create_instance();
+
+    // its changes would be dropped, the app asks first. the temp folder's path isn't its real one, the same file still
+    // finds its tab
+    edit("tab-1", &["viewer-3"]);
+    assert_eq!(STATE.lock().unwrap().unsaved_file_tab(&path).as_deref(), Some("tab-1"));
+    assert_eq!(STATE.lock().unwrap().unsaved_file_tab(&std::fs::canonicalize(&path).unwrap().to_string_lossy()).as_deref(), Some("tab-1"));
+
+    // the file goes into a new tab where the old one was (not the untouched one on screen), with the file's graph,
+    // nothing to undo, and Blender still linked to its place
+    let opened = open_file(&path).unwrap();
+    assert_eq!(
+        opened,
+        Opened::Reopened {
+            id: "tab-3".to_string(),
+            replaced: "tab-1".to_string()
+        }
+    );
+    assert_eq!(tabs().iter().map(|(id, _)| id.clone()).collect::<Vec<_>>(), ["tab-3", "tab-2"]);
+    assert_eq!(active(), "tab-3");
+    assert_eq!(node_ids("tab-3"), ["viewer-1", "viewer-2"]);
+    assert!(history::info("tab-3").entries.is_empty());
+    assert_eq!(STATE.lock().unwrap().connected_instance_id.as_deref(), Some("tab-3"));
+    assert!(!get_project_status().unsaved);
+    assert_eq!(STATE.lock().unwrap().unsaved_file_tab(&path), None);
+
+    // a file that can't be read keeps its tab
+    std::fs::remove_file(&path).unwrap();
+    assert!(open_file(&path).unwrap_err().contains("File read error"));
+    assert_eq!(tabs().iter().map(|(id, _)| id.clone()).collect::<Vec<_>>(), ["tab-3", "tab-2"]);
 }
 
 #[test]

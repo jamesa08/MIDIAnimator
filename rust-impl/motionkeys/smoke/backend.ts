@@ -70,7 +70,10 @@ function install({ backend, label }: { backend: Backend; label: string }) {
                 return Array.from(new TextEncoder().encode(backend.default_nodes_json));
             case "ready":
                 return state;
-            // opening a project (File > Open, Open Recent) gives the state with it shown, the fixture's here
+            // picking a project gives its file (a recent one's is named after its place in the list), no tab has it open
+            // with unsaved changes unless the test says so. opening it gives the state with it shown, the fixture's here
+            case "pick_project":
+                return backend.pick_project ?? { path: args.recent == null ? "/smoke/picked.mkproj" : `/smoke/recent-${args.recent}.mkproj`, unsaved_tab: null };
             case "load_project":
                 return state;
             // the system clipboard isn't dumped, it's whatever the machine had. it always has nodes here

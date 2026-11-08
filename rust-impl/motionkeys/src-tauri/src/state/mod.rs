@@ -215,6 +215,17 @@ impl AppState {
         self.instances.iter().any(InstanceState::unsaved)
     }
 
+    /// where the tab that has a file open is in the tab bar, by the file's real path
+    pub fn file_tab(&self, path: &str) -> Option<usize> {
+        let path = crate::settings::real_path(path);
+        self.instances.iter().position(|instance| instance.path.as_deref().is_some_and(|other| crate::settings::real_path(other) == path))
+    }
+
+    /// the tab that has a file open if it has unsaved changes, opening the file again drops them
+    pub fn unsaved_file_tab(&self, path: &str) -> Option<String> {
+        self.file_tab(path).map(|index| &self.instances[index]).filter(|instance| instance.unsaved()).map(|instance| instance.id.clone())
+    }
+
     /// the state as the front end sees it, a newer one each time
     pub fn view(&mut self) -> StateView {
         self.state_rev += 1;
@@ -587,10 +598,17 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
     Ok(path.to_string())
 }
 
-/// asks for a project file and opens it, or opens the recent project at `recent` (File > Open Recent), see `open_project`.
-/// a recent project whose file is gone leaves the list
+/// a project file picked to open (`pick_project`), and the tab that has it open with unsaved changes if one does:
+/// opening the file again drops them
+#[derive(Serialize, Clone, PartialEq, Debug)]
+pub struct PickedProject {
+    pub path: String,
+    pub unsaved_tab: Option<String>,
+}
+
+/// asks for a project file, or takes the recent project at `recent` (File > Open Recent). `load_project` opens it
 #[tauri::command]
-pub async fn load_project(recent: Option<usize>) -> Result<StateView, String> {
+pub async fn pick_project(recent: Option<usize>) -> Result<PickedProject, String> {
     let path = match recent {
         Some(index) => crate::settings::recent_projects().get(index).cloned().ok_or_else(|| format!("no recent project {}", index))?,
         None => {
@@ -602,9 +620,18 @@ pub async fn load_project(recent: Option<usize>) -> Result<StateView, String> {
             file_path.ok_or("Load cancelled")?.to_string()
         }
     };
+    let unsaved_tab = lock().unsaved_file_tab(&path);
+    Ok(PickedProject {
+        path,
+        unsaved_tab,
+    })
+}
 
+/// opens a project file (`pick_project`), see `open_project`. a recent project whose file is gone leaves the list
+#[tauri::command]
+pub async fn load_project(path: String) -> Result<StateView, String> {
     if let Err(e) = open_project(&path).await {
-        if recent.is_some() && !std::path::Path::new(&path).exists() {
+        if !std::path::Path::new(&path).exists() {
             crate::settings::forget_recent(&path);
         }
         return Err(e);
@@ -616,40 +643,47 @@ pub async fn load_project(recent: Option<usize>) -> Result<StateView, String> {
 /// returns the tab
 pub async fn open_project(path: &str) -> Result<String, String> {
     let opened = open_file(path).inspect_err(|e| console::log(Level::Error, Source::App, format!("Couldn't open {}: {}", path, e)))?;
-    match opened {
-        Opened::Already(id) => switch_active_instance(id.clone()).await,
-        Opened::New(id) => start_instance(id.clone()).await,
-    }
+    start_instance(opened.id().to_string()).await;
     Ok(lock().active_instance_id.clone())
 }
 
-/// where `open_file` put a file
+/// where `open_file` put a file, a new tab that's on screen
 #[derive(Debug, PartialEq)]
 pub enum Opened {
-    /// a tab already had it open, it wasn't read again
-    Already(String),
-    /// read into a new tab, which is on screen
+    /// no tab had it open
     New(String),
+    /// read again in place of the tab that had it open, `replaced`, which is gone with its unsaved changes
+    Reopened {
+        id: String,
+        replaced: String,
+    },
 }
 
-/// reads a project file into a new tab and shows it, with nothing to undo and no results yet. it takes the place of the
-/// tab on screen if that one is an empty graph nobody touched, otherwise it goes after the others. a file a tab already
-/// has open isn't opened twice. call `start_instance` after (`open_project` does)
-pub fn open_file(path: &str) -> Result<Opened, String> {
-    // the same file through another path is still the same file
-    let path = fs::canonicalize(path).map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string());
-    let same = |other: &str| fs::canonicalize(other).map(|other| other.to_string_lossy().to_string()).unwrap_or_else(|_| other.to_string()) == path;
-    if let Some(instance) = lock().instances.iter().find(|instance| instance.path.as_deref().is_some_and(same)) {
-        let id = instance.id.clone();
-        crate::settings::note_recent(&path);
-        return Ok(Opened::Already(id));
+impl Opened {
+    /// the new tab
+    pub fn id(&self) -> &str {
+        match self {
+            Opened::New(id)
+            | Opened::Reopened {
+                id,
+                ..
+            } => id,
+        }
     }
+}
 
-    // read and parse the project file
+/// reads a project file into a new tab and shows it, with nothing to undo and no results yet. a file a tab already has
+/// open is read again in that tab's place (its unsaved changes are dropped, ask first: `unsaved_file_tab`). otherwise it
+/// takes the place of the tab on screen if that one is an empty graph nobody touched, or goes after the others. call
+/// `start_instance` after (`open_project` does)
+pub fn open_file(path: &str) -> Result<Opened, String> {
+    let path = crate::settings::real_path(path);
+
+    // read and parse the project file, a tab that has it open stays if it can't be
     let json = fs::read_to_string(&path).map_err(|e| format!("File read error: {}", e))?;
     let saved_data: SavedProject = serde_json::from_str(&json).map_err(|e| format!("Deserialization error: {}", e))?;
 
-    let (id, replaced) = {
+    let (id, replaced, reopened) = {
         let mut state = lock();
         let id = state.next_id();
         let mut instance = InstanceState::new(id.clone(), String::new());
@@ -662,31 +696,41 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
         state.graph_rev += 1;
         instance.graph_rev = state.graph_rev;
 
-        // an untouched tab on screen makes way for it, Blender stays linked to its place
+        // the tab that has the file open, or an untouched tab on screen, makes way for it. Blender stays linked to its place
+        let open = state.file_tab(&path);
         let active = state.instances.iter().position(|instance| instance.id == state.active_instance_id).unwrap_or(0);
-        let replaced = if state.instances[active].untouched() {
-            let old = std::mem::replace(&mut state.instances[active], instance);
-            if state.connected_instance_id.as_deref() == Some(&old.id) {
-                state.connected_instance_id = Some(id.clone());
+        let replaced = match open.or(state.instances[active].untouched().then_some(active)) {
+            Some(index) => {
+                let old = std::mem::replace(&mut state.instances[index], instance);
+                if state.connected_instance_id.as_deref() == Some(&old.id) {
+                    state.connected_instance_id = Some(id.clone());
+                }
+                Some(old.id)
             }
-            Some(old.id)
-        } else {
-            state.instances.push(instance);
-            None
+            None => {
+                state.instances.push(instance);
+                None
+            }
         };
         state.active_instance_id = id.clone();
-        (id, replaced)
+        (id, replaced, open.is_some())
     };
-    if let Some(old) = replaced {
-        history::forget(&old);
-        forget_memo(&old);
+    if let Some(old) = &replaced {
+        history::forget(old);
+        forget_memo(old);
     }
 
     // tell the front end about the new tab and its empty history
     crate::settings::note_recent(&path);
     update_state();
     history::notify_active();
-    Ok(Opened::New(id))
+    Ok(match replaced.filter(|_| reopened) {
+        Some(replaced) => Opened::Reopened {
+            id,
+            replaced,
+        },
+        None => Opened::New(id),
+    })
 }
 
 /// after a tab is opened from a file: Blender links to it (it checks the scene first) if Blender is connected and no

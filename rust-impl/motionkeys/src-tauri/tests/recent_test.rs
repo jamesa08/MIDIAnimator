@@ -4,7 +4,7 @@
 // File > Open Recent: the newest first, each once, at most ten, named by file name with the folder for files named alike
 
 use motionkeys::settings::{clear_recent, forget_recent, note_recent, push_recent, recent_labels, recent_projects, RECENT_LIMIT};
-use motionkeys::state::{load_project, lock, open_file, save_instance_to, AppState, STATE};
+use motionkeys::state::{load_project, lock, open_file, pick_project, save_instance_to, AppState, PickedProject, STATE};
 
 // the newest goes first, one opened again moves up instead of showing twice, the oldest fall off past the limit
 #[test]
@@ -64,7 +64,15 @@ fn opening_and_saving_note_projects() {
     note_recent(&gone);
     std::fs::remove_file(&gone).unwrap();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    assert!(runtime.block_on(load_project(Some(0))).unwrap_err().contains("File read error"));
+    let picked = runtime.block_on(pick_project(Some(0))).unwrap();
+    assert_eq!(
+        picked,
+        PickedProject {
+            path: gone.clone(),
+            unsaved_tab: None
+        }
+    );
+    assert!(runtime.block_on(load_project(picked.path)).unwrap_err().contains("File read error"));
     assert_eq!(recent_projects(), [saved.clone(), opened.clone()]);
 
     forget_recent(&opened);

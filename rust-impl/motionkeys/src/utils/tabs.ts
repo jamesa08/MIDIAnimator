@@ -4,6 +4,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { PANELS, panelWindowFrame } from "./panels";
 import { takeState } from "./graphOps";
 import { showStatus } from "./status";
+import { askUnsaved } from "../components/UnsavedChangesModal";
 
 // the file name at the end of a path
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
@@ -49,20 +50,28 @@ export function useSaveTab() {
 }
 
 // asks for a project file and opens it in a tab of its own, or the recent project at `recent` (File > Open Recent), see
-// load_project in src-tauri/src/state/mod.rs
+// pick_project and load_project in src-tauri/src/state/mod.rs. a file a tab has open is read again in that tab's place,
+// one with unsaved changes is shown and asks to save them first. cancelling, or cancelling a save dialog, opens nothing
 export function useOpenFile() {
     const { setBackEndState } = useStateContext();
+    const saveTab = useSaveTab();
     return useCallback(
         async (recent?: number) => {
             try {
-                const state = await invoke<any>("load_project", { recent: recent ?? null });
+                const { path, unsaved_tab } = await invoke<{ path: string; unsaved_tab: string | null }>("pick_project", { recent: recent ?? null });
+                if (unsaved_tab) {
+                    await invoke("switch_active_instance", { id: unsaved_tab });
+                    const answer = await askUnsaved();
+                    if (answer === "cancel") return;
+                    if (answer === "save") await saveTab(unsaved_tab);
+                }
+                const state = await invoke<any>("load_project", { path });
                 setBackEndState((s: any) => takeState(s, state));
-                const path = state?.tabs?.find((t: any) => t.id === state.active_tab)?.path;
-                if (path) showStatus(`Opened "${fileName(path)}"`);
+                showStatus(`Opened "${fileName(path)}"`);
             } catch (error) {
-                if (error !== "Load cancelled") console.error("Load failed:", error);
+                if (error !== "Load cancelled" && error !== "Save cancelled") console.error("Load failed:", error);
             }
         },
-        [setBackEndState]
+        [setBackEndState, saveTab]
     );
 }

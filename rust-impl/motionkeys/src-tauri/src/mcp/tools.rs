@@ -1000,23 +1000,23 @@ impl MotionKeysMcp {
     }
 
     // project_load: opens a .mkproj file in a tab of its own
-    #[tool(description = "Open a .mkproj project file in a tab of its own and show it: it takes the place of the tab on screen if that one is an untouched empty graph, otherwise it's added after the others. A file that's already open in a tab just switches to it. Blender links to it if no other tab is live.", annotations(read_only_hint = false, destructive_hint = false))]
+    #[tool(description = "Open a .mkproj project file in a tab of its own and show it: it takes the place of the tab on screen if that one is an untouched empty graph, otherwise it's added after the others. A file that's already open in a tab is read again from disk into a new tab in that tab's place (its undo history starts over); if that tab has unsaved changes the call fails instead, so they aren't lost. Blender links to it if no other tab is live.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn project_load(&self, Parameters(params): Parameters<PathParams>) -> Result<CallToolResult, McpError> {
         // the frontend has to be loaded before we change its state
         if !lock_state().ready {
             return tool_error(NOT_READY);
         }
+        // the app asks before unsaved changes are read over, this can't
+        if let Some(tab) = lock_state().unsaved_file_tab(&params.path) {
+            return tool_error(format!("'{}' is open in {} with unsaved changes, opening it again would drop them: save them first (tab_switch, then project_save), or close the tab with tab_close to drop them", params.path, tab));
+        }
         // open it in a tab, then link Blender to it or run it
-        let (id, already) = match open_file(&params.path) {
-            Ok(Opened::New(id)) => (id, false),
-            Ok(Opened::Already(id)) => (id, true),
+        let opened = match open_file(&params.path) {
+            Ok(opened) => opened,
             Err(e) => return tool_error(format!("could not open '{}': {}", params.path, e)),
         };
-        if already {
-            crate::state::switch_active_instance(id.clone()).await;
-        } else {
-            start_instance(id.clone()).await;
-        }
+        let id = opened.id().to_string();
+        start_instance(id.clone()).await;
         // outline it with the fresh results
         let execution = run_realtime_if_allowed().await;
         let snapshot = match Snapshot::take() {
@@ -1025,10 +1025,12 @@ impl MotionKeysMcp {
         };
         let view = snapshot.view(None).unwrap();
         let text = outline::outline(&snapshot.ctx(&view), None, Detail::Concise).unwrap_or_else(|e| e);
-        let how = if already {
-            "was already open in"
-        } else {
-            "opened in"
+        let how = match &opened {
+            Opened::New(_) => "opened in".to_string(),
+            Opened::Reopened {
+                replaced,
+                ..
+            } => format!("was open in {}, read again into", replaced),
         };
         ok_text(format!("{} {} {} \"{}\" (on screen): {} nodes, {} edges\n{}\n\n{}", params.path, how, id, snapshot.tab.name(), snapshot.graph.nodes.len(), snapshot.graph.edges.len(), execution, text))
     }
