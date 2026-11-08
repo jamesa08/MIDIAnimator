@@ -18,7 +18,7 @@ use crate::graph::execute::{execute_graph, panic_message};
 use crate::graph::builtin::{all_groups, builtin_groups};
 use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
 use crate::graph::run::{instance_path, scoped_values};
-use crate::graph::outline::{self, input_options, node_block, node_errors, Detail, OutlineCtx};
+use crate::graph::outline::{self, node_block, node_errors, option_warnings, Detail, OutlineCtx};
 use crate::graph::history::{EntryInfo, Source, Step};
 use crate::graph::ops::{self, graph_in, Ctx, Op};
 use crate::graph::tags;
@@ -835,15 +835,7 @@ impl MotionKeysMcp {
         let view = snapshot.as_ref().ok().and_then(|s| s.view(params.group.as_deref()).ok());
         if let (Ok(snapshot), Some(view)) = (&snapshot, &view) {
             if let Some(node) = view.graph.resolve(&params.node).ok().and_then(|id| view.graph.node(&id)) {
-                // compare each string value against the options for that input (if we know them)
-                for (key, value) in &params.inputs {
-                    let (Some(value), Some(options)) = (value.as_str(), input_options(&snapshot.ctx(view), node, key)) else {
-                        continue;
-                    };
-                    if !options.is_empty() && !options.iter().any(|o| o == value) {
-                        warnings.push(format!("warning: '{}' is not one of the current options for {}: {}", value, key, options.join(", ")));
-                    }
-                }
+                warnings = option_warnings(&snapshot.ctx(view), node, &params.inputs);
             }
         }
 

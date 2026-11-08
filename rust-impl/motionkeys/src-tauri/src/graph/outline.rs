@@ -1,7 +1,7 @@
 // text outline of the node graph and short summaries of values, written for an ML model to read (over MCP).
 // the UI still shows the full data, nothing in here is used by the frontend
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 
 use super::executors::animation::object_channels;
@@ -313,6 +313,23 @@ pub fn input_options(ctx: &OutlineCtx, node: &RfNode, input_id: &str) -> Option<
         // no known options for this input
         _ => None,
     }
+}
+
+/// a warning for each text value in `inputs` that isn't one of its input's known options. one input's options can depend
+/// on another set in the same call (an object on the group picked with it), so they're read with the new values in
+pub fn option_warnings(ctx: &OutlineCtx, node: &RfNode, inputs: &Map<String, Value>) -> Vec<String> {
+    let mut node = node.clone();
+    crate::graph::edit::merge_inputs(&mut node, inputs);
+    let mut warnings = Vec::new();
+    for (key, value) in inputs {
+        let (Some(value), Some(options)) = (value.as_str(), input_options(ctx, &node, key)) else {
+            continue;
+        };
+        if !options.is_empty() && !options.iter().any(|o| o == value) {
+            warnings.push(format!("warning: '{}' is not one of the current options for {}: {}", value, key, options.join(", ")));
+        }
+    }
+    warnings
 }
 
 /// `name` fields of an array of objects

@@ -65,7 +65,7 @@ pub fn validate_inputs(spec: &NodeSpec, inputs: &Map<String, Value>) -> Result<(
 }
 
 /// merges values into a node's inputs, a `null` value removes the input instead
-fn merge_inputs(node: &mut RfNode, inputs: &Map<String, Value>) {
+pub fn merge_inputs(node: &mut RfNode, inputs: &Map<String, Value>) {
     let target = node.inputs_mut();
     for (key, value) in inputs {
         if value.is_null() {

@@ -9,7 +9,7 @@ use serde_json::{json, Map, Value};
 use motionkeys::graph::edit;
 use motionkeys::graph::builtin::builtin_groups;
 use motionkeys::graph::model::{node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
-use motionkeys::graph::outline::{node_block, outline, summarize, unset_inputs, Detail, OutlineCtx};
+use motionkeys::graph::outline::{node_block, option_warnings, outline, summarize, unset_inputs, Detail, OutlineCtx};
 use motionkeys::midi::MIDIFile;
 use motionkeys::scene_generics::Scene;
 use motionkeys::state::{migrate_rf_instance, SavedProject};
@@ -520,4 +520,26 @@ fn group_nodes_get_their_groups_sockets() {
     let input = inside.for_node(def.graph.node("group_input-1").unwrap()).unwrap();
     let ids: Vec<&str> = input.handles.outputs.iter().map(|h| h.id.as_str()).collect();
     assert_eq!(ids, vec!["object_map", "midi_notes"]);
+}
+
+// a value is checked against the options it has with the other values set in the same call
+#[test]
+fn option_warnings_read_the_values_set_together() {
+    let mut f = Fixture::new();
+    // a second group whose one object isn't in Cubes
+    let scene = f.scene.values_mut().next().unwrap();
+    let mut drums = scene.object_groups[0].clone();
+    drums.name = "Drums".to_string();
+    drums.objects.truncate(1);
+    drums.objects[0].name = "Kick".to_string();
+    scene.object_groups.push(drums);
+    let node = f.graph.node("keyframes_from_object-1").unwrap().clone();
+    let inputs = |values: Value| values.as_object().unwrap().clone();
+
+    // the object is one of the group picked with it
+    assert_eq!(option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "Drums", "object_name": "Kick" }))), Vec::<String>::new());
+
+    // one from the node's old group isn't
+    let warnings = option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "Drums", "object_name": "Cube.001" })));
+    assert_eq!(warnings, vec!["warning: 'Cube.001' is not one of the current options for object_name: Kick".to_string()]);
 }
