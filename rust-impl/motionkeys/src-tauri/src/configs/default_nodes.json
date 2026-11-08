@@ -126,14 +126,14 @@
                         "name": "Object Name",
                         "data_type": "String",
                         "hidden": true,
-                        "description": "Name of the object whose animation curves are read."
+                        "description": "The id of the object whose animation curves are read (a name is matched too). Blender's object ids are their names."
                     },
                     {
                         "id": "channels",
                         "name": "Channels",
                         "data_type": "Array<String>",
                         "hidden": true,
-                        "description": "The animated channels to output, as Blender paths with their index, e.g. location[2], pose.bones[\"Arm\"].rotation_euler[0], key_blocks[\"Smile\"].value[0] or [\"prop\"][0]."
+                        "description": "The channels to output, by the bridge's channel ids. Blender's are data paths, with the index for one component of an array: location[2], pose.bones[\"Arm\"].rotation_euler[0], key_blocks[\"Smile\"].value or [\"prop\"]."
                     }
                 ],
                 "outputs": [
@@ -149,7 +149,7 @@
                         "name": "Available Channels",
                         "data_type": "Array<Any>",
                         "hidden": true,
-                        "description": "Every animated channel on the object, { id, group, name }, the values channels can hold."
+                        "description": "Every channel of the object that has keyframes, { id, group, name, label }: name is the channel's name in its group with its axis, label the output's name. These are the values channels can hold."
                     }
                 ]
             }

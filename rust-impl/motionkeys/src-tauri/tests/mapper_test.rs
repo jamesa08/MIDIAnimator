@@ -16,17 +16,12 @@ use motionkeys::utils::note_table::{self, Fallback, NoteTable};
 // MARK: - Helpers
 
 fn key(time: f64, value: f64) -> Value {
-    json!({
-        "amplitude": 0.0, "back": 0.0, "easing": "AUTO", "interpolation": "LINEAR", "period": 0.0,
-        "handle_left": [time, value], "handle_left_type": "AUTO_CLAMPED",
-        "handle_right": [time, value], "handle_right_type": "AUTO_CLAMPED",
-        "co": [time, value]
-    })
+    json!([time, value, "linear"])
 }
 
 // a cymbal hit on location[2]: up to 1 at 0.1 s, back to rest at 0.5 s
 fn hit() -> Value {
-    json!([{ "array_index": 2, "auto_smoothing": "NONE", "data_path": "location", "extrapolation": "CONSTANT", "keyframe_points": [key(0.0, 0.0), key(0.1, 1.0), key(0.5, 0.0)], "range": [0.0, 0.5] }])
+    json!([{ "channel": "location[2]", "keys": [key(0.0, 0.0), key(0.1, 1.0), key(0.5, 0.0)] }])
 }
 
 // a generator made by the node, with these inputs on top of the hit
@@ -61,7 +56,7 @@ fn play(gen: &AnimationGenerator, notes: &[MIDINote], fps: Option<f64>) -> Resul
 
 // times and values rounded, curve keys are f32 so 0.1 comes back as 0.100000001
 fn pairs(keys: &[BlendKeyframe]) -> Vec<(f64, f64)> {
-    keys.iter().map(|k| ((k.time * 1e6).round() / 1e6, (k.value * 1e6).round() / 1e6)).collect()
+    keys.iter().map(|k| ((k.key.time * 1e6).round() / 1e6, (k.key.value * 1e6).round() / 1e6)).collect()
 }
 
 // the value of the first key of a lone note, for reading what a variable is
@@ -143,7 +138,7 @@ fn velocity_is_applied_after_the_amplitude_mapper() {
     // min(y, 0.5) caps the hit at 0.5, then velocity 64 scales it. the other way round 64/127 would be capped instead
     let gen = generator(json!({ "amplitude_mapper": "min(y, 0.5)", "velocity_intensity": 1.0 })).unwrap();
     let keys = play(&gen, &[note(60, 64, 0.0, 0.1)], Some(24.0)).unwrap();
-    assert!((keys[1].value - 0.5 * 64.0 / 127.0).abs() < 1e-12, "{:?}", pairs(&keys));
+    assert!((keys[1].key.value - 0.5 * 64.0 / 127.0).abs() < 1e-12, "{:?}", pairs(&keys));
 }
 
 #[test]

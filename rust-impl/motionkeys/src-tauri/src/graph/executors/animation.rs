@@ -5,11 +5,11 @@ use serde_json::Value;
 
 use super::io::{Inputs, NodeResult, Outputs, Val};
 use crate::midi::MIDINote;
-use crate::scene_generics::{AnimCurve, Object, ObjectGroup};
+use crate::scene_generics::{find_group, find_object, AnimCurve, Object, ObjectGroup};
 use crate::utils::note_to_name;
 
 use super::scene::scene_fps;
-use crate::utils::animation::{combine_curve_keys, note_curve_keys, parse_channel, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
 use crate::utils::note_table::{self, NoteTable};
@@ -42,8 +42,8 @@ pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_gr
     }
 
     // find the object, a name that isn't in the scene is an error
-    let object_group = object_groups.iter().find(|g| g.name == object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
-    let object = object_group.objects.iter().find(|o| o.name == object_name).ok_or_else(|| format!("object '{}' does not exist in '{}'", object_name, object_group_name))?;
+    let object_group = find_group(object_groups, object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
+    let object = find_object(&object_group.objects, object_name).ok_or_else(|| format!("object '{}' does not exist in '{}'", object_name, object_group.name))?;
 
     /*
     example, with `location[2]` and a bone's `pose.bones["Arm"].location[0]` picked:
@@ -54,19 +54,19 @@ pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_gr
             },
             "location[2]": FCurveData,
             "pose.bones[\"Arm\"].location[0]": FCurveData,
-            "available_channels": [{ "id": "location[2]", "group": "Object", "name": "Location Z" }, ...]
+            "available_channels": [{ "id": "location[2]", "group": "Object", "name": "Location Z", "label": "Location Z" }, ...]
         }
     */
 
-    // every animated channel on the object, for the dropdowns
+    // every channel of the object with a curve, for the dropdowns
     let available = object_channels(object);
     outputs.set("available_channels", serde_json::to_value(&available).unwrap_or_default());
 
     // one output per picked channel, flat and inside dyn_output (see nodes_and_backend.md)
     for id in channels {
-        let channel = available.iter().find(|c| &c.id == id).ok_or_else(|| format!("'{}' has no keyframes on '{}'", id, object_name))?;
+        let channel = available.iter().find(|c| &c.id == id).ok_or_else(|| format!("'{}' has no keyframes on '{}'", id, object.name))?;
         let anim_curve = object.anim_curves.iter().find(|c| channel_id(c) == *id).unwrap();
-        dyn_output.insert(id.clone(), serde_json::Value::String(channel.label()));
+        dyn_output.insert(id.clone(), serde_json::Value::String(channel.label.clone()));
         outputs.set(id, anim_curve.clone());
     }
 
@@ -76,135 +76,38 @@ pub fn keyframes_from_object(object_groups: Option<&Vec<ObjectGroup>>, object_gr
 
 // MARK: - Channels
 
-/// an animated property of an object, one F-curve: its output id, the group it's listed under and its name in the group
+/// a channel in Keyframes From Object's dropdowns: its id, the group it's listed under, its name in the group (with the
+/// axis) and its label as an output's name
 #[derive(Serialize, Clone, Debug, PartialEq)]
-pub struct Channel {
+pub struct ChannelOption {
     pub id: String,
     pub group: String,
     pub name: String,
+    pub label: String,
 }
 
-impl Channel {
-    /// the group and name together, e.g. `Arm › Location X`. object channels are just their name
-    pub fn label(&self) -> String {
-        if self.group == OBJECT_GROUP {
-            self.name.clone()
-        } else {
-            format!("{} › {}", self.group, self.name)
-        }
-    }
-}
-
-const OBJECT_GROUP: &str = "Object";
-const SHAPE_KEYS_GROUP: &str = "Shape Keys";
-const CUSTOM_PROPERTIES_GROUP: &str = "Custom Properties";
-
-/// the id of an anim curve's channel, its Blender path with the index: `location[2]`, `pose.bones["Arm"].location[0]`
+/// the id of an anim curve's channel, the bridge's
 pub fn channel_id(anim_curve: &AnimCurve) -> String {
-    format!("{}[{}]", anim_curve.data_path, anim_curve.array_index)
+    anim_curve.channel.clone()
 }
 
-/// every animated channel of an object, in the order Blender has them
-pub fn object_channels(object: &Object) -> Vec<Channel> {
-    let all: Vec<(&str, u32)> = object.anim_curves.iter().map(|c| (c.data_path.as_str(), c.array_index)).collect();
-    object.anim_curves.iter().map(|c| curve_channel(&c.data_path, c.array_index, &all)).collect()
-}
-
-/// the channel of the curve at a Blender path and index, `all` is every curve's path and index on the same object.
-/// bones, shape keys and custom properties get groups of their own, the rest is the object's
-pub fn curve_channel(path: &str, array_index: u32, all: &[(&str, u32)]) -> Channel {
-    let id = format!("{}[{}]", path, array_index);
-    let indexed = |name: String| with_index(name, path, array_index, all);
-    let (group, property) = if let Some((bone, rest)) = path.strip_prefix("pose.bones").and_then(quoted) {
-        (bone, rest.strip_prefix('.').unwrap_or(rest))
-    } else if let Some((key, rest)) = path.strip_prefix("key_blocks").and_then(quoted) {
-        // a shape key's value is the shape key itself
-        let rest = rest.strip_prefix('.').unwrap_or(rest);
-        return Channel {
-            id,
-            group: SHAPE_KEYS_GROUP.to_string(),
-            name: if rest == "value" {
-                key
-            } else {
-                format!("{} {}", key, words(rest))
-            },
-        };
-    } else if let Some((property, "")) = quoted(path) {
-        return Channel {
-            id,
-            group: CUSTOM_PROPERTIES_GROUP.to_string(),
-            name: indexed(property),
-        };
-    } else {
-        (OBJECT_GROUP.to_string(), path)
-    };
-
-    // a bone's custom property is `["name"]` after the bone
-    let name = match quoted(property) {
-        Some((custom, "")) => indexed(custom),
-        _ => match axes(property).and_then(|axes| axes.get(array_index as usize)) {
-            Some(axis) => format!("{} {}", words(property), axis),
-            None => indexed(words(property)),
-        },
-    };
-    Channel {
-        id,
-        group,
-        name,
-    }
-}
-
-/// the axis (`X`, `Y`, `Z`, `W`) the curve at a Blender path and index animates, `None` if it isn't a vector's
-pub fn curve_axis(path: &str, array_index: u32) -> Option<&'static str> {
-    let property = match path.strip_prefix("pose.bones").and_then(quoted) {
-        Some((_, rest)) => rest.strip_prefix('.').unwrap_or(rest),
-        None => path,
-    };
-    axes(property)?.get(array_index as usize).copied()
-}
-
-/// the axis names of vector properties, `None` for anything else
-fn axes(property: &str) -> Option<&'static [&'static str]> {
-    match property {
-        "location" | "scale" | "rotation_euler" | "delta_location" | "delta_scale" | "delta_rotation_euler" => Some(&["X", "Y", "Z"]),
-        "rotation_quaternion" | "delta_rotation_quaternion" | "rotation_axis_angle" => Some(&["W", "X", "Y", "Z"]),
-        _ => None,
-    }
-}
-
-/// `rotation_euler` -> `Rotation`, `delta_location` -> `Delta Location`
-fn words(property: &str) -> String {
-    let property = property.strip_suffix("_euler").unwrap_or(property);
-    property.split('_').filter(|w| !w.is_empty()).map(capitalize).collect::<Vec<_>>().join(" ")
-}
-
-fn capitalize(word: &str) -> String {
-    let mut chars = word.chars();
-    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
-}
-
-/// the name with the curve's index when the property has more than one curve, `Color 2`
-fn with_index(name: String, path: &str, array_index: u32, all: &[(&str, u32)]) -> String {
-    if all.iter().any(|&(p, i)| p == path && i != array_index) {
-        format!("{} {}", name, array_index)
-    } else {
-        name
-    }
-}
-
-/// splits `["name"].rest` into the unescaped name and `.rest`, `None` if the path doesn't start with a quoted key
-fn quoted(path: &str) -> Option<(String, &str)> {
-    let inner = path.strip_prefix("[\"")?;
-    let mut name = String::new();
-    let mut chars = inner.char_indices();
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '\\' => name.push(chars.next()?.1),
-            '"' => return inner[i + 1..].strip_prefix(']').map(|rest| (name, rest)),
-            _ => name.push(c),
-        }
-    }
-    None
+/// the channels of an object that have curves: in the order the bridge lists them, then curves on channels it doesn't
+/// list (scene data saved before bridges listed channels) by their ids
+pub fn object_channels(object: &Object) -> Vec<ChannelOption> {
+    let has_curve = |id: &str| object.anim_curves.iter().any(|curve| curve.channel == id);
+    let listed = object.channels.iter().filter(|channel| has_curve(&channel.id)).map(|channel| ChannelOption {
+        id: channel.id.clone(),
+        group: channel.group.clone(),
+        name: channel.title(),
+        label: object.channel_label(&channel.id),
+    });
+    let unlisted = object.anim_curves.iter().filter(|curve| object.channel(&curve.channel).is_none()).map(|curve| ChannelOption {
+        id: curve.channel.clone(),
+        group: String::new(),
+        name: curve.channel.clone(),
+        label: curve.channel.clone(),
+    });
+    listed.chain(unlisted).collect()
 }
 
 /// Node: animation_generator
@@ -287,7 +190,7 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
     // the mappers compile once here, a mistake in one fails this node
     let mappers = generator.mappers()?;
     if mappers.needs_fps() && scene_fps().is_none() {
-        console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': no scene frame rate (Blender isn't linked), the mappers assume {} fps", generator.name, DEFAULT_FPS));
+        console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': no scene frame rate, the mappers assume {} fps", generator.name, DEFAULT_FPS));
     }
 
     let mut outputs = Outputs::new();
@@ -330,7 +233,8 @@ pub fn note_table(note_map: Option<&BTreeMap<String, Vec<u8>>>, table: Option<&V
 ///
 /// inputs:
 /// "keyframes": `FCurveData`,
-/// "channel": `String`, a Blender path with its index like `rotation_euler[1]`, empty leaves the curve where it is
+/// "channel": `String`, a channel id of the connected app like Blender's `rotation_euler[1]`, empty leaves the curve where
+/// it is
 ///
 /// outputs:
 /// "keyframes": `FCurveData`, the same keys on the new channel
@@ -339,12 +243,7 @@ pub fn set_channel(keyframes: &AnimCurve, channel: Option<&String>) -> NodeResul
     let mut curve = keyframes.clone();
     let channel = channel.map(|c| c.trim()).unwrap_or("");
     if !channel.is_empty() {
-        let (data_path, array_index) = parse_channel(channel);
-        if data_path.is_empty() {
-            return Err(format!("'{}' has no data path, e.g. location[2]", channel));
-        }
-        curve.data_path = data_path;
-        curve.array_index = array_index;
+        curve.channel = channel.to_string();
     }
 
     let mut outputs = Outputs::new();
@@ -690,8 +589,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     }
 
     // find the object group, a name that isn't in the scene is an error
-    let object_group = object_groups.iter().find(|g| g.name == object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
-    println!("object group name: {}", object_group_name);
+    let object_group = find_group(object_groups, object_group_name).ok_or_else(|| format!("object group '{}' does not exist", object_group_name))?;
 
     // the generators connected, by name in connect order. the same one twice is fine, two different ones can't share
     // a name
@@ -725,7 +623,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
         None
     };
     let pairs: Vec<(&Object, u8)> = match &saved {
-        Some(saved) => objects.iter().flat_map(|object| saved.objects.get(&object.name).into_iter().flatten().map(move |note| (*object, *note))).collect(),
+        Some(saved) => objects.iter().flat_map(|object| saved.objects.get(&object.id).into_iter().flatten().map(move |note| (*object, *note))).collect(),
         None => rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?,
     };
 
@@ -733,16 +631,16 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     // default_nodes.json), so it can feed a Note Table that feeds one of them
     let mut object_notes: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for (object, note_number) in &pairs {
-        add_note(object_notes.entry(object.name.clone()).or_default(), *note_number);
+        add_note(object_notes.entry(object.id.clone()).or_default(), *note_number);
     }
     outputs.set("object_notes", object_notes);
 
     // extra objects (not enough notes) are left out. in map mode an object plays the animations wired to it, a map from
     // before they were wired plays every animation on every object
     for (object, note_number) in &pairs {
-        let entry = object_map.objects.entry(object.name.clone()).or_default();
+        let entry = object_map.objects.entry(object.id.clone()).or_default();
         for name in &animations {
-            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(*name).is_some_and(|objects| objects.contains(&object.name)));
+            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(*name).is_some_and(|objects| objects.contains(&object.id)));
             if wired {
                 add_note(entry.entry(name.to_string()).or_default(), *note_number);
             }

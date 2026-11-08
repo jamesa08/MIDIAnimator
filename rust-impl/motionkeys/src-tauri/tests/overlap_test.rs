@@ -1,10 +1,12 @@
 use serde_json::json;
 use motionkeys::graph::executors::animation::animation_generator;
 use motionkeys::graph::executors::io::Inputs;
-use motionkeys::utils::animation::{combine_keyframes, BlendKeyframe, OverlapSettings, ANIMATION_OVERLAPS};
+use motionkeys::utils::animation::{combine_keyframes, OverlapSettings, ANIMATION_OVERLAPS};
+use motionkeys::utils::curve::Key;
 
-fn keys(points: &[(f64, f64)]) -> Vec<BlendKeyframe> {
-    points.iter().map(|&(time, value)| BlendKeyframe::bare(time, value)).collect()
+// linear keys, so the curves between them are the straight lines the modes were worked out on
+fn keys(points: &[(f64, f64)]) -> Vec<Key> {
+    points.iter().map(|&(time, value)| Key::linear(time, value)).collect()
 }
 
 // combines `next` into `old` with the mode, returns the (time, value) of each key rounded to 3 places

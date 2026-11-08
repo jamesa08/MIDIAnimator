@@ -1,250 +1,644 @@
 {
-  "scene_data": {
-    "Scene": {
-      "name": "Scene",
-      "object_groups": [
-        {
-          "name": "Cubes",
-          "objects": [
-            {
-              "name": "Cube.001",
-              "position": {
-                "x": -4.359868,
-                "y": 0.0,
-                "z": 0.0
+  "scene": {
+    "id": "Scene",
+    "name": "Scene",
+    "axes": {
+      "up": "z",
+      "handedness": "right",
+      "angle_unit": "radians"
+    },
+    "object_groups": [
+      {
+        "id": "collection:Cubes",
+        "name": "Cubes",
+        "objects": [
+          {
+            "id": "Cube.001",
+            "name": "Cube.001",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
               },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
               },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": false
               },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
               },
-              "anim_curves": []
-            },
-            {
-              "name": "Cube.002",
-              "position": {
-                "x": -2.159868,
-                "y": 0.0,
-                "z": 0.0
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
               },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
               },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
               },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
               },
-              "anim_curves": []
-            },
-            {
-              "name": "Cube.003",
-              "position": {
-                "x": 0.040132046,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
-              },
-              "anim_curves": []
-            },
-            {
-              "name": "Cube.004",
-              "position": {
-                "x": 2.2401314,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
-              },
-              "anim_curves": []
-            },
-            {
-              "name": "Cube.005",
-              "position": {
-                "x": 4.440132,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
-              },
-              "anim_curves": []
-            },
-            {
-              "name": "ANIM_bounce",
-              "position": {
-                "x": 0.040132046,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "rotation": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "scale": {
-                "x": 1.0,
-                "y": 1.0,
-                "z": 1.0
-              },
-              "blend_shapes": {
-                "keys": [],
-                "reference": null
-              },
-              "anim_curves": [
-                {
-                  "array_index": 2,
-                  "auto_smoothing": "CONT_ACCEL",
-                  "data_path": "location",
-                  "extrapolation": "CONSTANT",
-                  "keyframe_points": [
-                    {
-                      "amplitude": 0.8,
-                      "back": 1.70158,
-                      "easing": "AUTO",
-                      "handle_left": [
-                        -1.6666666,
-                        0.0
-                      ],
-                      "handle_left_type": "AUTO",
-                      "handle_right": [
-                        1.6666666,
-                        0.0
-                      ],
-                      "handle_right_type": "AUTO",
-                      "interpolation": "BEZIER",
-                      "co": [
-                        0.0,
-                        0.0
-                      ],
-                      "period": 4.1
-                    },
-                    {
-                      "amplitude": 0.8,
-                      "back": 1.70158,
-                      "easing": "AUTO",
-                      "handle_left": [
-                        3.3333335,
-                        -3.0085726
-                      ],
-                      "handle_left_type": "AUTO",
-                      "handle_right": [
-                        7.0,
-                        -3.0941737
-                      ],
-                      "handle_right_type": "AUTO",
-                      "interpolation": "BEZIER",
-                      "co": [
-                        5.0,
-                        -3.0474823
-                      ],
-                      "period": 4.1
-                    },
-                    {
-                      "amplitude": 0.8,
-                      "back": 1.70158,
-                      "easing": "AUTO",
-                      "handle_left": [
-                        9.0,
-                        1.13545
-                      ],
-                      "handle_left_type": "AUTO",
-                      "handle_right": [
-                        13.333333,
-                        3.2684674
-                      ],
-                      "handle_right_type": "AUTO",
-                      "interpolation": "BEZIER",
-                      "co": [
-                        11.0,
-                        2.1199195
-                      ],
-                      "period": 4.1
-                    },
-                    {
-                      "amplitude": 0.8,
-                      "back": 1.70158,
-                      "easing": "AUTO",
-                      "handle_left": [
-                        15.666667,
-                        0.0
-                      ],
-                      "handle_left_type": "AUTO",
-                      "handle_right": [
-                        20.333334,
-                        0.0
-                      ],
-                      "handle_right_type": "AUTO",
-                      "interpolation": "BEZIER",
-                      "co": [
-                        18.0,
-                        0.0
-                      ],
-                      "period": 4.1
-                    }
-                  ],
-                  "range": [
-                    0.0,
-                    18.0
-                  ]
-                }
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                -4.359868,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
               ]
-            }
-          ]
-        }
-      ]
-    }
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": []
+          },
+          {
+            "id": "Cube.002",
+            "name": "Cube.002",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
+              },
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
+              },
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
+              },
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
+              },
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
+              },
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                -2.159868,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": []
+          },
+          {
+            "id": "Cube.003",
+            "name": "Cube.003",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
+              },
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
+              },
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
+              },
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
+              },
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
+              },
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                0.040132046,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": []
+          },
+          {
+            "id": "Cube.004",
+            "name": "Cube.004",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
+              },
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
+              },
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
+              },
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
+              },
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
+              },
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                2.2401314,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": []
+          },
+          {
+            "id": "Cube.005",
+            "name": "Cube.005",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
+              },
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
+              },
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
+              },
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
+              },
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
+              },
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                4.440132,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": []
+          },
+          {
+            "id": "ANIM_bounce",
+            "name": "ANIM_bounce",
+            "channels": [
+              {
+                "id": "location[0]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "position.x",
+                "animated": false
+              },
+              {
+                "id": "location[1]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "position.y",
+                "animated": false
+              },
+              {
+                "id": "location[2]",
+                "name": "Location",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "position.z",
+                "animated": true
+              },
+              {
+                "id": "rotation_euler[0]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "rotation.x",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[1]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "rotation.y",
+                "animated": false
+              },
+              {
+                "id": "rotation_euler[2]",
+                "name": "Rotation",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "rotation.z",
+                "animated": false
+              },
+              {
+                "id": "scale[0]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "X",
+                "semantic": "scale.x",
+                "animated": false
+              },
+              {
+                "id": "scale[1]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Y",
+                "semantic": "scale.y",
+                "animated": false
+              },
+              {
+                "id": "scale[2]",
+                "name": "Scale",
+                "group": "Object",
+                "axis": "Z",
+                "semantic": "scale.z",
+                "animated": false
+              }
+            ],
+            "transform": {
+              "position": [
+                0.040132046,
+                0.0,
+                0.0
+              ],
+              "rotation": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "scale": [
+                1.0,
+                1.0,
+                1.0
+              ]
+            },
+            "rotation_order": "XYZ",
+            "anim_curves": [
+              {
+                "channel": "location[2]",
+                "keys": [
+                  [
+                    0.0,
+                    0.0,
+                    "bezier",
+                    -1.6666666,
+                    0.0,
+                    1.6666666,
+                    0.0
+                  ],
+                  [
+                    5.0,
+                    -3.0474823,
+                    "bezier",
+                    3.3333335,
+                    -3.0085726,
+                    7.0,
+                    -3.0941737
+                  ],
+                  [
+                    11.0,
+                    2.1199195,
+                    "bezier",
+                    9.0,
+                    1.13545,
+                    13.333333,
+                    3.2684674
+                  ],
+                  [
+                    18.0,
+                    0.0,
+                    "bezier",
+                    15.666667,
+                    0.0,
+                    20.333334,
+                    0.0
+                  ]
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "rf_instance": {
     "nodes": [

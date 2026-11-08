@@ -63,9 +63,9 @@ node_data!(String, f64, u8, u32, i64, bool, (f64, f64), serde_json::Map<String, 
 
 // the types nodes pass around
 use crate::midi::{MIDIEvent, MIDINote, MIDITrack};
-use crate::scene_generics::{AnimCurve, KeyframePoint, Object, ObjectGroup, Scene};
+use crate::scene_generics::{AnimCurve, Object, ObjectGroup, Scene};
 use crate::utils::animation::{AnimationGenerator, BlendKeyframe, CurveKeys, NoteTarget, ObjectMap};
-node_data!(MIDINote, MIDIEvent, MIDITrack, Scene, ObjectGroup, Object, AnimCurve, KeyframePoint, BlendKeyframe, AnimationGenerator, ObjectMap, NoteTarget, CurveKeys);
+node_data!(MIDINote, MIDIEvent, MIDITrack, Scene, ObjectGroup, Object, AnimCurve, BlendKeyframe, AnimationGenerator, ObjectMap, NoteTarget, CurveKeys);
 
 impl NodeData for Value {
     fn to_json(&self) -> Value {

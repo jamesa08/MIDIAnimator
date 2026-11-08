@@ -113,7 +113,7 @@ The backend node function is then responsible for returning two things:
 }
 ```
 
-Keyframes from Object only outputs the channels picked on the node (its hidden `channels` input, Blender paths with their index). It also returns every channel the object has in the hidden `available_channels` output, which its dropdowns list.
+Keyframes from Object only outputs the channels picked on the node (its hidden `channels` input, the bridge's channel ids). It also returns every channel of the object that has keyframes in the hidden `available_channels` output, which its dropdowns list. Their names and groups come from the channel list the bridge sends with each object (docs/bridge_protocol.md §8.5).
 
 ### Why Flat Top-Level Keys Are Required
 

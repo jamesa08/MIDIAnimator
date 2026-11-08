@@ -27,17 +27,17 @@ use crate::state::{open_file, save_project_to, start_instance, update_state, App
 use crate::ui::screenshot;
 
 // instructions sent to the MCP client when it connects
-const INSTRUCTIONS: &str = "MotionKeys: node graphs that turn MIDI into Blender keyframes. \
+const INSTRUCTIONS: &str = "MotionKeys: node graphs that turn MIDI into keyframes in a 3D app (Blender, or any app with a MotionKeys bridge). \
 Call graph_outline first to see the current graph, and node_types_list for the node types you can add. \
 Data flows from outputs to inputs; edit with graph_add_node, graph_connect, graph_set_inputs, graph_disconnect and graph_remove_node. \
 Never connect hidden handles: 'par' inputs are set with graph_set_inputs, and outputs marked hidden are display-only. \
-Edits show up live in the app and re-run the realtime graph, which never writes to Blender; \
+Edits show up live in the app and re-run the realtime graph, which never writes to the 3D app; \
 the app and these tools share one undo history: graph_history lists it, graph_undo and graph_redo step through it; \
-graph_execute with write_to_blender=true writes keyframes to Blender. Node ids accept any unique prefix. \
+graph_execute with write_keyframes=true writes keyframes to the 3D app. Node ids accept any unique prefix. \
 app_screenshot shows what the UI currently looks like. \
 Each tab is its own .mkproj file with its own graph, undo history and window layout, like a separate instance of the app; \
 every graph tool acts on the tab on screen. app_status lists the tabs, tab_new/tab_switch/tab_close/tab_rename manage them, \
-project_load opens a file in a tab of its own, and tab_go_live links Blender to one: only the live tab gets Blender's scene changes and writes keyframes. \
+project_load opens a file in a tab of its own, and tab_go_live links the 3D app to one: only the live tab gets the 3D app's scene changes and writes keyframes. \
 Frames are labeled boxes around nodes for organizing the graph, they never run: graph_join_in_frame makes one, graph_remove_from_frame takes nodes out, \
 graph_set_label names it (or any node) and graph_remove_node removes it, keeping its nodes.";
 
@@ -186,8 +186,8 @@ pub struct SetLabelParams {
 // graph_execute
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExecuteParams {
-    /// false: realtime run (skips nodes that write to Blender). true: full run, writes keyframes to Blender
-    pub write_to_blender: bool,
+    /// false: realtime run (skips nodes that write keyframes). true: full run, writes keyframes to the 3D app
+    pub write_keyframes: bool,
 }
 
 // project_load, project_save
@@ -301,7 +301,7 @@ impl Snapshot {
             },
             results: &view.results,
             inputs: &view.inputs,
-            scene_data: &self.tab.scene_data,
+            scene: &self.tab.scene,
         }
     }
 }
@@ -365,7 +365,7 @@ async fn run_realtime_if_allowed() -> String {
     };
     // don't run while scene changes are waiting to be reviewed in the app
     if paused {
-        return "execution paused (Blender scene changes are pending review in the app); results not updated".to_string();
+        return "execution paused (scene changes from the 3D app are pending review in the app); results not updated".to_string();
     }
     if empty {
         return "nothing to execute".to_string();
@@ -597,8 +597,8 @@ impl MotionKeysMcp {
 
     // MARK: - Read-only Tools
 
-    // app_status: ready flag, blender connection, graph size and execution state
-    #[tool(description = "App status: whether the UI is ready, Blender connection (app, version, file), the tabs (which is on screen, which is live), and for the tab on screen its node and edge counts, whether execution is paused and scene changes are pending.", annotations(read_only_hint = true))]
+    // app_status: ready flag, the bridge connection, graph size and execution state
+    #[tool(description = "App status: whether the UI is ready, the 3D app connection (app, version, file), the tabs (which is on screen, which is live), and for the tab on screen its node and edge counts, whether execution is paused and scene changes are pending.", annotations(read_only_hint = true))]
     async fn app_status(&self) -> Result<CallToolResult, McpError> {
         let state = lock_state().clone();
         let tab = state.active();
@@ -620,7 +620,7 @@ impl MotionKeysMcp {
                     line.push_str(if state.connected {
                         " (live)"
                     } else {
-                        " (linked, Blender away)"
+                        " (linked, 3D app away)"
                     });
                 }
                 if instance.unsaved() {
@@ -629,8 +629,8 @@ impl MotionKeysMcp {
                 line
             })
             .collect();
-        // describe the blender connection
-        let blender = if state.connected {
+        // describe the bridge connection
+        let connection = if state.connected {
             format!(
                 "connected to {} {} ({})",
                 state.connected_application,
@@ -644,7 +644,7 @@ impl MotionKeysMcp {
         } else {
             "not connected".to_string()
         };
-        ok_text(format!("ready: {}\nblender: {}\ntabs:\n{}\ngraph on screen: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}\nkeyframes waiting to be imported (over the limit, the user confirms in the app): {}", state.ready, blender, tabs.join("\n"), nodes, edges, tab.execution_paused, tab.pending_scene_data.is_some(), tab.pending_curve_import.as_ref().map_or("none".to_string(), |objects| objects.iter().map(|(name, count)| format!("{name} ({count} keyframes)")).collect::<Vec<_>>().join(", "))))
+        ok_text(format!("ready: {}\n3d app: {}\ntabs:\n{}\ngraph on screen: {} nodes, {} edges\nexecution paused: {}\npending scene changes: {}\nkeyframes waiting to be imported (over the limit, the user confirms in the app): {}", state.ready, connection, tabs.join("\n"), nodes, edges, tab.execution_paused, tab.pending_scene.is_some(), tab.pending_curve_import.as_ref().map_or("none".to_string(), |objects| objects.iter().map(|(name, count)| format!("{name} ({count} keyframes)")).collect::<Vec<_>>().join(", "))))
     }
 
     // node_types_list: every node type with its inputs and outputs
@@ -684,7 +684,7 @@ impl MotionKeysMcp {
                     if spec.realtime {
                         ""
                     } else {
-                        "  [not realtime: runs only with graph_execute write_to_blender=true]"
+                        "  [not realtime: runs only with graph_execute write_keyframes=true]"
                     }
                 )];
                 // one line per input, parameters (hidden inputs) are marked `par`
@@ -939,29 +939,29 @@ impl MotionKeysMcp {
         self.history_step(true).await
     }
 
-    // graph_execute: realtime run, or a full run that writes keyframes to blender
-    #[tool(description = "Execute the graph. write_to_blender=false runs the realtime nodes only; true also runs Evaluate Instrument, which writes keyframes into the connected Blender file. Returns the outline with fresh value summaries.", annotations(read_only_hint = false, destructive_hint = true))]
+    // graph_execute: realtime run, or a full run that writes keyframes to the 3D app
+    #[tool(description = "Execute the graph. write_keyframes=false runs the realtime nodes only; true also runs Evaluate Instrument, which writes keyframes into the connected 3D app's file. Returns the outline with fresh value summaries.", annotations(read_only_hint = false, destructive_hint = true))]
     async fn graph_execute(&self, Parameters(params): Parameters<ExecuteParams>) -> Result<CallToolResult, McpError> {
         let snapshot = match Snapshot::take() {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
-        // make sure we're allowed to execute: not paused, connected if writing to blender, and not empty
+        // make sure we're allowed to execute: not paused, connected if writing keyframes, and not empty
         if snapshot.tab.execution_paused {
-            return tool_error("execution is paused because Blender scene changes are pending; accept or reject them in the app first");
+            return tool_error("execution is paused because scene changes from the 3D app are pending; accept or reject them in the app first");
         }
-        if params.write_to_blender && !snapshot.state.connected {
-            return tool_error("Blender is not connected; connect it (app_status shows the connection) or run with write_to_blender=false");
+        if params.write_keyframes && !snapshot.state.connected {
+            return tool_error("no 3D app is connected; connect its bridge (app_status shows the connection) or run with write_keyframes=false");
         }
-        if params.write_to_blender && !snapshot.state.is_live(&snapshot.tab.id) {
-            return tool_error("the tab on screen isn't live, only the live tab writes to Blender; switch to it or link this one with tab_go_live (app_status shows which is live)");
+        if params.write_keyframes && !snapshot.state.is_live(&snapshot.tab.id) {
+            return tool_error("the tab on screen isn't live, only the live tab writes keyframes; switch to it or link this one with tab_go_live (app_status shows which is live)");
         }
         if snapshot.graph.nodes.is_empty() {
             return tool_error("the graph is empty; add nodes with graph_add_node first");
         }
 
-        // run it, realtime is the opposite of writing to blender
-        if let Err(e) = run_execution(!params.write_to_blender).await {
+        // run it, realtime is the opposite of writing keyframes
+        if let Err(e) = run_execution(!params.write_keyframes).await {
             return tool_error(e);
         }
 
@@ -973,8 +973,8 @@ impl MotionKeysMcp {
         // count how many nodes ran without an error and say what kind of run it was
         let errors = node_errors(&snapshot.tab.executed_results);
         let executed = snapshot.tab.executed_results.len() - errors.len();
-        let mode = if params.write_to_blender {
-            "full run, keyframes sent to Blender"
+        let mode = if params.write_keyframes {
+            "full run, keyframes sent to the 3D app"
         } else {
             "realtime run"
         };
@@ -992,7 +992,7 @@ impl MotionKeysMcp {
     }
 
     // project_load: opens a .mkproj file in a tab of its own
-    #[tool(description = "Open a .mkproj project file in a tab of its own and show it: it takes the place of the tab on screen if that one is an untouched empty graph, otherwise it's added after the others. A file that's already open in a tab is read again from disk into a new tab in that tab's place (its undo history starts over); if that tab has unsaved changes the call fails instead, so they aren't lost. Blender links to it if no other tab is live.", annotations(read_only_hint = false, destructive_hint = false))]
+    #[tool(description = "Open a .mkproj project file in a tab of its own and show it: it takes the place of the tab on screen if that one is an untouched empty graph, otherwise it's added after the others. A file that's already open in a tab is read again from disk into a new tab in that tab's place (its undo history starts over); if that tab has unsaved changes the call fails instead, so they aren't lost. The 3D app links to it if no other tab is live.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn project_load(&self, Parameters(params): Parameters<PathParams>) -> Result<CallToolResult, McpError> {
         // the frontend has to be loaded before we change its state
         if !lock_state().ready {
@@ -1002,7 +1002,7 @@ impl MotionKeysMcp {
         if let Some(tab) = lock_state().unsaved_file_tab(&params.path) {
             return tool_error(format!("'{}' is open in {} with unsaved changes, opening it again would drop them: save them first (tab_switch, then project_save), or close the tab with tab_close to drop them", params.path, tab));
         }
-        // open it in a tab, then link Blender to it or run it
+        // open it in a tab, then link the 3D app to it or run it
         let opened = match open_file(&params.path) {
             Ok(opened) => opened,
             Err(e) => return tool_error(format!("could not open '{}': {}", params.path, e)),
@@ -1067,7 +1067,7 @@ impl MotionKeysMcp {
     }
 
     // tab_close
-    #[tool(description = "Close a tab without asking, its graph and undo history are gone (unless the project file has them). The last tab can't be closed. Blender unlinks if it was the live tab.", annotations(read_only_hint = false, destructive_hint = true))]
+    #[tool(description = "Close a tab without asking, its graph and undo history are gone (unless the project file has them). The last tab can't be closed. The 3D app unlinks if it was the live tab.", annotations(read_only_hint = false, destructive_hint = true))]
     async fn tab_close(&self, Parameters(params): Parameters<TabParams>) -> Result<CallToolResult, McpError> {
         let id = match resolve_tab(&lock_state(), &params.tab) {
             Ok(id) => id,
@@ -1097,7 +1097,7 @@ impl MotionKeysMcp {
     }
 
     // tab_go_live
-    #[tool(description = "Link Blender to a tab (it goes live): it gets Blender's scene changes and is the only tab that writes keyframes. When Blender's objects or collections differ from the tab's saved scene, the tab pauses until the user reviews the changes in the app.", annotations(read_only_hint = false, destructive_hint = false))]
+    #[tool(description = "Link the connected 3D app to a tab (it goes live): it gets the 3D app's scene changes and is the only tab that writes keyframes. When the 3D app's objects or groups differ from the tab's saved scene, the tab pauses until the user reviews the changes in the app.", annotations(read_only_hint = false, destructive_hint = false))]
     async fn tab_go_live(&self, Parameters(params): Parameters<TabParams>) -> Result<CallToolResult, McpError> {
         let id = match resolve_tab(&lock_state(), &params.tab) {
             Ok(id) => id,
@@ -1108,7 +1108,7 @@ impl MotionKeysMcp {
         }
         let paused = lock_state().instance(&id).is_some_and(|instance| instance.execution_paused);
         ok_text(if paused {
-            format!("{} is live; Blender's scene differs from the tab's, so it's paused until the changes are reviewed in the app", id)
+            format!("{} is live; the 3D app's scene differs from the tab's, so it's paused until the changes are reviewed in the app", id)
         } else {
             format!("{} is live", id)
         })

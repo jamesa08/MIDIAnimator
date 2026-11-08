@@ -40,12 +40,12 @@ fn graph(nodes: Vec<RfNode>, links: &[(&str, &str, &str, &str)]) -> Graph {
 }
 
 fn cubes(count: usize) -> Value {
-    let objects: Vec<_> = (1..=count).map(|i| json!({ "name": format!("Cube.{:03}", i), "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": [] })).collect();
+    let objects: Vec<_> = (1..=count).map(|i| json!({ "id": format!("Cube.{:03}", i), "name": format!("Cube.{:03}", i), "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": [] })).collect();
     json!([{ "name": "Cubes", "objects": objects }])
 }
 
 fn key(time: f64, value: f64) -> Value {
-    json!({ "amplitude": 0.0, "back": 0.0, "easing": "AUTO", "interpolation": "LINEAR", "period": 0.0, "handle_left": [time, value], "handle_left_type": "AUTO_CLAMPED", "handle_right": [time, value], "handle_right_type": "AUTO_CLAMPED", "co": [time, value] })
+    json!([time, value, "linear"])
 }
 
 fn run_graph(root: &Graph) -> (HashMap<String, Value>, Option<String>) {
@@ -75,7 +75,7 @@ fn text(table: &NoteTable, note_map: &BTreeMap<String, Vec<u8>>) -> String {
 
 // generator -> assign -> (note map) -> table -> generator's amplitude mapper
 fn looped() -> Graph {
-    let generator = node("animation_generator-1", json!({ "name": "hit", "note_on_keyframes": [{ "array_index": 2, "auto_smoothing": "NONE", "data_path": "location", "extrapolation": "CONSTANT", "keyframe_points": [key(0.0, 0.0), key(0.1, 1.0)], "range": [0.0, 0.1] }] }));
+    let generator = node("animation_generator-1", json!({ "name": "hit", "note_on_keyframes": [{ "channel": "location[2]", "keys": [key(0.0, 0.0), key(0.1, 1.0)] }] }));
     let assign = node("assign_notes_to_objects-1", json!({ "object_groups": cubes(7), "object_group_name": "Cubes", "note_numbers": "58 59 60 61 62 63 64" }));
     let table = node("note_table-1", json!({ "table": { "shape": "linear", "curve": "t", "min": 0, "max": 1 } }));
     graph(vec![generator, assign, table], &[("animation_generator-1", "generator", "assign_notes_to_objects-1", "generator"), ("assign_notes_to_objects-1", "object_notes", "note_table-1", "note_map")])

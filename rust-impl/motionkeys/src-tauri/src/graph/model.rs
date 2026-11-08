@@ -300,8 +300,8 @@ pub fn describe_type(data_type: &str) -> Result<String, String> {
         "Object" => (schemars::schema_for!(Object), None),
         "Scene" => (schemars::schema_for!(Scene), None),
         "AnimCurve" => (schemars::schema_for!(AnimCurve), None),
-        // handles typed Array<Keyframe> currently carry one Blender F-curve, not a list of `Keyframe`s
-        "Keyframe" => (schemars::schema_for!(AnimCurve), Some(format!("note: values typed {} are currently a single Blender F-curve (AnimCurve) object; its keyframe_points[].co is [frame, value]. The plain Keyframe struct is: {}", data_type, serde_json::to_string(&schemars::schema_for!(Keyframe)).unwrap_or_default()))),
+        // handles typed Array<Keyframe> currently carry one curve, not a list of `Keyframe`s
+        "Keyframe" => (schemars::schema_for!(AnimCurve), Some(format!("note: values typed {} are currently a single curve (AnimCurve) object: {{channel, keys}}, each key [time_seconds, value, interpolation] or [time_seconds, value, interpolation, left_time, left_value, right_time, right_value]. The plain Keyframe struct is: {}", data_type, serde_json::to_string(&schemars::schema_for!(Keyframe)).unwrap_or_default()))),
         "BlendKeyframe" => (schemars::schema_for!(BlendKeyframe), None),
         "AnimationGenerator" => (schemars::schema_for!(AnimationGenerator), None),
         "ObjectMap" => (schemars::schema_for!(ObjectMap), None),
@@ -685,7 +685,7 @@ mod tests {
         assert_eq!(base_type("Dyn<Array<Keyframe>>"), "Keyframe");
         assert_eq!(base_type("HashMap<String, Array<BlendKeyframe>>"), "BlendKeyframe");
         assert!(describe_type("Array<MIDINote>").unwrap().contains("note_number"));
-        assert!(describe_type("Array<Keyframe>").unwrap().contains("keyframe_points"));
+        assert!(describe_type("Array<Keyframe>").unwrap().contains("interpolation"));
         assert!(describe_type("Nope").unwrap_err().contains("known types"));
     }
 

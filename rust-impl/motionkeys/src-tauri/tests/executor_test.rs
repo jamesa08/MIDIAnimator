@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, targets_for_note};
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data};
-use motionkeys::utils::animation::parse_channel;
 
 const TYPE_1: &str = "./tests/test_midi_type_1_rs_4_14_24.mid";
 
@@ -85,7 +84,7 @@ fn assign_notes_errors_on_missing_group() {
 
 /// an object group named Cubes of plain objects with these names, in this order
 fn group(names: &[&str]) -> serde_json::Value {
-    let objects: Vec<_> = names.iter().map(|name| json!({ "name": name, "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": [] })).collect();
+    let objects: Vec<_> = names.iter().map(|name| json!({ "id": name, "name": name, "channels": [], "anim_curves": [] })).collect();
     json!([{ "name": "Cubes", "objects": objects }])
 }
 
@@ -118,6 +117,26 @@ fn assign_notes_uses_note_in_name() {
     assert_eq!(assign_by_name(&names, &[72, 73, 74]), notes_of(&[("Cube_72", 72), ("Cube_73", 73), ("Cube_74", 74)]));
     // note names like the old add-on, 60 = C3
     assert_eq!(assign_by_name(&["Key_C3", "Key_c#3", "Key_A-1", "Key_D3.001"], &[90]), notes_of(&[("Key_C3", 60), ("Key_c#3", 61), ("Key_A-1", 21), ("Key_D3.001", 90)]));
+}
+
+#[test]
+fn assign_notes_keys_objects_by_id() {
+    // the note comes from the name, the maps are by the bridge's id
+    let groups = json!([{ "id": "collection:Cubes", "name": "Cubes", "objects": [{ "id": "obj-1", "name": "Cube_60", "channels": [], "anim_curves": [] }] }]);
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    let notes = json!([{ "channel": 0, "note_number": 60, "velocity": 100, "time_on": 0.0, "time_off": 1.0 }]);
+    let inputs = |extra: Vec<(&str, serde_json::Value)>| {
+        let base = [("object_groups", groups.clone()), ("object_group_name", json!("collection:Cubes")), ("midi_notes", notes.clone()), ("generator", json!([generator.clone()]))];
+        Inputs::from(base.into_iter().chain(extra).map(|(name, value)| (name.to_string(), value)).collect::<std::collections::HashMap<_, _>>())
+    };
+    let outputs = assign_notes_to_objects(&inputs(vec![])).unwrap().to_json();
+    assert_eq!(outputs["object_notes"], json!({ "obj-1": [60] }));
+    assert_eq!(outputs["object_map"]["objects"], json!({ "obj-1": { "anim": [60] } }));
+
+    // the note map drawn in the app is by id too
+    let map = json!({ "objects": { "obj-1": [61], "Cube_60": [62] }, "notes": [], "animations": { "anim": ["obj-1"] } });
+    let outputs = assign_notes_to_objects(&inputs(vec![("mode", json!("map")), ("note_map", map)])).unwrap().to_json();
+    assert_eq!(outputs["object_notes"], json!({ "obj-1": [61] }));
 }
 
 #[test]
@@ -243,44 +262,55 @@ fn assign_notes_uses_note_list() {
     }
 }
 
-/// an object group with one object animated on the given (data_path, array_index) curves
-fn animated_object(curves: &[(&str, u32)]) -> serde_json::Value {
-    let curves: Vec<_> = curves.iter().map(|(data_path, array_index)| json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": [], "range": [0.0, 1.0] })).collect();
-    let object = json!({ "name": "ANIM_rig", "position": {"x": 0.0, "y": 0.0, "z": 0.0}, "rotation": {"x": 0.0, "y": 0.0, "z": 0.0}, "scale": {"x": 1.0, "y": 1.0, "z": 1.0}, "blend_shapes": { "keys": [], "reference": null }, "anim_curves": curves });
-    json!([{ "name": "Rig", "objects": [object] }])
+/// a channel as a bridge lists it
+fn channel(id: &str, group: &str, name: &str, axis: Option<&str>) -> serde_json::Value {
+    let mut channel = json!({ "id": id, "group": group, "name": name, "animated": true });
+    if let Some(axis) = axis {
+        channel["axis"] = json!(axis);
+    }
+    channel
+}
+
+/// an object group with one object that lists these channels and has curves on these channel ids
+fn animated_object(channels: &[serde_json::Value], curves: &[&str]) -> serde_json::Value {
+    let curves: Vec<_> = curves.iter().map(|id| json!({ "channel": id, "keys": [] })).collect();
+    let object = json!({ "id": "rig-id", "name": "Rig object", "channels": channels, "anim_curves": curves });
+    json!([{ "id": "collection:Rig", "name": "Rig", "objects": [object] }])
+}
+
+/// the channels of a rig: its own (the first group), a bone's and a shape key
+fn rig_channels() -> Vec<serde_json::Value> {
+    vec![channel("location[0]", "Object", "Location", Some("X")), channel("location[2]", "Object", "Location", Some("Z")), channel("pose.bones[\"Arm\"].location[0]", "Arm", "Location", Some("X")), channel("pose.bones[\"Arm\"][\"stretch\"]", "Arm", "stretch", None), channel("key_blocks[\"Smile\"].value", "Shape Keys", "Smile", None)]
 }
 
 #[test]
-fn keyframes_from_object_lists_channels_by_group() {
-    let groups = animated_object(&[("location", 2), ("pose.bones[\"Arm.L\"].rotation_quaternion", 0), ("pose.bones[\"Arm.L\"][\"stretch\"]", 0), ("key_blocks[\"Smile\"].value", 0), ("[\"glow\"]", 0), ("color", 0), ("color", 3)]);
-    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig"))])).unwrap().to_json();
-    let available: Vec<(String, String)> = outputs["available_channels"].as_array().unwrap().iter().map(|c| (c["group"].as_str().unwrap().to_string(), c["name"].as_str().unwrap().to_string())).collect();
-    let expected = [("Object", "Location Z"), ("Arm.L", "Rotation Quaternion W"), ("Arm.L", "stretch"), ("Shape Keys", "Smile"), ("Custom Properties", "glow"), ("Object", "Color 0"), ("Object", "Color 3")];
-    assert_eq!(available, expected.map(|(g, n)| (g.to_string(), n.to_string())));
+fn keyframes_from_object_lists_channels_with_curves_by_group() {
+    // listed in the bridge's order, not the curves'. a curve on a channel the bridge doesn't list comes last, as its id
+    let groups = animated_object(&rig_channels(), &["key_blocks[\"Smile\"].value", "custom", "location[2]", "pose.bones[\"Arm\"][\"stretch\"]"]);
+    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("collection:Rig")), ("object_name", json!("rig-id"))])).unwrap().to_json();
+    let available: Vec<[String; 3]> = outputs["available_channels"].as_array().unwrap().iter().map(|c| ["group", "name", "label"].map(|field| c[field].as_str().unwrap().to_string())).collect();
+    let expected = [["Object", "Location Z", "Location Z"], ["Arm", "stretch", "Arm › stretch"], ["Shape Keys", "Smile", "Shape Keys › Smile"], ["", "custom", "custom"]];
+    assert_eq!(available, expected.map(|row| row.map(str::to_string)));
     // nothing picked, no outputs
     assert_eq!(outputs["dyn_output"], json!({}));
 }
 
 #[test]
 fn keyframes_from_object_outputs_picked_channels() {
-    let groups = animated_object(&[("location", 2), ("pose.bones[\"Arm\"].location", 0)]);
+    let groups = animated_object(&rig_channels(), &["location[2]", "pose.bones[\"Arm\"].location[0]"]);
     let channels = json!(["pose.bones[\"Arm\"].location[0]", "location[2]"]);
-    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups.clone()), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig")), ("channels", channels)])).unwrap().to_json();
+    let outputs = keyframes_from_object(&Inputs::from([("object_groups", groups.clone()), ("object_group_name", json!("collection:Rig")), ("object_name", json!("rig-id")), ("channels", channels)])).unwrap().to_json();
     assert_eq!(outputs["dyn_output"], json!({ "pose.bones[\"Arm\"].location[0]": "Arm › Location X", "location[2]": "Location Z" }));
-    assert_eq!(outputs["location[2]"]["array_index"], json!(2));
-    assert_eq!(outputs["pose.bones[\"Arm\"].location[0]"]["data_path"], json!("pose.bones[\"Arm\"].location"));
+    assert_eq!(outputs["location[2]"]["channel"], json!("location[2]"));
+    assert_eq!(outputs["pose.bones[\"Arm\"].location[0]"]["channel"], json!("pose.bones[\"Arm\"].location[0]"));
 
-    // a channel the object doesn't have is an error
-    let error = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("Rig")), ("object_name", json!("ANIM_rig")), ("channels", json!(["scale[0]"]))])).unwrap_err();
-    assert!(error.contains("'scale[0]' has no keyframes on 'ANIM_rig'"), "{}", error);
-}
+    // the object is picked by id, or by name when typed in
+    let by_name = keyframes_from_object(&Inputs::from([("object_groups", groups.clone()), ("object_group_name", json!("Rig")), ("object_name", json!("Rig object")), ("channels", json!(["location[2]"]))])).unwrap().to_json();
+    assert_eq!(by_name["dyn_output"], json!({ "location[2]": "Location Z" }));
 
-#[test]
-fn channel_index_is_the_last_one() {
-    assert_eq!(parse_channel("location[2]"), ("location".to_string(), 2));
-    assert_eq!(parse_channel("pose.bones[\"Arm\"].location[1]"), ("pose.bones[\"Arm\"].location".to_string(), 1));
-    assert_eq!(parse_channel("[\"glow\"][0]"), ("[\"glow\"]".to_string(), 0));
-    assert_eq!(parse_channel("location"), ("location".to_string(), 0));
+    // a channel the object doesn't have curves on is an error, even one the bridge lists
+    let error = keyframes_from_object(&Inputs::from([("object_groups", groups), ("object_group_name", json!("Rig")), ("object_name", json!("rig-id")), ("channels", json!(["location[0]"]))])).unwrap_err();
+    assert!(error.contains("'location[0]' has no keyframes on 'Rig object'"), "{}", error);
 }
 
 #[test]
@@ -298,16 +328,16 @@ fn animation_generator_keeps_every_curve_on_its_channel() {
     let off = json!([curve("location[2]", vec![key(0.0, 1.0), key(0.5, 0.0)])]);
     let outputs = animation_generator(&Inputs::from([("note_on_keyframes", on), ("note_off_keyframes", off)])).unwrap().to_json();
     let generator = outputs["generator"].clone();
-    let channels: Vec<_> = generator["note_on_keyframes"].as_array().unwrap().iter().map(|c| (c["data_path"].clone(), c["array_index"].clone())).collect();
-    assert_eq!(channels, vec![(json!("location"), json!(2)), (json!("rotation_euler"), json!(1))]);
+    let channels: Vec<_> = generator["note_on_keyframes"].as_array().unwrap().iter().map(|c| c["channel"].clone()).collect();
+    assert_eq!(channels, vec![json!("location[2]"), json!("rotation_euler[1]")]);
 
     // a note plays each channel on its own curve, note on and off keys on one channel go on the same curve
     let note = json!({ "channel": 0, "note_number": 60, "velocity": 127, "time_on": 1.0, "time_off": 2.0 });
     let object_map = json!({ "animations": { "hit": generator }, "objects": { "Cube": { "hit": [60] } } });
     let target = json!({ "object": "Cube", "animation": "hit" });
     let keys = note_keyframes(&Inputs::from([("object_map", object_map), ("target", target), ("note", note)])).unwrap().to_json()["keys"].clone();
-    let curves: Vec<_> = keys.as_array().unwrap().iter().map(|k| (k["data_path"].as_str().unwrap().to_string(), k["array_index"].as_u64().unwrap(), k["keyframes"].as_array().unwrap().iter().map(|key| (key["time"].as_f64().unwrap(), key["value"].as_f64().unwrap())).collect::<Vec<_>>())).collect();
-    assert_eq!(curves, vec![("location".to_string(), 2, vec![(1.0, 0.0), (2.0, 1.0), (2.0, 1.0), (2.5, 0.0)]), ("rotation_euler".to_string(), 1, vec![(1.0, 0.0), (2.0, 3.0)])]);
+    let curves: Vec<_> = keys.as_array().unwrap().iter().map(|k| (k["channel"].as_str().unwrap().to_string(), k["keyframes"].as_array().unwrap().iter().map(|key| (key[0].as_f64().unwrap(), key[1].as_f64().unwrap())).collect::<Vec<_>>())).collect();
+    assert_eq!(curves, vec![("location[2]".to_string(), vec![(1.0, 0.0), (2.0, 1.0), (2.0, 1.0), (2.5, 0.0)]), ("rotation_euler[1]".to_string(), vec![(1.0, 0.0), (2.0, 3.0)])]);
 }
 
 #[test]
@@ -320,9 +350,8 @@ fn animation_generator_errors_on_two_curves_on_one_channel() {
 #[test]
 fn set_channel_moves_a_curve() {
     let moved = set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![key(0.0, 1.0)])), ("channel", json!("pose.bones[\"Arm\"].rotation_euler[1]"))])).unwrap().to_json();
-    assert_eq!(moved["keyframes"]["data_path"], json!("pose.bones[\"Arm\"].rotation_euler"));
-    assert_eq!(moved["keyframes"]["array_index"], json!(1));
-    assert_eq!(moved["keyframes"]["keyframe_points"], json!([key(0.0, 1.0)]));
+    assert_eq!(moved["keyframes"]["channel"], json!("pose.bones[\"Arm\"].rotation_euler[1]"));
+    assert_eq!(moved["keyframes"]["keys"], json!([key(0.0, 1.0)]));
 
     // an empty channel leaves it where it is
     let kept = set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![key(0.0, 1.0)])), ("channel", json!(""))])).unwrap().to_json();
@@ -330,7 +359,9 @@ fn set_channel_moves_a_curve() {
 
     // no curve waits for one
     assert_eq!(set_channel(&Inputs::default()).unwrap_err(), "missing input 'keyframes'");
-    assert!(set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![])), ("channel", json!("[2]"))])).unwrap_err().contains("no data path"));
+    // channel ids are the bridge's, any id goes as typed
+    let any = set_channel(&Inputs::from([("keyframes", curve("location[2]", vec![])), ("channel", json!(" [2] "))])).unwrap().to_json();
+    assert_eq!(any["keyframes"]["channel"], json!("[2]"));
 }
 
 #[test]
@@ -403,20 +434,14 @@ fn pad_nums_keeps_every_pair() {
     }
 }
 
-// a linear keyframe point at (time, value)
+// a linear key at (time, value)
 fn key(time: f64, value: f64) -> serde_json::Value {
-    json!({
-        "amplitude": 0.0, "back": 0.0, "easing": "AUTO", "interpolation": "LINEAR", "period": 0.0,
-        "handle_left": [time, value], "handle_left_type": "AUTO_CLAMPED",
-        "handle_right": [time, value], "handle_right_type": "AUTO_CLAMPED",
-        "co": [time, value]
-    })
+    json!([time, value, "linear"])
 }
 
 // a curve on a channel like `location[2]`, as keyframes from object gives it
 fn curve(channel: &str, keys: Vec<serde_json::Value>) -> serde_json::Value {
-    let (data_path, array_index) = parse_channel(channel);
-    json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": keys, "range": [0.0, 1.0] })
+    json!({ "channel": channel, "keys": keys })
 }
 
 fn generator(property: &str, peak: f64) -> serde_json::Value {
@@ -444,8 +469,8 @@ fn cube_keys(properties: &[(&str, f64)]) -> Vec<serde_json::Value> {
 fn evaluate_instrument_steps_combine_overlap_per_curve() {
     // two curves on one object with keys at the same times, each should match evaluating it alone
     let both = cube_keys(&[("location[2]", 1.0), ("rotation_euler[0]", 5.0)]);
-    for (property, peak, data_path, index) in [("location[2]", 1.0, "location", 2), ("rotation_euler[0]", 5.0, "rotation_euler", 0)] {
-        let on_curve: Vec<_> = both.iter().filter(|k| k["data_path"] == data_path && k["array_index"] == index).cloned().collect();
+    for (property, peak) in [("location[2]", 1.0), ("rotation_euler[0]", 5.0)] {
+        let on_curve: Vec<_> = both.iter().filter(|k| k["channel"] == property).cloned().collect();
         assert_eq!(on_curve, cube_keys(&[(property, peak)]), "{}", property);
     }
     assert_eq!(both.len(), 8);
@@ -503,9 +528,9 @@ fn merge_object_maps_keeps_notes_per_animation() {
     ]);
     let outputs = evaluate(merged.clone(), notes);
     let keys = outputs["keyframes"]["Cube"].as_array().unwrap();
-    let times = |data_path: &str| -> Vec<f64> { keys.iter().filter(|k| k["data_path"] == data_path).map(|k| k["time"].as_f64().unwrap()).collect() };
-    assert_eq!(times("location"), vec![0.0, 1.0]);
-    assert_eq!(times("rotation_euler"), vec![2.0, 3.0]);
+    let times = |channel: &str| -> Vec<f64> { keys.iter().filter(|k| k["channel"] == channel).map(|k| k["key"][0].as_f64().unwrap()).collect() };
+    assert_eq!(times("location[2]"), vec![0.0, 1.0]);
+    assert_eq!(times("rotation_euler[0]"), vec![2.0, 3.0]);
 }
 
 #[test]

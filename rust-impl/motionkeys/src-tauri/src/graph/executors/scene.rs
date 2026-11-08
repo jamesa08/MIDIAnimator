@@ -1,15 +1,17 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::io::{NodeResult, Outputs};
-use crate::blender::scene_data::write_scene_data;
+use crate::bridge::scene_data::write_scene_data;
 use crate::state::STATE;
 use crate::utils::log::log;
 use crate::scene_generics::{ObjectGroup, Scene};
-use crate::utils::animation::BlendKeyframe;
+use crate::scene_generics::AnimCurve;
+use crate::utils::animation::{finish_keys, BlendKeyframe};
+use crate::utils::curve::Key;
 
 /// a scene writer's error while Blender isn't connected, it goes away when Blender connects (`clear_not_connected`)
-pub const NOT_CONNECTED: &str = "Blender isn't connected";
+pub const NOT_CONNECTED: &str = "no 3D app is connected";
 
 thread_local! {
     // the scene of the tab being run, see `with_scene`
@@ -21,7 +23,7 @@ thread_local! {
 }
 
 /// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene. `curve_sources` are
-/// the objects its graph reads keyframes from (`blender::curves::curve_sources`)
+/// the objects its graph reads keyframes from (`bridge::curves::curve_sources`)
 pub fn with_scene<T>(scene: Option<Scene>, curve_sources: BTreeSet<String>, f: impl FnOnce() -> T) -> T {
     let before = SCENE.with(|current| current.replace(scene));
     let sources_before = CURVE_SOURCES.with(|current| current.replace(curve_sources));
@@ -83,11 +85,11 @@ pub fn scene_link() -> NodeResult {
 #[node_registry::node]
 pub fn scene_writer(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: Option<bool>) -> NodeResult {
     // every write and how it went is in the log file, with Blender's error when it failed
-    log(format!("writing keyframes for {} object(s) to Blender", keyframes.len()));
+    log(format!("writing keyframes for {} object(s) through the bridge", keyframes.len()));
     let outcome = write(keyframes, clean_keyframes.unwrap_or(true));
     match &outcome {
-        Ok(_) => log("wrote keyframes to Blender"),
-        Err(error) => log(format!("writing keyframes to Blender failed: {error}")),
+        Ok(_) => log("wrote keyframes through the bridge"),
+        Err(error) => log(format!("writing keyframes through the bridge failed: {error}")),
     }
     outcome
 }
@@ -99,11 +101,9 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool)
     for name in keyframes.keys().filter(|name| sources.contains(*name)) {
         log(format!("not writing keyframes to '{name}', its keyframes are read by Keyframes From Object and are in a collection being animated"));
     }
-    let keyframes: HashMap<&String, &Vec<BlendKeyframe>> = keyframes.iter().filter(|(name, _)| !sources.contains(*name)).collect();
-    let totals = (keyframes.len(), keyframes.values().map(|keys| keys.len()).sum::<usize>());
-
-    // the Blender side reads JSON
-    let keyframes = serde_json::to_value(keyframes).map_err(|e| e.to_string())?;
+    let curves: HashMap<&String, Vec<AnimCurve>> = keyframes.iter().filter(|(name, _)| !sources.contains(*name)).map(|(name, keys)| (name, object_curves(keys))).collect();
+    let totals = (curves.len(), curves.values().flatten().map(|curve| curve.keys.len()).sum::<usize>());
+    let keyframes = serde_json::to_value(curves).map_err(|e| e.to_string())?;
 
     // with nothing connected the write would wait out its timeout
     if !STATE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).connected {
@@ -115,15 +115,33 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool)
 
     let mut problems = Vec::new();
     if !report.missing_objects.is_empty() {
-        problems.push(format!("not in the Blender scene, skipped: {}", report.missing_objects.join(", ")));
+        problems.push(format!("not in the {} scene, skipped: {}", crate::ipc::app_name(), report.missing_objects.join(", ")));
     }
-    problems.extend(report.errors);
+    problems.extend(report.errors.iter().map(ToString::to_string));
     if !problems.is_empty() {
         return Err(problems.join("\n"));
     }
     let (objects, keys) = WRITTEN.get();
     WRITTEN.set((objects + totals.0, keys + totals.1));
     Ok(Outputs::new())
+}
+
+/// an object's keys as one curve per channel, in time order. keys without a channel are left out
+fn object_curves(keys: &[BlendKeyframe]) -> Vec<AnimCurve> {
+    let mut curves: BTreeMap<&str, Vec<Key>> = BTreeMap::new();
+    for key in keys.iter().filter(|key| !key.channel.is_empty()) {
+        curves.entry(key.channel.as_str()).or_default().push(key.key.clone());
+    }
+    curves
+        .into_iter()
+        .map(|(channel, mut keys)| {
+            finish_keys(&mut keys);
+            AnimCurve {
+                channel: channel.to_string(),
+                keys,
+            }
+        })
+        .collect()
 }
 
 // waits for `future` from a node function (they're sync). runs run on the async runtime's worker threads,

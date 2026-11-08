@@ -396,7 +396,7 @@ fn outline_shows_frames() {
     let specs = specs();
     let groups = all_groups(&graph);
     let empty = HashMap::new();
-    let scenes = HashMap::new();
+    let scene = None;
     let ctx = OutlineCtx {
         graph: &graph,
         specs: Specs {
@@ -406,7 +406,7 @@ fn outline_shows_frames() {
         },
         results: &empty,
         inputs: &empty,
-        scene_data: &scenes,
+        scene: &scene,
     };
     let frame = node_block(&ctx, "frame-1", Detail::Concise);
     assert!(frame.contains("label \"Input\"") && frame.contains("holds: viewer-1, get_midi_file-1"), "{}", frame);

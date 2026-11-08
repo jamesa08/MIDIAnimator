@@ -27,13 +27,13 @@ fn specs() -> Vec<NodeSpec> {
     node_specs(&default_nodes)
 }
 
-/// loads the fixture project, returns its graph and scene data
-fn fixture() -> (Graph, HashMap<String, Scene>) {
+/// loads the fixture project, returns its graph and scene
+fn fixture() -> (Graph, Option<Scene>) {
     let data = std::fs::read_to_string("tests/fixtures/simple_scene_3_executor.mkproj").unwrap();
     let mut project: SavedProject = serde_json::from_str(&data).unwrap();
     // loading a project updates graphs from before node groups, like the app does
     migrate_rf_instance(&mut project.rf_instance);
-    (Graph::from_rf(&project.rf_instance).unwrap(), project.scene_data)
+    (Graph::from_rf(&project.rf_instance).unwrap(), project.scene)
 }
 
 /// the fixture graph plus everything an `OutlineCtx` needs, results and inputs start out empty
@@ -43,7 +43,7 @@ struct Fixture {
     groups: BTreeMap<String, GroupDef>,
     results: HashMap<String, Value>,
     inputs: HashMap<String, Value>,
-    scene: HashMap<String, Scene>,
+    scene: Option<Scene>,
 }
 
 impl Fixture {
@@ -65,7 +65,7 @@ impl Fixture {
             specs: lookup(&self.specs, &self.groups),
             results: &self.results,
             inputs: &self.inputs,
-            scene_data: &self.scene,
+            scene: &self.scene,
         }
     }
 }
@@ -359,7 +359,8 @@ fn outline_shows_labels_values_connections_and_options() {
     // full outline has descriptions and options from the scene data
     let full = outline(&f.ctx(), None, Detail::Full).unwrap();
     assert!(full.contains("# Animation curves played at each note-on"));
-    assert!(full.contains("options: Cubes"));
+    // groups are picked by id
+    assert!(full.contains("options: collection:Cubes"));
     assert!(full.contains("options: Cube.001, Cube.002"));
     // concise outline lists unset inputs compactly and shows dynamic outputs that haven't executed yet
     let concise = outline(&f.ctx(), None, Detail::Concise).unwrap();
@@ -391,9 +392,9 @@ fn summaries() {
     let tracks = json!([{"name": "Studio Grand", "notes": [1, 2, 3]}, {"name": "Drums", "notes": []}]);
     assert_eq!(summarize("Array<MIDITrack>", &tracks), "2 tracks: Studio Grand (3 notes), Drums (0 notes)");
 
-    // keyframes: data path, count and frame range
-    let curve = json!({"data_path": "location", "array_index": 2, "keyframe_points": [{"co": [0.0, 0.0]}, {"co": [10.0, 1.0]}]});
-    assert_eq!(summarize("Array<Keyframe>", &curve), "location[2] · 2 keyframes · frames 0–10");
+    // keyframes: channel, count and time range
+    let curve = json!({"channel": "location[2]", "keys": [[0.0, 0.0, "linear"], [0.42, 1.0, "linear"]]});
+    assert_eq!(summarize("Array<Keyframe>", &curve), "location[2] · 2 keyframes · 0s–0.42s");
 
     // object groups and strings
     let groups = json!([{"name": "Cubes", "objects": [{}, {}]}]);
@@ -527,19 +528,21 @@ fn group_nodes_get_their_groups_sockets() {
 fn option_warnings_read_the_values_set_together() {
     let mut f = Fixture::new();
     // a second group whose one object isn't in Cubes
-    let scene = f.scene.values_mut().next().unwrap();
+    let scene = f.scene.as_mut().unwrap();
     let mut drums = scene.object_groups[0].clone();
+    drums.id = "collection:Drums".to_string();
     drums.name = "Drums".to_string();
     drums.objects.truncate(1);
+    drums.objects[0].id = "Kick".to_string();
     drums.objects[0].name = "Kick".to_string();
     scene.object_groups.push(drums);
     let node = f.graph.node("keyframes_from_object-1").unwrap().clone();
     let inputs = |values: Value| values.as_object().unwrap().clone();
 
     // the object is one of the group picked with it
-    assert_eq!(option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "Drums", "object_name": "Kick" }))), Vec::<String>::new());
+    assert_eq!(option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "collection:Drums", "object_name": "Kick" }))), Vec::<String>::new());
 
     // one from the node's old group isn't
-    let warnings = option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "Drums", "object_name": "Cube.001" })));
+    let warnings = option_warnings(&f.ctx(), &node, &inputs(json!({ "object_group_name": "collection:Drums", "object_name": "Cube.001" })));
     assert_eq!(warnings, vec!["warning: 'Cube.001' is not one of the current options for object_name: Kick".to_string()]);
 }

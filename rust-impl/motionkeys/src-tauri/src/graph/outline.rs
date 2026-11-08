@@ -10,7 +10,7 @@ use super::model::{dyn_inner, is_param, node_inputs, node_outputs, Graph, Handle
 use super::ops::Side;
 use super::tags;
 use crate::midi::MIDINote;
-use crate::scene_generics::{Object, Scene};
+use crate::scene_generics::{find_group, find_object, ObjectGroup, Scene};
 
 /// everything needed to describe the graph, borrowed from a snapshot of `AppState`
 pub struct OutlineCtx<'a> {
@@ -20,7 +20,7 @@ pub struct OutlineCtx<'a> {
     pub results: &'a HashMap<String, Value>,
     /// `executed_inputs`: `{node_id: {input_id: value}}`
     pub inputs: &'a HashMap<String, Value>,
-    pub scene_data: &'a HashMap<String, Scene>,
+    pub scene: &'a Option<Scene>,
 }
 
 /// how much to show in an outline, `Full` adds descriptions and the values coming in over connections
@@ -112,7 +112,7 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
         header.push_str(if spec.realtime {
             "  (not executed)"
         } else {
-            "  (not executed; runs only with graph_execute write_to_blender=true)"
+            "  (not executed; runs only with graph_execute write_keyframes=true)"
         });
     }
     // add the node description in full detail
@@ -291,24 +291,21 @@ pub fn input_options(ctx: &OutlineCtx, node: &RfNode, input_id: &str) -> Option<
     match (node.resolved_node_type(), input_id) {
         // track names come from the tracks fed into the node
         ("get_midi_track_data", "track_name") => Some(names(executed.and_then(|i| i.get("tracks")))),
-        // object group names come from the executed inputs or the scene
-        ("keyframes_from_object", "object_group_name") | ("assign_notes_to_objects", "object_group_name") => Some(object_groups(ctx, node).iter().filter_map(|g| g.get("name").and_then(|n| n.as_str()).map(String::from)).collect()),
-        // object names come from the object group picked on the node
+        // object groups are picked by id, from the executed inputs or the scene
+        ("keyframes_from_object", "object_group_name") | ("assign_notes_to_objects", "object_group_name") => Some(object_groups(ctx, node).iter().map(|g| g.key().to_string()).collect()),
+        // objects are picked by id, from the object group picked on the node
         ("keyframes_from_object", "object_name") => {
-            let group_name = node.input_value("object_group_name").and_then(|v| v.as_str()).unwrap_or("");
             let groups = object_groups(ctx, node);
-            let group = groups.iter().find(|g| g.get("name").and_then(|n| n.as_str()) == Some(group_name));
-            Some(names(group.and_then(|g| g.get("objects"))))
+            let group = find_group(&groups, node.input_value("object_group_name").and_then(|v| v.as_str()).unwrap_or(""));
+            Some(group.map(|g| g.objects.iter().map(|o| o.id.clone()).collect()).unwrap_or_default())
         }
-        // channels are the animated channels of the object picked on the node
+        // channels are the channels with curves of the object picked on the node
         ("keyframes_from_object", "channels") => {
-            let group_name = node.input_value("object_group_name").and_then(|v| v.as_str()).unwrap_or("");
             let object_name = node.input_value("object_name").and_then(|v| v.as_str()).unwrap_or("");
             let groups = object_groups(ctx, node);
-            let objects = groups.iter().find(|g| g.get("name").and_then(|n| n.as_str()) == Some(group_name)).and_then(|g| g.get("objects")).and_then(|o| o.as_array());
-            let object = objects.and_then(|o| o.iter().find(|o| o.get("name").and_then(|n| n.as_str()) == Some(object_name)));
-            let object: Option<Object> = object.and_then(|o| serde_json::from_value(o.clone()).ok());
-            Some(object.map(|o| object_channels(&o).into_iter().map(|c| c.id).collect()).unwrap_or_default())
+            let group = find_group(&groups, node.input_value("object_group_name").and_then(|v| v.as_str()).unwrap_or(""));
+            let object = group.and_then(|g| find_object(&g.objects, object_name));
+            Some(object.map(|o| object_channels(o).into_iter().map(|c| c.id).collect()).unwrap_or_default())
         }
         // no known options for this input
         _ => None,
@@ -338,13 +335,13 @@ fn names(array: Option<&Value>) -> Vec<String> {
 }
 
 /// object groups the node sees: from its executed inputs, else every group in the scene data
-fn object_groups(ctx: &OutlineCtx, node: &RfNode) -> Vec<Value> {
+fn object_groups(ctx: &OutlineCtx, node: &RfNode) -> Vec<ObjectGroup> {
     // use the groups fed into the node if it has executed
-    if let Some(groups) = ctx.inputs.get(&node.id).and_then(|i| i.get("object_groups")).and_then(|g| g.as_array()) {
-        return groups.clone();
+    if let Some(groups) = ctx.inputs.get(&node.id).and_then(|i| i.get("object_groups")).and_then(|g| serde_json::from_value::<Vec<ObjectGroup>>(g.clone()).ok()) {
+        return groups;
     }
     // otherwise, every object group in every scene
-    ctx.scene_data.values().flat_map(|scene| scene.object_groups.iter()).filter_map(|g| serde_json::to_value(g).ok()).collect()
+    ctx.scene.iter().flat_map(|scene| scene.object_groups.iter().cloned()).collect()
 }
 
 // MARK: - Summaries
@@ -429,22 +426,17 @@ fn summarize_object_groups(value: &Value) -> Option<String> {
     ))
 }
 
-/// keyframe outputs are Blender F-curves: `location[2] · 3 keyframes · frames 0–10`
+/// keyframe outputs are one channel's curve: `location[2] · 3 keyframes · 0s–0.42s`
 fn summarize_curve(value: &Value) -> Option<String> {
-    // get the curve info and the frames of its keyframes
-    let points = value.get("keyframe_points")?.as_array()?;
-    let data_path = value.get("data_path").and_then(|v| v.as_str()).unwrap_or("?");
-    let index = value.get("array_index").and_then(|v| v.as_u64()).unwrap_or(0);
-    let frames: Vec<f64> = points.iter().filter_map(|p| p.get("co")?.get(0)?.as_f64()).collect();
-    // frame range, only if there are keyframes
-    let range = if frames.is_empty() {
-        String::new()
-    } else {
-        let lo = frames.iter().cloned().fold(f64::INFINITY, f64::min);
-        let hi = frames.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        format!(" · frames {}–{}", lo, hi)
+    let keys = value.get("keys")?.as_array()?;
+    let channel = value.get("channel").and_then(|v| v.as_str()).unwrap_or("?");
+    // keys are [time, value, interpolation, ...] in seconds, in time order
+    let times: Vec<f64> = keys.iter().filter_map(|key| key.get(0)?.as_f64()).collect();
+    let range = match (times.first(), times.last()) {
+        (Some(lo), Some(hi)) => format!(" · {}s–{}s", lo, hi),
+        _ => String::new(),
     };
-    Some(format!("{}[{}] · {} keyframes{}", data_path, index, points.len(), range))
+    Some(format!("{} · {} keyframes{}", channel, keys.len(), range))
 }
 
 /// MIDI note number to name, 60 = C4

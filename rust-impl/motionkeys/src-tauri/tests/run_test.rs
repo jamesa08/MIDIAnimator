@@ -2,6 +2,7 @@
 // cargo test --test run_test
 // benchmark: cargo test --release --test run_test -- --ignored --nocapture
 
+use motionkeys::graph::executors::scene::NOT_CONNECTED;
 use std::collections::{BTreeMap, HashMap};
 use std::time::Instant;
 
@@ -100,20 +101,14 @@ fn run_memo(root: &Graph, groups: &BTreeMap<String, GroupDef>, inspect: &str, re
 
 // MARK: - Test Data
 
-// a linear keyframe point at (time, value)
+// a linear key at (time, value)
 fn key(time: f64, value: f64) -> Value {
-    json!({
-        "amplitude": 0.0, "back": 0.0, "easing": "AUTO", "interpolation": "LINEAR", "period": 0.0,
-        "handle_left": [time, value], "handle_left_type": "AUTO_CLAMPED",
-        "handle_right": [time, value], "handle_right_type": "AUTO_CLAMPED",
-        "co": [time, value]
-    })
+    json!([time, value, "linear"])
 }
 
 // a curve on a channel like `location[2]`, as keyframes from object gives it
 fn curve(channel: &str, keys: Vec<Value>) -> Value {
-    let (data_path, array_index) = motionkeys::utils::animation::parse_channel(channel);
-    json!({ "array_index": array_index, "auto_smoothing": "NONE", "data_path": data_path, "extrapolation": "CONSTANT", "keyframe_points": keys, "range": [0.0, 1.0] })
+    json!({ "channel": channel, "keys": keys })
 }
 
 fn generator(name: &str, property: &str, overlap: &str, peak: f64) -> Value {
@@ -428,7 +423,7 @@ fn a_multi_input_gets_every_connection_in_order() {
     let (record, error) = run_graph(&two_curves(), &BTreeMap::new(), true);
     assert_eq!(error, None);
     let curves = record.results["animation_generator-1"]["generator"]["note_on_keyframes"].as_array().unwrap().clone();
-    let channels: Vec<_> = curves.iter().map(|c| format!("{}[{}]", c["data_path"].as_str().unwrap(), c["array_index"])).collect();
+    let channels: Vec<_> = curves.iter().map(|c| c["channel"].as_str().unwrap().to_string()).collect();
     assert_eq!(channels, ["location[2]", "rotation_euler[1]"]);
     // the record shows the list it got
     assert_eq!(record.inputs["animation_generator-1"]["note_on_keyframes"].as_array().unwrap().len(), 2);
@@ -577,8 +572,8 @@ fn the_scene_writer_fails_when_blender_isnt_connected() {
     let root = graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": {} } }))], &[]);
     let (record, error) = run_graph(&root, &BTreeMap::new(), false);
     assert!(record.skipped.is_empty());
-    assert_eq!(node_error(&record.results["scene_writer-1"]), Some("Blender isn't connected"));
-    assert!(error.unwrap().contains("Blender isn't connected"));
+    assert_eq!(node_error(&record.results["scene_writer-1"]), Some(NOT_CONNECTED));
+    assert!(error.unwrap().contains(NOT_CONNECTED));
 }
 
 #[test]
@@ -593,14 +588,14 @@ fn a_scene_writer_inside_a_closed_group_is_still_recorded() {
 
     // a write: the writer's error is there even though nothing inside the group is open
     let (record, _) = run_graph(&root, &groups, false);
-    assert_eq!(node_error(&record.results["group-1/scene_writer-1"]), Some("Blender isn't connected"));
+    assert_eq!(node_error(&record.results["group-1/scene_writer-1"]), Some(NOT_CONNECTED));
 }
 
 // MARK: - Stale Writes
 
 /// a scene writer with keyframes set on it
 fn writer_graph(value: f64) -> Graph {
-    graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": { "Cube": [{ "time": 1.0, "value": value, "data_path": "location", "array_index": 2 }] } } }))], &[])
+    graph(vec![node("scene_writer-1", json!({ "inputs": { "keyframes": { "Cube": [{ "channel": "location[2]", "key": [1.0, value, "linear"] }] } } }))], &[])
 }
 
 /// `run_memo` with a scene writer that writes nothing and goes through
