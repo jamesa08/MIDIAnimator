@@ -25,7 +25,7 @@ type Option = { value: string; label: string };
 
 // an input with an editor of its own instead of the one its type gets, like the widget on the node. `shown` hides it
 // like the node does. a select's `set` is what picking sets when it changes other inputs too, like the node's dropdown
-type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[]; set?: (value: string, ctx: ParamContext) => Record<string, any> } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" });
+type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[]; set?: (value: string, ctx: ParamContext) => Record<string, any> } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" } | { kind: "checkbox" });
 
 // the names of a list of named things, a mistyped connection can hand over anything
 const list = (items: any): any[] => (Array.isArray(items) ? items : []);
@@ -60,6 +60,8 @@ const PARAMS: Record<string, Param[]> = {
         { id: "amplitude_mapper", kind: "expression", vars: "mapper" },
         { id: "animation_overlap", kind: "select", options: () => overlapModes.map((mode) => ({ value: mode.id, label: mode.name })) },
         { id: "overlap_blend", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "crossfade" },
+        { id: "overlap_dampen", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
+        { id: "overlap_use_anchor_value", kind: "checkbox", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
     ],
 };
 
@@ -386,6 +388,10 @@ function Properties() {
                     break;
                 case "midi_file":
                     field = <MidiFileField value={value} readOnly={!editable} onCommit={set} />;
+                    break;
+                case "checkbox":
+                    // mixed shows unchecked, ticking sets them all
+                    field = <input type="checkbox" checked={value === true} disabled={!editable} onChange={(e) => set(e.target.checked)} />;
                     break;
                 case "expression":
                     field = (

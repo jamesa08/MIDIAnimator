@@ -23,6 +23,7 @@ export const overlapModes = [
     { id: "rvc", name: "Rest Value Crossing" },
     { id: "prune", name: "Keyframe Pruning" },
     { id: "crossfade", name: "Crossfade" },
+    { id: "momentum", name: "Momentum" },
 ];
 
 // a slider drag: its undo step, the value waiting to be sent, the last one sent and whether it's still on its way
@@ -59,6 +60,55 @@ function NumberField({ value, onCommit, ...props }: { value: number | undefined;
             }}
         />
     );
+}
+
+// a slider for an input from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
+// it's dragged to, not what comes back from the backend on the way
+function useSliderInput(id: string, input: string, current: number | undefined) {
+    const setInputs = useSetInputs();
+    const { scopeId } = useGroupContext();
+    const { end } = useGraphOps(scopeId);
+    const [value, setValue] = useState<number>(current ?? 0);
+    const dragRef = useRef<Drag | null>(null);
+    useEffect(() => {
+        if (!dragRef.current) setValue(current ?? 0);
+    }, [current]);
+
+    // send the value waiting, in the drag's undo step. one send at a time, the latest value goes out when the one before
+    // it lands, so a slow backend doesn't queue up a send per frame
+    const flush = (drag: Drag): Promise<unknown> => {
+        if (drag.pending === null || drag.sending) return drag.sent;
+        const pending = drag.pending;
+        drag.pending = null;
+        drag.sending = true;
+        drag.sent = setInputs(id, { [input]: pending }, { txn: drag.txn }).finally(() => {
+            drag.sending = false;
+            // only a value that came meanwhile, `drag.sent` is this promise itself and waiting on it never ends
+            return drag.pending !== null ? flush(drag) : undefined;
+        });
+        return drag.sent;
+    };
+    const onChange = (next: number) => {
+        setValue(next);
+        const drag = dragRef.current;
+        // typed in, its own undo step
+        if (!drag) {
+            setInputs(id, { [input]: next });
+            return;
+        }
+        if (drag.pending === null) requestAnimationFrame(() => flush(drag));
+        drag.pending = next;
+    };
+    const onStart = () => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve(), sending: false });
+    // the last value goes out, then the undo step closes
+    const onEnd = () => {
+        const drag = dragRef.current;
+        dragRef.current = null;
+        if (!drag) return;
+        flush(drag);
+        drag.sent.finally(() => end(drag.txn));
+    };
+    return { value, onChange, onStart, onEnd };
 }
 
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
@@ -130,50 +180,31 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     // an anchor point is typed in unless something is connected to it, in seconds from the note on or off
     const anchorComponent = (input: "note_on_anchor_point" | "note_off_anchor_point") => (connected.includes(input) ? <></> : <NumberField step="0.01" placeholder="0" value={data.inputs?.[input]} onCommit={(value) => setInputs(id, { [input]: value })} />);
 
-    // velocity intensity from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
-    // it's dragged to, not what comes back from the backend on the way
-    const { scopeId } = useGroupContext();
-    const { end } = useGraphOps(scopeId);
-    const [intensity, setIntensity] = useState<number>(data.inputs?.velocity_intensity ?? 0);
-    const dragRef = useRef<Drag | null>(null);
-    useEffect(() => {
-        if (!dragRef.current) setIntensity(data.inputs?.velocity_intensity ?? 0);
-    }, [data.inputs?.velocity_intensity]);
+    // velocity intensity from 0 to 1
+    const intensity = useSliderInput(id, "velocity_intensity", data.inputs?.velocity_intensity);
+    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" {...intensity} />;
 
-    // send the value waiting, in the drag's undo step. one send at a time, the latest value goes out when the one before
-    // it lands, so a slow backend doesn't queue up a send per frame
-    const flushIntensity = (drag: Drag): Promise<unknown> => {
-        if (drag.pending === null || drag.sending) return drag.sent;
-        const value = drag.pending;
-        drag.pending = null;
-        drag.sending = true;
-        drag.sent = setInputs(id, { velocity_intensity: value }, { txn: drag.txn }).finally(() => {
-            drag.sending = false;
-            // only a value that came meanwhile, `drag.sent` is this promise itself and waiting on it never ends
-            return drag.pending !== null ? flushIntensity(drag) : undefined;
-        });
-        return drag.sent;
-    };
-    const changeIntensity = (value: number) => {
-        setIntensity(value);
-        const drag = dragRef.current;
-        // typed in, its own undo step
-        if (!drag) {
-            setInputs(id, { velocity_intensity: value });
-            return;
-        }
-        if (drag.pending === null) requestAnimationFrame(() => flushIntensity(drag));
-        drag.pending = value;
-    };
-    // the last value goes out, then the undo step closes
-    const endIntensityDrag = () => {
-        const drag = dragRef.current;
-        dragRef.current = null;
-        if (!drag) return;
-        flushIntensity(drag);
-        drag.sent.finally(() => end(drag.txn));
-    };
-    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" value={intensity} onChange={changeIntensity} onStart={() => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve(), sending: false })} onEnd={endIntensityDrag} />;
+    // only momentum uses dampen and use anchor point value. unset is on, the spec's default
+    const momentum = data.inputs?.animation_overlap === "momentum";
+    const dampen = useSliderInput(id, "overlap_dampen", data.inputs?.overlap_dampen);
+    const dampenComponent = momentum ? (
+        <>
+            <div className="node-field field-inputs">
+                <span>Dampen</span>
+            </div>
+            <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" {...dampen} />
+        </>
+    ) : (
+        <></>
+    );
+    const anchorValueComponent = momentum ? (
+        <label className="node-field flex items-center gap-1">
+            <input type="checkbox" checked={data.inputs?.overlap_use_anchor_value ?? true} onChange={(e) => setInputs(id, { overlap_use_anchor_value: e.target.checked })} />
+            Use Anchor Point Value
+        </label>
+    ) : (
+        <></>
+    );
 
     const uiInject = {
         name: nameComponent,
@@ -184,11 +215,15 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         velocity_intensity: intensityComponent,
         animation_overlap: overlapComponent,
         overlap_blend: blendComponent,
+        overlap_dampen: dampenComponent,
+        overlap_use_anchor_value: anchorValueComponent,
     };
 
     const hiddenHandles = {
         animation_overlap: true,
         overlap_blend: true,
+        overlap_dampen: true,
+        overlap_use_anchor_value: true,
     };
 
     // the generator's curves from the last run, under the inputs
