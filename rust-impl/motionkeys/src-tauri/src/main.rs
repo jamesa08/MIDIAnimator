@@ -111,6 +111,10 @@ async fn main() {
             #[cfg(target_os = "macos")]
             motionkeys::ui::panels::watch_app_active(app.handle().clone());
 
+            // dock quit, logging out and restarting ask about unsaved changes like the quit menu item
+            #[cfg(target_os = "macos")]
+            motionkeys::ui::windows::ask_before_terminate(app.handle());
+
             // load default nodes
             let resource_path = app.path().resolve("src/configs/default_nodes.json", tauri::path::BaseDirectory::Resource).unwrap();
             let data = std::fs::read_to_string(resource_path).unwrap();

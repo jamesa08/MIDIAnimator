@@ -55,6 +55,8 @@ const PanelContent: React.FC = () => {
 
     // nodes dropped outside this window go to the graph in the main window
     const handleNodeDrop = ({ clientX, clientY, ...drop }: PanelNodeDrop) => {
+        // let go over this panel, so not on the graph behind it
+        if (clientX >= 0 && clientX < window.innerWidth && clientY >= 0 && clientY < window.innerHeight) return;
         sendToMain(PANEL_NODE_DROP_EVENT, drop);
     };
 

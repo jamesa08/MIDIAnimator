@@ -690,3 +690,73 @@ extern "C" fn window_should_zoom(_this: *mut objc2::runtime::AnyObject, _sel: ob
 
     Bool::NO
 }
+
+// MARK: - Quit
+
+// quitting from the dock, logging out, restarting or another app asking this one to quit (activity monitor) goes through
+// appkit's terminate:, which exits without closing the main window, so the unsaved changes prompt (App.tsx) never ran.
+// tao's app delegate only implements applicationWillTerminate:, so applicationShouldTerminate: is added to its class.
+// the app's own quit never comes back through it: the main window being destroyed exits (main.rs), which stops the event
+// loop instead of calling terminate:
+
+/// the app the quit is asked of, set once by ask_before_terminate
+#[cfg(target_os = "macos")]
+static TERMINATE_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// has terminate: (dock quit, log out, restart) go through the main window's close like the quit menu item when a tab has
+/// unsaved changes. called once from setup
+#[cfg(target_os = "macos")]
+pub fn ask_before_terminate(app: &AppHandle) {
+    TERMINATE_APP.set(app.clone()).ok();
+    app.run_on_main_thread(|| unsafe {
+        use objc2::runtime::{AnyObject, Sel};
+        use objc2::Encode;
+        use objc2_app_kit::{NSApplication, NSApplicationTerminateReply};
+
+        let Some(mtm) = objc2_foundation::MainThreadMarker::new() else {
+            return;
+        };
+        let ns_app = NSApplication::sharedApplication(mtm);
+        let delegate: *mut AnyObject = objc2::msg_send![&ns_app, delegate];
+        if delegate.is_null() {
+            return;
+        }
+        // added, or swapped in if a later tao has its own
+        let class = (*delegate).class() as *const _ as *mut objc2::ffi::objc_class;
+        let types = std::ffi::CString::new(format!("{}{}{}{}", NSApplicationTerminateReply::ENCODING, <*mut AnyObject>::ENCODING, Sel::ENCODING, <*mut AnyObject>::ENCODING)).unwrap();
+        let imp: extern "C" fn(*mut AnyObject, Sel, *mut AnyObject) -> NSApplicationTerminateReply = application_should_terminate;
+        objc2::ffi::class_replaceMethod(class, objc2::ffi::sel_registerName(c"applicationShouldTerminate:".as_ptr()), Some(std::mem::transmute(imp)), types.as_ptr());
+    })
+    .ok();
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn application_should_terminate(_this: *mut objc2::runtime::AnyObject, _sel: objc2::runtime::Sel, _sender: *mut objc2::runtime::AnyObject) -> objc2_app_kit::NSApplicationTerminateReply {
+    use objc2_app_kit::NSApplicationTerminateReply;
+    use std::sync::TryLockError;
+
+    // no main window left to ask in, the quit goes ahead
+    let Some(main) = TERMINATE_APP.get().and_then(|app| app.get_webview_window("main")) else {
+        return NSApplicationTerminateReply::NSTerminateNow;
+    };
+    // nothing unsaved quits right away, so logging out or restarting isn't held up. this runs on the main thread, a state
+    // lock held elsewhere asks through the window rather than wait on it here
+    let unsaved = match crate::state::STATE.try_lock() {
+        Ok(state) => state.unsaved(),
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner().unsaved(),
+        Err(TryLockError::WouldBlock) => true,
+    };
+    if !unsaved {
+        return NSApplicationTerminateReply::NSTerminateNow;
+    }
+
+    // the same as the quit menu item, brought forward so the prompt is seen. closing asks about each unsaved tab, then
+    // destroys the window and the app exits. cancelling the prompt keeps it running.
+    // sent from another thread so they go through the event loop in order once appkit's call has returned
+    std::thread::spawn(move || {
+        main.unminimize().ok();
+        main.set_focus().ok();
+        main.close().ok();
+    });
+    NSApplicationTerminateReply::NSTerminateCancel
+}
