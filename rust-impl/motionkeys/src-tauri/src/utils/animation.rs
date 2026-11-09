@@ -8,6 +8,7 @@ use crate::midi::MIDINote;
 use crate::scene_generics::AnimCurve;
 use crate::utils::curve::{auto_handles, evaluate, slope, sort_keys, Key};
 use crate::utils::mapper::{Mappers, NoteContext, NoteVars};
+use crate::utils::momentum::{momentum_keys, MomentumNote};
 
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
@@ -43,6 +44,12 @@ pub struct AnimationGenerator {
     /// crossfade only: seconds to ease from the old animation into the note
     #[serde(default = "default_overlap_blend")]
     pub overlap_blend: f64,
+    /// momentum only: 0 to 1, how much crowded notes shrink
+    #[serde(default)]
+    pub overlap_dampen: f64,
+    /// momentum only: dampening shrinks toward the hit's value so the hit still lands, off shrinks toward rest
+    #[serde(default = "default_use_anchor_value")]
+    pub overlap_use_anchor_value: bool,
     /// the mappers compiled, once for every copy of the generator
     #[serde(skip)]
     #[schemars(skip)]
@@ -51,6 +58,10 @@ pub struct AnimationGenerator {
 
 fn default_overlap_blend() -> f64 {
     DEFAULT_OVERLAP_BLEND
+}
+
+fn default_use_anchor_value() -> bool {
+    true
 }
 
 /// a generator's compiled mappers, shared by its copies. made the first time they're needed, a generator read from JSON
@@ -197,6 +208,14 @@ pub struct CurveKeys {
     pub channel: String,
     pub animation_overlap: String,
     pub overlap_blend: f64,
+    /// momentum: when the note hits (its note on), seconds. unset uses the first key
+    #[serde(default)]
+    pub hit: Option<f64>,
+    /// momentum: the generator's dampening and anchor point value
+    #[serde(default)]
+    pub overlap_dampen: f64,
+    #[serde(default = "default_use_anchor_value")]
+    pub overlap_use_anchor_value: bool,
     /// in the wire form, `[time, value, interpolation]` or with the handles
     #[serde(with = "crate::utils::curve::wire_keys")]
     #[schemars(with = "Vec<Vec<serde_json::Value>>")]
@@ -259,6 +278,9 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
                 channel: channel.to_string(),
                 animation_overlap: gen.animation_overlap.clone(),
                 overlap_blend: gen.overlap_blend,
+                hit: Some(note.time_on),
+                overlap_dampen: gen.overlap_dampen,
+                overlap_use_anchor_value: gen.overlap_use_anchor_value,
                 keyframes,
             }
         })
@@ -290,16 +312,41 @@ fn note_keyframes(curve: &AnimCurve, offset: f64, velocity: u8, velocity_intensi
 }
 
 /// combines each note's keys into its curve in order with the curve's overlap mode, then flattens to one list per object.
-/// every object in `objects` is in the result, ones with no keys stay empty so the writer still clears them
+/// every object in `objects` is in the result, ones with no keys stay empty so the writer still clears them.
+/// momentum looks at a note's neighbors on both sides, so a curve's momentum notes in a row are collected and combined
+/// together, then added to the curve like one note
 pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks: impl IntoIterator<Item = CurveKeys>) -> Result<HashMap<String, Vec<BlendKeyframe>>, String> {
     // keyframes per object, then per channel. overlap only combines keys on the same curve
     let mut obj_curves: HashMap<String, BTreeMap<String, Vec<Key>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
+    // each curve's momentum notes waiting to be combined
+    let mut runs: HashMap<(String, String), Vec<MomentumNote>> = HashMap::new();
+    let flush = |obj_curves: &mut HashMap<String, BTreeMap<String, Vec<Key>>>, (object, channel): (String, String), run: Vec<MomentumNote>| {
+        let inserted = obj_curves.entry(object).or_default().entry(channel).or_default();
+        add_keyframes(inserted, &mut momentum_keys(run));
+    };
     for mut chunk in chunks {
-        let inserted = obj_curves.entry(chunk.object).or_default().entry(chunk.channel).or_default();
+        let curve = (chunk.object, chunk.channel);
+        if chunk.animation_overlap == "momentum" {
+            let hit = chunk.hit.or(chunk.keyframes.first().map(|key| key.time)).unwrap_or_default();
+            runs.entry(curve).or_default().push(MomentumNote {
+                hit,
+                keys: chunk.keyframes,
+                dampen: chunk.overlap_dampen,
+                use_anchor_value: chunk.overlap_use_anchor_value,
+            });
+            continue;
+        }
+        if let Some(run) = runs.remove(&curve) {
+            flush(&mut obj_curves, curve.clone(), run);
+        }
+        let inserted = obj_curves.entry(curve.0).or_default().entry(curve.1).or_default();
         let settings = OverlapSettings {
             blend: chunk.overlap_blend,
         };
         combine_keyframes(&chunk.animation_overlap, &settings, inserted, &mut chunk.keyframes)?;
+    }
+    for (curve, run) in runs {
+        flush(&mut obj_curves, curve, run);
     }
     Ok(obj_curves
         .into_iter()
@@ -324,7 +371,7 @@ pub fn finish_keys(keys: &mut Vec<Key>) {
 }
 
 /// the ways a note's keyframes can combine with the keyframes already on its curve, the first is the default
-pub const ANIMATION_OVERLAPS: [&str; 8] = ["add", "min", "max", "prev", "next", "rvc", "prune", "crossfade"];
+pub const ANIMATION_OVERLAPS: [&str; 9] = ["add", "min", "max", "prev", "next", "rvc", "prune", "crossfade", "momentum"];
 
 /// seconds a crossfade eases over when the generator doesn't set one
 pub const DEFAULT_OVERLAP_BLEND: f64 = 0.1;
@@ -365,6 +412,9 @@ pub fn combine_keyframes(mode: &str, settings: &OverlapSettings, inserted_keys: 
         "rvc" => rest_value_crossing_keyframes(inserted_keys, next_keys),
         "prune" => prune_keyframes(inserted_keys, next_keys),
         "crossfade" => crossfade_keyframes(inserted_keys, next_keys, settings.blend),
+        // momentum needs every note's hit and both neighbors, combine_curve_keys does it (utils/momentum.rs). two bare key
+        // lists have neither, they add
+        "momentum" => add_keyframes(inserted_keys, next_keys),
         other => return Err(format!("unknown animation overlap '{}', expected one of: {}", other, ANIMATION_OVERLAPS.join(", "))),
     }
     Ok(())

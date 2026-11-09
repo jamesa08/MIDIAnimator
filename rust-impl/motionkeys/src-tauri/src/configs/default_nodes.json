@@ -223,7 +223,7 @@
                         "name": "Animation Overlap",
                         "data_type": "String",
                         "hidden": true,
-                        "description": "How a note combines with an animation still playing on the same curve: add, min, max, prev (previous), next, rvc (rest value crossing), prune (keyframe pruning) or crossfade. Empty = add."
+                        "description": "How a note combines with an animation still playing on the same curve: add, min, max, prev (previous), next, rvc (rest value crossing), prune (keyframe pruning), crossfade or momentum (keys keep their keyed timing, crowded notes are trimmed and joined so nothing moves faster than it was keyed). Empty = add."
                     },
                     {
                         "id": "overlap_blend",
@@ -232,6 +232,22 @@
                         "data_type": "f64",
                         "hidden": true,
                         "description": "Crossfade only: seconds to ease from the animation still playing into the note. Unset = 0.1."
+                    },
+                    {
+                        "id": "overlap_dampen",
+                        "default": 0,
+                        "name": "Dampen",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Momentum only: how much crowded notes shrink, from 0 (not at all) to 1 (as much as they're crowded). Unset = 0."
+                    },
+                    {
+                        "id": "overlap_use_anchor_value",
+                        "default": true,
+                        "name": "Use Anchor Point Value",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "Momentum only: dampening shrinks toward the hit's value so every hit still lands. Off shrinks toward rest. Unset = on."
                     }
                 ],
                 "outputs": [

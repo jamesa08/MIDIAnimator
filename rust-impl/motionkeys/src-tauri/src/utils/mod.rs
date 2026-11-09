@@ -7,6 +7,7 @@ pub mod expr;
 pub mod gm_instrument_map;
 pub mod log;
 pub mod mapper;
+pub mod momentum;
 pub mod note_table;
 pub mod ui;
 

@@ -123,12 +123,14 @@ pub fn object_channels(object: &Object) -> Vec<ChannelOption> {
 /// "amplitude_mapper": `String`,
 /// "velocity_intensity": `f64`,
 /// "animation_overlap": `String`,
-/// "overlap_blend": `f64`
+/// "overlap_blend": `f64`,
+/// "overlap_dampen": `f64`, momentum, 0 to 1,
+/// "overlap_use_anchor_value": `bool`, momentum
 ///
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[node_registry::node]
-pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<&Value>, amplitude_mapper: Option<&Value>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>) -> NodeResult {
+pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<&Value>, amplitude_mapper: Option<&Value>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>, overlap_dampen: Option<f64>, overlap_use_anchor_value: Option<bool>) -> NodeResult {
     // the keyframe curves are optional, an unconnected one is just no keyframes
     let note_on_keyframes = note_on_keyframes.cloned().unwrap_or_default();
     let note_off_keyframes = note_off_keyframes.cloned().unwrap_or_default();
@@ -160,6 +162,12 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         return Err(format!("overlap blend can't be negative, got {}", overlap_blend));
     }
 
+    // momentum's dampening, unset is none
+    let overlap_dampen = overlap_dampen.unwrap_or_default();
+    if !(0.0..=1.0).contains(&overlap_dampen) {
+        return Err(format!("overlap dampen goes from 0 to 1, got {}", overlap_dampen));
+    }
+
     // a mapper is an expression, nothing set changes nothing. one saved with the expression inside an object (how the
     // mappers were saved for a while) reads its expression
     let mapper = |value: Option<&Value>, name: &str| -> Result<String, String> {
@@ -184,6 +192,8 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         velocity_intensity: velocity_intensity.unwrap_or_default(),
         animation_overlap,
         overlap_blend,
+        overlap_dampen,
+        overlap_use_anchor_value: overlap_use_anchor_value.unwrap_or(true),
         compiled: Default::default(),
     };
 
