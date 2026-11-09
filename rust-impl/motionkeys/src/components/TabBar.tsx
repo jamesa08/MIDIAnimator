@@ -22,6 +22,10 @@ interface Tab {
 
 type ProjectStatus = { name: string; unsaved: boolean; unsaved_tabs: string[] };
 
+// what try_close_instance errs with when the tab has unsaved changes, and when it's the last tab (src-tauri/src/state/mod.rs)
+const UNSAVED_CHANGES = "Unsaved changes";
+const LAST_TAB = "Last tab";
+
 // the tabs, the backend owns them: each is a file of its own, like an instance of the app. adding, closing, switching,
 // renaming and moving one are backend commands (src-tauri/src/state/mod.rs)
 function TabBar() {
@@ -60,32 +64,51 @@ function TabBar() {
         if (id !== activeId) invoke("switch_active_instance", { id });
     };
 
-    // the last tab closes the window instead, which asks to save the project
-    const latest = useRef({ tabs, activeId, unsavedTabs });
-    latest.current = { tabs, activeId, unsavedTabs };
-    const closeTab = (id: string) => {
-        const { tabs, unsavedTabs } = latest.current;
-        if (tabs.length <= 1) getCurrentWindow().close();
-        else if (unsavedTabs.includes(id)) setConfirmClose(id);
-        else invoke("close_instance", { id });
+    // closes a tab, one with unsaved changes only with `discard`: the backend checks, it can have changes the star doesn't
+    // show yet. resolves to false when it has them and stays open. one that's the last tab by now (MCP closed the others)
+    // closes the window instead, which asks about it again
+    const tryClose = async (id: string, discard = false) => {
+        try {
+            await invoke("try_close_instance", { id, discard });
+            return true;
+        } catch (error) {
+            if (error === UNSAVED_CHANGES) return false;
+            if (error === LAST_TAB) {
+                getCurrentWindow().close();
+                return true;
+            }
+            console.error("Close failed:", error);
+            return true;
+        }
+    };
+
+    // the last tab closes the window instead, which asks to save the project. whether the tab has unsaved changes is
+    // asked for now, the star can be behind
+    const latest = useRef({ tabs, activeId });
+    latest.current = { tabs, activeId };
+    const closeTab = async (id: string) => {
+        if (latest.current.tabs.length <= 1) return getCurrentWindow().close();
+        const { unsaved_tabs } = await invoke<ProjectStatus>("get_project_status");
+        if (unsaved_tabs.includes(id) || !(await tryClose(id))) setConfirmClose(id);
     };
 
     const discardAndClose = () => {
-        if (confirmClose) invoke("close_instance", { id: confirmClose });
+        if (confirmClose) tryClose(confirmClose, true);
         setConfirmClose(null);
     };
 
-    // a cancelled save dialog keeps the tab
+    // a cancelled save dialog keeps the tab, and so do changes made after the save (MCP), which ask again
     const saveAndClose = async () => {
         const id = confirmClose;
         setConfirmClose(null);
         if (!id) return;
         try {
             await saveTab(id);
-            invoke("close_instance", { id });
         } catch (error) {
             if (error !== "Save cancelled") console.error("Save failed:", error);
+            return;
         }
+        if (!(await tryClose(id))) setConfirmClose(id);
     };
 
     // only a tab that hasn't been saved, a saved one is named after its file

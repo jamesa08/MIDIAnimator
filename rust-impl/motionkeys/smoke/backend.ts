@@ -76,6 +76,17 @@ function install({ backend, label }: { backend: Backend; label: string }) {
                 return backend.pick_project ?? { path: args.recent == null ? "/smoke/picked.mkproj" : `/smoke/recent-${args.recent}.mkproj`, unsaved_tab: null };
             case "load_project":
                 return state;
+            // a tab has the file open with unsaved changes while the test says so (`unsaved_open`), until it's saved.
+            // dropping the changes opens it
+            case "try_load_project":
+                if (backend.unsaved_open && !args.discard) return { state: null, unsaved_tab: backend.unsaved_open };
+                return { state, unsaved_tab: null };
+            case "save_project":
+                backend.unsaved_open = null;
+                return backend.save_project ?? null;
+            // the tab is on screen as of the fixture's state
+            case "switch_active_instance":
+                return state.state_rev;
             // the system clipboard isn't dumped, it's whatever the machine had. it always has nodes here
             case "graph_can_paste":
                 return true;

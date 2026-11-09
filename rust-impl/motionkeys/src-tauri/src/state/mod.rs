@@ -22,6 +22,8 @@ lazy_static! {
     pub static ref WINDOW: Arc<Mutex<Option<tauri::WebviewWindow>>> = Arc::new(Mutex::new(None));
     // last status sent to the front end, only changes are sent
     static ref LAST_STATUS: Mutex<Option<ProjectStatus>> = Mutex::new(None);
+    // wakes `wait_ready` when the front end calls `ready`
+    static ref READY: tokio::sync::Notify = tokio::sync::Notify::new();
 }
 
 /// state struct for the application
@@ -344,9 +346,25 @@ fn empty_graph() -> HashMap<String, serde_json::Value> {
 #[tauri::command]
 pub fn ready() -> StateView {
     println!("READY");
-    let mut state = lock();
-    state.ready = true;
-    state.view()
+    let view = {
+        let mut state = lock();
+        state.ready = true;
+        state.view()
+    };
+    READY.notify_waiters();
+    view
+}
+
+/// waits until the front end has called `ready`, nothing is sent to it before that (`update_state`)
+pub async fn wait_ready() {
+    loop {
+        // made before the check, so a `ready` between the check and the wait still wakes it
+        let notified = READY.notified();
+        if lock().ready {
+            return;
+        }
+        notified.await;
+    }
 }
 
 /// the state as it is, for windows other than the main one (floating panels) when they open
@@ -364,20 +382,28 @@ pub fn log(message: String) {
 /// emits via command "update_state"
 pub fn update_state() {
     println!("BACKEND STATE UPDATE");
-    loop {
-        let state = STATE.lock().unwrap();
-
-        if state.ready {
-            // if the app is ready, we can send the state
-            break;
+    let view = {
+        let mut state = lock();
+        // nothing is sent before the front end is ready, `ready` gives it the whole state. never waits for it: this can
+        // run on the main thread, which `ready` needs
+        if !state.ready {
+            return;
         }
-        drop(state);
-    }
-    let view = lock().view();
+        state.view()
+    };
     if let Some(window) = WINDOW.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
         window.emit("update_state", view).ok();
     }
     notify_project_status();
+}
+
+/// `update_state` after the tab on screen changed to `id`, then that tab's graph again (`push_graph`): a graph the
+/// front end got for it before a state showing it was dropped (it wasn't on screen yet), and this state can be older
+/// than that graph. returns the `state_rev` the front end's state shows the change as of
+fn update_shown(id: &str) -> u64 {
+    update_state();
+    push_graph(id);
+    lock().state_rev
 }
 
 /// a project file, one tab's: its scene, node graph and window layout
@@ -475,9 +501,9 @@ pub async fn set_open_group(tab: String, path: String) {
         instance.open_group = path;
         instance.execution_paused
     };
-    // a run sends the state, the panels follow the open group either way
+    // the panels follow the open group now, the run (which waits on the curves and other runs first) sends its values
+    update_state();
     if paused {
-        update_state();
         return;
     }
     run_instance(tab, true).await;
@@ -511,13 +537,13 @@ pub fn get_project_status() -> ProjectStatus {
 /// sends the project status to the front end ("project_status") and puts it in the window title, only when it changed.
 /// call without holding the state or window locks
 pub fn notify_project_status() {
-    let status = get_project_status();
+    // worked out, compared and sent under one lock, so of two at once the newer status is always the one sent last
     let mut last = LAST_STATUS.lock().unwrap_or_else(PoisonError::into_inner);
+    let status = get_project_status();
     if last.as_ref() == Some(&status) {
         return;
     }
     *last = Some(status.clone());
-    drop(last);
 
     if let Some(window) = WINDOW.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
         window
@@ -575,9 +601,12 @@ pub fn save_project_to(path: &str) -> Result<String, String> {
 /// writes a tab's scene data, node graph and layout to `path`, which becomes its file. returns the path
 pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
     // copy what we need out of the state so we don't hold the lock while writing
-    let saved_data = {
+    let (saved_data, key) = {
         let mut state = lock();
         let instance = state.instance_mut(id).ok_or_else(|| format!("no tab '{}'", id))?;
+        // the graph being written is what's saved, an edit landing during the write is still unsaved after it. taken
+        // from the tab's own graph, which unsaved changes are compared to, not the copy written below
+        let key = graph_key(&instance.rf_instance);
         // curves of objects the graph stopped reading are kept until now. node sizes are never saved, the canvas
         // measures them
         let mut rf_instance = instance.rf_instance.clone();
@@ -587,11 +616,12 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
             graph.strip_measured();
             rf_instance = graph.to_rf();
         }
-        SavedProject {
+        let saved_data = SavedProject {
             scene: instance.scene.clone(),
             rf_instance,
             layout: instance.layout.clone(),
-        }
+        };
+        (saved_data, key)
     };
 
     // serialize and write the file
@@ -600,11 +630,19 @@ pub fn save_instance_to(id: &str, path: &str) -> Result<String, String> {
         console::push(Entry::new(Level::Error, Source::App, format!("Couldn't save {}: {}", path, e)).tab(id));
         return Err(e);
     }
+    let real = crate::settings::real_path(path);
     {
         let mut state = lock();
         if let Some(instance) = state.instance_mut(id) {
             instance.path = Some(path.to_string());
-            instance.mark_saved();
+            instance.saved = key;
+        }
+        // another tab that had this file open (Save As, or MCP saving over it) doesn't anymore: what it has is in no file
+        // now, so it's an unsaved tab and closing it asks. it keeps its name
+        for other in state.instances.iter_mut().filter(|other| other.id != id && other.path.as_deref().is_some_and(|file| crate::settings::real_path(file) == real)) {
+            other.label = other.name();
+            other.path = None;
+            other.saved = serde_json::Value::Null;
         }
     }
     crate::settings::note_recent(path);
@@ -622,18 +660,20 @@ pub struct PickedProject {
     pub unsaved_tab: Option<String>,
 }
 
-/// asks for a project file, or takes the recent project at `recent` (File > Open Recent). `load_project` opens it
+/// asks for a project file, or takes the recent project at `recent` in the list (File > Open Recent's items name their
+/// project's path instead, the list can change while the menu is open). `try_load_project` opens it
 #[tauri::command]
 pub async fn pick_project(recent: Option<usize>) -> Result<PickedProject, String> {
     let path = match recent {
         Some(index) => crate::settings::recent_projects().get(index).cloned().ok_or_else(|| format!("no recent project {}", index))?,
         None => {
-            // the window lock is scoped so it's released before loading
-            let file_path = {
+            // the window lock is released before the dialog opens: the menu (File > New Tab) and every state sent need it,
+            // and the main thread they can run on is the one the dialog waits for
+            let dialog = {
                 let window = WINDOW.lock().unwrap_or_else(PoisonError::into_inner);
-                window.as_ref().ok_or("no window")?.dialog().file().set_title("Load Project").add_filter("MotionKeys Project", &["mkproj"]).blocking_pick_file()
+                window.as_ref().ok_or("no window")?.dialog().file().set_title("Load Project").add_filter("MotionKeys Project", &["mkproj"])
             };
-            file_path.ok_or("Load cancelled")?.to_string()
+            dialog.blocking_pick_file().ok_or("Load cancelled")?.to_string()
         }
     };
     let unsaved_tab = lock().unsaved_file_tab(&path);
@@ -643,16 +683,53 @@ pub async fn pick_project(recent: Option<usize>) -> Result<PickedProject, String
     })
 }
 
-/// opens a project file (`pick_project`), see `open_project`. a recent project whose file is gone leaves the list
+/// opens a project file (`pick_project`), see `open_project`, dropping the unsaved changes of a tab that has it open
+/// (`try_load_project` keeps them). a recent project whose file is gone leaves the list
 #[tauri::command]
 pub async fn load_project(path: String) -> Result<StateView, String> {
-    if let Err(e) = open_project(&path).await {
-        if !std::path::Path::new(&path).exists() {
-            crate::settings::forget_recent(&path);
+    let loaded = load(&path, true).await?;
+    Ok(loaded.state.unwrap_or_else(|| lock().view()))
+}
+
+/// what `try_load_project` did: `state` once the file is open, or `unsaved_tab`, the tab that has the file open with
+/// unsaved changes, when the file wasn't opened
+#[derive(Serialize, Clone, Debug)]
+pub struct LoadedProject {
+    pub state: Option<StateView>,
+    pub unsaved_tab: Option<String>,
+}
+
+/// `load_project`, except a tab that has the file open with unsaved changes is kept unless `discard` is true: the
+/// frontend asks about them first, and changes made after it asked (MCP) aren't dropped without asking again
+#[tauri::command]
+pub async fn try_load_project(path: String, discard: Option<bool>) -> Result<LoadedProject, String> {
+    load(&path, discard == Some(true)).await
+}
+
+/// opens a project file like `open_project`, unless the tab that has it open has unsaved changes and they're not to be
+/// dropped (`discard`). a recent project whose file is gone leaves the list
+async fn load(path: &str, discard: bool) -> Result<LoadedProject, String> {
+    let opened = match open_file_unless_unsaved(path, discard) {
+        Ok(Opening::Done(opened)) => opened,
+        Ok(Opening::Unsaved(tab)) => {
+            return Ok(LoadedProject {
+                state: None,
+                unsaved_tab: Some(tab),
+            })
         }
-        return Err(e);
-    }
-    Ok(lock().view())
+        Err(e) => {
+            console::log(Level::Error, Source::App, format!("Couldn't open {}: {}", path, e));
+            if !std::path::Path::new(path).exists() {
+                crate::settings::forget_recent(path);
+            }
+            return Err(e);
+        }
+    };
+    start_instance(opened.id().to_string()).await;
+    Ok(LoadedProject {
+        state: Some(lock().view()),
+        unsaved_tab: None,
+    })
 }
 
 /// opens a project file in a tab of its own, see `open_file`, then links Blender to it or runs it (`start_instance`).
@@ -693,6 +770,23 @@ impl Opened {
 /// takes the place of the tab on screen if that one is an empty graph nobody touched, or goes after the others. call
 /// `start_instance` after (`open_project` does)
 pub fn open_file(path: &str) -> Result<Opened, String> {
+    match open_file_unless_unsaved(path, true)? {
+        Opening::Done(opened) => Ok(opened),
+        Opening::Unsaved(tab) => Err(format!("{} has unsaved changes", tab)),
+    }
+}
+
+/// what `open_file_unless_unsaved` did
+pub enum Opening {
+    /// the file is open, see `Opened`
+    Done(Opened),
+    /// the file isn't open: the tab that has it open has unsaved changes, that tab is kept
+    Unsaved(String),
+}
+
+/// `open_file`, except a tab that has the file open with unsaved changes is kept unless `discard` is true. it's checked
+/// as the tab would be replaced, so changes made after anyone asked aren't dropped
+pub fn open_file_unless_unsaved(path: &str, discard: bool) -> Result<Opening, String> {
     let path = crate::settings::real_path(path);
 
     // read and parse the project file, a tab that has it open stays if it can't be
@@ -701,6 +795,12 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
 
     let (id, replaced, reopened) = {
         let mut state = lock();
+        // the tab that has the file open, or an untouched tab on screen, makes way for it. Blender stays linked to its place
+        let open = state.file_tab(&path);
+        // unless it has unsaved changes that aren't to be dropped, ones made after anyone asked count too
+        if let Some(index) = open.filter(|&index| !discard && state.instances[index].unsaved()) {
+            return Ok(Opening::Unsaved(state.instances[index].id.clone()));
+        }
         let id = state.next_id();
         let mut instance = InstanceState::new(id.clone(), String::new());
         instance.path = Some(path.clone());
@@ -712,8 +812,6 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
         state.graph_rev += 1;
         instance.graph_rev = state.graph_rev;
 
-        // the tab that has the file open, or an untouched tab on screen, makes way for it. Blender stays linked to its place
-        let open = state.file_tab(&path);
         let active = state.instances.iter().position(|instance| instance.id == state.active_instance_id).unwrap_or(0);
         let replaced = match open.or(state.instances[active].untouched().then_some(active)) {
             Some(index) => {
@@ -738,15 +836,15 @@ pub fn open_file(path: &str) -> Result<Opened, String> {
 
     // tell the front end about the new tab and its empty history
     crate::settings::note_recent(&path);
-    update_state();
+    update_shown(&id);
     history::notify_active();
-    Ok(match replaced.filter(|_| reopened) {
+    Ok(Opening::Done(match replaced.filter(|_| reopened) {
         Some(replaced) => Opened::Reopened {
             id,
             replaced,
         },
         None => Opened::New(id),
-    })
+    }))
 }
 
 /// after a tab is opened from a file: Blender links to it (it checks the scene first) if Blender is connected and no
@@ -785,41 +883,77 @@ pub fn create_instance() -> String {
         state.active_instance_id = id.clone();
         id
     };
-    update_state();
+    update_shown(&id);
     history::notify_active();
     id
 }
 
+/// what `try_close_instance` errs with when the tab has unsaved changes
+const UNSAVED_CHANGES: &str = "Unsaved changes";
+/// what `try_close_instance` errs with when the tab is the last one, the window closes instead
+const LAST_TAB: &str = "Last tab";
+
 /// closes a tab, the one to its right is shown if it was on screen. Blender unlinks if it was linked to it.
-/// the last tab isn't closed (the window closes instead), returns whether it closed
+/// the last tab isn't closed (the window closes instead), returns whether it closed. its unsaved changes are dropped,
+/// the frontend closes with `try_close_instance`
 #[tauri::command]
 pub async fn close_instance(id: String) -> bool {
-    let (run, unlinked) = {
+    close_tab(id, true).await.unwrap_or(false)
+}
+
+/// `close_instance`, except a tab with unsaved changes is kept unless `discard` is true, erring with "Unsaved changes":
+/// the frontend asks about them first, and changes made after it asked (MCP) aren't dropped without asking again. the
+/// last tab errs with "Last tab", it can be the last one by now (MCP closed the others) and the window closes instead
+#[tauri::command]
+pub async fn try_close_instance(id: String, discard: Option<bool>) -> Result<bool, String> {
+    // only for the tab itself, one that's gone (closed meanwhile) just isn't closed
+    {
+        let state = lock();
+        if state.instances.len() <= 1 && state.instances.iter().any(|instance| instance.id == id) {
+            return Err(LAST_TAB.to_string());
+        }
+    }
+    close_tab(id, discard == Some(true)).await
+}
+
+/// closes a tab (`close_instance`), one with unsaved changes only with `discard`
+async fn close_tab(id: String, discard: bool) -> Result<bool, String> {
+    let (run, shown, unlinked) = {
         let mut state = lock();
         if state.instances.len() <= 1 {
-            return false;
+            return Ok(false);
         }
         let Some(index) = state.instances.iter().position(|instance| instance.id == id) else {
-            return false;
+            return Ok(false);
         };
+        // checked under the lock that closes it, so no edit lands in between
+        if !discard && state.instances[index].unsaved() {
+            return Err(UNSAVED_CHANGES.to_string());
+        }
         state.instances.remove(index);
         let unlinked = state.connected_instance_id.as_deref() == Some(&id);
         if unlinked {
             state.connected_instance_id = None;
         }
-        let run = if state.active_instance_id != id {
-            None
+        let (run, shown) = if state.active_instance_id != id {
+            (None, None)
         } else {
             let next = &state.instances[index.min(state.instances.len() - 1)];
             let run = (!next.execution_paused).then(|| next.id.clone());
-            state.active_instance_id = next.id.clone();
-            run
+            let shown = next.id.clone();
+            state.active_instance_id = shown.clone();
+            (run, Some(shown))
         };
-        (run, unlinked)
+        (run, shown, unlinked)
     };
     history::forget(&id);
     forget_memo(&id);
-    update_state();
+    // a tab that's on screen now gets its graph again, see `update_shown`
+    if let Some(shown) = &shown {
+        update_shown(shown);
+    } else {
+        update_state();
+    }
     history::notify_active();
     // no tab reads keyframes from Blender now
     if unlinked {
@@ -829,29 +963,29 @@ pub async fn close_instance(id: String) -> bool {
     if let Some(next) = run {
         run_instance(next, true).await;
     }
-    true
+    Ok(true)
 }
 
-/// shows a tab and runs it (it may have missed scene changes while it was in the background)
+/// shows a tab and runs it (it may have missed scene changes while it was in the background). returns the `state_rev`
+/// the frontend's state shows it on screen as of (that state or a newer one), none if there's no such tab
 #[tauri::command]
-pub async fn switch_active_instance(id: String) {
+pub async fn switch_active_instance(id: String) -> Option<u64> {
     let run = {
         let mut state = lock();
-        let Some(instance) = state.instance(&id) else {
-            return;
-        };
+        let instance = state.instance(&id)?;
         if state.active_instance_id == id {
-            return;
+            return Some(state.state_rev);
         }
         let paused = instance.execution_paused;
         state.active_instance_id = id.clone();
         !paused
     };
-    update_state();
+    let shown_at = update_shown(&id);
     history::notify_active();
     if run {
         run_instance(id, true).await;
     }
+    Some(shown_at)
 }
 
 /// renames a tab that hasn't been saved (a saved one is named after its file), a blank label is ignored. the name is
@@ -941,8 +1075,12 @@ pub async fn link(id: String) -> Result<(), String> {
             println!("Scene data changes detected, execution paused for validation.");
             false
         } else {
+            // nothing differs from the tab's scene, so a review left from before (an older pending scene) has nothing
+            // to show: the tab runs on this one
             instance.scene = Some(fresh);
-            !instance.execution_paused
+            instance.pending_scene = None;
+            instance.execution_paused = false;
+            true
         }
     };
     // the state isn't held any more, a scene held back applies now

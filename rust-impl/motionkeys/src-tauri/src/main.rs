@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use motionkeys::ipc::start_server;
 use motionkeys::mcp::start_mcp_server;
-use motionkeys::state::{update_state, STATE, WINDOW};
+use motionkeys::state::{update_state, wait_ready, STATE, WINDOW};
 use motionkeys::ui::menu;
 use motionkeys::utils::log;
 
@@ -117,9 +117,11 @@ async fn main() {
             let default_nodes: HashMap<String, serde_json::Value> = serde_json::from_str(&data).unwrap();
             STATE.lock().unwrap().default_nodes = default_nodes;
 
-            // update_state waits for the front end to call ready, the bridge only starts after that
+            // the bridge only starts once the front end has called ready. the state is sent then too, which puts the tab
+            // in the window title
             tauri::async_runtime::spawn(async move {
                 log::log("waiting for the front end to be ready");
+                wait_ready().await;
                 update_state();
                 log::log("front end ready, starting the bridge server");
                 start_server();

@@ -25,7 +25,7 @@ const DOCK_MAX_FRACTION = 0.4;
 // how far past the narrowest width a dock column's edge is dragged before the side hides
 const DOCK_HIDE_DETENT = 80;
 // sent to the main window by the file menu (src-tauri/src/ui/menu.rs), payload "open", "save", "save_as" or a recent
-// project's, RECENT_PREFIX and its index in the list
+// project's, RECENT_PREFIX and its path
 const FILE_EVENT = "menu-file";
 const RECENT_PREFIX = "open_recent.";
 
@@ -65,10 +65,10 @@ function App() {
         });
 
         invoke("splash_progress", { message: "Launching..." });
-        // tell the backend we're ready & get the initial state
+        // tell the backend we're ready & get the initial state, unless a newer one came first (an event)
         invoke("ready").then((res: any) => {
             if (res !== null) {
-                setBackEndState(res);
+                setBackEndState((s: any) => takeState(s, res));
             }
             // close the splash screen once the app is ready
             invoke("close_splashscreen");
@@ -83,15 +83,28 @@ function App() {
 
     // closing the main window asks about each tab with unsaved changes first (showing it), the app quits once it's gone.
     // cancelling, or cancelling a save dialog, keeps the window open
+    const stateRef = useRef(backEndState);
+    stateRef.current = backEndState;
     useEffect(() => {
         const unlisten = getCurrentWindow().onCloseRequested(async (event) => {
             event.preventDefault();
-            const { unsaved_tabs } = await invoke<{ unsaved_tabs: string[] }>("get_project_status");
-            for (const id of unsaved_tabs) {
-                await invoke("switch_active_instance", { id });
-                const answer = await askUnsaved();
-                if (answer === "cancel") return;
-                if (answer === "save") {
+            // the tabs with unsaved changes are asked for again after every answer, and once more right before quitting:
+            // MCP can add, edit or close tabs while it asks. ones whose changes were dropped, or that closed since, aren't
+            // asked about again
+            const skipped = new Set<string>();
+            for (;;) {
+                const { unsaved_tabs } = await invoke<{ unsaved_tabs: string[] }>("get_project_status");
+                const id = unsaved_tabs.find((tab) => !skipped.has(tab));
+                if (id === undefined) break;
+                // a tab closed since has nothing to ask about
+                const shownAt = await invoke<number | null>("switch_active_instance", { id });
+                if (shownAt == null) {
+                    skipped.add(id);
+                    continue;
+                }
+                const answer = await askUnsaved(id, shownAt);
+                if (answer === "discard") skipped.add(id);
+                else if (answer === "save") {
                     try {
                         await saveTab(id);
                     } catch (error) {
@@ -99,6 +112,8 @@ function App() {
                         return;
                     }
                 }
+                // cancelled, unless the prompt went away because the tab closed
+                else if (stateRef.current.tabs?.some((tab: any) => tab.id === id)) return;
             }
             getCurrentWindow().destroy();
         });
@@ -111,7 +126,7 @@ function App() {
     useEffect(() => {
         const unlisten = getCurrentWebviewWindow().listen<string>(FILE_EVENT, async ({ payload }) => {
             if (payload === "open") return openFile();
-            if (payload.startsWith(RECENT_PREFIX)) return openFile(Number(payload.slice(RECENT_PREFIX.length)));
+            if (payload.startsWith(RECENT_PREFIX)) return openFile(payload.slice(RECENT_PREFIX.length));
             try {
                 await saveTab(undefined, payload === "save_as");
             } catch (error) {
@@ -134,17 +149,19 @@ function App() {
         if (!tab || tab === shownTab.current) return;
         const previous = shownTab.current;
         shownTab.current = tab;
-        switching.current = switching.current.then(async () => {
-            const left = previous ? layoutByTab.current[previous] : null;
-            if (previous && left) setTabLayout(previous, await withFloatingFrames(left));
-            const layout = layoutByTab.current[tab];
-            const floating = floatingPanels(layout);
-            for (const id of Object.keys(PANELS).map(Number)) {
-                if (floating.includes(id)) await showFloating(id, layout.floating?.[id]);
-                else hidePanelWindow(id);
-            }
-        });
-        switching.current.catch((e) => console.error(`Error switching floating panels: ${e}`));
+        // a step that fails is logged and the chain goes on, so the next switch still runs
+        switching.current = switching.current
+            .then(async () => {
+                const left = previous ? layoutByTab.current[previous] : null;
+                if (previous && left) setTabLayout(previous, await withFloatingFrames(left));
+                const layout = layoutByTab.current[tab];
+                const floating = floatingPanels(layout);
+                for (const id of Object.keys(PANELS).map(Number)) {
+                    if (floating.includes(id)) await showFloating(id, layout.floating?.[id]);
+                    else hidePanelWindow(id);
+                }
+            })
+            .catch((e) => console.error(`Error switching floating panels: ${e}`));
     }, [tab]);
 
     // the dock slot a floating panel is being dragged over

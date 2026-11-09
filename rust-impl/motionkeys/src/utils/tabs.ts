@@ -41,7 +41,8 @@ export function useSaveTab() {
                 setTabLayout(shown, placed);
                 await invoke("set_layout", { tab: shown, layout: placed });
             }
-            const path = await invoke<string>("save_project", { tab: tab ?? null, saveAs });
+            // the tab whose layout was just sent, the backend's tab on screen may be another one by now
+            const path = await invoke<string>("save_project", { tab: tab ?? shown, saveAs });
             showStatus(`Saved "${fileName(path)}"`);
             return path;
         },
@@ -49,25 +50,40 @@ export function useSaveTab() {
     );
 }
 
-// asks for a project file and opens it in a tab of its own, or the recent project at `recent` (File > Open Recent), see
-// pick_project and load_project in src-tauri/src/state/mod.rs. a file a tab has open is read again in that tab's place,
-// one with unsaved changes is shown and asks to save them first. cancelling, or cancelling a save dialog, opens nothing
+// asks for a project file and opens it in a tab of its own, or the recent project at the path `recent` (File > Open
+// Recent), see pick_project and try_load_project in src-tauri/src/state/mod.rs. a file a tab has open is read again in
+// that tab's place, one with unsaved changes is shown and asks to save them first. cancelling, or cancelling a save
+// dialog, opens nothing
 export function useOpenFile() {
     const { setBackEndState } = useStateContext();
     const saveTab = useSaveTab();
     return useCallback(
-        async (recent?: number) => {
+        async (recent?: string) => {
             try {
-                const { path, unsaved_tab } = await invoke<{ path: string; unsaved_tab: string | null }>("pick_project", { recent: recent ?? null });
-                if (unsaved_tab) {
-                    await invoke("switch_active_instance", { id: unsaved_tab });
-                    const answer = await askUnsaved();
+                const path = recent ?? (await invoke<{ path: string }>("pick_project", { recent: null })).path;
+                // the backend checks for unsaved changes as it opens the file, it asks again while the tab has some (MCP
+                // can edit it while the prompt is up or after a save)
+                let discard = false;
+                let closed: string | null = null;
+                for (;;) {
+                    const { state, unsaved_tab } = await invoke<{ state: any; unsaved_tab: string | null }>("try_load_project", { path, discard });
+                    if (state) {
+                        setBackEndState((s: any) => takeState(s, state));
+                        showStatus(`Opened "${fileName(path)}"`);
+                        return;
+                    }
+                    if (!unsaved_tab || unsaved_tab === closed) return;
+                    // a tab closed since has nothing to lose, the file opens on the next try
+                    const shownAt = await invoke<number | null>("switch_active_instance", { id: unsaved_tab });
+                    if (shownAt == null) {
+                        closed = unsaved_tab;
+                        continue;
+                    }
+                    const answer = await askUnsaved(unsaved_tab, shownAt);
                     if (answer === "cancel") return;
                     if (answer === "save") await saveTab(unsaved_tab);
+                    else discard = true;
                 }
-                const state = await invoke<any>("load_project", { path });
-                setBackEndState((s: any) => takeState(s, state));
-                showStatus(`Opened "${fileName(path)}"`);
             } catch (error) {
                 if (error !== "Load cancelled" && error !== "Save cancelled") console.error("Load failed:", error);
             }

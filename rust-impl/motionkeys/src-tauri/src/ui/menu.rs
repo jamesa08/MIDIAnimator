@@ -8,9 +8,10 @@ use tauri::{
 // sent to the main window to close its tab, or the window on the last one
 pub const CLOSE_TAB_EVENT: &str = "close-tab";
 // sent to the main window when open, save or save as is picked from the file menu (or its shortcut), payload "open",
-// "save" or "save_as", or a recent project's "open_recent.{index}". the frontend does them for the tab on screen
+// "save" or "save_as", or a recent project's "open_recent.{path}". the frontend does them for the tab on screen
 pub const FILE_EVENT: &str = "menu-file";
-// starts the id of a recent project's menu item, its index in the list follows
+// starts the id of a recent project's menu item, its path follows: the list can change between drawing the menu and
+// picking from it, the path still names the project that was picked
 const RECENT_PREFIX: &str = "open_recent.";
 // sent to the focused window when a menu item is picked (or its shortcut pressed), payload the app command's id.
 // the window runs it unless a modal is taking its keys (src/utils/keymap.ts), sending it back to run_app_command when
@@ -77,8 +78,8 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // the recent projects newest first, there but off when there are none
     let recent = crate::settings::recent_projects();
     let mut recent_submenu = SubmenuBuilder::new(app, "Open Recent").enabled(!recent.is_empty());
-    for (index, label) in crate::settings::recent_labels(&recent).iter().enumerate() {
-        recent_submenu = recent_submenu.item(&MenuItemBuilder::with_id(format!("{RECENT_PREFIX}{index}"), label).build(app)?);
+    for (path, label) in recent.iter().zip(crate::settings::recent_labels(&recent)) {
+        recent_submenu = recent_submenu.item(&MenuItemBuilder::with_id(format!("{RECENT_PREFIX}{path}"), label).build(app)?);
     }
     let clear_recent = MenuItemBuilder::with_id("clear_recent", "Clear Menu").build(app)?;
     let recent_submenu = recent_submenu.separator().item(&clear_recent).build()?;

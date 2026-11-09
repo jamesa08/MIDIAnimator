@@ -1633,18 +1633,23 @@ const callsTo = (page: Page, cmd: string) => page.evaluate((cmd) => (window as a
 test("open recent opens the project it names", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await graphReady(page);
-    await emitEvent(page, "menu-file", "open_recent.2");
-    await expect.poll(() => callsTo(page, "load_project")).toEqual([{ path: "/smoke/recent-2.mkproj" }]);
+    await emitEvent(page, "menu-file", "open_recent./smoke/recent-2.mkproj");
+    await expect.poll(() => callsTo(page, "try_load_project")).toEqual([{ path: "/smoke/recent-2.mkproj", discard: false }]);
     await emitEvent(page, "menu-file", "open");
-    await expect.poll(() => callsTo(page, "pick_project")).toEqual([{ recent: 2 }, { recent: null }]);
-    await expect.poll(() => callsTo(page, "load_project")).toEqual([{ path: "/smoke/recent-2.mkproj" }, { path: "/smoke/picked.mkproj" }]);
+    await expect.poll(() => callsTo(page, "pick_project")).toEqual([{ recent: null }]);
+    await expect
+        .poll(() => callsTo(page, "try_load_project"))
+        .toEqual([
+            { path: "/smoke/recent-2.mkproj", discard: false },
+            { path: "/smoke/picked.mkproj", discard: false },
+        ]);
     await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
     await settle(page);
 });
 
 test("opening a file a tab has open with unsaved changes asks first", async ({ page }) => {
     const path = "/smoke/open.mkproj";
-    await openWindow(page, { ...backend, pick_project: { path, unsaved_tab: "tab-1" }, save_project: path }, "/#/");
+    await openWindow(page, { ...backend, pick_project: { path, unsaved_tab: null }, unsaved_open: "tab-1", save_project: path }, "/#/");
     await graphReady(page);
     const prompt = page.getByText("Unsaved changes", { exact: true });
     const answer = async (name: string) => {
@@ -1658,14 +1663,15 @@ test("opening a file a tab has open with unsaved changes asks first", async ({ p
     await answer("Cancel");
     expect(await callsTo(page, "switch_active_instance")).toEqual([{ id: "tab-1" }]);
     await settle(page);
-    expect(await callsTo(page, "load_project")).toEqual([]);
+    expect(await callsTo(page, "try_load_project")).toEqual([{ path, discard: false }]);
 
-    // don't save reads the file over the changes, save saves the tab first
+    // don't save reads the file over the changes, save saves the tab first. the backend is asked again each time
+    const ask = { path, discard: false };
     await answer("Don't Save");
-    await expect.poll(() => callsTo(page, "load_project")).toEqual([{ path }]);
+    await expect.poll(() => callsTo(page, "try_load_project")).toEqual([ask, ask, { path, discard: true }]);
     expect(await callsTo(page, "save_project")).toEqual([]);
     await answer("Save");
-    await expect.poll(() => callsTo(page, "load_project")).toEqual([{ path }, { path }]);
+    await expect.poll(() => callsTo(page, "try_load_project")).toEqual([ask, ask, { path, discard: true }, ask, ask]);
     expect(await callsTo(page, "save_project")).toEqual([{ tab: "tab-1", saveAs: false }]);
     await settle(page);
 });
