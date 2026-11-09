@@ -221,20 +221,24 @@ pub fn remove_from(graph: &mut Graph, nodes: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// puts nodes in the frame each was dropped in, `None` for none
+/// puts nodes in the frame each was dropped in, `None` for none. a node that's gone is skipped and a frame that's gone is
+/// none (something else removed them while the drop was on its way, like a move skips nodes that are gone)
 pub fn place(graph: &mut Graph, frames: &BTreeMap<String, Option<String>>) -> Result<(), String> {
     for (id, frame) in frames {
-        graph.node(id).ok_or_else(|| format!("no node '{}'", id))?;
+        if graph.node(id).is_none() {
+            continue;
+        }
+        let frame = frame.as_deref().filter(|frame| graph.node(frame).is_some());
         if let Some(frame) = frame {
             if !graph.node(frame).is_some_and(RfNode::is_frame) {
                 return Err(format!("'{}' is not a frame", frame));
             }
             // a frame can't go inside itself
-            if frame == id || ancestors(graph, frame).contains(id) {
+            if frame == id.as_str() || ancestors(graph, frame).contains(id) {
                 return Err(format!("'{}' can't go inside '{}'", id, frame));
             }
         }
-        graph.node_mut(id).unwrap().set_frame(frame.as_deref());
+        graph.node_mut(id).unwrap().set_frame(frame);
     }
     Ok(())
 }

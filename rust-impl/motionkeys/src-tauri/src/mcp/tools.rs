@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::graph::edit::{self, EditResult};
-use crate::graph::execute::{execute_graph, panic_message};
+use crate::graph::execute::{panic_message, run_tab};
 use crate::graph::builtin::{all_groups, builtin_groups};
 use crate::graph::model::{describe_type, dyn_inner, is_param, node_specs, Graph, GroupDef, NodeSpec, Position, Specs};
 use crate::graph::run::{instance_path, scoped_values};
@@ -23,7 +23,7 @@ use crate::graph::history::{EntryInfo, Source, Step};
 use crate::graph::ops::{self, graph_in, Ctx, Op};
 use crate::graph::tags;
 use crate::state::history::{self, Capture};
-use crate::state::{open_file, save_project_to, start_instance, update_state, AppState, InstanceState, Opened, STATE};
+use crate::state::{open_file_unless_unsaved, save_project_to, start_instance, update_state, AppState, InstanceState, LastWrite, Opened, Opening, STATE};
 use crate::ui::screenshot;
 
 // instructions sent to the MCP client when it connects
@@ -32,7 +32,7 @@ Call graph_outline first to see the current graph, and node_types_list for the n
 Data flows from outputs to inputs; edit with graph_add_node, graph_connect, graph_set_inputs, graph_disconnect and graph_remove_node. \
 Never connect hidden handles: 'par' inputs are set with graph_set_inputs, and outputs marked hidden are display-only. \
 Edits show up live in the app and re-run the realtime graph, which never writes to the 3D app; \
-the app and these tools share one undo history: graph_history lists it, graph_undo and graph_redo step through it; \
+the app and these tools share one undo history: graph_history lists it, graph_undo and graph_redo step through it (give them the step_id graph_history lists, so they don't take a step the user just made instead); \
 graph_execute with write_keyframes=true writes keyframes to the 3D app. Node ids accept any unique prefix. \
 app_screenshot shows what the UI currently looks like. \
 Each tab is its own .mkproj file with its own graph, undo history and window layout, like a separate instance of the app; \
@@ -183,6 +183,13 @@ pub struct SetLabelParams {
     pub group: Option<String>,
 }
 
+// graph_undo, graph_redo
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct StepParams {
+    /// The id of the step you mean to take, the #number graph_history lists: for graph_undo the newest done step, for graph_redo the first undone one. The call fails if a different step is there (the user may have just made one); omit to take whatever step is there
+    pub step_id: Option<u64>,
+}
+
 // graph_execute
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ExecuteParams {
@@ -226,7 +233,7 @@ fn resolve_tab(state: &AppState, tab: &str) -> Result<String, String> {
     found.map(|instance| instance.id.clone()).ok_or_else(|| format!("no tab '{}'; tabs are: {}", tab, state.instances.iter().map(|instance| format!("{} \"{}\"", instance.id, instance.name())).collect::<Vec<_>>().join(", ")))
 }
 
-/// a copy of the parts of `AppState` the tools read, with the tab on screen
+/// a copy of the parts of `AppState` the tools read, with the tab on screen (or the one asked for)
 struct Snapshot {
     state: AppState,
     tab: InstanceState,
@@ -246,8 +253,14 @@ struct View<'a> {
 }
 
 impl Snapshot {
-    /// clones the state and parses the graph and node specs out of it
+    /// clones the state and parses the graph and node specs of the tab on screen out of it
     fn take() -> Result<Self, String> {
+        Self::of(None)
+    }
+
+    /// `take` with a tab of its own (the one an edit went to, which may not be on screen any more), the tab on screen
+    /// for none
+    fn of(tab: Option<&str>) -> Result<Self, String> {
         // copy the state so we don't hold the lock while the tool runs
         let state = lock_state().clone();
         // don't do anything until the frontend has loaded and called `ready`
@@ -255,7 +268,10 @@ impl Snapshot {
             return Err(NOT_READY.to_string());
         }
         // parse the graph and the node specs
-        let tab = state.active().clone();
+        let tab = match tab {
+            None => state.active().clone(),
+            Some(id) => state.instance(id).cloned().ok_or_else(|| format!("{} was closed", id))?,
+        };
         let graph = Graph::from_rf(&tab.rf_instance)?;
         let specs = node_specs(&state.default_nodes);
         let groups = all_groups(&graph);
@@ -320,16 +336,16 @@ fn group_values_note(view: &View, group: Option<&str>) -> String {
     }
 }
 
-/// one history entry as a line: `add_node (mcp): added viewer-1 "Viewer"`
+/// one history entry as a line with its id: `#3 add_node (mcp): added viewer-1 "Viewer"`
 fn history_line(entry: &EntryInfo) -> String {
     let source = match entry.source {
         Source::Ui => "app",
         Source::Mcp => "mcp",
     };
     if entry.detail.is_empty() {
-        format!("{} ({})", entry.op, source)
+        format!("#{} {} ({})", entry.id, entry.op, source)
     } else {
-        format!("{} ({}): {}", entry.op, source, entry.detail)
+        format!("#{} {} ({}): {}", entry.id, entry.op, source, entry.detail)
     }
 }
 
@@ -343,10 +359,10 @@ fn tool_error(text: impl Into<String>) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![ContentBlock::text(text)]))
 }
 
-/// runs `execute_graph` in its own task so a panicking executor turns into an error message instead, and a run that
-/// didn't happen into its reason
-async fn run_execution(realtime: bool) -> Result<(), String> {
-    let ran = tokio::spawn(execute_graph(realtime, None)).await.map_err(|e| {
+/// runs a tab in its own task so a panicking executor turns into an error message instead. gives what a full run wrote,
+/// an error when nothing ran (the tab was closed, its graph can't be read, or it isn't live for a full run)
+async fn run_execution(tab: String, realtime: bool) -> Result<Option<LastWrite>, String> {
+    let ran = tokio::spawn(run_tab(tab, realtime)).await.map_err(|e| {
         // pull the panic message out
         if e.is_panic() {
             format!("execution failed: {}", panic_message(&e.into_panic()))
@@ -354,16 +370,18 @@ async fn run_execution(realtime: bool) -> Result<(), String> {
             format!("execution failed: {}", e)
         }
     })?;
-    ran.map(|_| ())
+    ran
 }
 
-/// runs the realtime graph of the tab on screen unless execution is paused, returns a one-line status
-async fn run_realtime_if_allowed() -> String {
+/// runs the realtime graph of a tab unless execution is paused, returns a one-line status
+async fn run_realtime_if_allowed(tab: &str) -> String {
     // grab what we need and drop the lock before executing
     let (paused, empty) = {
         let state = lock_state();
-        let tab = state.active();
-        (tab.execution_paused, Graph::from_rf(&tab.rf_instance).map_or(true, |g| g.nodes.is_empty()))
+        let Some(instance) = state.instance(tab) else {
+            return format!("{} was closed, nothing ran", tab);
+        };
+        (instance.execution_paused, Graph::from_rf(&instance.rf_instance).map_or(true, |g| g.nodes.is_empty()))
     };
     // don't run while scene changes are waiting to be reviewed in the app
     if paused {
@@ -373,11 +391,11 @@ async fn run_realtime_if_allowed() -> String {
         return "nothing to execute".to_string();
     }
     // run it, if it fails the last results are still in the state
-    if let Err(e) = run_execution(true).await {
+    if let Err(e) = run_execution(tab.to_string(), true).await {
         return format!("{}; values below are from the last successful run", e);
     }
     // the edit worked either way, but say which nodes failed
-    let errors = node_errors(&lock_state().active().executed_results);
+    let errors = lock_state().instance(tab).map(|instance| node_errors(&instance.executed_results)).unwrap_or_default();
     if errors.is_empty() {
         "realtime execution ok".to_string()
     } else {
@@ -401,7 +419,7 @@ impl MotionKeysMcp {
         F: FnOnce(&mut Graph, &Specs, &HashMap<String, Value>) -> Result<EditResult, String>,
     {
         // lock the state for the edit only, the lock is dropped before execution
-        let result = {
+        let (result, tab, recorded) = {
             let mut state = lock_state();
             if !state.ready {
                 return tool_error(NOT_READY);
@@ -456,17 +474,21 @@ impl MotionKeysMcp {
                 Ok(result) => {
                     // a group whose last group node was removed goes with it, like the editor's edits
                     ops::drop_unused_groups(&mut graph, group);
-                    history::commit(&mut state, &tab, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
-                    result
+                    let committed = history::commit(&mut state, &tab, graph.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(result.message.clone())));
+                    (result, tab, committed.history)
                 }
                 Err(e) => return tool_error(e),
             }
         };
 
-        // push the new graph to the UI, then re-run the realtime graph
+        // push the new graph and history to the UI, then re-run the realtime graph of the tab it went to (another tab
+        // may be on screen by now)
+        if let Some(info) = recorded {
+            history::notify(info);
+        }
         update_state();
-        let execution = run_realtime_if_allowed().await;
-        self.edit_report(group, &result, &execution)
+        let execution = run_realtime_if_allowed(&tab).await;
+        self.edit_report(&tab, group, &result, &execution)
     }
 
     /// applies ops the way the editor does (`graph::ops`) as one undo step named `op`, pushes the graph to the UI, re-runs
@@ -476,7 +498,7 @@ impl MotionKeysMcp {
     where
         F: FnOnce(&Graph) -> Result<(Vec<Op>, Vec<String>), String>,
     {
-        let (result, affects_output) = {
+        let (result, tab, committed) = {
             let mut state = lock_state();
             if !state.ready {
                 return tool_error(NOT_READY);
@@ -517,28 +539,34 @@ impl MotionKeysMcp {
                 message.push_str(&format!("; node group '{}' is now this project's own copy", group.unwrap()));
             }
             touched.splice(0..0, added.into_iter().map(|a| a.id));
-            let affects_output = history::commit(&mut state, &tab, project.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(message.clone())));
+            let committed = history::commit(&mut state, &tab, project.to_rf(), Capture::Record(Step::new(op, Source::Mcp).detail(message.clone())));
             (
                 EditResult {
                     message,
                     touched,
                 },
-                affects_output,
+                tab,
+                committed,
             )
         };
 
-        // push the new graph to the UI, frames and labels are only layout and run nothing
+        // push the new graph and history to the UI, frames and labels are only layout and run nothing. the run and the
+        // report are the tab it went to's
+        if let Some(info) = committed.history {
+            history::notify(info);
+        }
         update_state();
-        let execution = if affects_output {
-            run_realtime_if_allowed().await
+        let execution = if committed.affects_output {
+            run_realtime_if_allowed(&tab).await
         } else {
             "layout only, nothing to run".to_string()
         };
-        self.edit_report(group, &result, &execution)
+        self.edit_report(&tab, group, &result, &execution)
     }
 
-    /// undoes or redoes one step, re-runs the realtime graph and says which step it was
-    async fn history_step(&self, redo: bool) -> Result<CallToolResult, McpError> {
+    /// undoes or redoes one step, re-runs the realtime graph and says which step it was. with `step_id` it's refused when
+    /// another step is there, and it never takes a step the user is still making in the app (a grab being placed)
+    async fn history_step(&self, redo: bool, step_id: Option<u64>) -> Result<CallToolResult, McpError> {
         let tab = {
             let state = lock_state();
             if !state.ready {
@@ -546,14 +574,24 @@ impl MotionKeysMcp {
             }
             state.active_instance_id.clone()
         };
-        let Some((entry, _)) = history::step(&tab, redo) else {
-            return tool_error(if redo {
-                "nothing to redo"
-            } else {
-                "nothing to undo"
-            });
+        let verb = if redo {
+            "redo"
+        } else {
+            "undo"
         };
-        let execution = run_realtime_if_allowed().await;
+        // checked with the history locked, so a step the user makes meanwhile can't be taken in its place
+        let stepped = history::step_if(&tab, redo, |next| match (next, step_id) {
+            (Some((entry, true)), _) => Err(format!("the newest step is still being made in the app (the user is in the middle of it, e.g. placing nodes they added); try again once it's done: {}", history_line(&entry))),
+            (Some((entry, false)), Some(id)) if entry.id != id => Err(format!("#{} isn't the step to {}, it's {}; check graph_history", id, verb, history_line(&entry))),
+            (None, Some(id)) => Err(format!("#{} isn't the step to {}, there's nothing to {}", id, verb, verb)),
+            _ => Ok(()),
+        });
+        let entry = match stepped {
+            Ok(Some((entry, _))) => entry,
+            Ok(None) => return tool_error(format!("nothing to {}", verb)),
+            Err(e) => return tool_error(e),
+        };
+        let execution = run_realtime_if_allowed(&tab).await;
         ok_text(format!(
             "{} {}\n{}",
             if redo {
@@ -566,10 +604,10 @@ impl MotionKeysMcp {
         ))
     }
 
-    /// builds the tool result for an edit: the message, the execution status and the outline of each touched node
-    fn edit_report(&self, group: Option<&str>, result: &EditResult, execution: &str) -> Result<CallToolResult, McpError> {
+    /// builds the tool result for an edit of `tab`: the message, the execution status and the outline of each touched node
+    fn edit_report(&self, tab: &str, group: Option<&str>, result: &EditResult, execution: &str) -> Result<CallToolResult, McpError> {
         // take a fresh snapshot so the outline shows the new results
-        let snapshot = match Snapshot::take() {
+        let snapshot = match Snapshot::of(Some(tab)) {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
@@ -911,7 +949,7 @@ impl MotionKeysMcp {
     // MARK: - History Tools
 
     // graph_history: the undo history shared with the app
-    #[tool(description = "List the undo history of the tab on screen, oldest first. The app and MCP share it: entries from the app are the user's own edits. Entries after the current position can be redone.", annotations(read_only_hint = true))]
+    #[tool(description = "List the undo history of the tab on screen, oldest first. The app and MCP share it: entries from the app are the user's own edits. Entries after the current position can be redone. Each step has an id (#n) to give graph_undo or graph_redo as step_id.", annotations(read_only_hint = true))]
     async fn graph_history(&self) -> Result<CallToolResult, McpError> {
         let tab = lock_state().active_instance_id.clone();
         let info = history::info(&tab);
@@ -930,15 +968,15 @@ impl MotionKeysMcp {
     }
 
     // graph_undo
-    #[tool(description = "Undo the newest step in the undo history. The history is shared with the app, so this can undo the user's own edits; check graph_history first.", annotations(read_only_hint = false, destructive_hint = true))]
-    async fn graph_undo(&self) -> Result<CallToolResult, McpError> {
-        self.history_step(false).await
+    #[tool(description = "Undo the newest step in the undo history. The history is shared with the app, so this can undo the user's own edits: check graph_history first and pass the id of the step you mean as step_id, the call then fails if the user made a step since. A step the user is still making in the app (placing nodes they added) is never undone.", annotations(read_only_hint = false, destructive_hint = true))]
+    async fn graph_undo(&self, Parameters(params): Parameters<StepParams>) -> Result<CallToolResult, McpError> {
+        self.history_step(false, params.step_id).await
     }
 
     // graph_redo
-    #[tool(description = "Redo the newest undone step in the undo history.", annotations(read_only_hint = false, destructive_hint = false))]
-    async fn graph_redo(&self) -> Result<CallToolResult, McpError> {
-        self.history_step(true).await
+    #[tool(description = "Redo the newest undone step in the undo history (the first one after the current position in graph_history). Pass its id as step_id, the call then fails if a different step is there.", annotations(read_only_hint = false, destructive_hint = false))]
+    async fn graph_redo(&self, Parameters(params): Parameters<StepParams>) -> Result<CallToolResult, McpError> {
+        self.history_step(true, params.step_id).await
     }
 
     // graph_execute: realtime run, or a full run that writes keyframes to the 3D app
@@ -962,23 +1000,33 @@ impl MotionKeysMcp {
             return tool_error("the graph is empty; add nodes with graph_add_node first");
         }
 
-        // run it, realtime is the opposite of writing keyframes
-        if let Err(e) = run_execution(!params.write_keyframes).await {
-            return tool_error(e);
-        }
+        // run the tab that was checked, even if another one is on screen by the time it runs. realtime is the opposite
+        // of writing keyframes
+        let tab = snapshot.tab.id.clone();
+        // what the run wrote comes from the run itself, another write finishing meanwhile can't be mistaken for it. a
+        // full run turned away (the tab stopped being live before it ran) sent nothing
+        let write = match run_execution(tab.clone(), !params.write_keyframes).await {
+            Ok(write) => write,
+            Err(e) if params.write_keyframes => return tool_error(format!("full run skipped, no keyframes sent: {} (app_status shows which tab is live)", e)),
+            Err(e) => return tool_error(e),
+        };
 
         // take a new snapshot to get the fresh results
-        let snapshot = match Snapshot::take() {
+        let snapshot = match Snapshot::of(Some(&tab)) {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };
-        // count how many nodes ran without an error and say what kind of run it was
+        // count how many nodes ran without an error and say what kind of run it was. a full run says what it wrote
         let errors = node_errors(&snapshot.tab.executed_results);
         let executed = snapshot.tab.executed_results.len() - errors.len();
-        let mode = if params.write_keyframes {
-            "full run, keyframes sent to the 3D app"
-        } else {
-            "realtime run"
+        let mode = match (params.write_keyframes, write.as_ref()) {
+            (false, _) => "realtime run".to_string(),
+            (true, None) => "full run, nothing to write to the 3D app".to_string(),
+            (true, Some(write)) => match &write.error {
+                Some(error) => format!("full run, writing to the 3D app failed: {}", error),
+                None if write.written == 0 => "full run, nothing to write to the 3D app".to_string(),
+                None => format!("full run, {} keyframes sent to {} objects in the 3D app", write.keyframes, write.objects),
+            },
         };
         let view = snapshot.view(None).unwrap();
         let text = match outline::outline(&snapshot.ctx(&view), None, Detail::Concise) {
@@ -1000,20 +1048,19 @@ impl MotionKeysMcp {
         if !lock_state().ready {
             return tool_error(NOT_READY);
         }
-        // the app asks before unsaved changes are read over, this can't
-        if let Some(tab) = lock_state().unsaved_file_tab(&params.path) {
-            return tool_error(format!("'{}' is open in {} with unsaved changes, opening it again would drop them: save them first (tab_switch, then project_save), or close the tab with tab_close to drop them", params.path, tab));
-        }
-        // open it in a tab, then link the 3D app to it or run it
-        let opened = match open_file(&params.path) {
-            Ok(opened) => opened,
+        // open it in a tab, then link the 3D app to it or run it. the app asks before unsaved changes are read over, this
+        // can't: a tab that has the file open with unsaved changes is kept, checked as it would be replaced so changes
+        // made meanwhile count too
+        let opened = match open_file_unless_unsaved(&params.path, false) {
+            Ok(Opening::Done(opened)) => opened,
+            Ok(Opening::Unsaved(tab)) => return tool_error(format!("'{}' is open in {} with unsaved changes, opening it again would drop them: save them first (tab_switch, then project_save), or close the tab with tab_close to drop them", params.path, tab)),
             Err(e) => return tool_error(format!("could not open '{}': {}", params.path, e)),
         };
         let id = opened.id().to_string();
         start_instance(id.clone()).await;
-        // outline it with the fresh results
-        let execution = run_realtime_if_allowed().await;
-        let snapshot = match Snapshot::take() {
+        // outline it with the fresh results, the tab that was opened even if another one is on screen by now
+        let execution = run_realtime_if_allowed(&id).await;
+        let snapshot = match Snapshot::of(Some(&id)) {
             Ok(snapshot) => snapshot,
             Err(e) => return tool_error(e),
         };

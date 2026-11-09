@@ -87,6 +87,9 @@ function install({ backend, label }: { backend: Backend; label: string }) {
             // the tab is on screen as of the fixture's state
             case "switch_active_instance":
                 return state.state_rev;
+            // cancelling a transaction takes back what it did
+            case "history_cancel":
+                return true;
             // the system clipboard isn't dumped, it's whatever the machine had. it always has nodes here
             case "graph_can_paste":
                 return true;

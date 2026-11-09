@@ -108,7 +108,7 @@ pub async fn graph_can_paste() -> bool {
 }
 
 fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool, sizes: &HashMap<String, Size>) -> Result<Applied, String> {
-    let (applied, run) = {
+    let (applied, run, recorded) = {
         let mut state = lock();
         let instance = state.instance(tab).ok_or_else(|| format!("no tab '{}'", tab))?;
         let mut graph = Graph::from_rf(&instance.rf_instance)?;
@@ -144,7 +144,7 @@ fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, co
                 None => step,
             })
         };
-        let affects_output = history::commit(&mut state, tab, graph.to_rf(), capture);
+        let committed = history::commit(&mut state, tab, graph.to_rf(), capture);
         let Some(instance) = state.instance(tab) else {
             return Err(format!("no tab '{}'", tab));
         };
@@ -154,10 +154,14 @@ fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, co
             rf_instance: instance.rf_instance.clone(),
             added,
         };
-        (applied, affects_output && !instance.execution_paused)
+        (applied, committed.affects_output && !instance.execution_paused, committed.history)
     };
 
+    // the graph and history go out with the state unlocked
     push_graph(tab);
+    if let Some(info) = recorded {
+        history::notify(info);
+    }
     // the editor gets its answer right away (it may be waiting to grab what it added), the run happens after
     if run {
         tauri::async_runtime::spawn(crate::graph::execute::run_instance(tab.to_string(), true));

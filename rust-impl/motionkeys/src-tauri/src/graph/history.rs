@@ -371,9 +371,13 @@ pub struct EntryInfo {
     pub detail: String,
 }
 
-/// the whole history, oldest entry first. the first `current` entries are done, the rest can be redone
+/// the whole history, oldest entry first. the first `current` entries are done, the rest can be redone. `tab` is whose
+/// it is and `rev` how new (revisions only go up), `state::history` stamps them, the history panel keeps the newest one
+/// of the tab on screen
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct HistoryInfo {
+    pub tab: String,
+    pub rev: u64,
     pub entries: Vec<EntryInfo>,
     pub current: usize,
 }
@@ -396,6 +400,9 @@ pub struct History {
     undone: Vec<Entry>,
     next_id: u64,
     pub limit: usize,
+    /// transactions another step ended while they were open (an MCP edit during a grab). what one did before that step
+    /// is an entry of its own, so cancelling it can't undo all of it
+    split: BTreeSet<String>,
 }
 
 impl Default for History {
@@ -411,6 +418,7 @@ impl History {
             undone: Vec::new(),
             next_id: 1,
             limit,
+            split: BTreeSet::new(),
         }
     }
 
@@ -457,6 +465,7 @@ impl History {
 
     /// ends the transaction, its entry stops taking changes
     pub fn end(&mut self, txn: &str) {
+        self.split.remove(txn);
         if let Some(top) = self.done.last_mut().filter(|top| top.open && top.step.txn.as_deref() == Some(txn)) {
             top.open = false;
         }
@@ -466,14 +475,30 @@ impl History {
         }
     }
 
-    /// cancels the transaction: its changes are undone and forgotten
+    /// cancels the transaction: its open entry is undone and forgotten. returns true if that was all it did, false if
+    /// there's no open entry or another step ended the transaction first (what it did before that step stays, for the
+    /// caller to remove)
     pub fn cancel(&mut self, txn: &str, project: &mut HashMap<String, Value>) -> bool {
+        let whole = !self.split.remove(txn);
+        // nothing of it left open: only a transaction another step ended first left something behind, one that recorded
+        // nothing has nothing to take back
         if !self.done.last().is_some_and(|top| top.open && top.step.txn.as_deref() == Some(txn)) {
-            return false;
+            return whole;
         }
         let entry = self.done.pop().unwrap();
         entry.diff.apply(project, false);
-        true
+        whole
+    }
+
+    /// the entry undo (or `redo`) would step next and whether its transaction is still open (a grab being placed)
+    pub fn top(&self, redo: bool) -> Option<(EntryInfo, bool)> {
+        let entry = if redo {
+            self.undone.last()
+        } else {
+            // an open entry that changed nothing goes before undo, the one under it is undone
+            self.done.iter().rev().find(|entry| !(entry.open && entry.diff.is_empty()))
+        }?;
+        Some((entry.info(), entry.open))
     }
 
     /// undoes the newest entry, returns it and whether it changes what the graph computes
@@ -519,18 +544,25 @@ impl History {
     pub fn clear(&mut self) {
         self.done.clear();
         self.undone.clear();
+        self.split.clear();
     }
 
+    /// the entries and how many are done, without a tab or revision (`state::history` stamps those)
     pub fn info(&self) -> HistoryInfo {
         HistoryInfo {
+            tab: String::new(),
+            rev: 0,
             entries: self.done.iter().chain(self.undone.iter().rev()).map(Entry::info).collect(),
             current: self.done.len(),
         }
     }
 
-    /// an open transaction is over once anything else happens
+    /// an open transaction is over once anything else happens, a step it takes after that can't be cancelled with it
     fn end_open(&mut self) {
         if let Some(top) = self.done.last_mut() {
+            if top.open {
+                self.split.extend(top.step.txn.clone());
+            }
             top.open = false;
         }
         if self.done.last().is_some_and(|top| top.diff.is_empty()) {

@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { PANELS, panelWindowFrame } from "./panels";
-import { takeState } from "./graphOps";
+import { queued, takeState } from "./graphOps";
 import { showStatus } from "./status";
 import { askUnsaved } from "../components/UnsavedChangesModal";
 
@@ -41,8 +41,11 @@ export function useSaveTab() {
                 setTabLayout(shown, placed);
                 await invoke("set_layout", { tab: shown, layout: placed });
             }
-            // the tab whose layout was just sent, the backend's tab on screen may be another one by now
-            const path = await invoke<string>("save_project", { tab: tab ?? shown, saveAs });
+            // the tab whose layout was just sent, the backend's tab on screen may be another one by now. after the tab's
+            // edits still on their way, so the file has them. not in the queue itself, edits don't wait on the save dialog
+            const saved = tab ?? shown;
+            await queued(saved, async () => {});
+            const path = await invoke<string>("save_project", { tab: saved, saveAs });
             showStatus(`Saved "${fileName(path)}"`);
             return path;
         },

@@ -1143,12 +1143,32 @@ fn rename_socket(project: &mut Graph, scope: Option<&str>, side: Side, id: &str,
     Ok(())
 }
 
-/// removes a socket, its connections go with it: inside on the group input or output, outside on every group node running the group
+/// removes a socket, its connections go with it: inside on the group input or output, outside on every group node running
+/// the group. so do the tags and the selection on it, a socket added later can get the same id and mustn't pick them up
 fn remove_socket(project: &mut Graph, scope: Option<&str>, side: Side, id: &str) -> Result<(), String> {
     let sockets = sockets_mut(local_group(project, scope)?, side);
     sockets.retain(|h| h.id != id);
     let group_id = scope.unwrap();
 
+    // the socket's tag and selection on `ends`, which have it on `socket_side`. the graph's tagged edges follow
+    let forget = |graph: &mut Graph, ends: &HashSet<String>, socket_side: Side| {
+        if ends.is_empty() {
+            return;
+        }
+        for node in ends {
+            tags::remove(
+                graph,
+                &SocketRef {
+                    node: node.clone(),
+                    side: socket_side,
+                    socket: id.to_string(),
+                },
+            );
+        }
+        let selected: Vec<SocketRef> = sockets::selected(graph).into_iter().filter(|s| !(ends.contains(&s.node) && s.side == socket_side && s.socket == id)).collect();
+        sockets::select(graph, &selected);
+        tags::sync(graph);
+    };
     // inside: the group's inputs come out of the group input, its outputs go into the group output
     let inside = |graph: &mut Graph| {
         let ends: HashSet<String> = graph
@@ -1168,6 +1188,14 @@ fn remove_socket(project: &mut Graph, scope: Option<&str>, side: Side, id: &str)
             Side::Inputs => !(ends.contains(e.from_node()) && e.from_output() == id),
             Side::Outputs => !(ends.contains(e.to_node()) && e.to_input() == id),
         });
+        forget(
+            graph,
+            &ends,
+            match side {
+                Side::Inputs => Side::Outputs,
+                Side::Outputs => Side::Inputs,
+            },
+        );
     };
     // outside: on group nodes running this group
     let outside = |graph: &mut Graph| {
@@ -1176,6 +1204,7 @@ fn remove_socket(project: &mut Graph, scope: Option<&str>, side: Side, id: &str)
             Side::Inputs => !(ends.contains(e.to_node()) && e.to_input() == id),
             Side::Outputs => !(ends.contains(e.from_node()) && e.from_output() == id),
         });
+        forget(graph, &ends, side);
     };
 
     outside(project);

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useStateContext } from "../contexts/StateContext";
 import { invoke } from "@tauri-apps/api/core";
 import { useOpenFile, useSaveTab } from "../utils/tabs";
+import { queued } from "../utils/graphOps";
 import { Icon, IconName } from "../icons";
 import { formatCombo, runCommand, useKeymapData } from "../utils/keymap";
 
@@ -177,8 +178,13 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
                         alert("Execution paused: Validate scene data first");
                         return;
                     }
-                    // the tab the button was shown for, the backend doesn't run another one MCP switched to meanwhile
-                    invoke("execute_graph", { realtime: false, tab: backEndState.active_tab }).catch((error) => console.error("Run failed:", error));
+                    // the tab the button was shown for, the backend doesn't run another one MCP switched to meanwhile. after
+                    // the tab's edits still on their way, so the keyframes written have them. not in the queue itself, a
+                    // write can take a while and edits made meanwhile don't wait for it
+                    const tab = backEndState.active_tab;
+                    queued(tab, async () => {})
+                        .then(() => invoke("execute_graph", { realtime: false, tab }))
+                        .catch((error) => console.error("Run failed:", error));
                 } else if (type == "save") {
                     try {
                         const path = await saveTab();

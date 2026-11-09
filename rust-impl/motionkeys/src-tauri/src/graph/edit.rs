@@ -303,8 +303,13 @@ pub fn set_inputs(graph: &mut Graph, specs: &Specs, node: &str, inputs: &Map<Str
 
     // remember which of these inputs are connected, their values will be ignored while connected
     let connected: Vec<String> = inputs.keys().filter(|key| graph.edge_into(&id, key).is_some()).cloned().collect();
-    // write the values to the node
+    // write the values to the node, a renamed animation generator keeps its wires in the note maps (a name that's
+    // connected comes from the connection, the value set here isn't it)
+    let old_name = generator_name(graph.node(&id).unwrap()).filter(|_| graph.edge_into(&id, "name").is_none());
     merge_inputs(graph.node_mut(&id).unwrap(), inputs);
+    if let Some(old) = old_name {
+        rename_animation(graph, &id, &old);
+    }
 
     // build the message, mention any inputs that were ignored
     let mut message = format!("set {} on {}", inputs.keys().cloned().collect::<Vec<_>>().join(", "), id);
@@ -315,6 +320,31 @@ pub fn set_inputs(graph: &mut Graph, specs: &Specs, node: &str, inputs: &Map<Str
         message,
         touched: vec![id],
     })
+}
+
+/// the name an animation generator gives its animations (unset is empty), none for any other node
+fn generator_name(node: &RfNode) -> Option<String> {
+    (node.node_type == "animation_generator").then(|| node.input_value("name").and_then(Value::as_str).unwrap_or_default().to_string())
+}
+
+/// the note maps of the Assign Notes to Objects nodes an animation generator feeds wire its animations by its name
+/// (`note_map.animations`), after a rename from `old` they're under its new name. a map that already has the new name
+/// is left alone (two generators with one name is an error the node shows)
+fn rename_animation(graph: &mut Graph, generator: &str, old: &str) {
+    let Some(new) = graph.node(generator).and_then(generator_name).filter(|new| new != old) else {
+        return;
+    };
+    // the maps it feeds that wire the old name and not the new one yet
+    let wires = |n: &RfNode| n.input_value("note_map").and_then(|map| map.get("animations")).and_then(Value::as_object).is_some_and(|animations| animations.contains_key(old) && !animations.contains_key(&new));
+    let fed: Vec<String> = graph.nodes.iter().filter(|n| n.node_type == "assign_notes_to_objects" && wires(n) && graph.reaches(generator, &n.id)).map(|n| n.id.clone()).collect();
+    for id in fed {
+        let Some(animations) = graph.node_mut(&id).and_then(|n| n.inputs_mut().get_mut("note_map")).and_then(|map| map.get_mut("animations")).and_then(Value::as_object_mut) else {
+            continue;
+        };
+        if let Some(objects) = animations.remove(old) {
+            animations.insert(new.clone(), objects);
+        }
+    }
 }
 
 /// removes a node and every edge connected to it

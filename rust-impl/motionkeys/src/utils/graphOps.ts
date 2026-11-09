@@ -77,26 +77,44 @@ export function useStateSync() {
     }, []);
 }
 
+// each tab's last op on its way (or its reply), the next one waits for it. the backend takes concurrent commands in any
+// order, so a tab's edits, undos and transaction ends go one at a time in the order they were made
+const queues = new Map<string, Promise<unknown>>();
+
+// runs `send` (a command for `tab`) once the tab's ops before it have their replies, resolves to its reply
+export function queued<T>(tab: string, send: () => Promise<T>): Promise<T> {
+    const reply = (queues.get(tab) ?? Promise.resolve()).then(send);
+    // a failed op doesn't hold up the ones after it
+    const done = reply.catch(() => {});
+    queues.set(tab, done);
+    done.then(() => {
+        if (queues.get(tab) === done) queues.delete(tab);
+    });
+    return reply;
+}
+
 // applies ops to the graph `scope` (a group id, null for the top level) of the tab, see graph_apply in src-tauri/src/state/graph.rs.
 // copy, cut and paste use the system clipboard from the backend. the graph that comes back is taken right away, so it's
-// there when the promise resolves
+// there when the promise resolves. every command waits for the tab's ops before it (`queued`). `cancel` resolves to
+// false when the transaction couldn't all be undone (another step ended it first), what it added is still there
 export function useGraphOps(scope: string | null) {
     const { setBackEndState } = useStateContext();
     const tab = useContext(TabContext);
     return useMemo(() => {
-        const edit = async (command: string, args: Record<string, any>): Promise<Applied> => {
-            const applied = await invoke<Applied>(command, { tab, scope, ...args });
-            setBackEndState((s: any) => takeGraph(s, applied));
-            return applied;
-        };
+        const edit = (command: string, args: Record<string, any>): Promise<Applied> =>
+            queued(tab, async () => {
+                const applied = await invoke<Applied>(command, { tab, scope, ...args });
+                setBackEndState((s: any) => takeGraph(s, applied));
+                return applied;
+            });
         return {
             apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true, sizes: options.sizes ?? null }),
-            copy: (nodes: string[]) => invoke("graph_copy", { tab, scope, nodes }),
+            copy: (nodes: string[]) => queued(tab, () => invoke("graph_copy", { tab, scope, nodes })),
             cut: (nodes: string[], edges: string[], sockets: SocketRef[]) => edit("graph_cut", { nodes, edges, sockets }),
             paste: (position: XY) => edit("graph_paste", { position }),
-            unused: () => invoke<string[]>("graph_unused", { tab, scope }),
-            end: (txn: string) => invoke("history_end", { tab, txn }),
-            cancel: (txn: string) => invoke("history_cancel", { tab, txn }),
+            unused: () => queued(tab, () => invoke<string[]>("graph_unused", { tab, scope })),
+            end: (txn: string) => queued(tab, () => invoke("history_end", { tab, txn })),
+            cancel: (txn: string) => queued(tab, () => invoke<boolean>("history_cancel", { tab, txn })),
         };
     }, [tab, scope, setBackEndState]);
 }
