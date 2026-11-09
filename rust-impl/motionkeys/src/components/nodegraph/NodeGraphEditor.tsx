@@ -10,7 +10,7 @@ import { NODE_DROP_EVENT } from "../../utils/node";
 import { GROUP, GroupDef, Level, NOTE_MAP_NODE, PATH_SEP, Project, inputHandle, outputHandle, specLookup } from "../../utils/groups";
 import { ApplyOptions, Op, SocketRef, TabContext, useGraphOps } from "../../utils/graphOps";
 import { takeReveal, usePendingReveal } from "../../utils/console";
-import { addsToSelection, blockUntilRelease, commandName, isTextField, useHold, useKeymap, useModal } from "../../utils/keymap";
+import { addsToSelection, blockUntilRelease, commandName, isTextField, pushModal, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { LinkFrom, linkSocket, nodeEntries, useNodeSpecs } from "../../utils/nodeEntries";
 import { wouldCycle } from "../../utils/sockets";
 import { SOCKET_EDIT_EVENT } from "../../nodes/_InterfaceNode";
@@ -58,8 +58,12 @@ type EditorProps = {
 
 // nodes following the cursor until a click places them (G, Shift+D, adding from the menu). `txn` is the transaction the
 // add or duplicate was made in, placing ends it and cancelling undoes it. `nodes` are the grabbed ones and what the
-// frames among them carry
-type Grab = { txn: string | null; cursorX: number; cursorY: number; nodes: { id: string; x: number; y: number }[] };
+// frames among them carry, `added` the nodes the add or duplicate made
+type Grab = { txn: string | null; cursorX: number; cursorY: number; nodes: { id: string; x: number; y: number }[]; added: string[] };
+
+// an add or duplicate on its way to the backend, its grab isn't up yet. `cancelled` when it was cancelled meanwhile,
+// `end` lets go of the modal that holds the input until then
+type Sending = { cancelled: boolean; end: () => void };
 
 // a drag or grab under way: what's moved, the frames' rects when it started (for dropping nodes in them, dropFrames), and for a drag where each dragged node started and which dragged frame carries each node in one
 type MoveSession = { moved: string[]; frames: Map<string, Rect>; starts: Map<string, { x: number; y: number }>; carriedBy: Map<string, string> };
@@ -157,17 +161,44 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // edits in a read-only graph (an unedited built-in group) don't happen
     const canEdit = useCallback(() => editable, [editable]);
 
-    // an edit on its way to the backend, a failed one changed nothing
+    // bumped when an edit failed, so what was shown ahead of it stops being ahead of the backend's graph: the graph on
+    // screen is shown from the backend's again (below)
+    const [resync, setResync] = useState(0);
+
+    // an edit on its way to the backend, a failed one changed nothing. what was shown ahead of it (nodes where they were
+    // dropped, a picked up link hidden, a frame's size kept) goes back to the backend's graph
     const track = useCallback(async <T,>(label: string, run: () => Promise<T>) => {
         inFlightRef.current++;
         try {
             return await run();
         } catch (e) {
             console.error(`${label}: ${e}`);
+            setResync((n) => n + 1);
             return null;
         } finally {
             inFlightRef.current--;
         }
+    }, []);
+
+    // nodes whose move (or resize) is on its way to the backend, by how many: they stay where they were put (and at the
+    // size they were given) until it's back, a push meanwhile (a run, the viewport) still has them where they were
+    const movingRef = useRef(new Map<string, number>());
+    const sizingRef = useRef(new Map<string, number>());
+    // the height each node being resized had when the resize started, and the size and place it was last given, which
+    // the resize ends with. a push meanwhile doesn't change them
+    const resizeStartRef = useRef(new Map<string, number | undefined>());
+    const resizeLastRef = useRef(new Map<string, { width?: number; height?: number; position?: { x: number; y: number } }>());
+    const hold = useCallback((held: Map<string, number>, ids: string[], sent: Promise<unknown>) => {
+        for (const id of ids) held.set(id, (held.get(id) ?? 0) + 1);
+        // let go once it's back, before its graph is shown. a reply older than the graph shown is dropped, that graph came
+        // after the move and already has it, so nothing on screen has to change. a failed one is put back by `track`
+        sent.then(() => {
+            for (const id of ids) {
+                const left = (held.get(id) ?? 1) - 1;
+                if (left > 0) held.set(id, left);
+                else held.delete(id);
+            }
+        });
     }, []);
 
     // sends ops to the backend, with the sizes the nodes are drawn at for frames to fit around
@@ -204,6 +235,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         scheduleSelection();
     }, [getNodes, setNodes, scheduleSelection]);
 
+    // the last selection sent while selects are on their way (how many), what the backend will have once they're back.
+    // a selection is compared with it then, not with the backend's graph: toggling back before the first one is back
+    // still sends one. forgotten once the graph they came back with is shown (the reconcile below)
+    const sentSelectionRef = useRef<{ nodes: string[]; edges: string[]; sockets: SocketRef[] } | null>(null);
+    const selectsRef = useRef(0);
+
     // after react flow's own effects (it's a child), so its store has the selection
     useEffect(() => {
         if (!selectionPendingRef.current) return;
@@ -218,9 +255,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const edges = selectedIds(getEdges());
             const sockets = selectedSockets(getNodes());
             const stored = storedRef.current;
+            const base = sentSelectionRef.current ?? { nodes: selectedIds(stored.nodes ?? []), edges: selectedIds(stored.edges ?? []), sockets: selectedSockets(stored.nodes ?? []) };
             const same = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
-            if (canEdit() && !(same(nodes, selectedIds(stored.nodes ?? [])) && same(edges, selectedIds(stored.edges ?? [])) && sameSockets(sockets, selectedSockets(stored.nodes ?? [])))) {
-                apply([{ op: "select", nodes, edges, sockets }]);
+            if (canEdit() && !(same(nodes, base.nodes) && same(edges, base.edges) && sameSockets(sockets, base.sockets))) {
+                sentSelectionRef.current = { nodes, edges, sockets };
+                selectsRef.current++;
+                apply([{ op: "select", nodes, edges, sockets }]).then(() => selectsRef.current--);
             }
             inFlightRef.current--;
         };
@@ -270,7 +310,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const at = new Map([...nodes.map((n) => [n.id, n.position] as const), ...grabbed.map((n) => [n.id, n.position] as const)]);
             const moved = grabbed.map((n) => n.id);
             const ids = [...new Set([...moved, ...withContents(nodes, moved)])].filter((id) => at.has(id));
-            grabRef.current = { txn, cursorX: cursor.x, cursorY: cursor.y, nodes: ids.map((id) => ({ id, x: at.get(id)!.x, y: at.get(id)!.y })) };
+            grabRef.current = { txn, cursorX: cursor.x, cursorY: cursor.y, nodes: ids.map((id) => ({ id, x: at.get(id)!.x, y: at.get(id)!.y })), added: txn ? moved : [] };
             beginMove(moved);
             setGrabbing(true);
         },
@@ -285,10 +325,38 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (!grab) return;
         const placed = new Map(getNodes().map((n) => [n.id, n.position]));
         const positions = Object.fromEntries(grab.nodes.filter((n) => placed.has(n.id)).map((n) => [n.id, placed.get(n.id)!]));
-        apply([moveOp(positions, endMove(positions))], grab.txn ? { txn: grab.txn } : {}).then(() => grab.txn && ops.end(grab.txn));
-    }, [getNodes, apply, ops, endMove]);
+        const sent = apply([moveOp(positions, endMove(positions))], grab.txn ? { txn: grab.txn } : {});
+        hold(movingRef.current, Object.keys(positions), sent);
+        sent.then(() => grab.txn && ops.end(grab.txn));
+    }, [getNodes, apply, ops, endMove, hold]);
 
-    // puts the grabbed nodes back, an add or duplicate is undone
+    // nodes back where the backend's graph has them
+    const showStored = useCallback(
+        (ids: string[]) => {
+            const stored = new Map((storedRef.current.nodes ?? []).map((n: any) => [n.id, n.position]));
+            setNodes((nds) => nds.map((node) => (ids.includes(node.id) && stored.has(node.id) ? { ...node, position: stored.get(node.id) } : node)));
+        },
+        [setNodes]
+    );
+
+    // undoes an add or duplicate. when another step (an MCP edit) ended its transaction first, cancelling it leaves what
+    // came before that step, so its nodes are deleted. not when it isn't known whether cancelling undid it all
+    const opsRef = useRef(ops);
+    opsRef.current = ops;
+    const undoAdd = useCallback((txn: string, added: string[]) => {
+        const ops = opsRef.current;
+        ops.cancel(txn).then(
+            (cancelled) => {
+                if (cancelled !== false) return;
+                const present = new Set((storedRef.current.nodes ?? []).map((n: any) => n.id));
+                const nodes = added.filter((id) => present.has(id));
+                if (nodes.length > 0) ops.apply([{ op: "delete", nodes, keep_frames: true }]).catch((e) => console.error(`delete: ${e}`));
+            },
+            (e) => console.error(`history_cancel: ${e}`)
+        );
+    }, []);
+
+    // puts the grabbed nodes back, an add or duplicate is undone and the rest go where the backend has them
     const cancelGrab = useCallback(() => {
         const grab = grabRef.current;
         grabRef.current = null;
@@ -297,22 +365,64 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         moveRef.current = null;
         if (!grab) return;
         if (grab.txn) {
-            ops.cancel(grab.txn);
+            undoAdd(grab.txn, grab.added);
+            showStored(grab.nodes.map((n) => n.id).filter((id) => !grab.added.includes(id)));
         } else {
             const start = new Map(grab.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
             setNodes((nds) => nds.map((node) => (start.has(node.id) ? { ...node, position: start.get(node.id)! } : node)));
         }
-    }, [ops, setNodes]);
+    }, [undoAdd, showStored, setNodes]);
 
-    // leaving the graph mid grab (another tab or group is shown) undoes the add or duplicate it belongs to
-    const opsRef = useRef(ops);
-    opsRef.current = ops;
-    useEffect(
-        () => () => {
-            const txn = grabRef.current?.txn;
-            if (txn) opsRef.current.cancel(txn);
+    // adds and duplicates on their way, and the one whose grab is starting: its modal is let go once the grab's has
+    // taken over (after the grab's modal below)
+    const sendingRef = useRef(new Set<Sending>());
+    const handoffRef = useRef<Sending | null>(null);
+    // false once the editor is gone, an add or duplicate that comes back then isn't grabbed
+    const mountedRef = useRef(true);
+
+    // leaving the graph mid grab (another tab or group is shown) undoes the add or duplicate it belongs to, one still on
+    // its way is undone once it's back
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            const grab = grabRef.current;
+            if (grab?.txn) undoAdd(grab.txn, grab.added);
+            handoffRef.current = null;
+            for (const sending of [...sendingRef.current]) sending.end();
+        };
+    }, [undoAdd]);
+
+    // an add or duplicate is being sent: a modal takes every key and click until its grab is up, so nothing (a select)
+    // ends its transaction first. a cancel meanwhile undoes it once it's back
+    const beginSending = useCallback((): Sending => {
+        const sending: Sending = { cancelled: false, end: () => {} };
+        const pop = pushModal("grab", { confirm: () => {}, cancel: () => (sending.cancelled = true) });
+        sending.end = () => {
+            pop();
+            sendingRef.current.delete(sending);
+        };
+        sendingRef.current.add(sending);
+        return sending;
+    }, []);
+
+    // an add or duplicate is back: its nodes are grabbed from `cursor`, or undone when it was cancelled meanwhile or the
+    // editor is gone. true when its modal is handed to the grab
+    const grabAdded = useCallback(
+        (sending: Sending, added: { id: string; position: { x: number; y: number } }[], cursor: { x: number; y: number }, txn: string) => {
+            if (!mountedRef.current || sending.cancelled) {
+                undoAdd(
+                    txn,
+                    added.map((n) => n.id)
+                );
+                return false;
+            }
+            startGrab(added, cursor, txn);
+            handoffRef.current?.end();
+            handoffRef.current = sending;
+            return true;
         },
-        []
+        [undoAdd, startGrab]
     );
 
     // close the add menu without adding anything
@@ -328,17 +438,25 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             if (!entry || !canEdit()) return;
             const flowPosition = screenToFlowPosition(mousePositionRef.current, { snapToGrid: false });
             const txn = crypto.randomUUID();
-            const applied = await apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x + 10, y: flowPosition.y + 10 } }] }], { txn });
-            if (!applied) return;
-            const socket = link && linkSocket(entry, link, nodeSpecs, groups);
-            const added = socket && applied.added[socket.node];
-            if (link && socket && added) {
-                const ends = link.isOutput ? { from_node: link.nodeId, from_output: link.handleId, to_node: added.id, to_input: socket.handle } : { from_node: added.id, from_output: socket.handle, to_node: link.nodeId, to_input: link.handleId };
-                await apply([{ op: "connect", ...ends }], { txn });
+            const sending = beginSending();
+            let handedOff = false;
+            try {
+                const applied = await apply([{ op: "add_nodes", nodes: [{ type: entry.nodeType, data: entry.data, position: { x: flowPosition.x + 10, y: flowPosition.y + 10 } }] }], { txn });
+                if (!applied) return;
+                const socket = link && linkSocket(entry, link, nodeSpecs, groups);
+                const added = socket && applied.added[socket.node];
+                // not for an add that's about to be undone
+                if (link && socket && added && mountedRef.current && !sending.cancelled) {
+                    const ends = link.isOutput ? { from_node: link.nodeId, from_output: link.handleId, to_node: added.id, to_input: socket.handle } : { from_node: added.id, from_output: socket.handle, to_node: link.nodeId, to_input: link.handleId };
+                    await apply([{ op: "connect", ...ends }], { txn });
+                }
+                handedOff = grabAdded(sending, applied.added, flowPosition, txn);
+            } finally {
+                // the modal never stays up past the add
+                if (!handedOff) sending.end();
             }
-            startGrab(applied.added, flowPosition, txn);
         },
-        [entries, canEdit, screenToFlowPosition, apply, startGrab, nodeSpecs, groups]
+        [entries, canEdit, screenToFlowPosition, apply, beginSending, grabAdded, nodeSpecs, groups]
     );
     const addNode = useCallback((key: string) => addEntry(key, menuLink), [addEntry, menuLink]);
     // picked from the toolbar's add menu: added under the cursor over the toolbar, the grab brings it down into the graph
@@ -410,6 +528,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // a grab takes every key and click until it's confirmed or cancelled (left click and right click by default). like
     // blender the confirming click only confirms, react flow never sees it (src/utils/keymap.ts swallows it)
     useModal("grab", { confirm: confirmGrab, cancel: cancelGrab }, grabbing);
+    // the grab's modal is up, the add's or duplicate's that held the input until now goes. one cancelled in between is
+    // cancelled now
+    useEffect(() => {
+        const sending = handoffRef.current;
+        if (!grabbing || !sending) return;
+        handoffRef.current = null;
+        sending.end();
+        if (sending.cancelled) cancelGrab();
+    }, [grabbing, cancelGrab]);
 
     // MARK: - Clipboard
 
@@ -557,11 +684,19 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     // the nodes Delete Unused Nodes found, asked about before they go. frames emptied by it stay
     const [unused, setUnused] = useState<string[] | null>(null);
-    const deleteUnused = useCallback(() => {
+    // only the ones that are still unused: an edit while it was asked (over MCP, an undo) can have put one to use
+    const deleteUnused = useCallback(async () => {
         if (!unused) return;
         setUnused(null);
-        apply([{ op: "delete", nodes: unused, keep_frames: true }]);
-    }, [unused, apply]);
+        const still = new Set(
+            await ops.unused().catch((e) => {
+                console.error(`graph_unused: ${e}`);
+                return [] as string[];
+            })
+        );
+        const nodes = unused.filter((id) => still.has(id));
+        if (nodes.length > 0) apply([{ op: "delete", nodes, keep_frames: true }]);
+    }, [unused, ops, apply]);
     const cancelUnused = useCallback(() => setUnused(null), []);
 
     // what the toolbar's buttons can do here, said by the graph on screen
@@ -766,8 +901,15 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const { x, y } = mousePositionRef.current;
                 const flowPosition = screenToFlowPosition({ x, y }, { snapToGrid: false });
                 const txn = crypto.randomUUID();
-                const applied = await apply([{ op: "duplicate", nodes: selected, offset: { x: 20, y: 20 } }], { txn });
-                if (applied) startGrab(applied.added, flowPosition, txn);
+                const sending = beginSending();
+                let handedOff = false;
+                try {
+                    const applied = await apply([{ op: "duplicate", nodes: selected, offset: { x: 20, y: 20 } }], { txn });
+                    if (applied) handedOff = grabAdded(sending, applied.added, flowPosition, txn);
+                } finally {
+                    // the modal never stays up past the duplicate
+                    if (!handedOff) sending.end();
+                }
             },
             // deselect everything if anything is selected, otherwise select every node but the locked frames
             select_all: () => {
@@ -1024,14 +1166,21 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         frameView([node]);
     }, [reveal, tab, ready, shown, path, getNodes, setNodes, setEdges, scheduleSelection, frameView]);
 
-    // the backend's graph changed (an op came back, undo, an MCP edit): show it.
-    // kept from what's on screen: sizes, nodes mid drag or grab where the cursor has them, and the selection while ops
-    // are still on their way (it's ahead of the backend's then)
+    // the backend's graph changed (an op came back, undo, an MCP edit), or what was shown ahead of it stopped being
+    // ahead: show it. kept from what's on screen: sizes, nodes mid drag or grab where the cursor has them (with what a
+    // dragged frame carries), nodes mid resize at the size and place they're being given, nodes whose move or resize is
+    // on its way, and the selection while ops are still on their way (it's ahead of the backend's then)
     const stored = level.graph;
     useEffect(() => {
         if (!state.ready || !stored?.nodes || !stored?.edges || !rfInstance) return;
         const keepSelection = inFlightRef.current > 0;
+        // the selects sent are all back, the graph shown has the last one
+        if (selectsRef.current === 0) sentSelectionRef.current = null;
         const grabbed = new Set(grabRef.current?.nodes.map((n) => n.id) ?? []);
+        const carried = moveRef.current?.carriedBy;
+        const resizing = resizeStartRef.current;
+        const moving = movingRef.current;
+        const sizing = sizingRef.current;
         // functional updates so we merge onto the latest nodes, not a snapshot from before a click/drag that hasn't rendered yet
         setNodes((nds) => {
             const current = new Map((nds ?? []).map((node: any) => [node.id, node]));
@@ -1041,10 +1190,13 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             return stored.nodes.map(({ measured, ...node }: any) => {
                 const prev: any = current.get(node.id);
                 if (!prev) return node;
-                const position = prev.dragging || grabbed.has(node.id) ? prev.position : node.position;
+                const sized = prev.resizing || resizing.has(node.id) || sizing.has(node.id);
+                const placed = prev.dragging || grabbed.has(node.id) || !!carried?.has(node.id) || moving.has(node.id) || sized;
+                const position = placed ? prev.position : node.position;
                 const { selectedSockets, ...stored } = node;
                 const sockets = keepSelection ? prev.selectedSockets : selectedSockets;
-                return { ...stored, position, measured: prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
+                const size = sized ? { width: prev.width, height: prev.height, ...(prev.resizing ? { resizing: true } : {}) } : {};
+                return { ...stored, position, ...size, measured: prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
             });
         });
         setEdges((eds) => {
@@ -1056,7 +1208,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 return { ...edge, selected: keepSelection && prev ? prev.selected : !!edge.selected, ...picked };
             });
         });
-    }, [stored, state.ready, rfInstance]);
+    }, [stored, state.ready, rfInstance, resync]);
 
     // MARK: -
     // HANDLERS FOR REACT FLOW EVENTS
@@ -1360,9 +1512,6 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         [editable, lookup, level.def, apply, store, getEdges]
     );
 
-    // the height each node being resized had when the resize started
-    const resizeStartRef = useRef(new Map<string, number | undefined>());
-
     // what react flow changes on screen: selection, drags, sizes. removals, drag ends and resizes are sent as ops.
     // a dragged frame takes the nodes in it along
     const onNodesChange = useCallback(
@@ -1370,6 +1519,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             const changes = keptChanges(all);
             for (const change of changes.filter((c) => c.type === "dimensions" && c.resizing === true && !resizeStartRef.current.has(c.id))) {
                 resizeStartRef.current.set(change.id, getNodes().find((n) => n.id === change.id)?.measured?.height);
+            }
+            // the size and place each node being resized was last given (moving its left or top edge moves it)
+            for (const change of changes.filter((c) => resizeStartRef.current.has(c.id))) {
+                const last = resizeLastRef.current.get(change.id) ?? {};
+                if (change.type === "dimensions" && change.resizing === true && change.dimensions) resizeLastRef.current.set(change.id, { ...last, width: change.dimensions.width, height: change.dimensions.height });
+                else if (change.type === "position" && change.position && change.dragging === undefined) resizeLastRef.current.set(change.id, { ...last, position: change.position });
             }
             const session = moveRef.current;
             const carried = session ? carriedChanges(session, changes) : [];
@@ -1385,26 +1540,29 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 const positions = Object.fromEntries([...moved, ...carried].map((c) => [c.id, c.position ?? current.get(c.id)]));
                 for (const id of session?.carriedBy.keys() ?? []) positions[id] ??= current.get(id);
                 const frames = endMove(positions);
-                if (canEdit()) apply([moveOp(positions, frames)]);
+                if (canEdit()) hold(movingRef.current, Object.keys(positions), apply([moveOp(positions, frames)]));
             }
-            // a resize finished, a frame keeps the size it was given
+            // a resize finished with the size and place it last gave, a frame keeps the size it was given
             for (const change of changes.filter((c) => c.type === "dimensions" && c.resizing === false)) {
+                const start = resizeStartRef.current.get(change.id);
+                const last = resizeLastRef.current.get(change.id);
+                resizeStartRef.current.delete(change.id);
+                resizeLastRef.current.delete(change.id);
                 const node = getNodes().find((n) => n.id === change.id);
                 if (!node || !canEdit()) continue;
-                const width = change.dimensions?.width ?? node.width ?? node.measured?.width;
-                const height = change.dimensions?.height ?? node.height ?? node.measured?.height;
+                const width = last?.width ?? change.dimensions?.width ?? node.width ?? node.measured?.width;
+                const height = last?.height ?? change.dimensions?.height ?? node.height ?? node.measured?.height;
+                const position = last?.position ?? node.position;
                 if (isFrame(node)) setNodes((nds) => nds.map((n) => (n.id === node.id ? { ...n, data: { ...n.data, shrink: false } } : n)));
                 // a viewer without a height of its own keeps growing with what it shows when only its width was dragged. a
                 // collapsed node keeps the height it had, it's drawn as tall as its header
-                const start = resizeStartRef.current.get(node.id);
-                resizeStartRef.current.delete(node.id);
                 const stored = (storedRef.current.nodes ?? []).find((n: any) => n.id === node.id);
                 const widthOnly = node.type === VIEWER && stored?.height === undefined && start !== undefined && height !== undefined && Math.abs(height - start) < 1;
                 const kept = (node.data as any)?.collapsed ? (stored?.height ?? null) : widthOnly ? null : height;
-                if (width && height) apply([{ op: "resize", node: node.id, width, height: kept, position: node.position }]);
+                if (width && height) hold(sizingRef.current, [node.id], apply([{ op: "resize", node: node.id, width, height: kept, position }]));
             }
         },
-        [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove]
+        [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove, hold]
     );
 
     const onEdgesChange = useCallback(

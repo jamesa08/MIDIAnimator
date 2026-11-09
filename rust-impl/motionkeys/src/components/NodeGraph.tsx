@@ -16,6 +16,8 @@ import { useConsoleSettings, usePendingReveal, useRunTimings } from "../utils/co
 import ConsoleOverlay from "./ConsoleOverlay";
 
 const noop = () => {};
+// the built-in groups while they load, the same object each render
+const NO_GROUPS: Record<string, GroupDef> = {};
 
 // the graph behind an open group, frozen and faded out, with the group node that's open outlined.
 // it stays where it was looked at when the group was opened
@@ -125,7 +127,9 @@ function NodeGraph() {
 // reads the tab's graph (the top-level graph plus the project's node groups), the backend owns it
 function TabGraph({ tab }: { tab: string }) {
     const { backEndState: state } = useStateContext();
-    const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
+    // the built-in groups, null until they've loaded (a path through one can't be resolved before)
+    const [loadedBuiltin, setBuiltin] = useState<Record<string, GroupDef> | null>(null);
+    const builtin = loadedBuiltin ?? NO_GROUPS;
     // group node ids from the top level down to the graph asked for, the tab opens in the group it was left in
     const [path, setPath] = useState<string[]>(() => (state.open_group ? state.open_group.split(PATH_SEP) : []));
     // the graph on screen (a path), it changes to the one asked for once that one has finished drawing
@@ -142,15 +146,14 @@ function TabGraph({ tab }: { tab: string }) {
         loadBuiltinGroups().then(setBuiltin);
     }, []);
 
-    // the latest project and state for callbacks, a backend push replaces the project
+    // the latest project and state for callbacks, a backend push replaces the project. set while rendering, the graphs
+    // below read it as they render
     const projectRef = useRef<Project>(state.rf_instance ?? { nodes: [], edges: [] });
+    if (state.rf_instance) projectRef.current = state.rf_instance;
     const stateRef = useRef(state);
     stateRef.current = state;
     const builtinRef = useRef(builtin);
     builtinRef.current = builtin;
-    useEffect(() => {
-        if (state.rf_instance) projectRef.current = state.rf_instance;
-    }, [state.rf_instance]);
 
     const project: ProjectAccess = useMemo(
         () => ({
@@ -166,14 +169,17 @@ function TabGraph({ tab }: { tab: string }) {
     const levels = useMemo(() => resolvePath(current, groups, path), [current, groups, path]);
     const openPath = levels.slice(1).map((l) => l.nodeId!);
     const pathKey = openPath.join(PATH_SEP);
+    // not before the built-in groups have loaded, a path through one would be cut short
+    const loaded = loadedBuiltin !== null;
     useEffect(() => {
-        if (openPath.length !== path.length) setPath(openPath);
-    }, [openPath.length, path.length]);
+        if (loaded && openPath.length !== path.length) setPath(openPath);
+    }, [loaded, openPath.length, path.length]);
 
-    // the backend records the insides of the open groups, so they have values to show
+    // the backend records the insides of the open groups, so they have values to show. not before the built-in groups
+    // have loaded, the open one could be one of them
     useEffect(() => {
-        if (stateRef.current.ready) invoke("set_open_group", { tab, path: pathKey });
-    }, [tab, pathKey, state.ready]);
+        if (loaded && stateRef.current.ready) invoke("set_open_group", { tab, path: pathKey });
+    }, [loaded, tab, pathKey, state.ready]);
 
     // the graph on screen
     const shownLevels = useMemo(() => resolvePath(current, groups, shownKey ? shownKey.split(PATH_SEP) : []), [current, groups, shownKey]);

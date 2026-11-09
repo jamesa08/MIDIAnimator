@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi } from "@xyflow/react";
-import { blockUntilRelease, isHeld, useHold, useKeymap, useModal } from "../../utils/keymap";
+import { blockUntilRelease, isHeld, pushModal, useHold, useKeymap, useModal } from "../../utils/keymap";
 import { ApplyOptions } from "../../utils/graphOps";
 import { socketStyle } from "../../utils/sockets";
 import { SOCKET_COLORS, nodeColors } from "../../styles";
@@ -153,9 +153,9 @@ type Props = {
     setLinkedOnly: (linkedOnly: boolean) => void;
     // shows the notes' wires, the animations' or both, kept on the node like linked only
     setView: (view: MapView) => void;
-    // ends or undoes a transaction (adding a note, then grabbing it until a click places it)
+    // ends or undoes a transaction (adding a note, then grabbing it until a click places it). undoing says whether it did
     endTxn: (txn: string) => void;
-    cancelTxn: (txn: string) => void;
+    cancelTxn: (txn: string) => Promise<unknown>;
     onExit: () => void;
     onExitToRoot: () => void;
 };
@@ -208,8 +208,17 @@ function NoteAddBox({ position, onAdd, onClose }: { position: { x: number; y: nu
     );
 }
 
-// a grab in progress: the nodes follow the cursor from `cursor` (flow position) until a click places them
-type Grab = { txn: string | null; cursor: { x: number; y: number }; nodes: { id: string; x: number; y: number }[] };
+// a note added to the map, and the node's mode and map before it was (adding the first one switches rules to map)
+type AddedNote = { note: number; before: { mode?: string; note_map?: any } };
+
+// a grab in progress: the nodes follow the cursor from `cursor` (flow position) until a click places them. `added` the
+// note added in its transaction
+type Grab = { txn: string | null; cursor: { x: number; y: number }; nodes: { id: string; x: number; y: number }[]; added: AddedNote | null };
+
+// a note being added, on its way to the backend and not grabbed yet: `id` its node, `from` where its grab starts,
+// `sent` its edit. `landed` once that's back, `cancelled` when it was cancelled meanwhile, `end` lets go of the modal that
+// holds the input until its grab is up
+type PendingAdd = { id: string; txn: string; from: { x: number; y: number }; added: AddedNote; sent: Promise<unknown>; landed: boolean; cancelled: boolean; end: () => void };
 
 function NoteMapView(props: Props) {
     return (
@@ -556,9 +565,33 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
 
     const grabRef = useRef<Grab | null>(null);
     const [grabbing, setGrabbing] = useState(false);
-    const startGrab = useCallback((grabbed: { id: string; position: { x: number; y: number } }[], from: { x: number; y: number }, txn: string | null) => {
-        grabRef.current = { txn, cursor: from, nodes: grabbed.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })) };
+    const startGrab = useCallback((grabbed: { id: string; position: { x: number; y: number } }[], from: { x: number; y: number }, txn: string | null, added: AddedNote | null = null) => {
+        grabRef.current = { txn, cursor: from, nodes: grabbed.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })), added };
         setGrabbing(true);
+    }, []);
+
+    // undoes an added note. when another step (an MCP edit) ended its transaction first, cancelling it leaves the note,
+    // so it's taken out of the map, the map going back to the rules if adding it switched to the map. not when it isn't
+    // known whether cancelling undid it all
+    const cancelRef = useRef(cancelTxn);
+    cancelRef.current = cancelTxn;
+    const setInputsRef = useRef(setInputs);
+    setInputsRef.current = setInputs;
+    const nodeRef = useRef(node);
+    nodeRef.current = node;
+    const undoAdd = useCallback((txn: string, { note, before }: AddedNote) => {
+        cancelRef.current(txn).then(
+            (cancelled) => {
+                if (cancelled !== false) return;
+                const inputs = nodeRef.current.data?.inputs ?? {};
+                const stored = inputs.note_map;
+                if (!Array.isArray(stored?.notes) || !stored.notes.includes(note)) return;
+                const map_layout = Object.fromEntries(Object.entries(inputs.map_layout ?? {}).filter(([id]) => id !== noteKey(note)));
+                const back = before.mode !== "map" ? { mode: before.mode ?? null, note_map: before.note_map ?? null } : { note_map: { ...stored, notes: stored.notes.filter((n: number) => n !== note) } };
+                setInputsRef.current({ ...back, map_layout });
+            },
+            (e) => console.error(`history_cancel: ${e}`)
+        );
     }, []);
 
     useEffect(() => {
@@ -595,30 +628,51 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         grabRef.current = null;
         setGrabbing(false);
         if (!grab) return;
-        if (grab.txn) return cancelTxn(grab.txn);
+        if (grab.txn && grab.added) return undoAdd(grab.txn, grab.added);
+        if (grab.txn) return void cancelTxn(grab.txn);
         const start = new Map(grab.nodes.map((n) => [n.id, n]));
         setNodes((current) => current.map((n) => (start.has(n.id) ? { ...n, position: { x: start.get(n.id)!.x, y: start.get(n.id)!.y } } : n)));
-    }, [cancelTxn]);
+    }, [undoAdd, cancelTxn]);
 
     // like the node editor a grab takes every key and click until it's confirmed or cancelled
     useModal("grab", { confirm: confirmGrab, cancel: cancelGrab }, grabbing);
+    // the added note whose grab is starting: its modal is let go once the grab's is up, so nothing gets between them. one
+    // cancelled in between is cancelled now
+    const handoffRef = useRef<PendingAdd | null>(null);
+    useEffect(() => {
+        const pending = handoffRef.current;
+        if (!grabbing || !pending) return;
+        handoffRef.current = null;
+        pending.end();
+        if (pending.cancelled) cancelGrab();
+    }, [grabbing, cancelGrab]);
 
-    // leaving the map mid grab undoes the note it was adding
-    const cancelRef = useRef(cancelTxn);
-    cancelRef.current = cancelTxn;
+    // the note being added, until it's grabbed
+    const pendingGrab = useRef<PendingAdd | null>(null);
+
+    // leaving the map mid grab undoes the note it was adding, one still on its way is undone once it's back
     useEffect(
         () => () => {
-            const txn = grabRef.current?.txn;
-            if (txn) cancelRef.current(txn);
+            const grab = grabRef.current;
+            if (grab?.txn && grab.added) undoAdd(grab.txn, grab.added);
+            else if (grab?.txn) cancelRef.current(grab.txn);
+            handoffRef.current?.end();
+            handoffRef.current = null;
+            const pending = pendingGrab.current;
+            pendingGrab.current = null;
+            if (!pending) return;
+            pending.end();
+            pending.sent.then(() => undoAdd(pending.txn, pending.added));
         },
-        []
+        [undoAdd]
     );
 
     // Shift+A takes a note number or name, a new note is added under the cursor and grabbed. one already in the map is
     // selected instead
     const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
     const closeMenu = useCallback(() => setMenu(null), []);
-    const pendingGrab = useRef<{ id: string; txn: string; from: { x: number; y: number } } | null>(null);
+    // bumped when an added note's edit is back, whether or not it's drawn
+    const [landed, setLanded] = useState(0);
     const addFromMenu = useCallback(
         (note: number) => {
             setMenu(null);
@@ -636,21 +690,40 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
             const txn = crypto.randomUUID();
             const next = copyMap(map);
             next.notes.push(note);
-            pendingGrab.current = { id: noteKey(note), txn, from };
             selectNext.current = new Set([noteKey(note)]);
             keep([note]);
-            commit(next, { map_layout: { ...layout, [noteKey(note)]: [Math.round(from.x), Math.round(from.y)] } }, { txn });
+            // a modal takes every key and click until its grab is up, so nothing ends its transaction first. a cancel
+            // meanwhile undoes it once it's back
+            const added: AddedNote = { note, before: { mode: node.data?.inputs?.mode, note_map: node.data?.inputs?.note_map } };
+            const pending: PendingAdd = { id: noteKey(note), txn, from, added, sent: Promise.resolve(), landed: false, cancelled: false, end: () => {} };
+            pending.end = pushModal("grab", { confirm: () => {}, cancel: () => (pending.cancelled = true) });
+            pendingGrab.current?.end();
+            pendingGrab.current = pending;
+            // back, failed or not
+            const land = () => {
+                pending.landed = true;
+                setLanded((n) => n + 1);
+            };
+            pending.sent = commit(next, { map_layout: { ...layout, [noteKey(note)]: [Math.round(from.x), Math.round(from.y)] } }, { txn }).then(land, land);
         },
-        [map, notes, visible, layout, commit, linkedOnly]
+        [map, notes, visible, layout, commit, linkedOnly, node]
     );
-    // the added note is grabbed once it's drawn
+    // the added note is grabbed once it's drawn, or undone when it was cancelled meanwhile. one that isn't drawn once its
+    // edit is back (it failed) has nothing to grab
     useEffect(() => {
         const pending = pendingGrab.current;
         const added = pending && built.find((n) => n.id === pending.id);
-        if (!pending || !added) return;
+        if (!pending || (!added && !pending.landed)) return;
         pendingGrab.current = null;
-        startGrab([added], pending.from, pending.txn);
-    }, [builtKey, startGrab]);
+        if (!added || pending.cancelled) {
+            pending.end();
+            if (pending.cancelled) pending.sent.then(() => undoAdd(pending.txn, pending.added));
+            return;
+        }
+        startGrab([added], pending.from, pending.txn, pending.added);
+        handoffRef.current?.end();
+        handoffRef.current = pending;
+    }, [builtKey, landed, startGrab, undoAdd]);
 
     // the toolbar's group buttons only leave the map, nothing is added from its add menu
     useEffect(() => setEditorState({ editable, selected: 0, groups: 0, openable: 0, inGroup: true, entries: null }), [editable]);
