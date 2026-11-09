@@ -13,10 +13,10 @@ function set_channel({ id, data, isConnectable }: { id: any; data: any; isConnec
         setChannel(data.inputs?.channel || "");
     }, [data.inputs?.channel]);
 
-    // empty leaves the curve on its own channel
+    // empty leaves the curve on its own channel. only a change is sent, emptied unsets it
     const handleUpdate = useCallback(() => {
-        setInputs(id, { channel });
-    }, [id, channel, setInputs]);
+        if (channel !== (data.inputs?.channel || "")) setInputs(id, { channel: channel === "" ? null : channel });
+    }, [id, channel, data.inputs?.channel, setInputs]);
 
     const channelComponent = (
         <div>

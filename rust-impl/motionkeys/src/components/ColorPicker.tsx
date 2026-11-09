@@ -193,15 +193,28 @@ function ColorPopover({ position, anchorTop, value, onChange, onClose }: { posit
     }, [position.x, position.y, anchorTop]);
 
     // a change still waiting goes out before it closes
+    const closedRef = useRef(false);
     const onCloseRef = useRef(onClose);
     onCloseRef.current = () => {
+        closedRef.current = true;
         flush();
         onClose();
     };
+    // taken away while it's open (the panel's fields started over for another tab or selection) it closes like a click
+    // outside, so its transaction ends and later edits aren't part of it. checked once the commit is done, strict mode
+    // puts it back right away
+    const mountedRef = useRef(false);
     useEffect(() => {
+        mountedRef.current = true;
         const outside = () => onCloseRef.current();
         window.addEventListener("mousedown", outside);
-        return () => window.removeEventListener("mousedown", outside);
+        return () => {
+            window.removeEventListener("mousedown", outside);
+            mountedRef.current = false;
+            queueMicrotask(() => {
+                if (!mountedRef.current && !closedRef.current) onCloseRef.current();
+            });
+        };
     }, []);
     // takes the keys while it's open, typing still goes to its fields
     useModal("color_picker", { cancel: () => onCloseRef.current() }, true, { passthrough: true });

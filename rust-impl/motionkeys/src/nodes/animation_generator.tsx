@@ -25,16 +25,20 @@ export const overlapModes = [
     { id: "crossfade", name: "Crossfade" },
 ];
 
-// a slider drag: its undo step, the value waiting to be sent and the last one sent
-type Drag = { txn: string; pending: number | null; sent: Promise<unknown> };
+// a slider drag: its undo step, the value waiting to be sent, the last one sent and whether it's still on its way
+type Drag = { txn: string; pending: number | null; sent: Promise<unknown>; sending: boolean };
 
 // a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
 // that isn't a number is put back
 function NumberField({ value, onCommit, ...props }: { value: number | undefined; onCommit: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
     const [text, setText] = useState<string | number>(value ?? "");
     useEffect(() => setText(value ?? ""), [value]);
-    const commit = () => {
-        if (text === "") {
+    const commit = (e: React.FocusEvent<HTMLInputElement>) => {
+        // a number half typed ("-", "1e", ".") reads as empty, it's put back instead of unsetting
+        if (e.currentTarget.validity.badInput) {
+            e.currentTarget.value = String(value ?? "");
+            setText(value ?? "");
+        } else if (text === "") {
             onCommit(null);
         } else if (!isNaN(Number(text))) {
             onCommit(Number(text));
@@ -68,9 +72,10 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         setName(data.inputs?.name || "");
     }, [data.inputs?.name]);
 
+    // only a change is sent, emptied unsets it
     const handleUpdate = useCallback(() => {
-        setInputs(id, { name });
-    }, [id, name, setInputs]);
+        if (name !== (data.inputs?.name || "")) setInputs(id, { name: name === "" ? null : name });
+    }, [id, name, data.inputs?.name, setInputs]);
 
     const nameComponent = (
         <>
@@ -135,10 +140,19 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         if (!dragRef.current) setIntensity(data.inputs?.velocity_intensity ?? 0);
     }, [data.inputs?.velocity_intensity]);
 
-    // send the value waiting, in the drag's undo step
-    const flushIntensity = (drag: Drag) => {
-        if (drag.pending !== null) drag.sent = setInputs(id, { velocity_intensity: drag.pending }, { txn: drag.txn });
+    // send the value waiting, in the drag's undo step. one send at a time, the latest value goes out when the one before
+    // it lands, so a slow backend doesn't queue up a send per frame
+    const flushIntensity = (drag: Drag): Promise<unknown> => {
+        if (drag.pending === null || drag.sending) return drag.sent;
+        const value = drag.pending;
         drag.pending = null;
+        drag.sending = true;
+        drag.sent = setInputs(id, { velocity_intensity: value }, { txn: drag.txn }).finally(() => {
+            drag.sending = false;
+            // only a value that came meanwhile, `drag.sent` is this promise itself and waiting on it never ends
+            return drag.pending !== null ? flushIntensity(drag) : undefined;
+        });
+        return drag.sent;
     };
     const changeIntensity = (value: number) => {
         setIntensity(value);
@@ -159,7 +173,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         flushIntensity(drag);
         drag.sent.finally(() => end(drag.txn));
     };
-    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" value={intensity} onChange={changeIntensity} onStart={() => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve() })} onEnd={endIntensityDrag} />;
+    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" value={intensity} onChange={changeIntensity} onStart={() => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve(), sending: false })} onEnd={endIntensityDrag} />;
 
     const uiInject = {
         name: nameComponent,

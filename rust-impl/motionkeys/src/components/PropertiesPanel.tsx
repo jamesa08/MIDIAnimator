@@ -8,6 +8,7 @@ import { ERROR_KEY } from "./nodegraph/ErrorBadge";
 import { usePanelGroups } from "./PanelBody";
 import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
+import { groupPick } from "../nodes/keyframes_from_object";
 import SceneTree from "./SceneTree";
 import ExpressionField from "./ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
@@ -23,8 +24,8 @@ type ParamContext = { node: any; executed: any };
 type Option = { value: string; label: string };
 
 // an input with an editor of its own instead of the one its type gets, like the widget on the node. `shown` hides it
-// like the node does
-type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[] } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" });
+// like the node does. a select's `set` is what picking sets when it changes other inputs too, like the node's dropdown
+type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } | { kind: "number" } | { kind: "number_list" } | { kind: "select"; options: (ctx: ParamContext) => Option[]; set?: (value: string, ctx: ParamContext) => Record<string, any> } | { kind: "midi_file" } | { kind: "expression"; vars: "mapper" });
 
 // the names of a list of named things, a mistyped connection can hand over anything
 const list = (items: any): any[] => (Array.isArray(items) ? items : []);
@@ -35,7 +36,7 @@ const PARAMS: Record<string, Param[]> = {
     get_midi_file: [{ id: "file_path", kind: "midi_file" }],
     get_midi_track_data: [{ id: "track_name", kind: "select", options: ({ executed }) => names(executed?.tracks) }],
     keyframes_from_object: [
-        { id: "object_group_name", kind: "select", options: ({ executed }) => groupOptions(list(executed?.object_groups)) },
+        { id: "object_group_name", kind: "select", options: ({ executed }) => groupOptions(list(executed?.object_groups)), set: (value, { executed }) => groupPick(list(executed?.object_groups), value) },
         { id: "object_name", kind: "select", options: ({ node, executed }) => objectOptions(list(findGroup(list(executed?.object_groups), node.data?.inputs?.object_group_name)?.objects)) },
     ],
     assign_notes_to_objects: [
@@ -365,8 +366,9 @@ function Properties() {
             // lists are compared by what's in them
             const mixed = values.some((v) => JSON.stringify(v) !== JSON.stringify(values[0]));
             const value = mixed ? undefined : values[0];
-            // an emptied text input is unset like a number, so it's left to the node's default
-            const set = (v: any) => edit((node) => ({ op: "set_inputs", node: node.id, inputs: { [param.id]: v === "" ? null : v } }));
+            // an emptied text input is unset like a number, so it's left to the node's default. a pick that changes other
+            // inputs too sets them with it, from each node's own last run
+            const set = (v: any) => edit((node) => ({ op: "set_inputs", node: node.id, inputs: param.kind === "select" && param.set ? param.set(v, { node, executed: executedInputs[node.id] }) : { [param.id]: v === "" ? null : v } }));
             let field: ReactNode;
             switch (param.kind) {
                 case "text":
@@ -525,9 +527,10 @@ function Properties() {
         );
     }
 
-    // fields start over when the selection changes
+    // fields start over when the selection changes, or the graph it's in (another tab, a group): node ids repeat across
+    // them, so what's typed for one node never lands on another with its id
     return (
-        <div key={selected.map((node) => node.id).join(",")} className="properties">
+        <div key={`${state.active_tab ?? ""}\n${path}\n${selected.map((node) => node.id).join(",")}`} className="properties">
             {body}
         </div>
     );

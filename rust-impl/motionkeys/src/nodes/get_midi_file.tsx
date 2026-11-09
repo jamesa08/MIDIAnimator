@@ -7,15 +7,19 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 
+// no stats, none show until the node has run
+const NO_STATS = { tracks: 0, minutes: "0:00" };
+
 function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const nodeData = useNodeSpec("get_midi_file");
-    const [file, setFile] = useState("");
-    const fileName = file.split("/").pop();
+    // the file the node has, however it was set (here, Properties, MCP, undo)
+    const filePath = data.inputs?.file_path;
+    const fileName = typeof filePath === "string" ? filePath.split("/").pop() : "";
 
-    const [fileStatsState, setFileStatsState] = useState<any>({ tracks: 0, minutes: "0:00" });
+    const [fileStatsState, setFileStatsState] = useState<any>(NO_STATS);
 
     useEffect(() => {
         var fileStats: any = {};
@@ -33,20 +37,16 @@ function get_midi_file({ id, data, isConnectable }: { id: any; data: any; isConn
             // state.executed_results[id]["stats"].split("\n").foreach((line: any) => {
             //     invoke("log", { message: JSON.stringify(line) });
             // });
+        } else {
+            // not run, or the run stopped before it: no stats left over from another file
+            setFileStatsState(NO_STATS);
         }
     }, [state.executed_results]);
-
-    useEffect(() => {
-        if (data.inputs?.file_path) {
-            setFile(data.inputs.file_path);
-        }
-    }, []);
 
     const pick = useCallback(async () => {
         let res = await onMIDIFilePick();
         if (res != null) {
             console.log("updating data{} object");
-            setFile(res.toString());
             setInputs(id, { file_path: res.toString() });
         }
     }, [id, setInputs]);

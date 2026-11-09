@@ -48,6 +48,8 @@ function NumberBox({ value, onCommit, width, className, readOnly, integer }: { v
     const [text, setText] = useState(short(value));
     useEffect(() => setText(short(value)), [value]);
     const commit = () => {
+        // the box shows the value rounded, left as it showed (or put back with escape) it's no edit
+        if (text === short(value)) return;
         const n = Number(text);
         if (text.trim() === "" || !Number.isFinite(n) || (integer && !Number.isInteger(n))) setText(short(value));
         else if (n !== value) onCommit(n);

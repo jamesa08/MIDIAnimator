@@ -4,9 +4,12 @@ import BaseNode from "./BaseNode";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useSetInputs } from "../utils/graphOps";
+import { useGroupContext } from "../contexts/GroupContext";
+import { withSelected } from "./keyframes_from_object";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
+    const { scopeId } = useGroupContext();
     const nodeData = useNodeSpec("get_midi_track_data");
     const { backEndState: state } = useStateContext();
 
@@ -19,23 +22,34 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
     // the track name that is currently set on the node
     const selectedTrackName: string = data.inputs?.track_name ?? "";
 
-    // only pick a track automatically when none is set or the set one doesn't exist in the tracks, not an undo step.
-    // the names are joined in the deps so this only re-runs when the track list actually changes
+    // a track is picked automatically only while none is, not an undo step. a pick the file doesn't have is kept (it's
+    // listed below), undo can put back the file it's from. not in a group's graph: the tracks are from one group node's
+    // run, the graph is every group node's. the names are joined in the deps so this only re-runs when the track list
+    // actually changes
     useEffect(() => {
-        if (trackNames.length > 0 && !trackNames.includes(selectedTrackName)) {
+        if (scopeId === null && !selectedTrackName && trackNames.length > 0) {
             setInputs(id, { track_name: trackNames[0] }, { commitToHistory: false });
         }
-    }, [trackNames.join("\n"), selectedTrackName]);
+    }, [trackNames.join("\n"), selectedTrackName, scopeId, setInputs]);
+
+    // a pick the file doesn't have shows as it is, nothing picked shows empty, so picking any track changes it
+    const trackChoices = withSelected(
+        trackNames.map((track) => ({ value: track, label: track })),
+        selectedTrackName
+    );
 
     const trackNameComponent = (
         <>
             <select className="node-field nodrag nopan" value={selectedTrackName} onChange={(event) => setInputs(id, { track_name: event.target.value })}>
-                {trackNames.length > 0 ? (
-                    trackNames.map((track, index) => (
-                        <option key={index} value={track}>
-                            {track}
-                        </option>
-                    ))
+                {trackChoices.length > 0 ? (
+                    <>
+                        {!selectedTrackName && <option value="" />}
+                        {trackChoices.map((track, index) => (
+                            <option key={index} value={track.value}>
+                                {track.label}
+                            </option>
+                        ))}
+                    </>
                 ) : (
                     <option value={selectedTrackName}>No track names found</option>
                 )}

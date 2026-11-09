@@ -13,6 +13,13 @@ import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
 // group's list, `label`: the output's name
 type Channel = { id: string; group: string; name: string; label: string };
 
+// a pick the scene (or the file) doesn't have (anymore) stays listed, so the dropdown shows it and picking a real one
+// changes it
+export const withSelected = (options: { value: string; label: string }[], selected: string) => (!selected || options.some((o) => o.value === selected) ? options : [{ value: selected, label: selected }, ...options]);
+
+// what picking a group sets: the old group's object isn't in the new one, so the object goes back to the new group's first
+export const groupPick = (objectGroups: any[], groupName: string) => ({ object_group_name: groupName, object_name: findGroup(objectGroups, groupName)?.objects?.[0]?.id ?? "" });
+
 function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const { scopeId, editable } = useGroupContext();
@@ -39,8 +46,6 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     const pickedObject = findObject(groupObjects, data.inputs?.object_name);
     const selectedObjectName: string = (pickedObject ? pickedObject.id : data.inputs?.object_name) || objects[0]?.value || "";
 
-    // a pick the scene doesn't have (anymore) stays listed, so the dropdown shows it and picking a real one changes it
-    const withSelected = (options: { value: string; label: string }[], selected: string) => (!selected || options.some((o) => o.value === selected) ? options : [{ value: selected, label: selected }, ...options]);
     const groupChoices = withSelected(groups, selectedGroupName);
     const objectChoices = withSelected(objects, selectedObjectName);
 
@@ -78,11 +83,12 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     useEffect(() => {
         console.log("state.executed_results[id] changed:", state?.executed_results?.[id]);
-        // filled in automatically, not an undo step
+        // filled in automatically, not an undo step. the stored picks are in the deps so it fills again once they're
+        // unset (undo, MCP), and setInputs so it does once the graph can be edited (Make Local)
         if ((selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) || (selectedObjectName && selectedObjectName !== data.inputs?.object_name)) {
             setInputs(id, { object_group_name: selectedGroupName, object_name: selectedObjectName }, { commitToHistory: false });
         }
-    }, [selectedGroupName, selectedObjectName]);
+    }, [selectedGroupName, selectedObjectName, data.inputs?.object_group_name, data.inputs?.object_name, setInputs]);
 
     // MARK: - Channels
 
@@ -166,10 +172,9 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         </div>
     );
 
-    // the old group's object isn't in the new one, so the object goes back to the new group's first
+    // the object goes back to the new group's first, like in Properties
     const changeGroup = (groupName: string) => {
-        const firstObject = findGroup(objectGroups, groupName)?.objects?.[0]?.id ?? "";
-        setInputs(id, { object_group_name: groupName, object_name: firstObject });
+        setInputs(id, groupPick(objectGroups, groupName));
     };
 
     const objectGroupNameComponent = (

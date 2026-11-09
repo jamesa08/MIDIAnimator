@@ -9,6 +9,7 @@ import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";
 import { findGroup, groupKey, groupOptions } from "../utils/objectGroups";
 import { mapView } from "../utils/noteMap";
+import { withSelected } from "./keyframes_from_object";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
@@ -32,13 +33,16 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     // the pick is the group's id, a pick saved before groups had ids is its name and turns into the id
     const pickedGroup = findGroup(objectGroups, data.inputs?.object_group_name);
     const selectedGroupName: string = (pickedGroup ? groupKey(pickedGroup) : data.inputs?.object_group_name) || groups[0]?.value || "";
+    // a group the scene doesn't have (anymore) is listed too, so picking a real one changes it
+    const groupChoices = withSelected(groups, selectedGroupName);
 
-    // the first group is picked until one is, filled in automatically, not an undo step
+    // the first group is picked until one is, filled in automatically, not an undo step. the stored pick is in the deps
+    // so it fills again once it's unset (undo, MCP), and setInputs so it does once the graph can be edited (Make Local)
     useEffect(() => {
         if (!preview && selectedGroupName && selectedGroupName !== data.inputs?.object_group_name) {
             setInputs(id, { object_group_name: selectedGroupName }, { commitToHistory: false });
         }
-    }, [selectedGroupName]);
+    }, [selectedGroupName, data.inputs?.object_group_name, setInputs]);
 
     // the note list, typed in unless a connection gives it. stored edges are reversed, `source` is the node taking the value
     const notesConnected = useStore((s) => s.edges.some((e) => e.source === id && e.sourceHandle === "note_numbers"));
@@ -58,8 +62,8 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     const objectGroupNameComponent = (
         <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
-            {groups.length > 0 ? (
-                groups.map((group, i) => (
+            {groupChoices.length > 0 ? (
+                groupChoices.map((group, i) => (
                     <option key={i} value={group.value}>
                         {group.label}
                     </option>
