@@ -30,8 +30,10 @@ pub struct BlendKeyframe {
 pub struct AnimationGenerator {
     pub name: String,
     pub note_on_keyframes: Vec<AnimCurve>,
+    /// frames added to the note on curves' times, like the time mapper's frames
     pub note_on_anchor_point: f64,
     pub note_off_keyframes: Vec<AnimCurve>,
+    /// frames added to the note off curves' times
     pub note_off_anchor_point: f64,
     /// an expression giving each key's new time in frames, before the note's offset is added. empty changes nothing
     #[serde(default)]
@@ -259,7 +261,9 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
 
     // note on and note off curves on the same channel play on the same curve
     let mut channels: BTreeMap<&str, Vec<Key>> = BTreeMap::new();
-    for (curves, offset) in [(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point), (&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point)] {
+    // anchor points are in frames, the note's times are seconds
+    let fps = ctx.fps();
+    for (curves, offset) in [(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point / fps), (&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point / fps)] {
         for curve in curves {
             // seconds, not frames, so timing follows the music rather than frame numbers
             let keys = note_keyframes(curve, offset, note.velocity, gen.velocity_intensity, mappers, vars.as_mut(), ctx.fps())?;

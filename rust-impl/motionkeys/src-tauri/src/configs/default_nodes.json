@@ -182,7 +182,7 @@
                         "default": 0,
                         "name": "Note On Anchor Point",
                         "data_type": "f64",
-                        "description": "Time offset added to every note-on keyframe."
+                        "description": "Frames added to every note-on keyframe's time."
                     },
                     {
                         "id": "note_off_keyframes",
@@ -196,7 +196,7 @@
                         "default": 0,
                         "name": "Note Off Anchor Point",
                         "data_type": "f64",
-                        "description": "Time offset added to every note-off keyframe."
+                        "description": "Frames added to every note-off keyframe's time."
                     },
                     {
                         "id": "time_mapper",

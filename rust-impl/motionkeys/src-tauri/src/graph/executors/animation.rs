@@ -116,9 +116,9 @@ pub fn object_channels(object: &Object) -> Vec<ChannelOption> {
 /// inputs:
 /// "name": `String`,
 /// "note_on_keyframes": `Array<FCurveData>`, multi, each curve plays on its own channel,
-/// "note_on_anchor_point": `f64`,
+/// "note_on_anchor_point": `f64`, frames
 /// "note_off_keyframes": `Array<FCurveData>`, multi,
-/// "note_off_anchor_point": `f64`,
+/// "note_off_anchor_point": `f64`, frames
 /// "time_mapper": `String`, an expression (utils/mapper.rs), typed in or from a Note Table,
 /// "amplitude_mapper": `String`,
 /// "velocity_intensity": `f64`,
@@ -199,8 +199,10 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
 
     // the mappers compile once here, a mistake in one fails this node
     let mappers = generator.mappers()?;
-    if mappers.needs_fps() && scene_fps().is_none() {
-        console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': no scene frame rate, the mappers assume {} fps", generator.name, DEFAULT_FPS));
+    // anchor points are frames too
+    let anchored = generator.note_on_anchor_point != 0.0 || generator.note_off_anchor_point != 0.0;
+    if (mappers.needs_fps() || anchored) && scene_fps().is_none() {
+        console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': no scene frame rate, the mappers and anchor points assume {} fps", generator.name, DEFAULT_FPS));
     }
 
     let mut outputs = Outputs::new();

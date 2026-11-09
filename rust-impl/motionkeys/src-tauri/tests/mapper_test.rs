@@ -143,8 +143,8 @@ fn velocity_is_applied_after_the_amplitude_mapper() {
 
 #[test]
 fn mappers_run_before_the_note_offset_and_anchor() {
-    // x is relative to the curve: a note at 2 s with an anchor of 0.5 s still sees x = 0 for its first key
-    let gen = generator(json!({ "amplitude_mapper": "x + 7", "note_on_anchor_point": 0.5 })).unwrap();
+    // x is relative to the curve: a note at 2 s with an anchor of 12 frames (0.5 s at 24 fps) still sees x = 0 for its first key
+    let gen = generator(json!({ "amplitude_mapper": "x + 7", "note_on_anchor_point": 12.0 })).unwrap();
     let keys = play(&gen, &[note(60, 127, 2.0, 2.1)], Some(24.0)).unwrap();
     assert_eq!(pairs(&keys)[0], (2.5, 7.0));
 }

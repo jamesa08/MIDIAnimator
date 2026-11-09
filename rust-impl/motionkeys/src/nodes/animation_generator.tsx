@@ -177,8 +177,8 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
             </div>
         );
 
-    // an anchor point is typed in unless something is connected to it, in seconds from the note on or off
-    const anchorComponent = (input: "note_on_anchor_point" | "note_off_anchor_point") => (connected.includes(input) ? <></> : <NumberField step="0.01" placeholder="0" value={data.inputs?.[input]} onCommit={(value) => setInputs(id, { [input]: value })} />);
+    // an anchor point is typed in unless something is connected to it, in frames from the note on or off
+    const anchorComponent = (input: "note_on_anchor_point" | "note_off_anchor_point") => (connected.includes(input) ? <></> : <NumberField step="1" placeholder="0" value={data.inputs?.[input]} onCommit={(value) => setInputs(id, { [input]: value })} />);
 
     // velocity intensity from 0 to 1
     const intensity = useSliderInput(id, "velocity_intensity", data.inputs?.velocity_intensity);
