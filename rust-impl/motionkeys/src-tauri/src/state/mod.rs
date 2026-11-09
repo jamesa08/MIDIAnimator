@@ -1067,8 +1067,8 @@ pub async fn link(id: String) -> Result<(), String> {
         let Some(instance) = state.instance_mut(&id) else {
             return Ok(());
         };
-        // Blender's scene only has the curves its tracker watches, the tab keeps its own until the run fetches them again
-        carry_over_curves(&instance.scene, &mut fresh, &BTreeSet::new());
+        // Blender's scene has no curves, the tab keeps its own until the run fetches them again
+        carry_over_curves(&instance.scene, &mut fresh);
         if compare_scene_data(instance.scene.as_ref(), &fresh).has_changes() {
             instance.pending_scene = Some(fresh);
             instance.execution_paused = true;

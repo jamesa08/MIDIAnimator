@@ -54,10 +54,10 @@ pub fn merge_curves(scene: &mut Option<Scene>, curves: &HashMap<String, Vec<Anim
     }
 }
 
-/// a new scene from Blender only has the curves of the objects its tracker watches. the others keep the ones they had
-/// (until the project is saved, see `prune_curves`)
-pub fn carry_over_curves(old: &Option<Scene>, new: &mut Scene, watched: &BTreeSet<String>) {
-    let kept: HashMap<String, Vec<AnimCurve>> = old.iter().flat_map(Scene::objects).filter(|object| !object.anim_curves.is_empty() && !watched.contains(&object.id)).map(|object| (object.id.clone(), object.anim_curves.clone())).collect();
+/// a new scene from the bridge has no curves, they come in watch replies and curves messages. every object keeps the
+/// ones it had (an object the graph stopped reading until the project is saved, see `prune_curves`)
+pub fn carry_over_curves(old: &Option<Scene>, new: &mut Scene) {
+    let kept: HashMap<String, Vec<AnimCurve>> = old.iter().flat_map(Scene::objects).filter(|object| !object.anim_curves.is_empty()).map(|object| (object.id.clone(), object.anim_curves.clone())).collect();
     for object in new.objects_mut() {
         if object.anim_curves.is_empty() {
             if let Some(curves) = kept.get(&object.id) {

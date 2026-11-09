@@ -168,6 +168,28 @@ fn scene_update_while_paused_is_pending() {
 }
 
 #[test]
+fn scene_update_keeps_the_curves_of_watched_objects() {
+    let _guard = lock_test();
+    *STATE.lock().unwrap() = linked_state();
+    apply_scene_update(scene_json(&["Pianos"], 2)).unwrap();
+    let watched = "Pianos_obj_0 \"}".to_string();
+    {
+        // the graph reads the first object, its curves came in the watch reply
+        let mut state = STATE.lock().unwrap();
+        state.watched_curves = Some([watched.clone()].into());
+        let curve = serde_json::from_value(json!({"channel": "location[0]", "keys": [[0.0, 1.0, "linear"]]})).unwrap();
+        let object = state.active_mut().scene.as_mut().unwrap().objects_mut().find(|object| object.id == watched).unwrap();
+        object.anim_curves = vec![curve];
+    }
+
+    // scenes never carry curves (writing keys sends one), the tab keeps the ones it has
+    apply_scene_update(scene_json(&["Pianos"], 2)).unwrap();
+    let state = STATE.lock().unwrap();
+    let curves: Vec<(String, usize)> = state.active().scene.as_ref().unwrap().objects().map(|object| (object.id.clone(), object.anim_curves.len())).collect();
+    assert_eq!(curves, vec![(watched, 1), ("Pianos_obj_1 \"}".to_string(), 0)]);
+}
+
+#[test]
 fn switching_to_a_different_scene_pauses_for_review() {
     let _guard = lock_test();
     *STATE.lock().unwrap() = linked_state();

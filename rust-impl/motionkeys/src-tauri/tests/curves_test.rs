@@ -56,19 +56,19 @@ fn merge_curves_sets_the_objects_given() {
 }
 
 #[test]
-fn carry_over_keeps_curves_of_objects_not_watched() {
+fn carry_over_keeps_the_curves_of_every_object() {
     let old = Some(scene(&[("bounce", Some(1.0)), ("hit", Some(2.0)), ("Cube_60", None)]));
-    // hit is watched, Blender's scene has its curves (here: none left, its keys were deleted)
+    // the bridge's scene has no curves, watched objects' too
     let mut new = scene(&[("bounce", None), ("hit", None), ("Cube_60", None)]);
-    carry_over_curves(&old, &mut new, &names(&["hit"]));
-    assert_eq!(values(&new), vec![("bounce".to_string(), 1.0)]);
+    carry_over_curves(&old, &mut new);
+    assert_eq!(values(&new), vec![("bounce".to_string(), 1.0), ("hit".to_string(), 2.0)]);
 }
 
 #[test]
 fn carry_over_keeps_the_new_curves_it_has() {
     let old = Some(scene(&[("bounce", Some(1.0))]));
     let mut new = scene(&[("bounce", Some(3.0))]);
-    carry_over_curves(&old, &mut new, &BTreeSet::new());
+    carry_over_curves(&old, &mut new);
     assert_eq!(values(&new), vec![("bounce".to_string(), 3.0)]);
 }
 

@@ -441,12 +441,11 @@ pub fn apply_scene_update(body: Value) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let shown = state.active_instance_id == id;
-    let watched = state.watched_curves.clone().unwrap_or_default();
     let Some(instance) = state.instance_mut(&id) else {
         return Ok(None);
     };
-    // only the watched objects come with their curves
-    carry_over_curves(&instance.scene, &mut scene, &watched);
+    // the scene has no curves, they come in watch replies and curves messages
+    carry_over_curves(&instance.scene, &mut scene);
     let switched = instance.scene.as_ref().is_some_and(|old| old.key() != scene.key());
     if switched && compare_scene_data(instance.scene.as_ref(), &scene).has_changes() {
         instance.execution_paused = true;
