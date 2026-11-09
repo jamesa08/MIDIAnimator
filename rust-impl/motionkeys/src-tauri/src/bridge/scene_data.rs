@@ -1,14 +1,14 @@
 use crate::graph::execute::run_instance;
 use crate::ipc;
 use crate::scene_generics::{ObjectGroup, Scene};
-use crate::state::{lock, update_state};
+use crate::state::{lock, update_state, AppState};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashSet;
 
-/// the scene the user is working in, from the bridge
+/// the scene the user is working in, from the bridge: its reply, or a scene it sent unasked after the reply
 pub async fn get_scene() -> Result<Scene, String> {
-    let body = ipc::request("get_scene", json!({})).await?;
+    let body = ipc::request_scene().await?;
     let mut scene: Scene = serde_json::from_value(body).map_err(|e| format!("couldn't read the scene {} sent: {e}", ipc::app_name()))?;
     (scene.app, scene.app_name) = connected_app();
     Ok(scene)
@@ -149,11 +149,21 @@ pub fn compare_scene_data(saved: Option<&Scene>, fresh: &Scene) -> SceneDiff {
 
 // the review of scene changes, for the tab on screen: Blender's scene differed from the tab's when it went live
 
-/// what differs between the scene the tab on screen has and the one waiting for review
+/// refuses a command the frontend sent for `tab` when another tab is on screen by now (MCP switched tabs), so it isn't
+/// applied to the wrong one. none is the tab on screen
+pub fn on_screen(state: &AppState, tab: Option<&str>) -> Result<(), String> {
+    match tab {
+        Some(tab) if tab != state.active_instance_id => Err(format!("{} isn't the tab on screen", tab)),
+        _ => Ok(()),
+    }
+}
+
+/// what differs between the scene the tab on screen (`tab`) has and the one waiting for review
 #[tauri::command]
-pub async fn check_scene_changes() -> Result<SceneDiff, String> {
+pub async fn check_scene_changes(tab: Option<String>) -> Result<SceneDiff, String> {
     let scenes = {
         let mut state = lock();
+        on_screen(&state, tab.as_deref())?;
         let instance = state.active_mut();
         if !instance.execution_paused {
             return Err("No validation pending".to_string());
@@ -178,11 +188,12 @@ pub async fn check_scene_changes() -> Result<SceneDiff, String> {
     }
 }
 
-/// the tab on screen takes the scene waiting for review and runs again
+/// the tab on screen (`tab`) takes the scene waiting for review and runs again
 #[tauri::command]
-pub async fn accept_scene_changes() -> Result<(), String> {
+pub async fn accept_scene_changes(tab: Option<String>) -> Result<(), String> {
     let (id, accepted) = {
         let mut state = lock();
+        on_screen(&state, tab.as_deref())?;
         let instance = state.active_mut();
         let accepted = match instance.pending_scene.take() {
             Some(scene) => {
@@ -204,10 +215,14 @@ pub async fn accept_scene_changes() -> Result<(), String> {
     }
 }
 
-/// drops the scene waiting for review, the tab on screen stays paused with the scene it had
+/// drops the scene waiting for review, the tab on screen (`tab`) stays paused with the scene it had
 #[tauri::command]
-pub fn reject_scene_changes() -> Result<(), String> {
-    lock().active_mut().pending_scene = None;
+pub fn reject_scene_changes(tab: Option<String>) -> Result<(), String> {
+    {
+        let mut state = lock();
+        on_screen(&state, tab.as_deref())?;
+        state.active_mut().pending_scene = None;
+    }
     update_state();
     Ok(())
 }

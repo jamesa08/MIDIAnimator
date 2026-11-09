@@ -919,6 +919,9 @@ pub async fn link(id: String) -> Result<(), String> {
     }
     update_state();
 
+    // scenes Blender sends unasked wait until the reply below is in place, so a newer one isn't compared against or
+    // overwritten by the older reply
+    let held = crate::ipc::hold_scenes();
     // the tab stays live when Blender doesn't answer, the tracker's next update brings the scene
     let mut fresh = get_scene().await?;
     let run = {
@@ -942,6 +945,8 @@ pub async fn link(id: String) -> Result<(), String> {
             !instance.execution_paused
         }
     };
+    // the state isn't held any more, a scene held back applies now
+    drop(held);
     update_state();
     if run {
         run_instance(id, true).await;

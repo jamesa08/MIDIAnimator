@@ -343,16 +343,18 @@ fn tool_error(text: impl Into<String>) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![ContentBlock::text(text)]))
 }
 
-/// runs `execute_graph` in its own task so a panicking executor turns into an error message instead
+/// runs `execute_graph` in its own task so a panicking executor turns into an error message instead, and a run that
+/// didn't happen into its reason
 async fn run_execution(realtime: bool) -> Result<(), String> {
-    tokio::spawn(execute_graph(realtime)).await.map_err(|e| {
+    let ran = tokio::spawn(execute_graph(realtime, None)).await.map_err(|e| {
         // pull the panic message out
         if e.is_panic() {
             format!("execution failed: {}", panic_message(&e.into_panic()))
         } else {
             format!("execution failed: {}", e)
         }
-    })
+    })?;
+    ran.map(|_| ())
 }
 
 /// runs the realtime graph of the tab on screen unless execution is paused, returns a one-line status

@@ -10,15 +10,15 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, Once, PoisonError};
 use std::thread;
 use std::time::Duration;
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::bridge::curves::carry_over_curves;
 use crate::bridge::scene_data::compare_scene_data;
-use crate::graph::execute::run_instance;
+use crate::graph::execute::{forget_writes, run_instance};
 use crate::graph::executors::scene::NOT_CONNECTED;
 use crate::scene_generics;
 use crate::settings::get_setting;
@@ -121,8 +121,8 @@ struct Server {
     bridge: Option<Bridge>,
     /// every open connection, ones that haven't said hello yet too, so `disconnect` closes them all
     connections: HashMap<u64, TcpStream>,
-    /// requests waiting for their reply, by id
-    pending: HashMap<String, mpsc::Sender<Envelope>>,
+    /// requests waiting for their reply, by id. the reply comes with its arrival number (`ARRIVALS`)
+    pending: HashMap<String, oneshot::Sender<(u64, Envelope)>>,
 }
 
 static SERVER: Lazy<Mutex<Server>> = Lazy::new(|| {
@@ -138,6 +138,62 @@ fn server() -> MutexGuard<'static, Server> {
 }
 
 static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
+
+// numbers the messages from the bridge in the order they came, so a reply and a message sent unasked after it are
+// applied in that order (`request_scene`, `bridge::curves`)
+static ARRIVALS: AtomicU64 = AtomicU64::new(1);
+
+/// scenes the bridge sent unasked while a get_scene request waited for its reply. they're held back so the reply and
+/// they apply in the order they came: the request returns the newest scene that came after its reply instead of it,
+/// and a held scene no request returned applies once none waits
+struct SceneHold {
+    /// get_scene requests (and callers of `hold_scenes`) waiting
+    waiting: usize,
+    /// the newest scene held back, with its arrival number
+    newest: Option<(u64, Value)>,
+    /// the arrival number of the newest scene a request returned, a held scene no newer than it is done with
+    returned: u64,
+}
+
+static SCENE_HOLD: Mutex<SceneHold> = Mutex::new(SceneHold {
+    waiting: 0,
+    newest: None,
+    returned: 0,
+});
+
+fn scene_hold() -> MutexGuard<'static, SceneHold> {
+    SCENE_HOLD.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// holds back the scenes the bridge sends unasked until it's dropped, see `SceneHold`
+pub struct HeldScenes(());
+
+/// holds back the scenes the bridge sends unasked while it's kept: a caller comparing the reply of a get_scene request
+/// with a tab's scene keeps it until it has put the reply in place, a scene sent after the reply then applies after it.
+/// drop it without holding the state, the scene held back applies then
+pub fn hold_scenes() -> HeldScenes {
+    scene_hold().waiting += 1;
+    HeldScenes(())
+}
+
+impl Drop for HeldScenes {
+    fn drop(&mut self) {
+        // the last hold lets go of the newest scene held back, unless a request returned it or a newer one
+        let left = {
+            let mut hold = scene_hold();
+            hold.waiting -= 1;
+            if hold.waiting > 0 {
+                None
+            } else {
+                let returned = hold.returned;
+                hold.newest.take().filter(|(arrival, _)| *arrival > returned)
+            }
+        };
+        if let Some((_, body)) = left {
+            apply_scene_message(body);
+        }
+    }
+}
 
 pub static DEFAULT_PORT: u16 = 6577;
 
@@ -253,9 +309,14 @@ impl From<RequestError> for String {
 /// sends a request to the connected bridge and waits for its reply's body, as long as its timeout setting says. an
 /// error reply, no bridge, a timeout or a disconnect are errors
 pub async fn request(kind: &str, body: Value) -> Result<Value, RequestError> {
+    request_numbered(kind, body).await.map(|(_, body)| body)
+}
+
+/// `request`, with the reply's arrival number: a message from the bridge with a higher one came after the reply
+pub async fn request_numbered(kind: &str, body: Value) -> Result<(u64, Value), RequestError> {
     let timeout = timeout(kind);
     let envelope = Envelope::new(kind, body, None);
-    let (tx, rx) = mpsc::channel();
+    let (tx, rx) = oneshot::channel();
     let (writer, app_name) = {
         let mut server = server();
         let Some(bridge) = &server.bridge else {
@@ -273,20 +334,35 @@ pub async fn request(kind: &str, body: Value) -> Result<Value, RequestError> {
         log(format!("couldn't send the {kind} request to the bridge: {e}"));
         return Err(RequestError::Failed(format!("couldn't send to {app_name}: {e}")));
     }
-    let reply = rx.recv_timeout(timeout);
+    // waited for without holding up the thread, a write can take a minute
+    let reply = tokio::time::timeout(timeout, rx).await;
     server().pending.remove(&envelope.id);
     match reply {
-        Ok(reply) if reply.kind == "error" => Err(RequestError::Failed(error_text(&reply.body))),
-        Ok(reply) => Ok(reply.body),
-        Err(RecvTimeoutError::Timeout) => {
+        Ok(Ok((_, reply))) if reply.kind == "error" => Err(RequestError::Failed(error_text(&reply.body))),
+        Ok(Ok((arrival, reply))) => Ok((arrival, reply.body)),
+        Err(_) => {
             log(format!("the bridge didn't answer the {kind} request within {}s", timeout.as_secs()));
             Err(RequestError::Timeout(format!("{app_name} didn't answer within {}s", timeout.as_secs())))
         }
-        Err(RecvTimeoutError::Disconnected) => {
+        Ok(Err(_)) => {
             log(format!("the bridge disconnected before answering the {kind} request"));
             Err(RequestError::Failed(format!("{app_name} disconnected before answering")))
         }
     }
+}
+
+/// the bridge's scene (a get_scene request), the newest one: a scene it sent unasked after its reply takes the reply's
+/// place. the scenes it sends meanwhile are held back (`hold_scenes`)
+pub async fn request_scene() -> Result<Value, RequestError> {
+    let _held = hold_scenes();
+    let (arrival, body) = request_numbered("get_scene", json!({})).await?;
+    // a scene sent unasked after the reply is newer, it's returned instead
+    let mut hold = scene_hold();
+    let newer = hold.newest.as_ref().filter(|(newest, _)| *newest > arrival).map(|(newest, held)| (*newest, held.clone()));
+    let (returned, body) = newer.unwrap_or((arrival, body));
+    hold.returned = hold.returned.max(returned);
+    drop(hold);
+    Ok(body)
 }
 
 /// what an error message says: its message, and its detail (a traceback) under it
@@ -500,6 +576,8 @@ fn welcome(hello: &Hello, version: u32, connection: u64, writer: &Arc<Mutex<TcpS
     // scene writers that failed only because nothing was connected aren't red anymore
     state.clear_not_connected();
     drop(state);
+    // Blender may have changed meanwhile, what was written before isn't known to be there
+    forget_writes();
     update_state();
     tauri::async_runtime::spawn(relink());
 }
@@ -509,34 +587,58 @@ fn welcome(hello: &Hello, version: u32, connection: u64, writer: &Arc<Mutex<TcpS
 /// takes the hello fields an info event changes: the open file's name
 pub fn apply_info(body: &Value) {
     if let Some(file) = body.get("file").and_then(Value::as_str) {
-        STATE.lock().unwrap_or_else(PoisonError::into_inner).connected_file_name = file.to_string();
+        let opened = {
+            let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
+            let opened = state.connected_file_name != file;
+            state.connected_file_name = file.to_string();
+            opened
+        };
+        // another file doesn't have what was written to the one before
+        if opened {
+            forget_writes();
+        }
         update_state();
     }
 }
 
+// a scene the bridge sent unasked: the live tab takes it, and runs on it when it's on screen
+fn apply_scene_message(body: Value) {
+    match apply_scene_update(body) {
+        Ok(run) => {
+            update_state();
+            // run the realtime graph so nodes like Scene Link pick up the new scene
+            if let Some(id) = run {
+                tauri::async_runtime::spawn(run_instance(id, true));
+            }
+        }
+        Err(e) => log(format!("couldn't read the scene the bridge sent: {e}")),
+    }
+}
+
 fn handle_message(message: Envelope) {
+    let arrival = ARRIVALS.fetch_add(1, Ordering::Relaxed);
     if let Some(reply_to) = &message.reply_to {
         let waiting = server().pending.remove(reply_to);
         // the request may have timed out already
         if let Some(tx) = waiting {
-            tx.send(message).ok();
+            tx.send((arrival, message)).ok();
         }
         return;
     }
     match message.kind.as_str() {
-        "scene" => match apply_scene_update(message.body) {
-            Ok(run) => {
-                update_state();
-                // run the realtime graph so nodes like Scene Link pick up the new scene
-                if let Some(id) = run {
-                    tauri::async_runtime::spawn(run_instance(id, true));
-                }
+        "scene" => {
+            // held back while a get_scene request waits, the request decides which scene is the newest
+            let mut hold = scene_hold();
+            if hold.waiting > 0 {
+                hold.newest = Some((arrival, message.body));
+                return;
             }
-            Err(e) => log(format!("couldn't read the scene the bridge sent: {e}")),
-        },
+            drop(hold);
+            apply_scene_message(message.body);
+        }
         "info" => apply_info(&message.body),
         "curves" => {
-            let run = crate::bridge::curves::apply_curves_update(message.body);
+            let run = crate::bridge::curves::apply_curves_update(message.body, arrival);
             update_state();
             if let Some(id) = run {
                 tauri::async_runtime::spawn(run_instance(id, true));

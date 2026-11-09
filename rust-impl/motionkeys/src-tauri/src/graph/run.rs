@@ -225,6 +225,12 @@ impl Memo {
         self.hits
     }
 
+    /// forgets what the nodes writing to Blender last wrote, Blender may not have it anymore: they're all stale until
+    /// they write again
+    pub fn forget_writes(&mut self) {
+        self.written.clear();
+    }
+
     /// what the node at `path` gave last time, if it was given the same values
     fn hit(&mut self, path: &str, signature: &str, key: &Values) -> Option<&NodeMemo> {
         self.seen_nodes.insert(path.to_string());

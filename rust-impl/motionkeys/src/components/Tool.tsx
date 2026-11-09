@@ -177,7 +177,8 @@ function Tool({ type, onClick }: { type: string; onClick?: () => void }) {
                         alert("Execution paused: Validate scene data first");
                         return;
                     }
-                    invoke("execute_graph", { realtime: false });
+                    // the tab the button was shown for, the backend doesn't run another one MCP switched to meanwhile
+                    invoke("execute_graph", { realtime: false, tab: backEndState.active_tab }).catch((error) => console.error("Run failed:", error));
                 } else if (type == "save") {
                     try {
                         const path = await saveTab();

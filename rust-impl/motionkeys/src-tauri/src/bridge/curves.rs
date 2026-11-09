@@ -4,10 +4,12 @@
 // than the limit setting asks first
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::bridge::scene_data::on_screen;
 use crate::graph::execute::run_instance;
 use crate::graph::model::Graph;
 use crate::ipc;
@@ -18,6 +20,15 @@ use crate::utils::log::log;
 
 // the limit when the setting is missing or not a number
 const DEFAULT_KEYFRAME_IMPORT_LIMIT: u64 = 5000;
+
+// the arrival number (`ipc::request_numbered`) of the last curves message each object's curves came in, by id. a watch
+// reply that came before it has older curves for the object. only changed with the state locked, so a reply and a
+// curves message are applied in the order they came
+static CURVES_ARRIVED: Mutex<BTreeMap<String, u64>> = Mutex::new(BTreeMap::new());
+
+fn curves_arrived() -> MutexGuard<'static, BTreeMap<String, u64>> {
+    CURVES_ARRIVED.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// the most keyframes an object can have before importing it asks first
 pub fn keyframe_import_limit() -> u64 {
@@ -112,8 +123,9 @@ pub fn read_curves(objects: HashMap<String, Vec<Value>>) -> HashMap<String, Vec<
 }
 
 /// takes a curves message the bridge sent when watched objects' keys changed: their curves go into the linked tab's
-/// scene (its scene waiting for review too). the tab if it should run, like `ipc::apply_scene_update`
-pub fn apply_curves_update(body: Value) -> Option<String> {
+/// scene (its scene waiting for review too). the tab if it should run, like `ipc::apply_scene_update`. `arrival` is
+/// the message's arrival number
+pub fn apply_curves_update(body: Value, arrival: u64) -> Option<String> {
     let objects: HashMap<String, Vec<Value>> = body.get("objects").cloned().and_then(|objects| serde_json::from_value(objects).ok()).unwrap_or_default();
     let curves = read_curves(objects);
     let mut state = STATE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -128,6 +140,8 @@ pub fn apply_curves_update(body: Value) -> Option<String> {
     let instance = state.instance_mut(&id)?;
     merge_curves(&mut instance.scene, &curves);
     merge_curves(&mut instance.pending_scene, &curves);
+    // a watch reply that came before this message doesn't put its older curves back
+    curves_arrived().extend(curves.into_keys().map(|object| (object, arrival)));
     (shown && !instance.execution_paused).then_some(id)
 }
 
@@ -173,7 +187,7 @@ pub async fn sync_curves(id: &str) {
         (request, before)
     };
 
-    let response = match send_request(&request).await {
+    let (arrival, response) = match send_request(&request).await {
         Ok(response) => response,
         Err(e) => {
             // the next run tries again
@@ -196,7 +210,12 @@ pub async fn sync_curves(id: &str) {
     let Some(instance) = state.instance_mut(id) else {
         return;
     };
-    merge_curves(&mut instance.scene, &read_curves(response.objects));
+    // an object whose curves came in a curves message after the reply has newer ones already
+    let mut curves = read_curves(response.objects);
+    let arrived = curves_arrived();
+    curves.retain(|object, _| arrived.get(object).is_none_or(|newer| *newer < arrival));
+    drop(arrived);
+    merge_curves(&mut instance.scene, &curves);
     if !response.over_limit.is_empty() {
         instance.pending_curve_import = Some(response.over_limit);
     }
@@ -225,18 +244,20 @@ pub async fn unwatch_curves() {
     }
 }
 
-// the bridge's curves for the request
-async fn send_request(request: &CurveRequest) -> Result<CurveResponse, String> {
+// the bridge's curves for the request, with the reply's arrival number
+async fn send_request(request: &CurveRequest) -> Result<(u64, CurveResponse), String> {
     let body = serde_json::to_value(request).map_err(|e| e.to_string())?;
-    let reply = ipc::request("watch", body).await?;
-    serde_json::from_value(reply).map_err(|e| format!("couldn't read the keyframes {} sent: {e}", crate::ipc::app_name()))
+    let (arrival, reply) = ipc::request_numbered("watch", body).await?;
+    let response = serde_json::from_value(reply).map_err(|e| format!("couldn't read the keyframes {} sent: {e}", crate::ipc::app_name()))?;
+    Ok((arrival, response))
 }
 
-/// imports the objects over the keyframe limit waiting on the tab on screen, and runs it
+/// imports the objects over the keyframe limit waiting on the tab on screen (`tab`), and runs it
 #[tauri::command]
-pub async fn accept_curve_import() -> Result<(), String> {
+pub async fn accept_curve_import(tab: Option<String>) -> Result<(), String> {
     let id = {
         let mut state = lock();
+        on_screen(&state, tab.as_deref())?;
         let instance = state.active_mut();
         let pending = instance.pending_curve_import.take().ok_or("No keyframes waiting to be imported")?;
         instance.approved_curves.extend(pending.into_keys());
@@ -247,15 +268,17 @@ pub async fn accept_curve_import() -> Result<(), String> {
     Ok(())
 }
 
-/// leaves out the objects over the keyframe limit waiting on the tab on screen, until they're picked again
+/// leaves out the objects over the keyframe limit waiting on the tab on screen (`tab`), until they're picked again
 #[tauri::command]
-pub fn reject_curve_import() {
+pub fn reject_curve_import(tab: Option<String>) -> Result<(), String> {
     {
         let mut state = lock();
+        on_screen(&state, tab.as_deref())?;
         let instance = state.active_mut();
         if let Some(pending) = instance.pending_curve_import.take() {
             instance.declined_curves.extend(pending.into_keys());
         }
     }
     update_state();
+    Ok(())
 }

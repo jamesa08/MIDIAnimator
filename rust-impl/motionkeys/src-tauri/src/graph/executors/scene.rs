@@ -20,6 +20,8 @@ thread_local! {
     static CURVE_SOURCES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     // the objects and keyframes the run's scene writers wrote, together
     static WRITTEN: Cell<(usize, usize)> = const { Cell::new((0, 0)) };
+    // the objects the run's scene writers sent keyframes to, whether or not Blender said they went through
+    static WRITTEN_TO: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
 /// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene. `curve_sources` are
@@ -28,10 +30,12 @@ pub fn with_scene<T>(scene: Option<Scene>, curve_sources: BTreeSet<String>, f: i
     let before = SCENE.with(|current| current.replace(scene));
     let sources_before = CURVE_SOURCES.with(|current| current.replace(curve_sources));
     let written_before = WRITTEN.replace((0, 0));
+    let written_to_before = WRITTEN_TO.with(|current| current.take());
     let result = f();
     SCENE.with(|current| *current.borrow_mut() = before);
     CURVE_SOURCES.with(|current| *current.borrow_mut() = sources_before);
     WRITTEN.set(written_before);
+    WRITTEN_TO.with(|current| *current.borrow_mut() = written_to_before);
     result
 }
 
@@ -43,6 +47,11 @@ pub fn scene_fps() -> Option<f64> {
 /// how many objects and keyframes the scene writers wrote so far in the run `with_scene` is running
 pub fn written() -> (usize, usize) {
     WRITTEN.get()
+}
+
+/// the objects the scene writers sent keyframes to so far in the run `with_scene` is running
+pub fn written_objects() -> BTreeSet<String> {
+    WRITTEN_TO.with(|written| written.borrow().clone())
 }
 
 // Node: scene_link
@@ -103,12 +112,16 @@ fn write(keyframes: &HashMap<String, Vec<BlendKeyframe>>, clean_keyframes: bool)
     }
     let curves: HashMap<&String, Vec<AnimCurve>> = keyframes.iter().filter(|(name, _)| !sources.contains(*name)).map(|(name, keys)| (name, object_curves(keys))).collect();
     let totals = (curves.len(), curves.values().flatten().map(|curve| curve.keys.len()).sum::<usize>());
+    let objects: Vec<String> = curves.keys().map(|name| name.to_string()).collect();
     let keyframes = serde_json::to_value(curves).map_err(|e| e.to_string())?;
 
     // with nothing connected the write would wait out its timeout
     if !STATE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).connected {
         return Err(NOT_CONNECTED.to_string());
     }
+
+    // Blender may have their keyframes from now on, even when the write fails or isn't confirmed in time
+    WRITTEN_TO.with(|written| written.borrow_mut().extend(objects));
 
     // the write finishes before the node does
     let report = block_on(write_scene_data(keyframes, clean_keyframes)).map_err(|e| e.to_string())?;

@@ -24,6 +24,8 @@ function IPCLink() {
     const [menuShown, setMenuShown] = useState(false);
     const [showDiffModal, setShowDiffModal] = useState(false);
     const [sceneDiff, setSceneDiff] = useState(null);
+    // the tab whose scene changes are reviewed, accepting or rejecting acts on it
+    const [reviewTab, setReviewTab] = useState<string | null>(null);
 
     const linkRef = useRef<HTMLDivElement>(null);
     const labelRef = useRef<HTMLSpanElement>(null);
@@ -65,10 +67,23 @@ function IPCLink() {
 
     const disconnect = () => invoke("disconnect").catch((error) => console.error("Disconnect failed:", error));
 
+    const closeReview = () => {
+        setShowDiffModal(false);
+        setSceneDiff(null);
+        setReviewTab(null);
+    };
+
+    // the review is of the tab it was opened on, it closes when another tab is shown (MCP can switch tabs)
+    useEffect(() => {
+        if (reviewTab !== null && reviewTab !== state.active_tab) closeReview();
+    }, [state.active_tab, reviewTab]);
+
     const handleValidate = async () => {
+        const tab = state.active_tab;
         try {
-            const diff: any = await invoke("check_scene_changes");
+            const diff: any = await invoke("check_scene_changes", { tab });
             setSceneDiff(diff);
+            setReviewTab(tab);
             setShowDiffModal(true);
         } catch (error) {
             console.error("Validation failed:", error);
@@ -78,9 +93,8 @@ function IPCLink() {
 
     const handleAccept = async () => {
         try {
-            await invoke("accept_scene_changes");
-            setShowDiffModal(false);
-            setSceneDiff(null);
+            await invoke("accept_scene_changes", { tab: reviewTab });
+            closeReview();
             // State will update via backend's update_state() call
         } catch (error) {
             console.error("Accept failed:", error);
@@ -90,9 +104,8 @@ function IPCLink() {
 
     const handleReject = async () => {
         try {
-            await invoke("reject_scene_changes");
-            setShowDiffModal(false);
-            setSceneDiff(null);
+            await invoke("reject_scene_changes", { tab: reviewTab });
+            closeReview();
             alert("Changes rejected. Staying in paused mode with original scene data.");
         } catch (error) {
             console.error("Reject failed:", error);
@@ -100,9 +113,10 @@ function IPCLink() {
     };
 
     // links Blender to the tab on screen, it checks the scene first (see go_live in src-tauri/src/state/mod.rs)
-    // objects over the keyframe limit the graph picked, imported or left out (src-tauri/src/bridge/curves.rs)
-    const importCurves = () => invoke("accept_curve_import").catch((error) => console.error("Keyframe import failed:", error));
-    const skipCurves = () => invoke("reject_curve_import").catch((error) => console.error("Keyframe import failed:", error));
+    // objects over the keyframe limit the graph picked, imported or left out (src-tauri/src/bridge/curves.rs), on the
+    // tab the dialog is shown for
+    const importCurves = () => invoke("accept_curve_import", { tab: state.active_tab }).catch((error) => console.error("Keyframe import failed:", error));
+    const skipCurves = () => invoke("reject_curve_import", { tab: state.active_tab }).catch((error) => console.error("Keyframe import failed:", error));
 
     const goLive = () => invoke("go_live", { id: state.active_tab }).catch((error) => console.error("Go live failed:", error));
     const activeLinked = (state.tabs ?? []).some((tab: any) => tab.id === state.active_tab && tab.linked);
@@ -189,7 +203,7 @@ function IPCLink() {
                 link so clicks inside it don't toggle the menu */}
             {menuShown && createPortal(floatingPanel, document.body)}
 
-            {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={() => setShowDiffModal(false)} />}
+            {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={closeReview} />}
 
             {state.pending_curve_import && <CurveImportModal objects={state.pending_curve_import} onImport={importCurves} onCancel={skipCurves} />}
         </>
