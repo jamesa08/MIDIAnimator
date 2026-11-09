@@ -308,6 +308,50 @@ fn clamp_between(value: f64, a: f64, b: f64) -> f64 {
     value.clamp(a.min(b), a.max(b))
 }
 
+/// puts a key at `t` without changing the curve and returns its index, or the index of a key already there. a bezier
+/// segment is split in two (de Casteljau), the halves keep its exact shape. past either end the held value gets a key,
+/// joined to the end with a straight (flat) segment
+pub fn split_at(keys: &mut Vec<Key>, t: f64) -> usize {
+    if let Some(i) = keys.iter().position(|key| (key.time - t).abs() <= TIME_TOLERANCE) {
+        return i;
+    }
+    let Some(first) = keys.first() else {
+        keys.push(Key::linear(t, 0.0));
+        return 0;
+    };
+    if t < first.time {
+        let value = first.value;
+        keys.insert(0, Key::linear(t, value));
+        return 0;
+    }
+    let last = keys.len() - 1;
+    if t > keys[last].time {
+        let value = keys[last].value;
+        keys[last].interpolation = Interpolation::Linear;
+        keys.push(Key::linear(t, value));
+        return last + 1;
+    }
+    let i = segment_index(keys, t);
+    let (a, b) = (&keys[i], &keys[i + 1]);
+    let key = match a.interpolation {
+        Interpolation::Constant => Key::new(t, a.value, Interpolation::Constant),
+        Interpolation::Linear => Key::linear(t, segment_value(a, b, t)),
+        Interpolation::Bezier => {
+            let p = segment_points(a, b);
+            let u = solve_u(&p, t);
+            let lerp = |p: [f64; 2], q: [f64; 2]| [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u];
+            let (p01, p12, p23) = (lerp(p[0], p[1]), lerp(p[1], p[2]), lerp(p[2], p[3]));
+            let (p012, p123) = (lerp(p01, p12), lerp(p12, p23));
+            let mid = lerp(p012, p123);
+            keys[i].right = p01;
+            keys[i + 1].left = p23;
+            Key::with_handles(t, mid[1], Interpolation::Bezier, p012, p123)
+        }
+    };
+    keys.insert(i + 1, key);
+    i + 1
+}
+
 /// keys sorted by time with the last of keys closer than `tolerance` seconds kept, the wire needs strictly increasing times
 pub fn sort_keys(keys: &mut Vec<Key>, tolerance: f64) {
     keys.sort_by(|a, b| a.time.total_cmp(&b.time));
