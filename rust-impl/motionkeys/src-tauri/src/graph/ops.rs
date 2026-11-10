@@ -866,6 +866,7 @@ fn add_nodes(graph: &mut Graph, specs: &Specs, scope: Option<&str>, nodes: &[New
         node.id = graph.next_node_id(id_prefix(&node));
         node.inputs_mut();
         edit::fill_default_name(graph, &mut node);
+        edit::fill_defaults(specs, &mut node);
         ids.push(node.id.clone());
         let pair = node.node_type == FOR_EACH_INPUT && zone_of(&node).is_none();
         let input_id = node.id.clone();
@@ -1041,6 +1042,7 @@ fn connect(project: &mut Graph, scope: Option<&str>, specs: &Specs, from_node: &
         sockets.push(HandleSpec {
             id: id.clone(),
             reads: None,
+            mode_defaults: None,
             ..handle
         });
         match side {
@@ -1100,6 +1102,7 @@ fn find_handle(handles: &[HandleSpec], id: &str) -> HandleSpec {
             multi: false,
             default: None,
             reads: None,
+            mode_defaults: None,
         },
     }
 }
@@ -1349,6 +1352,7 @@ fn make_group(project: &mut Graph, scope: Option<&str>, specs: &Specs, selected:
                     outputs.push(HandleSpec {
                         id: id.clone(),
                         reads: None,
+                        mode_defaults: None,
                         ..handle
                     });
                     output_for.insert(key, id.clone());

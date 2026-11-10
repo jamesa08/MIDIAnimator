@@ -182,6 +182,11 @@ pub fn node_block(ctx: &OutlineCtx, id: &str, detail: Detail) -> String {
             line.push_str("  (not set)");
             if let Some(default) = &input.default {
                 line.push_str(&format!(" default {}", default));
+            } else if let Some(defaults) = &input.mode_defaults {
+                // a default for each mode, e.g. `default spring 36, cymbal 240`
+                let mut modes: Vec<String> = defaults.iter().map(|(mode, value)| format!("{} {}", mode, value)).collect();
+                modes.sort();
+                line.push_str(&format!(" default {}", modes.join(", ")));
             }
         }
 

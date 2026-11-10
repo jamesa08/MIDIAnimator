@@ -39,6 +39,10 @@ pub struct HandleSpec {
     /// an output that only reads these inputs, it can feed back into the others without a cycle (`partial_output`)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reads: Option<Vec<String>>,
+    /// an input's default for each mode of its node when the modes start it differently (Preset Animation's spring and
+    /// cymbal), by the value of the node's `mode` input. the node falls back to them itself, the run doesn't fill them in
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode_defaults: Option<HashMap<String, Value>>,
 }
 
 /// outputs that only read some of their node's inputs (`reads` in default_nodes.json), by node type and output. read
@@ -47,6 +51,18 @@ static PARTIAL_OUTPUTS: once_cell::sync::Lazy<HashMap<(String, String), Vec<Stri
     let default_nodes: HashMap<String, Value> = serde_json::from_str(include_str!("../configs/default_nodes.json")).unwrap_or_default();
     node_specs(&default_nodes).into_iter().flat_map(|spec| spec.handles.outputs.into_iter().filter_map(move |h| Some(((spec.id.clone(), h.id), h.reads?)))).collect()
 });
+
+/// each input's defaults by mode (`mode_defaults` in default_nodes.json), by node type and input, from the specs built
+/// into the app so a node's function can read them
+static MODE_DEFAULTS: once_cell::sync::Lazy<HashMap<(String, String), HashMap<String, Value>>> = once_cell::sync::Lazy::new(|| {
+    let default_nodes: HashMap<String, Value> = serde_json::from_str(include_str!("../configs/default_nodes.json")).unwrap_or_default();
+    node_specs(&default_nodes).into_iter().flat_map(|spec| spec.handles.inputs.into_iter().filter_map(move |h| Some(((spec.id.clone(), h.id), h.mode_defaults?)))).collect()
+});
+
+/// an input's default in one mode of its node, none when its modes don't have their own
+pub fn mode_default(node_type: &str, input: &str, mode: &str) -> Option<f64> {
+    MODE_DEFAULTS.get(&(node_type.to_string(), input.to_string()))?.get(mode)?.as_f64()
+}
 
 /// the inputs a partial output reads, `None` for an output that reads all of them. connecting a partial output back into
 /// an input it doesn't read isn't a cycle, the run works the output out first (`split_partial_outputs` in run.rs)
@@ -79,6 +95,10 @@ pub struct NodeSpec {
     pub realtime: bool,
     #[serde(default)]
     pub handles: HandleSpecs,
+    /// a new node gets every input's default written on it (`edit::fill_defaults`), so a project keeps the values it was
+    /// made with when the defaults change later
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub store_defaults: bool,
 }
 
 impl NodeSpec {
@@ -196,6 +216,7 @@ pub fn node_outputs(spec: &NodeSpec, node_results: Option<&Value>) -> Vec<Handle
                 multi: false,
                 default: None,
                 reads: None,
+                mode_defaults: None,
             });
         }
     }
@@ -227,6 +248,7 @@ pub fn node_inputs(spec: &NodeSpec, graph: &Graph, node_id: &str) -> Vec<HandleS
                 multi: false,
                 default: None,
                 reads: None,
+                mode_defaults: None,
             });
         }
     }

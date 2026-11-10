@@ -66,6 +66,7 @@ fn socket(id: &str, data_type: &str) -> HandleSpec {
         multi: false,
         default: None,
         reads: None,
+        mode_defaults: None,
     }
 }
 

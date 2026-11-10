@@ -4,7 +4,7 @@
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 
-use super::model::{compatible, dyn_inner, is_param, node_inputs, node_outputs, Graph, NodeSpec, Position, RfEdge, RfNode, Specs};
+use super::model::{compatible, dyn_inner, is_param, node_inputs, node_outputs, Graph, HandleSpec, NodeSpec, Position, RfEdge, RfNode, Specs};
 use super::ops::Side;
 use super::run::GROUP;
 use super::tags;
@@ -86,6 +86,56 @@ pub fn fill_default_name(graph: &Graph, node: &mut RfNode) {
     node.inputs_mut().insert("name".to_string(), Value::String(name));
 }
 
+/// an input's default on a node in `mode`: the spec's default, or the mode's when its modes start it differently
+fn default_in(spec: &HandleSpec, mode: &str) -> Option<Value> {
+    spec.default.clone().or_else(|| spec.mode_defaults.as_ref()?.get(mode).cloned())
+}
+
+/// the mode a node's `mode` input is in, its default when it isn't set
+fn mode_of(spec: &NodeSpec, node: &RfNode) -> String {
+    let set = node.input_value("mode").and_then(Value::as_str).filter(|m| !m.is_empty());
+    set.or_else(|| spec.input("mode")?.default.as_ref()?.as_str()).unwrap_or_default().to_string()
+}
+
+/// writes the default of every input that isn't set on a new node whose spec stores them (`store_defaults`), in the
+/// node's mode
+pub fn fill_defaults(specs: &Specs, node: &mut RfNode) {
+    let Some(spec) = specs.for_type(&node.node_type).filter(|spec| spec.store_defaults) else {
+        return;
+    };
+    let mode = mode_of(&spec, node);
+    let missing: Vec<(String, Value)> = spec.handles.inputs.iter().filter(|h| node.input_value(&h.id).is_none()).filter_map(|h| Some((h.id.clone(), default_in(h, &mode)?))).collect();
+    node.inputs_mut().extend(missing);
+}
+
+/// what else changes when `inputs` changes a node's mode: an input with a default for each mode that's still at one of
+/// them (or isn't set, on a node that stores its defaults) moves to the new mode's. one set by hand stays
+fn mode_change(spec: &NodeSpec, node: &RfNode, inputs: &Map<String, Value>) -> Map<String, Value> {
+    let Some(new) = inputs.get("mode") else {
+        return Map::new();
+    };
+    let old = mode_of(spec, node);
+    let new = new.as_str().filter(|m| !m.is_empty()).map(str::to_string).or_else(|| spec.input("mode")?.default.as_ref()?.as_str().map(str::to_string)).unwrap_or_default();
+    if new == old {
+        return Map::new();
+    }
+    let same = |a: &Value, b: &Value| a == b || a.as_f64().zip(b.as_f64()).is_some_and(|(a, b)| a == b);
+    spec.handles
+        .inputs
+        .iter()
+        .filter(|h| !inputs.contains_key(&h.id))
+        .filter_map(|h| {
+            let defaults = h.mode_defaults.as_ref()?;
+            let untouched = match node.input_value(&h.id) {
+                // at a mode's default, the old one's or one from before it (a drumstick keeps the spring's end)
+                Some(value) => defaults.values().any(|d| same(value, d)),
+                None => spec.store_defaults,
+            };
+            untouched.then(|| Some((h.id.clone(), defaults.get(&new)?.clone())))?
+        })
+        .collect()
+}
+
 /// adds a new node of `node_type` and returns its new id in `touched`
 ///
 /// the position comes from `position` if given, otherwise it's placed to the right of `after`,
@@ -146,6 +196,7 @@ pub fn add_node(graph: &mut Graph, specs: &Specs, node_type: &str, inputs: Optio
         merge_inputs(&mut node, inputs);
     }
     fill_default_name(graph, &mut node);
+    fill_defaults(specs, &mut node);
     graph.nodes.push(node);
 
     Ok(EditResult {
@@ -306,6 +357,10 @@ pub fn set_inputs(graph: &mut Graph, specs: &Specs, node: &str, inputs: &Map<Str
     // write the values to the node, a renamed animation generator keeps its wires in the note maps (a name that's
     // connected comes from the connection, the value set here isn't it)
     let old_name = generator_name(graph.node(&id).unwrap()).filter(|_| graph.edge_into(&id, "name").is_none());
+    // a new mode brings its own defaults along, in the same step
+    let mut inputs = inputs.clone();
+    inputs.extend(mode_change(&spec, graph.node(&id).unwrap(), &inputs));
+    let inputs = &inputs;
     merge_inputs(graph.node_mut(&id).unwrap(), inputs);
     if let Some(old) = old_name {
         rename_animation(graph, &id, &old);
