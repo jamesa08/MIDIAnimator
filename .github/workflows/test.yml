@@ -63,8 +63,9 @@ jobs:
         run: cargo test
 
       # every window in chromium, the engine of windows' webview2, headless so only the headless shell is needed
+      # no --with-deps, the runner image already has chromium's libraries and the tests check no rendered text
       - name: Run frontend smoke test
         if: ${{ !inputs.keepalive }}
         run: |
-          npx playwright install --with-deps --only-shell chromium
+          npx playwright install --only-shell chromium
           npx playwright test -c smoke

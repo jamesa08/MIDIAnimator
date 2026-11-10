@@ -1,42 +1,51 @@
 name: Install linux packages
-description: apt-get install that caches the downloaded .debs between runs and retries stalled mirrors quickly
+description: Installs apt packages from .debs cached per runner image, so apt and the mirror are only used once per new image
 
 inputs:
   packages:
-    description: Space separated apt packages
+    description: Space separated apt packages, the runner image's own packages (patchelf, pkg-config, the gtk runtime) don't need listing
     required: true
 
 runs:
   using: composite
   steps:
-    # the azure ubuntu mirror sometimes hangs for minutes on a single package, so time out and retry instead
-    # the .debs go in the home folder so actions/cache, running as the runner user, can save and restore them
-    # this config applies to every apt-get in the job, playwright's --with-deps too
-    - name: Configure apt
-      id: configure
+    # one cache per runner image, its .debs were resolved against that image's own libraries so they install as is
+    - name: Find cache key
+      id: key
       shell: bash
       env:
         PACKAGES: ${{ inputs.packages }}
-      run: |
-        mkdir -p "$HOME/apt-archives/partial"
-        printf '%s\n' \
-          "Dir::Cache::Archives \"$HOME/apt-archives\";" \
-          'APT::Sandbox::User "root";' \
-          'Acquire::http::Timeout "20";' \
-          'Acquire::https::Timeout "20";' \
-          'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/99-ci > /dev/null
-        # monthly so packages updated since get picked up, the rest still comes from the cache
-        echo "key=apt-$ImageOS-$(echo "$PACKAGES" | sha256sum | cut -c1-12)-$(date -u +%Y-%m)" >> $GITHUB_OUTPUT
+      run: echo "key=apt-$ImageOS-$ImageVersion-$(echo "$PACKAGES" | sha256sum | cut -c1-12)" >> $GITHUB_OUTPUT
 
-    - name: Cache apt packages
-      uses: actions/cache@v5
+    - name: Restore apt packages
+      id: restore
+      uses: actions/cache/restore@v5
       with:
         path: ~/apt-archives/*.deb
-        key: ${{ steps.configure.outputs.key }}
+        key: ${{ steps.key.outputs.key }}
 
-    # apt only downloads the .debs that aren't already in the archive folder
+    # unsafe-io skips dpkg's fsyncs, the runner is thrown away after the job anyway
+    # on a cache hit the .debs are exactly what apt installed on this image, so no package lists or network are needed
+    # otherwise apt runs once, with timeouts because the azure mirror sometimes hangs for minutes on one package
     - name: Install packages
       shell: bash
+      env:
+        HIT: ${{ steps.restore.outputs.cache-hit }}
       run: |
-        sudo apt-get update
-        sudo apt-get install -y ${{ inputs.packages }}
+        echo force-unsafe-io | sudo tee /etc/dpkg/dpkg.cfg.d/99-unsafe-io > /dev/null
+        if [ "$HIT" = "true" ]; then
+          sudo dpkg -i "$HOME"/apt-archives/*.deb
+        else
+          mkdir -p "$HOME/apt-archives/partial"
+          APT=(-o Dir::Cache::Archives="$HOME/apt-archives" -o APT::Sandbox::User=root -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=5)
+          sudo apt-get "${APT[@]}" update
+          sudo apt-get "${APT[@]}" install -y --no-install-recommends ${{ inputs.packages }}
+        fi
+
+    # saved right away so a job failing later still leaves the cache for the next run
+    - name: Save apt packages
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ~/apt-archives/*.deb
+        key: ${{ steps.key.outputs.key }}
