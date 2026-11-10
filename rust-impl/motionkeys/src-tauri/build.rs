@@ -12,6 +12,14 @@ fn main() {
     tauri_build::build();
 }
 
+// written to a temp file then renamed over the old one, so another build running at the same time
+// (ci compiles both macos arches at once) never reads it half written
+fn write_atomic(path: &Path, contents: &str) {
+    let tmp = path.with_extension(format!("rs.{}.tmp", std::process::id()));
+    fs::write(&tmp, contents).unwrap_or_else(|e| panic!("failed to write {}: {e}", tmp.display()));
+    fs::rename(&tmp, path).unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display()));
+}
+
 fn get_git_hash() {
     let output = std::process::Command::new("git").args(["rev-parse", "--short", "HEAD"]).output().unwrap();
     let hash = String::from_utf8(output.stdout).unwrap();
@@ -81,7 +89,7 @@ pub fn get_cmds() -> Box<dyn Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send +
         return;
     }
 
-    fs::write(out_path, generated_code).expect("failed to write auto_commands.rs");
+    write_atomic(out_path, &generated_code);
 
     println!("cargo:warning=written generated code to src/auto_commands.rs");
 
@@ -144,7 +152,7 @@ pub fn get_node_registry() -> HashMap<String, NodeFunction> {{
         return;
     }
 
-    fs::write(out_path, generated_code).expect("failed to write node_registry.rs");
+    write_atomic(out_path, &generated_code);
 
     println!("cargo:warning=written generated code to src/node_registry.rs");
 

@@ -72,6 +72,13 @@ jobs:
         shell: bash
         run: echo "APP_DIR=${DEV_DRIVE_WORKSPACE:-$GITHUB_WORKSPACE}/rust-impl/motionkeys" >> $GITHUB_ENV
 
+      # rust-lld links the windows binary faster than msvc's link.exe
+      # set before the rust cache so its key changes with the linker, a cache built with link.exe would be rebuilt every run
+      - name: Use rust-lld
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=rust-lld.exe" >> $GITHUB_ENV
+
       # tauri needs webkit/gtk
       - name: Install linux dependencies
         if: runner.os == 'Linux' && !inputs.keepalive
@@ -93,11 +100,12 @@ jobs:
           targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       # never saves on keepalive, a cache saved then would be empty and stop real builds from saving theirs
+      # macos has its own key since its x86_64 build moved to target/x86 (see universal-cargo.sh), so that gets saved too
       - name: Cache rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ env.APP_DIR }}/src-tauri
-          key: ${{ matrix.name }}
+          key: ${{ matrix.name }}${{ runner.os == 'macOS' && '-parallel' || '' }}
           save-if: ${{ !inputs.keepalive }}
 
       # tauri downloads linuxdeploy, AppRun, WiX and NSIS from github releases while bundling, which sometimes 504s
@@ -115,13 +123,16 @@ jobs:
         run: npm ci
 
       # a failed bundler tool download is retried, cargo's output is reused so only bundling runs again
+      # macos compiles both of its arches at once through universal-cargo.sh
       - name: Build app
         if: ${{ !inputs.keepalive }}
         working-directory: ${{ env.APP_DIR }}
         shell: bash
+        env:
+          RUNNER: ${{ runner.os == 'macOS' && format('--runner {0}/.github/scripts/universal-cargo.sh', github.workspace) || '' }}
         run: |
           for attempt in 1 2 3; do
-            npx tauri build ${{ matrix.args }} 2>&1 | tee tauri-build.log && exit 0
+            npx tauri build ${{ matrix.args }} $RUNNER 2>&1 | tee tauri-build.log && exit 0
             grep -q 'http status' tauri-build.log || exit 1
             echo "::warning::bundler tool download failed on attempt $attempt"
             sleep 30
