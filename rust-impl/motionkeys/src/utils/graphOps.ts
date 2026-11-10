@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 
@@ -46,7 +46,8 @@ export const TabContext = createContext<string>("");
 // `txn`: ops with the same transaction are one undo step until it's ended or cancelled (a grab after adding or duplicating).
 // `commitToHistory`: false for no undo step (values filled in automatically), true when left out. `sizes`: the nodes'
 // sizes on screen, frames fit around them
-export type ApplyOptions = { txn?: string; commitToHistory?: boolean; sizes?: Record<string, { width: number; height: number }> };
+// `run` false leaves the realtime graph to run when the transaction ends (a drag's steps)
+export type ApplyOptions = { txn?: string; commitToHistory?: boolean; sizes?: Record<string, { width: number; height: number }>; run?: boolean };
 
 // the state with a tab's graph from the backend: only the tab on screen's, and not if the state already has a newer one
 // (graph_rev only goes up)
@@ -108,7 +109,7 @@ export function useGraphOps(scope: string | null) {
                 return applied;
             });
         return {
-            apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true, sizes: options.sizes ?? null }),
+            apply: (ops: Op[], options: ApplyOptions = {}) => edit("graph_apply", { ops, txn: options.txn ?? null, commitToHistory: options.commitToHistory ?? true, sizes: options.sizes ?? null, run: options.run ?? null }),
             copy: (nodes: string[]) => queued(tab, () => invoke("graph_copy", { tab, scope, nodes })),
             cut: (nodes: string[], edges: string[], sockets: SocketRef[]) => edit("graph_cut", { nodes, edges, sockets }),
             paste: (position: XY) => edit("graph_paste", { position }),
@@ -131,6 +132,52 @@ export function useSetInputs() {
         },
         [apply, editable]
     );
+}
+
+// a drag that sets a node's inputs (a slider, a line on a curve): one undo step, its inputs sent at most once a frame.
+// the graph doesn't run while it's dragged, it runs once when the drag ends
+type Drag = { txn: string; pending: Record<string, any> | null; sent: Promise<unknown>; sending: boolean };
+
+// `start` and `stop` a drag, `send` inputs during it (or on their own, outside one, as their own undo step)
+export function useInputDrag(id: string) {
+    const setInputs = useSetInputs();
+    const { scopeId } = useGroupContext();
+    const { end } = useGraphOps(scopeId);
+    const dragRef = useRef<Drag | null>(null);
+
+    // send what's waiting, in the drag's undo step. one send at a time, the latest inputs go out when the one before
+    // them lands, so a slow backend doesn't queue up a send per frame
+    const flush = (drag: Drag): Promise<unknown> => {
+        if (drag.pending === null || drag.sending) return drag.sent;
+        const pending = drag.pending;
+        drag.pending = null;
+        drag.sending = true;
+        drag.sent = setInputs(id, pending, { txn: drag.txn, run: false }).finally(() => {
+            drag.sending = false;
+            // only inputs that came meanwhile, `drag.sent` is this promise itself and waiting on it never ends
+            return drag.pending !== null ? flush(drag) : undefined;
+        });
+        return drag.sent;
+    };
+    const send = (inputs: Record<string, any>) => {
+        const drag = dragRef.current;
+        if (!drag) {
+            setInputs(id, inputs);
+            return;
+        }
+        if (drag.pending === null) requestAnimationFrame(() => flush(drag));
+        drag.pending = { ...(drag.pending ?? {}), ...inputs };
+    };
+    const start = () => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve(), sending: false });
+    // the last inputs go out, then the undo step closes
+    const stop = () => {
+        const drag = dragRef.current;
+        dragRef.current = null;
+        if (!drag) return;
+        flush(drag);
+        drag.sent.finally(() => end(drag.txn));
+    };
+    return { start, send, stop, dragging: () => dragRef.current !== null };
 }
 
 // collapses a node to its header or expands it, for node components. nothing happens in a graph that can't be edited

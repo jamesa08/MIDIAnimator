@@ -33,8 +33,8 @@ pub struct Applied {
 /// step (values filled in automatically). `sizes` are the nodes' sizes on screen, frames fit around them. if one op
 /// fails nothing changes and the error says why
 #[tauri::command]
-pub async fn graph_apply(tab: String, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: Option<bool>, sizes: Option<HashMap<String, Size>>) -> Result<Applied, String> {
-    apply(&tab, scope, ops, txn, commit_to_history != Some(false), &sizes.unwrap_or_default())
+pub async fn graph_apply(tab: String, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: Option<bool>, sizes: Option<HashMap<String, Size>>, run: Option<bool>) -> Result<Applied, String> {
+    apply_and_run(&tab, scope, ops, txn, commit_to_history != Some(false), &sizes.unwrap_or_default(), run != Some(false))
 }
 
 /// the system clipboard type copied nodes go under, in place of text. only MotionKeys reads it, pasting them anywhere
@@ -108,6 +108,12 @@ pub async fn graph_can_paste() -> bool {
 }
 
 fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool, sizes: &HashMap<String, Size>) -> Result<Applied, String> {
+    apply_and_run(tab, scope, ops, txn, commit_to_history, sizes, true)
+}
+
+/// `apply`, the realtime graph re-run after unless `run_now` is off (a drag's steps): then it's held until the drag's
+/// undo step ends (`history_end`)
+fn apply_and_run(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, commit_to_history: bool, sizes: &HashMap<String, Size>, run_now: bool) -> Result<Applied, String> {
     let (applied, run, recorded) = {
         let mut state = lock();
         let instance = state.instance(tab).ok_or_else(|| format!("no tab '{}'", tab))?;
@@ -145,16 +151,18 @@ fn apply(tab: &str, scope: Option<String>, ops: Vec<Op>, txn: Option<String>, co
             })
         };
         let committed = history::commit(&mut state, tab, graph.to_rf(), capture);
-        let Some(instance) = state.instance(tab) else {
+        let Some(instance) = state.instance_mut(tab) else {
             return Err(format!("no tab '{}'", tab));
         };
+        let run = committed.affects_output && !instance.execution_paused;
+        instance.run_held = run && !run_now || instance.run_held && !run;
         let applied = Applied {
             tab: tab.to_string(),
             graph_rev: instance.graph_rev,
             rf_instance: instance.rf_instance.clone(),
             added,
         };
-        (applied, committed.affects_output && !instance.execution_paused, committed.history)
+        (applied, run && run_now, committed.history)
     };
 
     // the graph and history go out with the state unlocked

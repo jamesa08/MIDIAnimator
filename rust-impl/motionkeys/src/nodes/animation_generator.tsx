@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/nodeEntries";
-import { useGraphOps, useSetInputs } from "../utils/graphOps";
+import { useInputDrag, useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
 import { useStore } from "@xyflow/react";
 import ExpressionField from "../components/ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
 import { ValueSlider } from "../components/ValueSlider";
-import { useGroupContext } from "../contexts/GroupContext";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -25,9 +24,6 @@ export const overlapModes = [
     { id: "crossfade", name: "Crossfade" },
     { id: "momentum", name: "Momentum" },
 ];
-
-// a slider drag: its undo step, the value waiting to be sent, the last one sent and whether it's still on its way
-type Drag = { txn: string; pending: number | null; sent: Promise<unknown>; sending: boolean };
 
 // a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
 // that isn't a number is put back
@@ -65,50 +61,16 @@ function NumberField({ value, onCommit, ...props }: { value: number | undefined;
 // a slider for an input from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
 // it's dragged to, not what comes back from the backend on the way
 function useSliderInput(id: string, input: string, current: number | undefined) {
-    const setInputs = useSetInputs();
-    const { scopeId } = useGroupContext();
-    const { end } = useGraphOps(scopeId);
+    const drag = useInputDrag(id);
     const [value, setValue] = useState<number>(current ?? 0);
-    const dragRef = useRef<Drag | null>(null);
     useEffect(() => {
-        if (!dragRef.current) setValue(current ?? 0);
+        if (!drag.dragging()) setValue(current ?? 0);
     }, [current]);
-
-    // send the value waiting, in the drag's undo step. one send at a time, the latest value goes out when the one before
-    // it lands, so a slow backend doesn't queue up a send per frame
-    const flush = (drag: Drag): Promise<unknown> => {
-        if (drag.pending === null || drag.sending) return drag.sent;
-        const pending = drag.pending;
-        drag.pending = null;
-        drag.sending = true;
-        drag.sent = setInputs(id, { [input]: pending }, { txn: drag.txn }).finally(() => {
-            drag.sending = false;
-            // only a value that came meanwhile, `drag.sent` is this promise itself and waiting on it never ends
-            return drag.pending !== null ? flush(drag) : undefined;
-        });
-        return drag.sent;
-    };
     const onChange = (next: number) => {
         setValue(next);
-        const drag = dragRef.current;
-        // typed in, its own undo step
-        if (!drag) {
-            setInputs(id, { [input]: next });
-            return;
-        }
-        if (drag.pending === null) requestAnimationFrame(() => flush(drag));
-        drag.pending = next;
+        drag.send({ [input]: next });
     };
-    const onStart = () => (dragRef.current = { txn: crypto.randomUUID(), pending: null, sent: Promise.resolve(), sending: false });
-    // the last value goes out, then the undo step closes
-    const onEnd = () => {
-        const drag = dragRef.current;
-        dragRef.current = null;
-        if (!drag) return;
-        flush(drag);
-        drag.sent.finally(() => end(drag.txn));
-    };
-    return { value, onChange, onStart, onEnd };
+    return { value, onChange, onStart: drag.start, onEnd: drag.stop };
 }
 
 function animation_generator({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {

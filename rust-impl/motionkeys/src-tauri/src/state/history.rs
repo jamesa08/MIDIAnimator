@@ -274,6 +274,11 @@ pub async fn history_goto(tab: Option<String>, current: usize, entry: Option<u64
 #[tauri::command]
 pub fn history_end(tab: String, txn: String) {
     end(&tab, &txn);
+    // a drag's steps didn't run the graph, it runs once now
+    let held = lock_state().instance_mut(&tab).is_some_and(|instance| std::mem::take(&mut instance.run_held));
+    if held {
+        tauri::async_runtime::spawn(run_instance(tab, true));
+    }
 }
 
 /// cancels a transaction from the node editor (a grab was cancelled), what it did is undone. returns false if it
