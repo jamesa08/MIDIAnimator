@@ -5,7 +5,7 @@
 use motionkeys::graph::executors::animation::animation_generator;
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::utils::animation::{combine_curve_keys, finish_keys, CurveKeys};
-use motionkeys::utils::curve::{auto_handles, check_keys, evaluate, slope, split_at, Interpolation, Key};
+use motionkeys::utils::curve::{auto_handles, check_keys, evaluate, split_at, Interpolation, Key};
 use motionkeys::utils::momentum::{momentum_keys, phases, MomentumNote};
 use motionkeys::scene_generics::AnimCurve;
 use serde_json::json;
@@ -152,25 +152,6 @@ fn motion(keys: &[Key], from: f64, to: f64) -> Motion {
         lo,
         hi,
     }
-}
-
-// the hardest a curve turns between two times, away from the times in `skip` (hits and sharp keys turn on purpose)
-fn turn(keys: &[Key], from: f64, to: f64, skip: &[f64]) -> f64 {
-    let mut top = 0.0f64;
-    let mut t = from + DT;
-    while t < to {
-        if !skip.iter().any(|s| (t - s).abs() < 0.25 / FPS) {
-            let a = evaluate(keys, t - DT).unwrap() - 2.0 * evaluate(keys, t).unwrap() + evaluate(keys, t + DT).unwrap();
-            top = top.max(a.abs() / (DT * DT));
-        }
-        t += DT;
-    }
-    top
-}
-
-// times where a curve has a sharp key, relative to its hit
-fn sharp_times(reference: &[Key]) -> Vec<f64> {
-    reference.iter().filter(|key| (slope(reference, key.time, true) - slope(reference, key.time, false)).abs() > 1e-6 * (1.0 + slope(reference, key.time, true).abs())).map(|key| key.time).collect()
 }
 
 fn span(reference: &[Key]) -> (f64, f64) {
@@ -616,10 +597,39 @@ fn the_generator_finds_its_windup_and_recoil_on_the_first_note_on_curve() {
     let outputs = animation_generator(&inputs(&[("overlap_windup", json!(-6.0)), ("overlap_recoil", json!(9.0))])).unwrap().to_json();
     assert_eq!(outputs["generator"]["overlap_windup"], json!(-6.0));
     assert_eq!(outputs["generator"]["overlap_recoil"], json!(9.0));
-    // the windup comes before the hit, the recoil after it
-    assert!(animation_generator(&inputs(&[("overlap_windup", json!(2.0))])).unwrap_err().contains("overlap windup"));
-    assert!(animation_generator(&inputs(&[("overlap_recoil", json!(-1.0))])).unwrap_err().contains("overlap recoil"));
+    // the windup comes before the hit and the recoil after it, one on the wrong side is found on the curve again
+    // instead of failing the node
+    for (windup, recoil) in [(2.0, -1.0), (0.0, 0.0)] {
+        let outputs = animation_generator(&inputs(&[("overlap_windup", json!(windup)), ("overlap_recoil", json!(recoil))])).unwrap().to_json();
+        assert_eq!(frames(&outputs["generator"]["overlap_windup"]), -4.0);
+        assert_eq!(frames(&outputs["generator"]["overlap_recoil"]), 5.0);
+    }
+    let outputs = animation_generator(&inputs(&[("overlap_windup", json!(-6.0)), ("overlap_recoil", json!(-1.0))])).unwrap().to_json();
+    assert_eq!(outputs["generator"]["overlap_windup"], json!(-6.0));
+    assert_eq!(frames(&outputs["generator"]["overlap_recoil"]), 5.0);
     // other modes don't look for them
     let outputs = animation_generator(&inputs(&[("animation_overlap", json!("add"))])).unwrap().to_json();
     assert!(outputs["generator"].get("overlap_windup").is_none());
+}
+
+#[test]
+fn any_phases_make_a_curve() {
+    // set by hand or through a time mapper the points can be anywhere: at the hit, past each other, off the curve,
+    // not numbers at all. every one still joins into a curve
+    let f = 1.0 / FPS;
+    let points: [[f64; 2]; 9] = [[-0.5 * f, 0.5 * f], [0.0, 0.0], [2.0 * f, -2.0 * f], [-0.01 * f, 0.01 * f], [-100.0, 100.0], [5.0 * f, 10.0 * f], [-10.0 * f, -5.0 * f], [f64::NAN, f64::NAN], [f64::INFINITY, f64::NEG_INFINITY]];
+    for (name, reference) in references() {
+        for gap in [0.0, 0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 40.0] {
+            let hits = [1.0, 1.0 + gap * f, 1.0 + 2.0 * gap * f + 3.0 * f];
+            for [windup, recoil] in points {
+                let mut set = notes(&reference, &hits, 0.5, true);
+                for note in &mut set {
+                    note.phases = Some([note.hit + windup, note.hit + recoil]);
+                }
+                let mut keys = std::panic::catch_unwind(|| momentum_keys(set)).unwrap_or_else(|_| panic!("{name}, {gap} frames apart, phases {windup} {recoil}: panics"));
+                finish_keys(&mut keys);
+                assert_eq!(check_keys(&keys), None, "{name}, {gap} frames apart, phases {windup} {recoil}");
+            }
+        }
+    }
 }

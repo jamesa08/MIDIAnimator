@@ -1873,12 +1873,12 @@ test("arrange places the columns the way settings say", async ({ page }) => {
 
 // the fixture's generator on momentum, its last run with the windup and recoil it found (frames from the hit). the
 // phase editor asks for its curve by value, a stand-in result holds it
-function withMomentum(inputs: Record<string, any> = {}) {
+function withMomentum(inputs: Record<string, any> = {}, output: Record<string, any> = {}) {
     const state = structuredClone(withLayout(ALL_DOCKED));
     const node = state.get_state.rf_instance.nodes.find((n: any) => n.id === "animation_generator-1");
     node.data.inputs = { ...node.data.inputs, animation_overlap: "momentum", note_on_anchor_point: -120, ...inputs };
     const generator = state.get_state.executed_results["animation_generator-1"].generator;
-    Object.assign(generator, { animation_overlap: "momentum", note_on_anchor_point: -120, overlap_windup: -48, overlap_recoil: 72 });
+    Object.assign(generator, { animation_overlap: "momentum", note_on_anchor_point: -120, overlap_windup: -48, overlap_recoil: 72, ...output });
     state.get_state.executed_results["phase-curve"] = { curve: generator.note_on_keyframes[0] };
     state.graph_value_curves["phase-curve"] = state.graph_value_curves["animation_generator-1"];
     return state;
@@ -1917,6 +1917,70 @@ test("the momentum phase editor shows its points and drags one", async ({ page }
     // the graph doesn't run on the way, ending the undo step runs it
     expect(sent.every(({ run }: any) => run === false)).toBe(true);
     await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "history_end"))).toBe(true);
+    await settle(page);
+});
+
+test("dragging the hit past the windup or recoil keeps it between them", async ({ page }) => {
+    await openWindow(page, withMomentum(), "/#/");
+    await frameNodes(page, ["animation_generator-1"]);
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    const sets = () =>
+        page.evaluate(() =>
+            (window as any).__smokeCalls
+                .filter((c: any) => c.cmd === "graph_apply")
+                .flatMap((c: any) => c.args.ops)
+                .filter((op: any) => op.op === "set_inputs" && "note_on_anchor_point" in op.inputs)
+        );
+    // let go well past each end, after going past the other
+    const row = node.locator(".phase-row").nth(1);
+    for (const ends of [
+        [2, 0, -1],
+        [-1, 0, 2],
+    ]) {
+        const box = (await row.boundingBox())!;
+        const y = box.y + box.height / 2;
+        await page.mouse.move(box.x + box.width * 0.3, y);
+        await page.mouse.down();
+        for (const end of ends) await page.mouse.move(box.x + box.width * end, y, { steps: 3 });
+        await page.mouse.up();
+    }
+    await expect.poll(async () => (await sets()).length).toBe(2);
+    for (const { inputs } of await sets()) {
+        expect(inputs.overlap_windup).toBeLessThan(0);
+        expect(inputs.overlap_recoil).toBeGreaterThan(0);
+    }
+    await expect(node.locator(".phase-row")).toHaveCount(3);
+    await settle(page);
+});
+
+test("the windup stays before a hit at the curve's start", async ({ page }) => {
+    // a curve keyed from its hit: the windup found half a frame before it, off the curve
+    await openWindow(page, withMomentum({ note_on_anchor_point: 0 }, { note_on_anchor_point: 0, overlap_windup: -0.5 }), "/#/");
+    await frameNodes(page, ["animation_generator-1"]);
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    const rows = node.locator(".phase-row");
+    for (const point of [0, 1]) {
+        const box = (await rows.nth(point).boundingBox())!;
+        await page.mouse.move(box.x + 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x - 100, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.move(box.x - 100, box.y + box.height / 2, { steps: 4 });
+        await page.mouse.up();
+    }
+    const sent = () =>
+        page.evaluate(() =>
+            (window as any).__smokeCalls
+                .filter((c: any) => c.cmd === "graph_apply")
+                .flatMap((c: any) => c.args.ops)
+                .filter((op: any) => op.op === "set_inputs")
+                .map((op: any) => op.inputs)
+        );
+    await expect.poll(async () => (await sent()).length).toBeGreaterThan(1);
+    for (const inputs of await sent()) {
+        if ("overlap_windup" in inputs) expect(inputs.overlap_windup).toBeLessThan(0);
+        if ("overlap_recoil" in inputs) expect(inputs.overlap_recoil).toBeGreaterThan(0);
+    }
     await settle(page);
 });
 

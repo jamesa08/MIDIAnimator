@@ -67,20 +67,23 @@ function PhaseEditor({ id, generator, fps, anchorConnected, set }: { id: string;
         if (!drag.dragging()) setMoved(null);
     }, [generator]);
 
-    // a point moved to frame `f`, kept in order on the curve. the hit is the anchor point, the windup and recoil are
-    // frames from it, so moving the hit sets them too, where they are on the curve. found again around the new hit, a
-    // recoil would jump to the old hit's turn
+    // a point moved to frame `f`, on the curve and always in order: the windup before the hit and the recoil after it
+    // win over the curve's ends (a curve keyed from its hit has its windup before its start). the hit is the anchor
+    // point, the windup and recoil are frames from it, so moving the hit sets them too, where they are on the curve.
+    // found again around the new hit, a recoil would jump to the old hit's turn
     const move = (point: Point, f: number) => {
-        if (!range) return;
-        f = Math.round(f * 10) / 10;
-        if (point === "windup") f = Math.max(range.start, Math.min(points.hit - GAP, f));
-        if (point === "hit") f = Math.max(points.windup + GAP, Math.min(points.recoil - GAP, f));
-        if (point === "recoil") f = Math.max(points.hit + GAP, Math.min(range.end, f));
-        if (point === "windup") drag.send({ overlap_windup: f - points.hit });
-        if (point === "recoil") drag.send({ overlap_recoil: f - points.hit });
-        if (point === "hit") drag.send({ note_on_anchor_point: -f, overlap_windup: points.windup - f, overlap_recoil: points.recoil - f });
-        // the others stay where they're shown until the output catches up
-        setMoved((m) => ({ ...(m ?? {}), ...(point === "hit" ? { windup: points.windup, recoil: points.recoil } : {}), [point]: f }));
+        if (!range || !Number.isFinite(f)) return;
+        f = Math.max(range.start, Math.min(range.end, Math.round(f * 10) / 10));
+        const next: Points = { ...points, [point]: f };
+        if (point === "hit") next.hit = Math.max(points.windup + GAP, Math.min(points.recoil - GAP, f));
+        // the node can't take a windup that isn't before the hit or a recoil that isn't after it
+        const windup = Math.min(next.windup - next.hit, -GAP);
+        const recoil = Math.max(next.recoil - next.hit, GAP);
+        if (point === "windup") drag.send({ overlap_windup: windup });
+        if (point === "recoil") drag.send({ overlap_recoil: recoil });
+        if (point === "hit") drag.send({ note_on_anchor_point: -next.hit, overlap_windup: windup, overlap_recoil: recoil });
+        // shown where they were sent until the output catches up
+        setMoved({ windup: next.hit + windup, hit: next.hit, recoil: next.hit + recoil });
     };
     const movable = (point: Point) => point !== "hit" || !anchorConnected;
 

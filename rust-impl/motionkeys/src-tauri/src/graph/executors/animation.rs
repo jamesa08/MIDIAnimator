@@ -171,13 +171,24 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         return Err(format!("overlap dampen goes from 0 to 1, got {}", overlap_dampen));
     }
 
-    // momentum's windup comes before the hit and its recoil after it
-    if let Some(windup) = overlap_windup.filter(|windup| !(*windup < 0.0)) {
-        return Err(format!("overlap windup is frames before the hit, it has to be negative, got {}", windup));
-    }
-    if let Some(recoil) = overlap_recoil.filter(|recoil| !(*recoil > 0.0)) {
-        return Err(format!("overlap recoil is frames after the hit, it has to be positive, got {}", recoil));
-    }
+    // momentum's windup comes before the hit and its recoil after it. one on the wrong side is found again rather than
+    // failing the node, which would take its phase editor with it and leave nothing to move it back with
+    let name = name.unwrap_or_default();
+    let side = |value: Option<f64>, before: bool, input: &str| match value {
+        Some(frames) if frames.is_finite() && (frames < 0.0) == before && frames != 0.0 => Some(frames),
+        Some(frames) => {
+            let wanted = if before {
+                "before"
+            } else {
+                "after"
+            };
+            console::log(Level::Warn, Source::Node, format!("Animation Generator '{}': the {} is {} frames from the hit, it has to be {} it, found it on the curve instead", name, input, frames, wanted));
+            None
+        }
+        None => None,
+    };
+    let overlap_windup = side(overlap_windup, true, "windup");
+    let overlap_recoil = side(overlap_recoil, false, "recoil");
 
     // a mapper is an expression, nothing set changes nothing. one saved with the expression inside an object (how the
     // mappers were saved for a while) reads its expression
@@ -193,7 +204,7 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
     let amplitude_mapper = mapper(amplitude_mapper, "Amplitude Mapper")?;
 
     let mut generator = AnimationGenerator {
-        name: name.unwrap_or_default(),
+        name,
         note_on_keyframes,
         note_on_anchor_point: note_on_anchor_point.unwrap_or_default(),
         note_off_keyframes,

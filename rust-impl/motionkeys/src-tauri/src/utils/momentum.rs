@@ -452,7 +452,9 @@ pub fn momentum_keys(mut notes: Vec<MomentumNote>) -> Vec<Key> {
                 note.keys[0].value
             };
             let (found, speed) = measured(&mut cache, &note.keys, note.hit);
-            let points = note.phases.unwrap_or([note.hit + found[0], note.hit + found[1]]);
+            // set ones that aren't numbers or are on the wrong side of the hit (a time mapper can turn a note around)
+            // are found on the keys
+            let points = note.phases.filter(|&[windup, recoil]| windup.is_finite() && recoil.is_finite() && windup < note.hit && recoil > note.hit).unwrap_or([note.hit + found[0], note.hit + found[1]]);
             phased(dampened(&note.keys, note.hit, pivot, lead, tail), note.hit, points, speed)
         })
         .collect();
