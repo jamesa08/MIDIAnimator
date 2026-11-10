@@ -1,0 +1,42 @@
+name: Install linux packages
+description: apt-get install that caches the downloaded .debs between runs and retries stalled mirrors quickly
+
+inputs:
+  packages:
+    description: Space separated apt packages
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # the azure ubuntu mirror sometimes hangs for minutes on a single package, so time out and retry instead
+    # the .debs go in the home folder so actions/cache, running as the runner user, can save and restore them
+    # this config applies to every apt-get in the job, playwright's --with-deps too
+    - name: Configure apt
+      id: configure
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        mkdir -p "$HOME/apt-archives/partial"
+        printf '%s\n' \
+          "Dir::Cache::Archives \"$HOME/apt-archives\";" \
+          'APT::Sandbox::User "root";' \
+          'Acquire::http::Timeout "20";' \
+          'Acquire::https::Timeout "20";' \
+          'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/99-ci > /dev/null
+        # monthly so packages updated since get picked up, the rest still comes from the cache
+        echo "key=apt-$ImageOS-$(echo "$PACKAGES" | sha256sum | cut -c1-12)-$(date -u +%Y-%m)" >> $GITHUB_OUTPUT
+
+    - name: Cache apt packages
+      uses: actions/cache@v5
+      with:
+        path: ~/apt-archives/*.deb
+        key: ${{ steps.configure.outputs.key }}
+
+    # apt only downloads the .debs that aren't already in the archive folder
+    - name: Install packages
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ${{ inputs.packages }}

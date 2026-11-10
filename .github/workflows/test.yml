@@ -7,6 +7,11 @@ on:
   push:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      # only restores the rust cache, so nights without builds don't let it expire (github evicts caches unused for 7 days)
+      keepalive:
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -21,11 +26,13 @@ jobs:
 
       # tauri needs webkit/gtk to compile
       - name: Install linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
+        if: ${{ !inputs.keepalive }}
+        uses: ./.github/actions/linux-deps
+        with:
+          packages: libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
 
       - name: Set up node
+        if: ${{ !inputs.keepalive }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,24 +42,29 @@ jobs:
       - name: Set up rust
         uses: dtolnay/rust-toolchain@stable
 
+      # never saves on keepalive, a cache saved then would be empty and stop real runs from saving theirs
       - name: Cache rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-impl/motionkeys/src-tauri
+          save-if: ${{ !inputs.keepalive }}
 
       # tsc typechecks the frontend, and generate_context! needs the built frontend to exist
       - name: Build frontend
+        if: ${{ !inputs.keepalive }}
         run: |
           npm ci
           npm run build
 
       # also writes smoke/backend.json (tests/smoke_backend_test.rs) for the smoke test
       - name: Run rust tests
+        if: ${{ !inputs.keepalive }}
         working-directory: rust-impl/motionkeys/src-tauri
         run: cargo test
 
-      # every window in chromium, the engine of windows' webview2
+      # every window in chromium, the engine of windows' webview2, headless so only the headless shell is needed
       - name: Run frontend smoke test
+        if: ${{ !inputs.keepalive }}
         run: |
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps --only-shell chromium
           npx playwright test -c smoke

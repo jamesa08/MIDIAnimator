@@ -14,12 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # skip the build when main hasn't moved since the last nightly, manual runs always build
+  # nothing is built or released when main hasn't moved since the last nightly, manual runs always build
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
       changed: ${{ steps.check.outputs.changed }}
       previous: ${{ steps.check.outputs.previous }}
+      tested: ${{ steps.check.outputs.tested }}
     steps:
       - name: Compare with last nightly
         id: check
@@ -34,24 +38,36 @@ jobs:
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
+          # the push already passed the tests on this exact commit, a push still running doesn't count
+          if gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=${{ github.sha }}&event=push&status=success" --jq .total_count 2>/dev/null | grep -qxE '[1-9][0-9]*'; then
+            echo "tested=true" >> $GITHUB_OUTPUT
+          else
+            echo "tested=false" >> $GITHUB_OUTPUT
+          fi
 
+  # on nights without changes test and build only restore their rust caches, so a quiet week doesn't let github evict them
   test:
     needs: check
-    if: needs.check.outputs.changed == 'true'
+    if: needs.check.outputs.changed == 'false' || needs.check.outputs.tested != 'true'
     uses: ./.github/workflows/test.yml
+    with:
+      keepalive: ${{ needs.check.outputs.changed == 'false' }}
 
   build:
     needs: check
-    if: needs.check.outputs.changed == 'true'
     uses: ./.github/workflows/build.yml
+    with:
+      keepalive: ${{ needs.check.outputs.changed == 'false' }}
 
   addon:
     needs: check
     if: needs.check.outputs.changed == 'true'
     uses: ./.github/workflows/package-addon.yml
 
+  # test is skipped when the push already passed it
   release:
     needs: [check, test, build, addon]
+    if: ${{ !cancelled() && needs.check.outputs.changed == 'true' && needs.build.result == 'success' && needs.addon.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.test.result) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

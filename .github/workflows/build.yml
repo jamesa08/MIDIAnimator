@@ -13,6 +13,11 @@ on:
         options: [all, macos-universal, windows-x64, linux-x64]
         default: all
   workflow_call:
+    inputs:
+      # only restores the rust caches, so nights without builds don't let them expire (github evicts caches unused for 7 days)
+      keepalive:
+        type: boolean
+        default: false
 
 jobs:
   # manual runs can build a single platform, everything else builds all of them
@@ -43,9 +48,6 @@ jobs:
         include: ${{ fromJSON(needs.matrix.outputs.include) }}
 
     runs-on: ${{ matrix.platform }}
-    defaults:
-      run:
-        working-directory: rust-impl/motionkeys
 
     steps:
       - name: Check out branch
@@ -56,14 +58,29 @@ jobs:
         shell: bash
         run: echo "HASH=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
+      # rust builds faster on a ReFS dev drive than on the runner's own disk, so windows builds from a copy of the checkout there
+      - name: Set up dev drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@v4
+        with:
+          drive-size: 12GB
+          workspace-copy: true
+          trusted-dev-drive: true
+
+      # the app folder, inside the dev drive's copy on windows
+      - name: Find app folder
+        shell: bash
+        run: echo "APP_DIR=${DEV_DRIVE_WORKSPACE:-$GITHUB_WORKSPACE}/rust-impl/motionkeys" >> $GITHUB_ENV
+
       # tauri needs webkit/gtk
       - name: Install linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        if: runner.os == 'Linux' && !inputs.keepalive
+        uses: ./.github/actions/linux-deps
+        with:
+          packages: libwebkit2gtk-4.1-dev librsvg2-dev patchelf
 
       - name: Set up node
+        if: ${{ !inputs.keepalive }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -75,27 +92,52 @@ jobs:
         with:
           targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      # never saves on keepalive, a cache saved then would be empty and stop real builds from saving theirs
       - name: Cache rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust-impl/motionkeys/src-tauri
+          workspaces: ${{ env.APP_DIR }}/src-tauri
           key: ${{ matrix.name }}
+          save-if: ${{ !inputs.keepalive }}
+
+      # tauri downloads linuxdeploy, AppRun, WiX and NSIS from github releases while bundling, which sometimes 504s
+      - name: Cache tauri bundler tools
+        if: runner.os != 'macOS' && !inputs.keepalive
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.os == 'Windows' && '~/AppData/Local/tauri' || '~/.cache/tauri' }}
+          key: tauri-tools-${{ runner.os }}-${{ hashFiles('rust-impl/motionkeys/package-lock.json') }}
+          restore-keys: tauri-tools-${{ runner.os }}-
 
       - name: Install frontend dependencies
+        if: ${{ !inputs.keepalive }}
+        working-directory: ${{ env.APP_DIR }}
         run: npm ci
 
+      # a failed bundler tool download is retried, cargo's output is reused so only bundling runs again
       - name: Build app
-        run: npx tauri build ${{ matrix.args }}
+        if: ${{ !inputs.keepalive }}
+        working-directory: ${{ env.APP_DIR }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx tauri build ${{ matrix.args }} 2>&1 | tee tauri-build.log && exit 0
+            grep -q 'http status' tauri-build.log || exit 1
+            echo "::warning::bundler tool download failed on attempt $attempt"
+            sleep 30
+          done
+          exit 1
 
       - name: Upload bundles
+        if: ${{ !inputs.keepalive }}
         uses: actions/upload-artifact@v6
         with:
           name: MotionKeys-${{ github.ref_name }}-${{ env.HASH }}-${{ matrix.name }}
           path: |
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/dmg/*.dmg
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/msi/*.msi
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/nsis/*.exe
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/deb/*.deb
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/rpm/*.rpm
-            rust-impl/motionkeys/src-tauri/${{ matrix.bundle }}/appimage/*.AppImage
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/dmg/*.dmg
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/msi/*.msi
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/nsis/*.exe
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/deb/*.deb
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/rpm/*.rpm
+            ${{ env.APP_DIR }}/src-tauri/${{ matrix.bundle }}/appimage/*.AppImage
           if-no-files-found: error
