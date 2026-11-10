@@ -101,6 +101,49 @@ fn add_nodes_names_animation_generators() {
     assert_eq!(graph.node(&added[0].id).unwrap().input_value("name"), Some(&json!("Animation 1")));
 }
 
+// a Preset Animation keeps its defaults on itself, so a project made now plays the same when they change later
+#[test]
+fn add_nodes_stores_a_preset_animations_defaults() {
+    let mut graph = fixture();
+    let preset = json!({ "type": "preset_animation", "position": { "x": 0, "y": 0 } });
+    let cymbal = json!({ "type": "preset_animation", "data": { "inputs": { "mode": "cymbal", "angle": 30 } }, "position": { "x": 0, "y": 0 } });
+    let added = run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [preset, cymbal] }])).unwrap();
+
+    let spring = graph.node(&added[0].id).unwrap();
+    for (input, value) in [("mode", json!("spring")), ("channel", json!("rotation_euler[0]")), ("end", json!(36)), ("period", json!(9)), ("dampen", json!(0.5)), ("windup", json!(8)), ("detune", json!(6.1))] {
+        assert_eq!(spring.input_value(input), Some(&value), "{input}");
+    }
+    // a mode's own defaults, and what was set stays
+    let cymbal = graph.node(&added[1].id).unwrap();
+    assert_eq!(cymbal.input_value("end"), Some(&json!(240)));
+    assert_eq!(cymbal.input_value("angle"), Some(&json!(30)));
+    // other nodes are added as they were
+    let added = run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "set_channel", "position": { "x": 0, "y": 0 } }] }])).unwrap();
+    assert_eq!(graph.node(&added[0].id).unwrap().input_value("channel"), None);
+}
+
+// a new mode brings its defaults, values set by hand stay
+#[test]
+fn set_inputs_moves_a_preset_animation_to_its_new_modes_defaults() {
+    let mut graph = fixture();
+    let added = run(&mut graph, None, json!([{ "op": "add_nodes", "nodes": [{ "type": "preset_animation", "position": { "x": 0, "y": 0 } }] }])).unwrap();
+    let id = added[0].id.clone();
+    let value = |graph: &Graph, input: &str| graph.node(&id).unwrap().input_value(input).cloned();
+
+    run(&mut graph, None, json!([{ "op": "set_inputs", "node": id, "inputs": { "mode": "cymbal" } }])).unwrap();
+    assert_eq!(value(&graph, "end"), Some(json!(240)));
+    assert_eq!(value(&graph, "period"), Some(json!(35)));
+
+    // one changed by hand is kept through a drumstick and back to a spring, the rest follow
+    run(&mut graph, None, json!([{ "op": "set_inputs", "node": id, "inputs": { "end": 100 } }])).unwrap();
+    run(&mut graph, None, json!([{ "op": "set_inputs", "node": id, "inputs": { "mode": "drumstick" } }])).unwrap();
+    assert_eq!(value(&graph, "period"), Some(json!(35)));
+    run(&mut graph, None, json!([{ "op": "set_inputs", "node": id, "inputs": { "mode": "spring" } }])).unwrap();
+    assert_eq!(value(&graph, "end"), Some(json!(100)));
+    assert_eq!(value(&graph, "period"), Some(json!(9)));
+    assert_eq!(value(&graph, "amplitude"), Some(json!(0.25)));
+}
+
 // deleting half a zone deletes all of it, with every connection to the deleted nodes
 #[test]
 fn delete_takes_zones_and_edges() {

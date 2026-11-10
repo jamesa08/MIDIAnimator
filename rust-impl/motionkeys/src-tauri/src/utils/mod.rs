@@ -10,6 +10,7 @@ pub mod mapper;
 pub mod momentum;
 pub mod note_table;
 pub mod ui;
+pub mod wave;
 
 use regex::Regex;
 use std::f64::consts::PI;

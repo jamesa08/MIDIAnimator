@@ -350,6 +350,206 @@
         },
 
         {
+            "id": "preset_animation",
+            "name": "Preset Animation",
+            "category": "animation",
+            "description": "Keyframes from a preset shape with its settings: a spring, a drumstick stroke (windup, hit, recoil and rest) or a cymbal crash, baked to bezier keys around the hit at frame 0. Connect it to Animation Generator's Note On Keyframes.",
+            "executor": "rust",
+            "realtime": true,
+            "store_defaults": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "mode",
+                        "default": "spring",
+                        "name": "Mode",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The shape: spring (a damped sine that settles at its end), drumstick (windup, hit, recoil, settle) or cymbal (a spring on two curves, rocking and wobbling around). Unset = spring."
+                    },
+                    {
+                        "id": "channel",
+                        "default": "rotation_euler[0]",
+                        "name": "Channel",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The curve's channel, the bridge's id (Blender: data path with its index, e.g. rotation_euler[0] or location[2]). Unset = rotation_euler[0]."
+                    },
+                    {
+                        "id": "channel_y",
+                        "default": "rotation_euler[1]",
+                        "name": "Channel Y",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "Cymbal only: the second curve's channel. Unset = rotation_euler[1]."
+                    },
+                    {
+                        "id": "start",
+                        "default": 0,
+                        "name": "Start",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Spring and cymbal: frames from the note on where the swinging starts."
+                    },
+                    {
+                        "id": "end",
+                        "name": "End",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Spring and cymbal: frames from the note on where it's settled back at rest, after the start. Unset = 36 for a spring, 240 for a cymbal.",
+                        "mode_defaults": {
+                            "spring": 36,
+                            "cymbal": 240
+                        }
+                    },
+                    {
+                        "id": "period",
+                        "name": "Period",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Spring and cymbal: frames for one swing there and back. Unset = 9 for a spring, 35 for a cymbal.",
+                        "mode_defaults": {
+                            "spring": 9,
+                            "cymbal": 35
+                        }
+                    },
+                    {
+                        "id": "amplitude",
+                        "name": "Amplitude",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Spring and cymbal: how far it swings, in the channel's units (radians for a rotation). For a cymbal, its whole tilt. Unset = 0.25 for a spring, 0.27 for a cymbal.",
+                        "mode_defaults": {
+                            "spring": 0.25,
+                            "cymbal": 0.27
+                        }
+                    },
+                    {
+                        "id": "dampen",
+                        "name": "Dampen",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Spring and cymbal: how fast the swinging dies down, from 0 (evenly, in a straight line) to 1 (gone after the first few swings). Unset = 0.5 for a spring, 0.42 for a cymbal.",
+                        "mode_defaults": {
+                            "spring": 0.5,
+                            "cymbal": 0.42
+                        }
+                    },
+                    {
+                        "id": "flip",
+                        "default": false,
+                        "name": "Flip",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "Spring only: the first swing goes down instead of up."
+                    },
+                    {
+                        "id": "rest",
+                        "default": 0,
+                        "name": "Rest",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "The value at rest, before and after the motion. A drumstick starts there and its rest phase settles back to it. For a cymbal, its first curve's."
+                    },
+                    {
+                        "id": "angle",
+                        "default": 45,
+                        "name": "Angle",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Cymbal only: degrees around the cymbal where it's struck. The whole crash turns with it: at 0 it first rocks on the first curve only, at 90 on the second only, at 45 on both alike."
+                    },
+                    {
+                        "id": "detune",
+                        "default": 6.1,
+                        "name": "Detune",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Cymbal only: percent the cymbal's second way of rocking is slower than the first. They start together, so it first rocks toward the strike, then drift apart and open into a wobble around the stand. 0 only rocks."
+                    },
+                    {
+                        "id": "rest_y",
+                        "default": 0,
+                        "name": "Rest Y",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Cymbal only: the second curve's value at rest."
+                    },
+                    {
+                        "id": "windup",
+                        "default": 8,
+                        "name": "Windup",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: frames the windup takes, lifting the stick from rest to its windup value."
+                    },
+                    {
+                        "id": "windup_value",
+                        "default": 0.6,
+                        "name": "Windup Value",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: the value the windup ends at, its peak."
+                    },
+                    {
+                        "id": "hit",
+                        "default": 5,
+                        "name": "Hit",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: frames the hit takes, falling faster and faster from the windup's peak onto the hit value. It lands on the note (frame 0)."
+                    },
+                    {
+                        "id": "hit_value",
+                        "default": -0.3,
+                        "name": "Hit Value",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: the value the hit ends at, where the stick meets the drum."
+                    },
+                    {
+                        "id": "recoil",
+                        "default": 6,
+                        "name": "Recoil",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: frames the recoil takes, knocked back up from the hit to the recoil value."
+                    },
+                    {
+                        "id": "recoil_value",
+                        "default": 0.15,
+                        "name": "Recoil Value",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: the value the recoil ends at, its top."
+                    },
+                    {
+                        "id": "rest_length",
+                        "default": 8,
+                        "name": "Rest Length",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Drumstick only: frames the rest phase takes, settling from the recoil's top back to rest."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "Array<Keyframe>",
+                        "description": "The curve on its channel, times relative to the note on."
+                    },
+                    {
+                        "id": "keyframes_y",
+                        "name": "Keyframes Y",
+                        "data_type": "Array<Keyframe>",
+                        "description": "Cymbal only: the second curve, on Channel Y."
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "assign_notes_to_objects",
             "name": "Assign Notes to Objects",
             "category": "animation",

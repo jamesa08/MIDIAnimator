@@ -14,6 +14,8 @@ use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
 use crate::utils::momentum::phases;
 use crate::utils::note_table::{self, NoteTable};
+use crate::utils::wave::{Cymbal, Drumstick, Spring};
+use crate::graph::model::mode_default;
 
 /// Node: keyframes_from_object
 ///
@@ -295,6 +297,141 @@ pub fn set_channel(keyframes: &AnimCurve, channel: Option<&String>) -> NodeResul
 
     let mut outputs = Outputs::new();
     outputs.set("keyframes", curve);
+    Ok(outputs)
+}
+
+// MARK: - Preset Animation
+
+/// the Preset Animation node's modes, same ids as `modes` in its UI (src/nodes/preset_animation.tsx)
+pub const PRESET_ANIMATION_MODES: [&str; 3] = ["spring", "drumstick", "cymbal"];
+
+/// Node: preset_animation
+///
+/// inputs:
+/// "mode": `String`, spring, drumstick or cymbal
+/// "channel", "channel_y": `String`, the channels of the curve and the cymbal's second curve
+/// spring and cymbal: "start", "end", "period" (frames), "amplitude", "dampen" (0 to 1), "rest". unset end, period,
+/// amplitude and dampen are the mode's, `mode_defaults` in the spec
+/// spring: "flip" (`bool`, the first swing goes down)
+/// cymbal: "angle" (degrees), "detune" (percent), "rest_y"
+/// drumstick: its phases' lengths in frames, "windup", "hit", "recoil" and "rest_length", and the values they end at,
+/// "windup_value", "hit_value", "recoil_value" and "rest" (where it starts too). the hit lands on the note
+///
+/// outputs:
+/// "keyframes": `FCurveData`, and "keyframes_y" for a cymbal
+#[node_registry::node]
+pub fn preset_animation(mode: Option<String>, channel: Option<String>, channel_y: Option<String>, start: Option<f64>, end: Option<f64>, period: Option<f64>, amplitude: Option<f64>, dampen: Option<f64>, flip: Option<bool>, rest: Option<f64>, angle: Option<f64>, detune: Option<f64>, rest_y: Option<f64>, windup: Option<f64>, windup_value: Option<f64>, hit: Option<f64>, hit_value: Option<f64>, recoil: Option<f64>, recoil_value: Option<f64>, rest_length: Option<f64>) -> NodeResult {
+    let mode = mode.filter(|m| !m.is_empty()).unwrap_or_else(|| PRESET_ANIMATION_MODES[0].to_string());
+    if !PRESET_ANIMATION_MODES.contains(&mode.as_str()) {
+        return Err(format!("unknown mode '{}', expected one of: {}", mode, PRESET_ANIMATION_MODES.join(", ")));
+    }
+    // times are typed in frames, keys are seconds
+    let fps = scene_fps().unwrap_or(DEFAULT_FPS);
+    let seconds = |frames: f64| frames / fps;
+    let default = |input: &str| mode_default("preset_animation", input, &mode).unwrap_or(0.0);
+    let finite = |value: Option<f64>, default: f64, name: &str| -> Result<f64, String> {
+        let value = value.unwrap_or(default);
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(format!("{} has to be a number, got {}", name, value))
+        }
+    };
+    let rest = finite(rest, 0.0, "rest")?;
+    // unset or emptied is the default, the first rotation axes. channel ids are the bridge's, any goes as typed
+    let channel_or = |channel: Option<String>, default: &str| channel.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).unwrap_or_else(|| default.to_string());
+    let channel = channel_or(channel, "rotation_euler[0]");
+
+    let spring = || -> Result<Spring, String> {
+        let (start, end) = (finite(start, 0.0, "start")?, finite(end, default("end"), "end")?);
+        if end <= start {
+            return Err(format!("the end ({}) has to come after the start ({})", end, start));
+        }
+        let period = finite(period, default("period"), "period")?;
+        if period <= 0.0 {
+            return Err(format!("the period has to be more than 0, got {}", period));
+        }
+        let dampen = finite(dampen, default("dampen"), "dampen")?;
+        if !(0.0..=1.0).contains(&dampen) {
+            return Err(format!("dampen goes from 0 to 1, got {}", dampen));
+        }
+        Ok(Spring {
+            start: seconds(start),
+            end: seconds(end),
+            amplitude: finite(amplitude, default("amplitude"), "amplitude")?,
+            period: seconds(period),
+            dampen,
+            rest,
+            flip: flip.unwrap_or(false),
+        })
+    };
+
+    let mut outputs = Outputs::new();
+    match mode.as_str() {
+        "spring" => outputs.set(
+            "keyframes",
+            AnimCurve {
+                channel,
+                keys: spring()?.keys(),
+            },
+        ),
+        "drumstick" => {
+            let stick = Drumstick {
+                windup: seconds(finite(windup, 8.0, "windup")?),
+                windup_value: finite(windup_value, 0.6, "windup value")?,
+                hit: seconds(finite(hit, 5.0, "hit")?),
+                hit_value: finite(hit_value, -0.3, "hit value")?,
+                recoil: seconds(finite(recoil, 6.0, "recoil")?),
+                recoil_value: finite(recoil_value, 0.15, "recoil value")?,
+                settle: seconds(finite(rest_length, 8.0, "rest length")?),
+                rest,
+            };
+            if let Some(phase) = stick.check() {
+                return Err(format!("the {} has to be longer than 0 frames", phase));
+            }
+            outputs.set(
+                "keyframes",
+                AnimCurve {
+                    channel,
+                    keys: stick.keys(),
+                },
+            );
+        }
+        _ => {
+            let channel_y = channel_or(channel_y, "rotation_euler[1]");
+            if channel_y == channel {
+                return Err(format!("both curves are on {}, give the second one its own channel", channel));
+            }
+            let detune = finite(detune, 6.1, "detune")?;
+            if detune <= -100.0 {
+                return Err(format!("the detune has to be more than -100%, got {}", detune));
+            }
+            let cymbal = Cymbal {
+                spring: Spring {
+                    flip: false,
+                    ..spring()?
+                },
+                angle: finite(angle, 45.0, "angle")?.to_radians(),
+                detune: detune / 100.0,
+                rest: [rest, finite(rest_y, 0.0, "rest y")?],
+            };
+            let [x, y] = cymbal.keys();
+            outputs.set(
+                "keyframes",
+                AnimCurve {
+                    channel,
+                    keys: x,
+                },
+            );
+            outputs.set(
+                "keyframes_y",
+                AnimCurve {
+                    channel: channel_y,
+                    keys: y,
+                },
+            );
+        }
+    }
     Ok(outputs)
 }
 
