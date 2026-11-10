@@ -1120,6 +1120,42 @@ img {
     border-color: var(--properties-dim);
 }
 
+/* Preset Animation's settings (nodes/preset_animation.tsx): a name and its boxes on one row, a drumstick's frame and value
+   in columns */
+.preset-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.preset-row > span:first-child {
+    flex: 1;
+}
+
+.preset-box {
+    box-sizing: border-box;
+    width: 52px;
+    padding: 1px 4px;
+    text-align: right;
+    -moz-appearance: textfield;
+}
+
+.preset-box::-webkit-inner-spin-button,
+.preset-box::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.node .value-slider.preset-slider {
+    justify-content: space-between;
+}
+
+.preset-columns > span:not(:first-child) {
+    width: 52px;
+    text-align: center;
+    color: var(--node-value);
+}
+
 /* in a node it's outlined like the node's text boxes, the number centered with no name in it */
 .node .value-slider {
     box-sizing: border-box;

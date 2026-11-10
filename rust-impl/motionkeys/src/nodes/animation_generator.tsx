@@ -28,7 +28,7 @@ export const overlapModes = [
 
 // a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
 // that isn't a number is put back
-function NumberField({ value, onCommit, ...props }: { value: number | undefined; onCommit: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+export function NumberField({ value, onCommit, ...props }: { value: number | undefined; onCommit: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
     const [text, setText] = useState<string | number>(value ?? "");
     useEffect(() => setText(value ?? ""), [value]);
     const commit = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -61,7 +61,7 @@ function NumberField({ value, onCommit, ...props }: { value: number | undefined;
 
 // a slider for an input from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
 // it's dragged to, not what comes back from the backend on the way
-function useSliderInput(id: string, input: string, current: number | undefined) {
+export function useSliderInput(id: string, input: string, current: number | undefined) {
     const drag = useInputDrag(id);
     const [value, setValue] = useState<number>(current ?? 0);
     useEffect(() => {
