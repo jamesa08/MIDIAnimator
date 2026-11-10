@@ -1897,27 +1897,26 @@ test("the momentum phase editor shows its points and drags one", async ({ page }
     // nothing set yet, nothing to reset
     await expect(node.locator(".phase-reset")).toBeDisabled();
 
-    // dragging the windup's row earlier sets it as frames from the hit, in one undo step
+    // dragging the windup's row earlier sets it as frames from the hit. nothing goes out on the way, the line and row
+    // follow the pointer, and it's sent once when it's let go
     const box = (await rows.nth(0).boundingBox())!;
-    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 5 });
-    await page.mouse.up();
     const windups = () =>
         page.evaluate(() =>
             (window as any).__smokeCalls
                 .filter((c: any) => c.cmd === "graph_apply")
-                .flatMap((c: any) => c.args.ops.map((op: any) => ({ op, txn: c.args.txn, run: c.args.run })))
-                .filter(({ op }: any) => op.op === "set_inputs" && "overlap_windup" in op.inputs)
+                .flatMap((c: any) => c.args.ops)
+                .filter((op: any) => op.op === "set_inputs" && "overlap_windup" in op.inputs)
         );
-    await expect.poll(async () => (await windups()).length).toBeGreaterThan(0);
-    const sent = await windups();
-    expect(sent.every(({ op }: any) => op.inputs.overlap_windup < 0)).toBe(true);
-    expect(new Set(sent.map(({ txn }: any) => txn)).size).toBe(1);
-    // the graph doesn't run on the way, ending the undo step runs it
-    expect(sent.every(({ run }: any) => run === false)).toBe(true);
-    await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "history_end"))).toBe(true);
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 5 });
+    await expect(rows.nth(0)).not.toContainText("72.0");
+    expect(await windups()).toHaveLength(0);
+    await page.mouse.up();
+    await expect.poll(async () => (await windups()).length).toBe(1);
+    expect((await windups())[0].inputs.overlap_windup).toBeLessThan(-48);
     await settle(page);
+    expect(await windups()).toHaveLength(1);
 });
 
 test("dragging the hit past the windup or recoil keeps it between them", async ({ page }) => {

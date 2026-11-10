@@ -128,20 +128,23 @@ function PhaseEditor({ id, generator, fps, anchorConnected, set }: { id: string;
         }
     }, [shown, zoom, fps, points.windup, points.hit, points.recoil]);
     useEffect(draw, [draw]);
+    const drawRef = useRef(draw);
+    drawRef.current = draw;
 
-    // the node resizing and the theme changing (its css is swapped in the head, utils/theme.ts)
+    // the node resizing and the theme changing (its css is swapped in the head, utils/theme.ts). watched once, a new
+    // observer every move during a drag would draw each frame twice
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const resize = new ResizeObserver(draw);
+        const resize = new ResizeObserver(() => drawRef.current());
         resize.observe(canvas);
-        const theme = new MutationObserver(draw);
+        const theme = new MutationObserver(() => drawRef.current());
         theme.observe(document.head, { childList: true, subtree: true, characterData: true });
         return () => {
             resize.disconnect();
             theme.disconnect();
         };
-    }, [draw]);
+    }, []);
 
     // a press on the curve picks up the nearest line
     const grabRef = useRef<Point | null>(null);

@@ -89,8 +89,6 @@ pub struct InstanceState {
     /// the scene waiting for review while the tab is paused
     pub pending_scene: Option<Scene>,
     pub execution_paused: bool,
-    /// an edit that changed the output didn't run the graph (a drag's steps), the run happens when its undo step ends
-    pub run_held: bool,
     /// objects over the keyframe limit and their keyframe counts, waiting to be imported or left out (bridge/curves.rs)
     pub pending_curve_import: Option<BTreeMap<String, u64>>,
     /// objects over the keyframe limit that were imported, they don't ask again
@@ -120,7 +118,6 @@ impl InstanceState {
             stale_writes: Vec::new(),
             pending_scene: None,
             execution_paused: false,
-            run_held: false,
             pending_curve_import: None,
             approved_curves: BTreeSet::new(),
             declined_curves: BTreeSet::new(),
