@@ -12,6 +12,7 @@ use super::scene::scene_fps;
 use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
+use crate::utils::momentum::phases;
 use crate::utils::note_table::{self, NoteTable};
 
 /// Node: keyframes_from_object
@@ -126,11 +127,13 @@ pub fn object_channels(object: &Object) -> Vec<ChannelOption> {
 /// "overlap_blend": `f64`,
 /// "overlap_dampen": `f64`, momentum, 0 to 1,
 /// "overlap_use_anchor_value": `bool`, momentum
+/// "overlap_windup": `f64`, momentum, frames from the hit to the windup's peak, negative
+/// "overlap_recoil": `f64`, momentum, frames from the hit to the recoil, positive
 ///
 /// outputs:
 /// "generator": `AnimationGenerator`
 #[node_registry::node]
-pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<&Value>, amplitude_mapper: Option<&Value>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>, overlap_dampen: Option<f64>, overlap_use_anchor_value: Option<bool>) -> NodeResult {
+pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<AnimCurve>>, note_on_anchor_point: Option<f64>, note_off_keyframes: Option<&Vec<AnimCurve>>, note_off_anchor_point: Option<f64>, time_mapper: Option<&Value>, amplitude_mapper: Option<&Value>, velocity_intensity: Option<f64>, animation_overlap: Option<String>, overlap_blend: Option<f64>, overlap_dampen: Option<f64>, overlap_use_anchor_value: Option<bool>, overlap_windup: Option<f64>, overlap_recoil: Option<f64>) -> NodeResult {
     // the keyframe curves are optional, an unconnected one is just no keyframes
     let note_on_keyframes = note_on_keyframes.cloned().unwrap_or_default();
     let note_off_keyframes = note_off_keyframes.cloned().unwrap_or_default();
@@ -168,6 +171,14 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         return Err(format!("overlap dampen goes from 0 to 1, got {}", overlap_dampen));
     }
 
+    // momentum's windup comes before the hit and its recoil after it
+    if let Some(windup) = overlap_windup.filter(|windup| !(*windup < 0.0)) {
+        return Err(format!("overlap windup is frames before the hit, it has to be negative, got {}", windup));
+    }
+    if let Some(recoil) = overlap_recoil.filter(|recoil| !(*recoil > 0.0)) {
+        return Err(format!("overlap recoil is frames after the hit, it has to be positive, got {}", recoil));
+    }
+
     // a mapper is an expression, nothing set changes nothing. one saved with the expression inside an object (how the
     // mappers were saved for a while) reads its expression
     let mapper = |value: Option<&Value>, name: &str| -> Result<String, String> {
@@ -181,7 +192,7 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
     let time_mapper = mapper(time_mapper, "Time Mapper")?;
     let amplitude_mapper = mapper(amplitude_mapper, "Amplitude Mapper")?;
 
-    let generator = AnimationGenerator {
+    let mut generator = AnimationGenerator {
         name: name.unwrap_or_default(),
         note_on_keyframes,
         note_on_anchor_point: note_on_anchor_point.unwrap_or_default(),
@@ -194,8 +205,21 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         overlap_blend,
         overlap_dampen,
         overlap_use_anchor_value: overlap_use_anchor_value.unwrap_or(true),
+        overlap_windup,
+        overlap_recoil,
         compiled: Default::default(),
     };
+
+    // momentum's windup and recoil that aren't set are found on the first note on curve, around its hit
+    let momentum = generator.animation_overlap == "momentum";
+    if let (true, Some(curve)) = (momentum, generator.note_on_keyframes.iter().find(|curve| !curve.keys.is_empty())) {
+        let fps = scene_fps().unwrap_or(DEFAULT_FPS);
+        let hit = -generator.note_on_anchor_point / fps;
+        let [windup, recoil] = phases(&curve.keys, hit);
+        // a point found at the hit (a curve that starts or ends there) is a frame from it
+        generator.overlap_windup = generator.overlap_windup.or(Some(((windup - hit) * fps).min(-0.5)));
+        generator.overlap_recoil = generator.overlap_recoil.or(Some(((recoil - hit) * fps).max(0.5)));
+    }
 
     // the mappers compile once here, a mistake in one fails this node
     let mappers = generator.mappers()?;

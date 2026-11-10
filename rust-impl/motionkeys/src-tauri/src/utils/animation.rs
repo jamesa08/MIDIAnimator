@@ -52,6 +52,12 @@ pub struct AnimationGenerator {
     /// momentum only: dampening shrinks toward the hit's value so the hit still lands, off shrinks toward rest
     #[serde(default = "default_use_anchor_value")]
     pub overlap_use_anchor_value: bool,
+    /// momentum only: frames from the hit to the windup's peak (negative) and to the recoil (positive) on the note on
+    /// curves. set on the node or found on the first note on curve, unset without one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlap_windup: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlap_recoil: Option<f64>,
     /// the mappers compiled, once for every copy of the generator
     #[serde(skip)]
     #[schemars(skip)]
@@ -218,6 +224,9 @@ pub struct CurveKeys {
     pub overlap_dampen: f64,
     #[serde(default = "default_use_anchor_value")]
     pub overlap_use_anchor_value: bool,
+    /// momentum: when the note's windup peaks and its recoil is, seconds. unset finds them on the keys
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phases: Option<[f64; 2]>,
     /// in the wire form, `[time, value, interpolation]` or with the handles
     #[serde(with = "crate::utils::curve::wire_keys")]
     #[schemars(with = "Vec<Vec<serde_json::Value>>")]
@@ -261,12 +270,28 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
 
     // note on and note off curves on the same channel play on the same curve
     let mut channels: BTreeMap<&str, Vec<Key>> = BTreeMap::new();
+    // momentum's windup and recoil on each note on curve, where they land for this note
+    let mut phases: BTreeMap<&str, [f64; 2]> = BTreeMap::new();
     // anchor points are in frames, the note's times are seconds
     let fps = ctx.fps();
-    for (curves, offset) in [(&gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point / fps), (&gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point / fps)] {
+    for (on, curves, offset) in [(true, &gen.note_on_keyframes, note.time_on + gen.note_on_anchor_point / fps), (false, &gen.note_off_keyframes, note.time_off + gen.note_off_anchor_point / fps)] {
         for curve in curves {
             // seconds, not frames, so timing follows the music rather than frame numbers
             let keys = note_keyframes(curve, offset, note.velocity, gen.velocity_intensity, mappers, vars.as_mut(), ctx.fps())?;
+            if let (true, Some(windup), Some(recoil), false) = (on, gen.overlap_windup, gen.overlap_recoil, curve.keys.is_empty()) {
+                // the points are frames from the curve's hit, they go through the time mapper like its keys
+                let hit = -gen.note_on_anchor_point / fps;
+                let mut at = |frames: f64| -> Result<f64, String> {
+                    let time = hit + frames / fps;
+                    let value = evaluate(&curve.keys, time).unwrap_or_default();
+                    let (time, _) = match vars.as_mut() {
+                        Some(vars) => mappers.map(vars, time, value, fps)?,
+                        None => (time, value),
+                    };
+                    Ok(time + offset)
+                };
+                phases.insert(curve.channel.as_str(), [at(windup)?, at(recoil)?]);
+            }
             channels.entry(curve.channel.as_str()).or_default().extend(keys);
         }
     }
@@ -285,6 +310,7 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
                 hit: Some(note.time_on),
                 overlap_dampen: gen.overlap_dampen,
                 overlap_use_anchor_value: gen.overlap_use_anchor_value,
+                phases: phases.get(channel).copied(),
                 keyframes,
             }
         })
@@ -337,6 +363,7 @@ pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks:
                 keys: chunk.keyframes,
                 dampen: chunk.overlap_dampen,
                 use_anchor_value: chunk.overlap_use_anchor_value,
+                phases: chunk.phases,
             });
             continue;
         }

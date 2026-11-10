@@ -6,8 +6,10 @@ use motionkeys::graph::executors::animation::animation_generator;
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::utils::animation::{combine_curve_keys, finish_keys, CurveKeys};
 use motionkeys::utils::curve::{auto_handles, check_keys, evaluate, slope, split_at, Interpolation, Key};
-use motionkeys::utils::momentum::{momentum_keys, MomentumNote};
+use motionkeys::utils::momentum::{momentum_keys, phases, MomentumNote};
+use motionkeys::scene_generics::AnimCurve;
 use serde_json::json;
+use std::collections::HashMap;
 
 const FPS: f64 = 24.0;
 // sampling step, seconds
@@ -91,7 +93,16 @@ fn references() -> Vec<(&'static str, Vec<Key>)> {
         ("jelly", reference(&[(-8.0, 1.0, false), (-4.0, 0.85, false), (0.0, 1.35, false), (4.0, 0.8, false), (8.0, 1.15, false), (12.0, 0.92, false), (16.0, 1.04, false), (20.0, 0.98, false), (26.0, 1.0, false)])),
         ("antenna", reference(&antenna)),
         ("baked spring", reference(&baked)),
+        ("hammer", hammer()),
     ]
+}
+
+// a hammer that rests partway up: it winds up from rest, strikes, and comes back up past its recoil to rest, the same
+// way the next windup goes on. close notes would stop it dead at rest on the way up. its handles are the ones blender
+// gives these keys (auto clamped, vector on the hit, in degrees), steeper at the recoil than `auto_handles` makes them
+fn hammer() -> Vec<Key> {
+    let keys: [(f64, f64, [f64; 2], [f64; 2]); 5] = [(-16.0, 10.0, [-18.333333, 10.0], [-13.666667, 10.0]), (-9.0, 60.0, [-11.333333, 60.0], [-6.0, 60.0]), (0.0, 0.0, [-3.0, 30.0], [1.0, 2.2078141]), (3.0, 6.0, [2.0, 4.4156282], [5.333333, 9.6969786]), (10.0, 10.0, [7.666667, 10.0], [12.333333, 10.0])];
+    keys.iter().map(|&(frame, value, left, right)| Key::with_handles(frame / FPS, value, Interpolation::Bezier, [left[0] / FPS, left[1]], [right[0] / FPS, right[1]])).collect()
 }
 
 // the reference moved to a note at `hit`
@@ -106,6 +117,7 @@ fn notes(reference: &[Key], hits: &[f64], dampen: f64, use_anchor_value: bool) -
             keys: at_hit(reference, hit),
             dampen,
             use_anchor_value,
+            phases: None,
         })
         .collect()
 }
@@ -206,19 +218,18 @@ fn momentum_never_moves_faster_than_keyed_lands_every_hit_and_stays_in_range() {
 }
 
 #[test]
-fn bridges_turn_no_harder_than_the_notes_do() {
+fn keys_stay_far_enough_apart_for_blender_to_keep_them() {
+    // blender merges keys less than a hundredth of a frame apart when it sorts a curve, so a key next to a hit would
+    // take the hit with it. 24 fps here, the slowest common rate, where a hundredth of a frame is longest
     for (name, reference) in references() {
         let (lead, tail) = span(&reference);
-        let mut skip_rel = sharp_times(&reference);
-        skip_rel.push(0.0);
-        let keyed = turn(&reference, -lead, tail, &skip_rel);
-        let mut frames = 3.0;
-        while frames <= (lead + tail) * FPS + 2.0 {
-            let hits = hits_for(&reference, frames / FPS);
-            let keys = combined(&reference, &hits, 0.0, true);
-            let skip: Vec<f64> = hits.iter().flat_map(|hit| skip_rel.iter().map(move |s| hit + s)).collect();
-            let worst = turn(&keys, hits[0] - lead, hits[3] + tail, &skip);
-            assert!(worst <= keyed * 1.6, "{name}, {frames} frames apart: turns {:.2}x as hard as keyed", worst / keyed);
+        let mut frames = 2.0;
+        while frames <= (lead + tail) * FPS + 4.0 {
+            let keys = combined(&reference, &hits_for(&reference, frames / FPS), 0.0, true);
+            for pair in keys.windows(2) {
+                let apart = (pair[1].time - pair[0].time) * FPS;
+                assert!(apart > 0.02, "{name}, {frames} frames apart: keys at {:.4} and {:.4} are {apart:.4} frames apart", pair[0].time * FPS, pair[1].time * FPS);
+            }
             frames += 0.5;
         }
     }
@@ -228,7 +239,8 @@ fn bridges_turn_no_harder_than_the_notes_do() {
 fn notes_with_room_play_exactly_as_keyed() {
     for (name, reference) in references() {
         let (lead, tail) = span(&reference);
-        let hits = [1.0, 1.0 + lead + tail + 0.1];
+        // room for the whole note, and to sit at rest for two windups before the next one
+        let hits = [1.0, 1.0 + 3.0 * lead + tail + 0.1];
         for dampen in [0.0, 1.0] {
             let keys = combined(&reference, &hits, dampen, true);
             let mut u = -lead;
@@ -271,7 +283,9 @@ fn a_drumstick_keeps_its_windup_like_the_doc_and_shrinks_only_when_it_has_to() {
 
 #[test]
 fn the_motion_between_two_hits_only_grows_with_the_gap() {
-    for (name, reference) in references() {
+    // rings with no windup (spring, pluck, baked spring) are left out: where the old ring is on the far side when the
+    // new stroke starts, keeping it would make the stroke faster than keyed, so the ring goes like the doc's recoil
+    for (name, reference) in references().into_iter().filter(|(name, _)| !["spring", "pluck", "baked spring"].contains(name)) {
         let (lead, tail) = span(&reference);
         let range = motion(&reference, -lead, tail);
         let range = range.hi - range.lo;
@@ -280,10 +294,131 @@ fn the_motion_between_two_hits_only_grows_with_the_gap() {
             let hits = [1.0, 1.0 + frames / FPS];
             let m = motion(&combined(&reference, &hits, 0.0, true), hits[0], hits[1]);
             let size = m.hi - m.lo;
-            // a ripple of a few percent where the bridge changes placement
+            // a ripple of a few percent where the join changes
             assert!(size >= biggest - 0.03 * range, "{name}: {frames} frames apart moves {size:.3}, less than {biggest:.3} at a smaller gap");
             biggest = biggest.max(size);
             frames += 0.25;
+        }
+    }
+}
+
+// the slowest the curve moves between two times
+fn slowest(keys: &[Key], from: f64, to: f64) -> f64 {
+    let mut slowest = f64::INFINITY;
+    let mut t = from;
+    while t < to {
+        slowest = slowest.min(((evaluate(keys, t + DT).unwrap() - evaluate(keys, t).unwrap()) / DT).abs());
+        t += DT;
+    }
+    slowest
+}
+
+#[test]
+fn a_hammer_coming_back_up_doesnt_stop_at_rest_before_a_close_note() {
+    let hammer = hammer();
+    // the hammer's whole stroke is 26 frames, it rests at 10 on the way up from the hit (0) to the windup (60, 9 frames
+    // before the hit). as keyed it would stop dead at rest when the notes touch (26 frames) or nearly do, its recoil
+    // is its rest so it goes straight from the hit up to the next windup instead
+    for frames in [20.0, 23.0, 26.0] {
+        let hits = [1.0, 1.0 + frames / FPS];
+        let (from, to) = (hits[0] + 3.0 / FPS, hits[1] - 10.0 / FPS);
+        let carried = combined(&hammer, &hits, 0.0, true);
+        let moving = slowest(&carried, from, to);
+        assert!(moving > 0.5 * 4.0 / (7.0 / FPS), "{frames} frames apart still stops: {moving:.2} a second");
+    }
+}
+
+#[test]
+fn a_carried_hammer_only_slows_down_at_its_rest_height() {
+    let hammer = hammer();
+    // at every gap it goes one way from the hit to the next windup, and wherever it's nearly still it's at rest (10),
+    // never hovering above it
+    let mut frames = 18.0;
+    while frames <= 60.0 {
+        let hits = [1.0, 1.0 + frames / FPS];
+        let keys = combined(&hammer, &hits, 0.0, true);
+        let (from, to) = (hits[0] + DT, hits[1] - 10.0 / FPS);
+        let mut t = from;
+        while t < to {
+            let (v, next) = (evaluate(&keys, t).unwrap(), evaluate(&keys, t + DT).unwrap());
+            let speed = (next - v) / DT;
+            assert!(speed > -0.06, "{frames} frames apart goes back down at {:.2} frames: {speed:.3} a second", (t - hits[0]) * FPS);
+            if speed < 0.1 * 4.0 / (7.0 / FPS) {
+                assert!((v - 10.0).abs() < 0.6, "{frames} frames apart nearly stops at {v:.2}, not at rest, {:.2} frames after the hit", (t - hits[0]) * FPS);
+            }
+            t += DT;
+        }
+        frames += 0.5;
+    }
+}
+
+// notes at different velocities: each note's whole curve scaled by velocity / 127, like the generator's velocity
+// intensity, so each rests at its own height
+fn loud_and_soft(reference: &[Key], hits: &[f64], velocities: &[f64]) -> Vec<Key> {
+    let notes = hits
+        .iter()
+        .zip(velocities)
+        .map(|(&hit, &velocity)| MomentumNote {
+            hit,
+            keys: at_hit(reference, hit)
+                .into_iter()
+                .map(|mut key| {
+                    let scale = velocity / 127.0;
+                    key.value *= scale;
+                    key.left[1] *= scale;
+                    key.right[1] *= scale;
+                    key
+                })
+                .collect(),
+            dampen: 0.0,
+            use_anchor_value: true,
+            phases: None,
+        })
+        .collect();
+    let mut keys = momentum_keys(notes);
+    finish_keys(&mut keys);
+    keys
+}
+
+#[test]
+fn notes_with_room_ease_between_their_rest_heights() {
+    // a drumstick at velocity 96 then 104 rests at 15.1 then 16.4, with half a second between its rests: it eases
+    // across the whole pause instead of hopping at one point in it
+    let (_, drumstick) = references().into_iter().next().unwrap();
+    let (lead, tail) = span(&drumstick);
+    let pause = 0.5;
+    let hits = [1.0, 1.0 + lead + tail + pause];
+    let keys = loud_and_soft(&drumstick, &hits, &[96.0, 104.0]);
+    let (from, to) = (hits[0] + tail, hits[1] - lead);
+    let rise = 20.0 * (104.0 - 96.0) / 127.0;
+    let fastest = motion(&keys, from, to).speed;
+    assert!(fastest <= 1.6 * rise / pause, "hops between rests at {fastest:.2} a second, an ease is about {:.2}", rise / pause);
+    for hit in hits {
+        assert!(evaluate(&keys, hit).unwrap().abs() < 1e-9);
+    }
+}
+
+#[test]
+fn a_hammer_carries_through_rest_at_different_velocities() {
+    // loud and soft notes rest at different heights, the hammer still doesn't stop on its way up between them, and
+    // nearly still it's only between the two rest heights
+    let hammer = hammer();
+    for (frames, velocities) in [(26.0, [96.0, 104.0]), (26.0, [110.0, 40.0]), (32.0, [40.0, 110.0]), (20.0, [100.0, 60.0])] {
+        let hits = [1.0, 1.0 + frames / FPS];
+        let keys = loud_and_soft(&hammer, &hits, &velocities);
+        let rests = [10.0 * velocities[0] / 127.0, 10.0 * velocities[1] / 127.0];
+        let (lo, hi) = (rests[0].min(rests[1]), rests[0].max(rests[1]));
+        let mut t = hits[0] + 4.0 / FPS;
+        while t < hits[1] - 10.0 / FPS {
+            let (v, next) = (evaluate(&keys, t).unwrap(), evaluate(&keys, t + DT).unwrap());
+            let speed = (next - v) / DT;
+            if speed.abs() < 0.05 * 4.0 / (7.0 / FPS) {
+                assert!(v > lo - 0.3 && v < hi + 0.3, "{frames} frames apart at {velocities:?} nearly stops at {v:.2}, rests are {lo:.2} to {hi:.2}");
+            }
+            t += DT;
+        }
+        for hit in hits {
+            assert!(evaluate(&keys, hit).unwrap().abs() < 1e-9);
         }
     }
 }
@@ -347,6 +482,7 @@ fn chunk(object: &str, channel: &str, overlap: &str, hit: Option<f64>, keys: Vec
         hit,
         overlap_dampen: 0.0,
         overlap_use_anchor_value: true,
+        phases: None,
         keyframes: keys,
     }
 }
@@ -396,4 +532,94 @@ fn a_long_crowded_song_is_quick() {
     let took = start.elapsed();
     println!("{} notes -> {} keys in {:?}", hits.len(), keys.len(), took);
     assert!(took.as_secs_f64() < 2.0);
+}
+
+#[test]
+fn phases_are_found_where_the_tangent_is_flat() {
+    let all = references();
+    let get = |name: &str| all.iter().find(|(n, _)| *n == name).unwrap().1.clone();
+    let frames = |keys: Vec<Key>| phases(&keys, 0.0).map(|t| (t * FPS * 1000.0).round() / 1000.0);
+    // the windup's peak and the recoil's top
+    assert_eq!(frames(get("drumstick")), [-4.0, 5.0]);
+    // a hammer that comes back up through rest: its recoil is its rest
+    assert_eq!(frames(get("hammer")), [-9.0, 10.0]);
+    // no windup (it starts at the hit's value): the first key, the recoil its first swing
+    assert_eq!(frames(get("antenna")), [-1.0, 2.0]);
+    // an anchor point a little off the drumstick's hit still finds the same windup and recoil
+    let off = |by: f64| phases(&get("drumstick"), by / FPS).map(|t| (t * FPS * 1000.0).round() / 1000.0);
+    assert_eq!(off(-0.4), [-4.0, 5.0]);
+    assert_eq!(off(0.4), [-4.0, 5.0]);
+    // the hit at the top: the windup is the rest it rises from, and it comes down without a bounce, so the recoil is
+    // where it's back at rest
+    assert_eq!(frames(get("laser tilt")), [-16.0, 10.0]);
+}
+
+#[test]
+fn phases_set_on_the_note_are_used() {
+    let (_, drumstick) = references().into_iter().next().unwrap();
+    let hits = [1.0, 1.0 + 20.0 / FPS];
+    // found: the recoil is its top (5 frames), the next windup starts during the rest after it, so it comes back down
+    // a little before winding up
+    let found = combined(&drumstick, &hits, 0.0, true);
+    // the recoil set at the rest (13 frames): no room for it, so it goes straight up into the windup
+    let mut set = notes(&drumstick, &hits, 0.0, true);
+    for note in &mut set {
+        note.phases = Some([note.hit - 4.0 / FPS, note.hit + 13.0 / FPS]);
+    }
+    let mut set = momentum_keys(set);
+    finish_keys(&mut set);
+    let peak_time = hits[1] - 4.0 / FPS;
+    let dips = |keys: &[Key]| {
+        let mut t = hits[0] + DT;
+        let mut dip = 0.0f64;
+        while t < peak_time {
+            dip = dip.max(evaluate(keys, t).unwrap() - evaluate(keys, t + DT).unwrap());
+            t += DT;
+        }
+        dip
+    };
+    assert!(dips(&found) > 0.0, "found phases go straight up");
+    assert!(dips(&set) < 1e-9, "the recoil set at rest still comes back down");
+}
+
+#[test]
+fn an_accent_after_a_ghost_note_keeps_its_whole_windup() {
+    // a soft note right before a loud one: the loud note's windup starts during the soft note's rest and still goes
+    // all the way up
+    let (_, drumstick) = references().into_iter().next().unwrap();
+    let hits = [1.0, 1.0 + 20.0 / FPS];
+    let keys = loud_and_soft(&drumstick, &hits, &[38.0, 112.0]);
+    let top = peak(&keys, hits[0], hits[1]);
+    assert!(top > 0.999 * 60.0 * 112.0 / 127.0, "peaks at {top:.2}");
+}
+
+#[test]
+fn the_generator_finds_its_windup_and_recoil_on_the_first_note_on_curve() {
+    // the drumstick keyed from frame 0, its hit at frame 11, the anchor point puts the hit on the note
+    let (_, drumstick) = references().into_iter().next().unwrap();
+    let keys: Vec<Key> = drumstick.iter().map(|key| key.moved(11.0 / FPS)).collect();
+    let curve = json!([serde_json::to_value(AnimCurve {
+        channel: "rotation_euler[0]".into(),
+        keys
+    })
+    .unwrap()]);
+    let inputs = |extra: &[(&str, serde_json::Value)]| {
+        let mut inputs: HashMap<String, serde_json::Value> = HashMap::from([("animation_overlap".into(), json!("momentum")), ("note_on_keyframes".into(), curve.clone()), ("note_on_anchor_point".into(), json!(-11.0))]);
+        inputs.extend(extra.iter().map(|(k, v)| (k.to_string(), v.clone())));
+        Inputs::from(inputs)
+    };
+    let frames = |v: &serde_json::Value| (v.as_f64().unwrap() * 1000.0).round() / 1000.0;
+    let outputs = animation_generator(&inputs(&[])).unwrap().to_json();
+    assert_eq!(frames(&outputs["generator"]["overlap_windup"]), -4.0);
+    assert_eq!(frames(&outputs["generator"]["overlap_recoil"]), 5.0);
+    // set ones are kept
+    let outputs = animation_generator(&inputs(&[("overlap_windup", json!(-6.0)), ("overlap_recoil", json!(9.0))])).unwrap().to_json();
+    assert_eq!(outputs["generator"]["overlap_windup"], json!(-6.0));
+    assert_eq!(outputs["generator"]["overlap_recoil"], json!(9.0));
+    // the windup comes before the hit, the recoil after it
+    assert!(animation_generator(&inputs(&[("overlap_windup", json!(2.0))])).unwrap_err().contains("overlap windup"));
+    assert!(animation_generator(&inputs(&[("overlap_recoil", json!(-1.0))])).unwrap_err().contains("overlap recoil"));
+    // other modes don't look for them
+    let outputs = animation_generator(&inputs(&[("animation_overlap", json!("add"))])).unwrap().to_json();
+    assert!(outputs["generator"].get("overlap_windup").is_none());
 }

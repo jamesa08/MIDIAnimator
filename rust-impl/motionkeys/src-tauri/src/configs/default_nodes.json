@@ -248,6 +248,20 @@
                         "data_type": "bool",
                         "hidden": true,
                         "description": "Momentum only: dampening shrinks toward the hit's value so every hit still lands. Off shrinks toward rest. Unset = on."
+                    },
+                    {
+                        "id": "overlap_windup",
+                        "name": "Windup",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Momentum only: frames from the hit back to the windup's peak on the note on curve, negative. A crowded note keeps its windup longest: the old rest is cut, then the old recoil, then the windup shrinks. Unset finds it on the curve (the flat point before the hit furthest from the hit's value)."
+                    },
+                    {
+                        "id": "overlap_recoil",
+                        "name": "Recoil",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "Momentum only: frames from the hit to where the note on curve is back from it (at rest, or the top of a bounce), positive. Unset finds it on the curve (the first flat point after the hit that has moved away from it)."
                     }
                 ],
                 "outputs": [
