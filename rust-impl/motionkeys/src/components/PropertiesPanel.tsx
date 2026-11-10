@@ -62,6 +62,8 @@ const PARAMS: Record<string, Param[]> = {
         { id: "overlap_blend", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "crossfade" },
         { id: "overlap_dampen", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
         { id: "overlap_use_anchor_value", kind: "checkbox", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
+        { id: "overlap_windup", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
+        { id: "overlap_recoil", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
     ],
 };
 

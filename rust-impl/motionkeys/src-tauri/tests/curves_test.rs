@@ -121,3 +121,11 @@ fn graph_curves_without_an_object_take_the_first_object_with_the_channel() {
     // in the order of the node's outputs
     assert_eq!(described(outputs), vec![row([Some(""), Some("Power"), None, None, None]), row([Some(""), Some("Location Z"), Some("Z"), Some("position.z"), Some("ZXY")])]);
 }
+
+#[test]
+fn one_curve_on_its_own_is_drawn() {
+    // the generator node's phase editor asks for its note on curve this way
+    let channels = node_curves(None, Some(&json!({ "curve": curve(1.0) })), None);
+    assert_eq!(channels.len(), 1);
+    assert_eq!(channels[0].pieces[0].keys.len(), 1);
+}

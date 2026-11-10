@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useInputDrag, useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
+import PhaseEditor from "../components/graph/PhaseEditor";
 import { useStore } from "@xyflow/react";
 import ExpressionField from "../components/ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
@@ -168,6 +169,12 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         <></>
     );
 
+    // momentum's windup, hit and recoil on the note on curve, once a run has found them
+    const generator = state?.executed_results?.[id]?.generator;
+    const sceneFps = (state?.scene as any)?.fps;
+    const fps: number = typeof sceneFps === "number" && sceneFps > 0 ? sceneFps : 24;
+    const phaseComponent = momentum && generator?.overlap_windup != null && generator?.overlap_recoil != null ? <PhaseEditor id={id} generator={generator} fps={fps} anchorConnected={connected.includes("note_on_anchor_point")} set={{ windup: data.inputs?.overlap_windup != null, recoil: data.inputs?.overlap_recoil != null }} /> : <></>;
+
     const uiInject = {
         name: nameComponent,
         note_on_anchor_point: anchorComponent("note_on_anchor_point"),
@@ -179,6 +186,8 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         overlap_blend: blendComponent,
         overlap_dampen: dampenComponent,
         overlap_use_anchor_value: anchorValueComponent,
+        overlap_windup: phaseComponent,
+        overlap_recoil: <></>,
     };
 
     const hiddenHandles = {
@@ -186,6 +195,8 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
         overlap_blend: true,
         overlap_dampen: true,
         overlap_use_anchor_value: true,
+        overlap_windup: true,
+        overlap_recoil: true,
     };
 
     // the generator's curves from the last run, under the inputs

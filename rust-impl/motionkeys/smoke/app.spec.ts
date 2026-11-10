@@ -1870,3 +1870,89 @@ test("arrange places the columns the way settings say", async ({ page }) => {
     for (const x of new Set(positions.map((p) => p.x))) expect(Math.min(...positions.filter((p) => p.x === x).map((p) => p.y))).toBe(top);
     await settle(page);
 });
+
+// the fixture's generator on momentum, its last run with the windup and recoil it found (frames from the hit). the
+// phase editor asks for its curve by value, a stand-in result holds it
+function withMomentum(inputs: Record<string, any> = {}) {
+    const state = structuredClone(withLayout(ALL_DOCKED));
+    const node = state.get_state.rf_instance.nodes.find((n: any) => n.id === "animation_generator-1");
+    node.data.inputs = { ...node.data.inputs, animation_overlap: "momentum", note_on_anchor_point: -120, ...inputs };
+    const generator = state.get_state.executed_results["animation_generator-1"].generator;
+    Object.assign(generator, { animation_overlap: "momentum", note_on_anchor_point: -120, overlap_windup: -48, overlap_recoil: 72 });
+    state.get_state.executed_results["phase-curve"] = { curve: generator.note_on_keyframes[0] };
+    state.graph_value_curves["phase-curve"] = state.graph_value_curves["animation_generator-1"];
+    return state;
+}
+
+test("the momentum phase editor shows its points and drags one", async ({ page }) => {
+    await openWindow(page, withMomentum(), "/#/");
+    await frameNodes(page, ["animation_generator-1"]);
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    const rows = node.locator(".phase-row");
+    await expect(rows).toHaveCount(3);
+    // in the curve's frames: the hit is the anchor point, the windup and recoil around it
+    await expect(rows.nth(0)).toContainText("72.0");
+    await expect(rows.nth(1)).toContainText("120.0");
+    await expect(rows.nth(2)).toContainText("192.0");
+    // nothing set yet, nothing to reset
+    await expect(node.locator(".phase-reset")).toBeDisabled();
+
+    // dragging the windup's row earlier sets it as frames from the hit, in one undo step
+    const box = (await rows.nth(0).boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    const windups = () =>
+        page.evaluate(() =>
+            (window as any).__smokeCalls
+                .filter((c: any) => c.cmd === "graph_apply")
+                .flatMap((c: any) => c.args.ops.map((op: any) => ({ op, txn: c.args.txn, run: c.args.run })))
+                .filter(({ op }: any) => op.op === "set_inputs" && "overlap_windup" in op.inputs)
+        );
+    await expect.poll(async () => (await windups()).length).toBeGreaterThan(0);
+    const sent = await windups();
+    expect(sent.every(({ op }: any) => op.inputs.overlap_windup < 0)).toBe(true);
+    expect(new Set(sent.map(({ txn }: any) => txn)).size).toBe(1);
+    // the graph doesn't run on the way, ending the undo step runs it
+    expect(sent.every(({ run }: any) => run === false)).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window as any).__smokeCalls.some((c: any) => c.cmd === "history_end"))).toBe(true);
+    await settle(page);
+});
+
+test("dragging the hit keeps the windup and recoil where they are on the curve", async ({ page }) => {
+    await openWindow(page, withMomentum(), "/#/");
+    await frameNodes(page, ["animation_generator-1"]);
+    const hit = page.locator('.react-flow__node[data-id="animation_generator-1"] .phase-row').nth(1);
+    const box = (await hit.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.33, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    const hits = () =>
+        page.evaluate(() =>
+            (window as any).__smokeCalls
+                .filter((c: any) => c.cmd === "graph_apply")
+                .flatMap((c: any) => c.args.ops)
+                .filter((op: any) => op.op === "set_inputs" && "note_on_anchor_point" in op.inputs)
+        );
+    await expect.poll(async () => (await hits()).length).toBeGreaterThan(0);
+    // found at 72 and 192, they're set as frames from wherever the hit went
+    for (const { inputs } of await hits()) {
+        const at = -inputs.note_on_anchor_point;
+        expect(at).not.toBe(120);
+        expect(at + inputs.overlap_windup).toBeCloseTo(72, 6);
+        expect(at + inputs.overlap_recoil).toBeCloseTo(192, 6);
+    }
+    await settle(page);
+});
+
+test("the momentum phase editor's reset unsets the windup and recoil", async ({ page }) => {
+    await openWindow(page, withMomentum({ overlap_windup: -48, overlap_recoil: 72 }), "/#/");
+    await frameNodes(page, ["animation_generator-1"]);
+    const node = page.locator('.react-flow__node[data-id="animation_generator-1"]');
+    await node.locator(".phase-reset").click();
+    const sets = (await applied(page)).flat().filter((op: any) => op.op === "set_inputs");
+    expect(sets).toContainEqual({ op: "set_inputs", node: "animation_generator-1", inputs: { overlap_windup: null, overlap_recoil: null } });
+    await settle(page);
+});

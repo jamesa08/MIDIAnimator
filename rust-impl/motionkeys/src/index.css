@@ -1043,6 +1043,83 @@ img {
     background-color: var(--properties-frame);
 }
 
+/* momentum's windup, hit and recoil on the generator node (components/graph/PhaseEditor.tsx): the curve with a line for
+   each, a row for each under it like a color picker's channels, a reset under them */
+:root {
+    --phase-windup: #2f9e44;
+    --phase-hit: #f08c00;
+    --phase-recoil: #8d8b85;
+}
+
+.node .phase-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.phase-curve {
+    position: relative;
+    border: 1px solid var(--chrome-line);
+}
+
+.phase-rows {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--chrome-line);
+}
+
+.phase-row {
+    position: relative;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    background-color: var(--properties-background);
+    border-bottom: 1px solid var(--properties-line);
+    border-left: 3px solid var(--phase);
+    cursor: ew-resize;
+    user-select: none;
+}
+
+.phase-row:last-child {
+    border-bottom: none;
+}
+
+.phase-row > span {
+    position: relative;
+}
+
+.phase-row-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background-color: color-mix(in srgb, var(--phase) 22%, transparent);
+}
+
+.phase-row-disabled {
+    cursor: default;
+    color: var(--properties-dim);
+}
+
+.phase-row input {
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: right;
+}
+
+.phase-reset {
+    padding: 2px 8px;
+}
+
+.phase-reset:disabled {
+    color: var(--properties-dim);
+    border-color: var(--properties-dim);
+}
+
 /* in a node it's outlined like the node's text boxes, the number centered with no name in it */
 .node .value-slider {
     box-sizing: border-box;
