@@ -3,9 +3,12 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::graph::executors::io::ERROR_KEY;
+use crate::graph::executors::io::{Inputs, ERROR_KEY};
+use crate::graph::executors::scene::with_scene;
+use crate::graph::model::{find_spec, node_specs};
+use crate::node_registry::get_node_registry;
 use crate::scene_generics::{find_object, AnimCurve, Object, Scene};
 use crate::utils::animation::{finish_keys, AnimationGenerator, BlendKeyframe, CurveKeys};
 use crate::utils::curve::{drawing, Drawing, Key};
@@ -147,6 +150,29 @@ pub async fn graph_curves(tab: String, nodes: Vec<String>) -> Result<Vec<NodeCur
 pub async fn graph_value_curves(outputs: Value) -> Vec<CurveChannel> {
     let scene = SceneChannels::of(crate::state::lock().active().scene.as_ref());
     curves_of(&scene, Some(&outputs), None)
+}
+
+/// what a node's own function gives with `inputs`, as curves for its preview: so a preview can follow a value while it's
+/// dragged or typed, before it's set. nothing else runs, nothing changes and there's no undo step, the graph runs once
+/// when the value is set. only realtime nodes, which never write to the 3D app. the node is on the tab on screen, its
+/// scene gives the frame rate and names the channels. unset inputs get their defaults, like in a run
+#[tauri::command]
+pub async fn graph_node_preview(node_type: String, inputs: serde_json::Map<String, Value>) -> Result<Vec<CurveChannel>, String> {
+    let (scene, spec) = {
+        let state = crate::state::lock();
+        let specs = node_specs(&state.default_nodes);
+        (state.active().scene.clone(), find_spec(&specs, &node_type).cloned())
+    };
+    let spec = spec.filter(|spec| spec.realtime).ok_or_else(|| format!("'{}' isn't a realtime node, it can't be previewed", node_type))?;
+    let func = *get_node_registry().get(&node_type).ok_or_else(|| format!("no executor for node type '{}'", node_type))?;
+    let mut values: HashMap<String, Value> = inputs.into_iter().collect();
+    for handle in &spec.handles.inputs {
+        if let Some(default) = &handle.default {
+            values.entry(handle.id.clone()).or_insert_with(|| default.clone());
+        }
+    }
+    let outputs = with_scene(scene.clone(), BTreeSet::new(), || func(&Inputs::from(values)))?;
+    Ok(node_curves(scene.as_ref(), Some(&outputs.to_json()), None))
 }
 
 /// the curves in a node's outputs, or in its inputs when it has none (a viewer, the scene writer), named by `scene`'s

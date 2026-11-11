@@ -101,6 +101,8 @@ function install({ backend, label }: { backend: Backend; label: string }) {
             return node ? backend.graph_value_curves[node] : [];
         }
         if (cmd === "graph_curves") return args.nodes.map((node: string) => backend.graph_curves[node] ?? { node, channels: [] });
+        // a node's own function on values being edited: no node here is being dragged or typed in
+        if (cmd === "graph_node_preview") return [];
         if (EDITS.includes(cmd)) {
             // a selection is kept, so a test can select something and then act on it
             for (const op of args.ops ?? []) {

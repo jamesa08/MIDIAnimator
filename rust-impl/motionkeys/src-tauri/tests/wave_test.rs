@@ -1,6 +1,7 @@
 // run from /src-tauri
 // cargo test --test wave_test
 // the Preset Animation node's shapes: baked keys follow their functions, rest where they should and turn flat
+use motionkeys::graph::curves::graph_node_preview;
 use motionkeys::graph::executors::animation::preset_animation;
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::graph::model::mode_default;
@@ -300,4 +301,26 @@ fn preset_animation_errors_on_bad_settings() {
     assert_eq!(error(Inputs::from([("period", json!(0.0))])), "the period has to be more than 0, got 0");
     assert_eq!(error(Inputs::from([("dampen", json!(2.0))])), "dampen goes from 0 to 1, got 2");
     assert_eq!(error(Inputs::from([("mode", json!("drumstick")), ("rest_length", json!(0.0))])), "the rest has to be longer than 0 frames");
+}
+
+#[test]
+fn a_preview_runs_only_the_node_on_values_not_set_yet() {
+    // the app's state with the node specs, the tab on screen has no scene (24 fps)
+    let mut state = motionkeys::state::AppState::default();
+    state.default_nodes = serde_json::from_str(&std::fs::read_to_string("src/configs/default_nodes.json").unwrap()).unwrap();
+    *motionkeys::state::STATE.lock().unwrap() = state;
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let preview = |node_type: &str, inputs: serde_json::Value| runtime.block_on(graph_node_preview(node_type.to_string(), inputs.as_object().unwrap().clone()));
+
+    // a drumstick's windup typed as 20 frames: its curve starts 25 frames before the hit, with its defaults filled in
+    let curves = preview("preset_animation", json!({ "mode": "drumstick", "windup": 20 })).unwrap();
+    assert_eq!(curves.len(), 1);
+    let first = curves[0].pieces[0].keys[0];
+    assert!((first[0] * FPS + 25.0).abs() < 1e-9, "starts at frame {}", first[0] * FPS);
+    // a cymbal draws both curves
+    assert_eq!(preview("preset_animation", json!({ "mode": "cymbal" })).unwrap().len(), 2);
+    // a value that doesn't work yet is the node's error, the node keeps its last preview
+    assert_eq!(preview("preset_animation", json!({ "start": 40, "end": 10 })).unwrap_err(), "the end (10) has to come after the start (40)");
+    // nothing that writes to the 3d app
+    assert!(preview("scene_writer", json!({})).unwrap_err().contains("isn't a realtime node"));
 }
