@@ -176,6 +176,12 @@ impl Channel {
             None => self.name.clone(),
         }
     }
+
+    /// a custom property's channel id, the same in every bridge: `["wear"]`, with `\` and `"` in the name escaped. the
+    /// one id MotionKeys builds itself, each bridge translates it to its app's own path (docs/bridge_protocol.md §8.5)
+    pub fn custom_property_id(name: &str) -> String {
+        format!("[\"{}\"]", name.replace('\\', "\\\\").replace('"', "\\\""))
+    }
 }
 
 /// the curves that read as curves, the others are left out
