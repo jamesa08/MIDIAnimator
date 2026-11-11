@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::collections::BTreeMap;
-use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, targets_for_note};
+use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, static_property, targets_for_note};
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data, note_frequency};
 
@@ -382,6 +382,87 @@ fn set_channel_moves_a_curve() {
 fn note_targets_errors_on_missing_input() {
     let error = note_targets(&Inputs::default()).unwrap_err();
     assert_eq!(error, "missing input 'object_map'");
+}
+
+#[test]
+fn static_property_errors_on_missing_object_map() {
+    assert_eq!(static_property(&Inputs::default()).unwrap_err(), "missing input 'object_map'");
+}
+
+#[test]
+fn static_property_writes_each_object_its_highest_value() {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    // Cube plays 60 and 62, Sphere plays 64, Drum plays no mapped note
+    let object_map = json!({
+        "animations": { "anim": generator },
+        "objects": { "Cube": { "anim": [60, 62] }, "Sphere": { "anim": [64] }, "Drum": { "anim": [] } }
+    });
+    let values = json!({ "60": 0.25, "62": 1.0, "64": 0.5 });
+    let keyframes = static_property(&Inputs::from([("object_map", object_map), ("values", values), ("channel", json!("wear")), ("rescale", json!(false))])).unwrap().to_json()["keyframes"].clone();
+
+    // rescale off: one constant key per object on the typed channel, the object taking the highest of its notes' values
+    for (object, value) in [("Cube", 1.0), ("Sphere", 0.5), ("Drum", 0.0)] {
+        let keys = keyframes[object].as_array().unwrap();
+        assert_eq!(keys.len(), 1, "{object}");
+        assert_eq!(keys[0]["channel"], json!("[\"wear\"]"), "{object}");
+        assert_eq!(keys[0]["key"][1], json!(value), "{object}");
+        assert_eq!(keys[0]["key"][2], json!("constant"), "{object}");
+    }
+}
+
+#[test]
+fn static_property_rescales_objects_with_several_notes() {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    // A is hit by 60 and 65, B only by 60
+    let object_map = json!({ "animations": { "anim": generator }, "objects": { "A": { "anim": [60, 65] }, "B": { "anim": [60] } } });
+    let values = json!({ "60": 0.85, "65": 0.25 });
+    let run = |rescale: Option<bool>| {
+        let mut inputs = vec![("object_map".to_string(), object_map.clone()), ("values".to_string(), values.clone()), ("channel".to_string(), json!("wear"))];
+        if let Some(rescale) = rescale {
+            inputs.push(("rescale".to_string(), json!(rescale)));
+        }
+        let keyframes = static_property(&Inputs::from(inputs.into_iter().collect::<std::collections::HashMap<_, _>>())).unwrap().to_json()["keyframes"].clone();
+        let value = |object: &str| keyframes[object][0]["key"][1].as_f64().unwrap();
+        (value("A"), value("B"))
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+
+    // on by default: A adds up to 1.10, the highest, so it's 1.0 and B is scaled with it
+    for rescale in [None, Some(true)] {
+        let (a, b) = run(rescale);
+        assert!(close(a, 1.0) && close(b, 0.85 / 1.10), "{rescale:?}: {a} {b}");
+    }
+    // off: both take their highest note, A's second note doesn't count
+    let (a, b) = run(Some(false));
+    assert!(close(a, 0.85) && close(b, 0.85), "{a} {b}");
+}
+
+#[test]
+fn static_property_writes_the_channel_as_typed() {
+    let generator = animation_generator(&Inputs::from([("name", json!("anim"))])).unwrap().to_json()["generator"].clone();
+    let object_map = json!({ "animations": { "anim": generator }, "objects": { "Cube": { "anim": [60] } } });
+    let run = |channel: Option<&str>, custom_property: Option<bool>| {
+        let mut inputs = vec![("object_map".to_string(), object_map.clone()), ("values".to_string(), json!({ "60": 1.0 }))];
+        if let Some(channel) = channel {
+            inputs.push(("channel".to_string(), json!(channel)));
+        }
+        if let Some(custom_property) = custom_property {
+            inputs.push(("custom_property".to_string(), json!(custom_property)));
+        }
+        static_property(&Inputs::from(inputs.into_iter().collect::<std::collections::HashMap<_, _>>())).unwrap().to_json()["keyframes"].clone()
+    };
+    let channel = |typed: &str, custom_property: Option<bool>| run(Some(typed), custom_property)["Cube"][0]["channel"].clone();
+
+    // a custom property's name, on by default, gets the id every bridge translates, its \ and " escaped
+    assert_eq!(channel(" wear ", None), json!("[\"wear\"]"));
+    assert_eq!(channel("wear", Some(true)), json!("[\"wear\"]"));
+    assert_eq!(channel("say \"hi\"", None), json!("[\"say \\\"hi\\\"\"]"));
+    assert_eq!(channel("a\\b", None), json!("[\"a\\\\b\"]"));
+    // off, any bridge channel id goes as typed, trimmed
+    assert_eq!(channel(" location[2] ", Some(false)), json!("location[2]"));
+    assert_eq!(channel("pose.bones[\"Arm\"][\"wear\"]", Some(false)), json!("pose.bones[\"Arm\"][\"wear\"]"));
+    // nothing typed, nothing to write
+    assert_eq!(run(None, None), json!({}));
 }
 
 /// Evaluate Instrument's steps, calling its nodes one after the other the way the group runs them

@@ -5,11 +5,12 @@ use serde_json::Value;
 
 use super::io::{Inputs, NodeResult, Outputs, Val};
 use crate::midi::MIDINote;
-use crate::scene_generics::{find_group, find_object, AnimCurve, Object, ObjectGroup};
+use crate::scene_generics::{find_group, find_object, AnimCurve, Channel, Object, ObjectGroup};
 use crate::utils::note_to_name;
 
 use super::scene::scene_fps;
-use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, BlendKeyframe, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::curve::{Interpolation, Key};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
 use crate::utils::momentum::phases;
@@ -1016,4 +1017,68 @@ fn flatten_curve_keys(value: &Val, out: &mut Vec<CurveKeys>) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+/// Node: static_property
+///
+/// inputs:
+/// "object_map": `ObjectMap`, note to object, every object in it gets a value,
+/// "values": `HashMap<u8, f64>`, each note number's value (Note Frequency, or any note map),
+/// "channel": `String`, with custom_property on the custom property's name (`wear`), off a bridge channel id typed as
+/// it is (`location[2]`),
+/// "custom_property": `bool`, `channel` is a custom property's name, its id built the same for every bridge, on when
+/// unset,
+/// "rescale": `bool`, an object sums its notes' values and every object is scaled so the highest is 1.0, on when unset.
+/// off, an object takes the highest of its notes' values as it is
+///
+/// outputs:
+/// "keyframes": `HashMap<String, Array<BlendKeyframe>>`, one constant key per object on the channel. Connect to Scene
+/// Writer to write them to Blender, where a shader's Attribute node can read a custom property.
+#[node_registry::node]
+pub fn static_property(object_map: &ObjectMap, values: Option<&BTreeMap<u8, f64>>, channel: Option<&String>, custom_property: Option<bool>, rescale: Option<bool>) -> NodeResult {
+    let mut outputs = Outputs::new();
+
+    // nothing to write until a name or a channel is typed
+    let typed = channel.map(|c| c.trim()).filter(|c| !c.is_empty());
+    let Some(typed) = typed else {
+        outputs.set("keyframes", BTreeMap::<String, Vec<BlendKeyframe>>::new());
+        return Ok(outputs);
+    };
+    // a custom property's name gets the id every bridge knows, `["wear"]`, and the bridge makes the property if it isn't
+    // there yet. otherwise it's the bridge's own id as typed, so a value can go to any channel
+    let channel = if custom_property.unwrap_or(true) { Channel::custom_property_id(typed) } else { typed.to_string() };
+
+    let values = values.cloned().unwrap_or_default();
+
+    let rescale = rescale.unwrap_or(true);
+
+    // every object gets a value, one that plays no mapped note stays at 0. rescaled, an object adds up its notes' values
+    // (an object hit by two notes is hit more than one hit by either), otherwise it takes the highest of them
+    let mut object_value: BTreeMap<String, f64> = object_map.objects.keys().map(|id| (id.clone(), 0.0)).collect();
+    for (note, targets) in object_map.note_targets()? {
+        let value = values.get(&note).copied().unwrap_or(0.0);
+        for target in targets {
+            let entry = object_value.entry(target.object).or_insert(0.0);
+            *entry = if rescale { *entry + value } else { entry.max(value) };
+        }
+    }
+
+    // the sums scaled so the highest object is 1.0, all 0 stays 0
+    if rescale {
+        let max = object_value.values().copied().fold(0.0, f64::max);
+        if max > 0.0 {
+            for value in object_value.values_mut() {
+                *value /= max;
+            }
+        }
+    }
+
+    // a single constant key holds the value at every frame, so it reads as a static value
+    let keyframes: BTreeMap<String, Vec<BlendKeyframe>> = object_value
+        .into_iter()
+        .map(|(object, value)| (object, vec![BlendKeyframe { channel: channel.clone(), key: Key::new(0.0, value, Interpolation::Constant) }]))
+        .collect();
+
+    outputs.set("keyframes", keyframes);
+    Ok(outputs)
 }

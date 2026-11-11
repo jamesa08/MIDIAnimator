@@ -1072,6 +1072,61 @@
                     }
                 ]
             }
+        },
+
+        {
+            "id": "static_property",
+            "name": "Static Property",
+            "category": "animation",
+            "description": "Writes a note-to-value map onto objects as a static value on a channel you name, e.g. a wear custom property a shader reads as opacity.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "object_map",
+                        "name": "Object Map",
+                        "data_type": "ObjectMap",
+                        "description": "Note-to-object mapping from Assign Notes to Objects. Every object in it gets a value."
+                    },
+                    {
+                        "id": "values",
+                        "name": "Values",
+                        "data_type": "HashMap<u8, f64>",
+                        "description": "Each note number's value, usually from Note Frequency. Rescale sets how an object with several notes combines them."
+                    },
+                    {
+                        "id": "channel",
+                        "name": "Channel",
+                        "data_type": "String",
+                        "description": "With Custom Property on, the custom property's name, e.g. wear, created on objects that don't have it. Off, a bridge channel id typed as it is, e.g. location[2]. Empty writes nothing."
+                    },
+                    {
+                        "id": "custom_property",
+                        "default": true,
+                        "name": "Custom Property",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "On treats Channel as a custom property's name and builds the id every bridge translates (docs/bridge_protocol.md §8.5). Off sends Channel as a bridge channel id as it is."
+                    },
+                    {
+                        "id": "rescale",
+                        "default": true,
+                        "name": "Rescale",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "On adds up each object's notes' values, then scales every object so the highest is 1.0. Off gives each object the highest of its notes' values as it is."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "keyframes",
+                        "name": "Keyframes",
+                        "data_type": "HashMap<String, Array<BlendKeyframe>>",
+                        "description": "One constant key per object on the channel. Connect to Scene Writer to write it to Blender."
+                    }
+                ]
+            }
         }
     ]
 }
