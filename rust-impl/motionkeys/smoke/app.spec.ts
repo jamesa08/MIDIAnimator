@@ -2019,3 +2019,34 @@ test("the momentum phase editor's reset unsets the windup and recoil", async ({ 
     expect(sets).toContainEqual({ op: "set_inputs", node: "animation_generator-1", inputs: { overlap_windup: null, overlap_recoil: null } });
     await settle(page);
 });
+
+// a Preset Animation drumstick off to the side of the fixture, with its defaults on it like a new one
+function withPreset() {
+    const state = structuredClone(withLayout(ALL_DOCKED));
+    const inputs = { mode: "drumstick", channel: "rotation_euler[0]", rest: 0, windup: 8, windup_value: 0.6, hit: 5, hit_value: -0.3, recoil: 6, recoil_value: 0.15, rest_length: 8 };
+    state.get_state.rf_instance.nodes.push({ id: "preset_animation-1", type: "preset_animation", position: { x: 2400, y: 0 }, data: { inputs } });
+    state.get_state.executed_results["preset_animation-1"] = { keyframes: { channel: "rotation_euler[0]", keys: [] } };
+    state.graph_value_curves["preset_animation-1"] = [];
+    return state;
+}
+
+test("a preset animation previews a value while it's typed and sets it once", async ({ page }) => {
+    await openWindow(page, withPreset(), "/#/");
+    await frameNodes(page, ["preset_animation-1"]);
+    const node = page.locator('.react-flow__node[data-id="preset_animation-1"]');
+    const calls = (cmd: string) => page.evaluate((cmd) => (window as any).__smokeCalls.filter((c: any) => c.cmd === cmd).map((c: any) => c.args), cmd);
+    const sets = async () => (await calls("graph_apply")).flatMap((args: any) => args.ops).filter((op: any) => op.op === "set_inputs" && "windup" in op.inputs);
+
+    // typing only asks for the node's own curves with the typed value, the graph isn't changed
+    const windup = node.locator(".preset-row", { hasText: "Windup" }).locator("input").first();
+    await windup.fill("20");
+    await expect.poll(async () => (await calls("graph_node_preview")).some((args: any) => args.nodeType === "preset_animation" && args.inputs.windup === 20 && args.inputs.hit === 5)).toBe(true);
+    expect(await sets()).toHaveLength(0);
+
+    // enter sets it, once
+    await windup.press("Enter");
+    await expect.poll(async () => (await sets()).length).toBe(1);
+    expect((await sets())[0].inputs.windup).toBe(20);
+    await settle(page);
+});
+

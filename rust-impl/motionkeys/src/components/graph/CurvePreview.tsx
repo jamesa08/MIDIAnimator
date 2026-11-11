@@ -10,8 +10,9 @@ const EMPTY_VIEW: View = { x0: 0, x1: 1, y0: -1, y1: 1 };
 const MAX_ZOOM = 4;
 
 // a small graph of the curves in a node's last results (`outputs`), always framed to fit, just the curves on the grid.
-// the curves come from the backend like the graph window's (graph_value_curves), so they're drawn the way Blender would
-function CurvePreview({ outputs, height = 80 }: { outputs: any; height?: number }) {
+// the curves come from the backend like the graph window's (graph_value_curves), so they're drawn the way Blender would.
+// `curves` are drawn instead while they're given, a node's preview of a value that isn't set yet
+function CurvePreview({ outputs, curves, height = 80 }: { outputs: any; curves?: CurveChannel[] | null; height?: number }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     // worked out again only when the results change, they come with every state update
@@ -30,7 +31,7 @@ function CurvePreview({ outputs, height = 80 }: { outputs: any; height?: number 
             current = false;
         };
     }, [key]);
-    const shown = useMemo(() => colorChannels([{ node: "", channels }]), [channels]);
+    const shown = useMemo(() => colorChannels([{ node: "", channels: curves ?? channels }]), [curves, channels]);
 
     // drawn at the zoom the graph shows it at so it stays sharp, in steps so zooming doesn't redraw it every frame
     const zoom = useStore((s) => Math.min(MAX_ZOOM, Math.ceil(s.transform[2] * 4) / 4));

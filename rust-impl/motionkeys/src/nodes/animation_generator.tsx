@@ -27,8 +27,8 @@ export const overlapModes = [
 ];
 
 // a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
-// that isn't a number is put back
-export function NumberField({ value, onCommit, ...props }: { value: number | undefined; onCommit: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+// that isn't a number is put back. `onDraft` hears each number as it's typed (null while it isn't one), before it's set
+export function NumberField({ value, onCommit, onDraft, ...props }: { value: number | undefined; onCommit: (value: number | null) => void; onDraft?: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
     const [text, setText] = useState<string | number>(value ?? "");
     useEffect(() => setText(value ?? ""), [value]);
     const commit = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -50,7 +50,11 @@ export function NumberField({ value, onCommit, ...props }: { value: number | und
             className="node-field nodrag border border-gray-400 rounded px-2 py-1"
             {...props}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+                setText(e.target.value);
+                const typed = e.target.value;
+                onDraft?.(typed === "" || isNaN(Number(typed)) ? null : Number(typed));
+            }}
             onBlur={commit}
             onKeyDown={(e) => {
                 if (e.key === "Enter") e.currentTarget.blur();
