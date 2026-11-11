@@ -38,6 +38,34 @@ class CurveError(Exception):
 # a channel id's index at its end: location[2], ["color"][1]
 INDEX = re.compile(r"^(.+)\[(\d+)\]$")
 
+# a scalar custom property channel: the object's ["wear"], or a bone's pose.bones["Arm"]["wear"]. the name has its \ and
+# " escaped (docs/bridge_protocol.md §8.5), the same way Blender escapes them in its paths
+CUSTOM_PROPERTY = re.compile(r'^(.*)\["((?:[^"\\]|\\.)+)"\]$')
+ESCAPED = re.compile(r"\\(.)")
+
+
+def ensure_custom_property(owner, data_path):
+    """Creates a missing scalar custom property for `data_path`, set to 0.0, so a map (a wear value, say) can be written
+    to an object that doesn't have the property yet, the way the writer already makes the action and F-curve it needs.
+    It sits on `owner` for a bare ["wear"], or on the bone or struct the prefix names (pose.bones["Arm"]["wear"]).
+    Returns (owner, data_path, 0) once it exists, or None when `data_path` isn't a custom property we can make here."""
+    match = CUSTOM_PROPERTY.match(data_path)
+    if not match:
+        return None
+    prefix, key = match.group(1), ESCAPED.sub(r"\1", match.group(2))
+    holder = owner
+    if prefix:
+        try:
+            holder = resolve(owner, prefix)
+        except (ValueError, TypeError, AttributeError):
+            return None
+    # only make it on something that takes custom properties, reached only when it doesn't already resolve
+    try:
+        holder[key] = 0.0
+    except (TypeError, KeyError):
+        return None
+    return owner, data_path, 0
+
 
 def resolve_channel(obj, channel):
     """The datablock, data path and array index a channel id writes to. Shape keys (`key_blocks["Smile"].value`) are
@@ -64,8 +92,17 @@ def resolve_channel(obj, channel):
             return owner, data_path, index
         if found and is_scalar(value) and index == 0:
             return owner, data_path, 0
+        # a scalar custom property written as ["wear"][0], made if it's missing
+        if not found and index == 0:
+            made = ensure_custom_property(owner, data_path)
+            if made is not None:
+                return made
     found, value = value_at(channel)
     if not found:
+        # a custom property the object doesn't have yet (a wear map's target), made so the write can land
+        made = ensure_custom_property(owner, channel)
+        if made is not None:
+            return made
         raise CurveError(f"{where} has no property '{channel}'")
     if is_array(value):
         raise CurveError(f"'{channel}' on {where} has {len(value)} values, the channel is one of {channel}[0] to {channel}[{len(value) - 1}]")
