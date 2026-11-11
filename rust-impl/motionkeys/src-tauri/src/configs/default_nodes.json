@@ -100,6 +100,33 @@
         },
 
         {
+            "id": "note_frequency",
+            "name": "Note Frequency",
+            "category": "midi",
+            "description": "How often each note number is played, scaled so the busiest note is 1.0, as a note-to-value map.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "notes",
+                        "name": "Notes",
+                        "data_type": "Array<MIDINote>",
+                        "description": "The notes to count, usually from Get MIDI Track Data."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "frequencies",
+                        "name": "Frequencies",
+                        "data_type": "HashMap<u8, f64>",
+                        "description": "Each note number's play count over the busiest note's count, 0 to 1."
+                    }
+                ]
+            }
+        },
+
+        {
             "id": "keyframes_from_object",
             "name": "Keyframes from Object",
             "category": "scene",

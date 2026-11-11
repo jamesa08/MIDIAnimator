@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
 use super::io::{NodeResult, Outputs};
-use crate::midi::{MIDIFile, MIDITrack};
+use crate::midi::{MIDIFile, MIDINote, MIDITrack};
 
 pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     let track_count = midi_file.get_midi_tracks().len();
@@ -99,5 +101,31 @@ pub fn get_midi_track_data(tracks: Option<&Vec<MIDITrack>>, track_name: Option<&
     outputs.set("control_change", track.control_change);
     outputs.set("pitchwheel", track.pitchwheel);
     outputs.set("aftertouch", track.aftertouch);
+    Ok(outputs)
+}
+
+/// Node: note_frequency
+///
+/// inputs:
+/// "notes": `Array<MIDINote>`
+///
+/// outputs:
+/// "frequencies": `HashMap<u8, f64>`, each note number's play count over the busiest note's count, 0 to 1
+#[node_registry::node]
+pub fn note_frequency(notes: Option<&Vec<MIDINote>>) -> NodeResult {
+    let notes: &[MIDINote] = notes.map(Vec::as_slice).unwrap_or(&[]);
+
+    // how many times each note number is played
+    let mut counts: BTreeMap<u8, u64> = BTreeMap::new();
+    for note in notes {
+        *counts.entry(note.note_number).or_default() += 1;
+    }
+
+    // scaled so the busiest note lands at 1.0 and the rest fall under it, empty with no notes
+    let max = counts.values().copied().max().unwrap_or(0);
+    let frequencies: BTreeMap<u8, f64> = counts.into_iter().map(|(note, count)| (note, if max == 0 { 0.0 } else { count as f64 / max as f64 })).collect();
+
+    let mut outputs = Outputs::new();
+    outputs.set("frequencies", frequencies);
     Ok(outputs)
 }

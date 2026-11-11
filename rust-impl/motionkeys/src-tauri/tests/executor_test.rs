@@ -2,7 +2,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, targets_for_note};
 use motionkeys::graph::executors::io::Inputs;
-use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data};
+use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data, note_frequency};
 
 const TYPE_1: &str = "./tests/test_midi_type_1_rs_4_14_24.mid";
 
@@ -69,6 +69,20 @@ fn get_midi_track_data_finds_track() {
 fn get_midi_track_data_errors_on_wrong_type() {
     let error = get_midi_track_data(&Inputs::from([("tracks", json!("not tracks")), ("track_name", json!("a"))])).unwrap_err();
     assert!(error.contains("input 'tracks' has the wrong type"), "{}", error);
+}
+
+#[test]
+fn note_frequency_empty_without_notes() {
+    assert_eq!(note_frequency(&Inputs::default()).unwrap().to_json()["frequencies"], json!({}));
+}
+
+#[test]
+fn note_frequency_scales_by_busiest_note() {
+    let note = |n: u8| json!({ "channel": 0, "note_number": n, "velocity": 100, "time_on": 0.0, "time_off": 1.0 });
+    // 60 plays three times, 62 twice, 64 once
+    let notes = json!([note(60), note(60), note(60), note(62), note(62), note(64)]);
+    let frequencies = note_frequency(&Inputs::from([("notes", notes)])).unwrap().to_json()["frequencies"].clone();
+    assert_eq!(frequencies, json!({ "60": 1.0, "62": 2.0 / 3.0, "64": 1.0 / 3.0 }));
 }
 
 #[test]
