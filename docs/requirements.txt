@@ -4,5 +4,10 @@ sphinx-rtd-theme==1.0.0
 myst-parser==0.17.2                 # via my-st
 mypy-extensions==0.4.3              # via my-st
 mdit-py-plugins==0.3.0              # via my-st
-fake-bpy-module-latest
+# newer sphinxcontrib releases need sphinx 5+
+sphinxcontrib-applehelp==1.0.4
+sphinxcontrib-devhelp==1.0.2
+sphinxcontrib-htmlhelp==2.0.1
+sphinxcontrib-qthelp==1.0.3
+sphinxcontrib-serializinghtml==1.1.5
 numpy

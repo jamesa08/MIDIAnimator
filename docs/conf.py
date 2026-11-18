@@ -4,11 +4,14 @@ import os
 import sys
 import re
 import datetime
+import ast
 
 print(f"cwd={os.getcwd()}")
 sys.path.insert(0, os.path.abspath("../"))
 
-from MIDIAnimator import bl_info
+# read bl_info without importing the add-on, which needs blender's modules
+with open(os.path.abspath("../MIDIAnimator/__init__.py")) as f:
+    bl_info = next(ast.literal_eval(node.value) for node in ast.parse(f.read()).body if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", None) == "bl_info")
 
 # -- Project information
 
@@ -45,7 +48,8 @@ html_theme = 'sphinx_rtd_theme'
 # -- Options for EPUB output
 epub_show_urls = 'footnote'
 
-autodoc_mock_imports = ["MIDIAnimator.libs", "numpy"]
+# blender's modules only exist inside blender, so autodoc mocks them
+autodoc_mock_imports = ["MIDIAnimator.libs", "numpy", "bpy", "bpy_extras", "mathutils"]
 
 autodoc_class_signature = "separated"
 
