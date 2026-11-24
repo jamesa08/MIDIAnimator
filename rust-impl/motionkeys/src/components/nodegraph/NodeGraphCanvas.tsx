@@ -1,5 +1,5 @@
 import { CSSProperties, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ReactFlow, MiniMap, Controls, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Panel, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -11,6 +11,7 @@ import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
 import { boxTakesFrame, isFrame, layoutFrames } from "../../utils/frames";
 import { CanvasTool, useCanvasTool } from "../../utils/editorState";
+import { useConsoleSettings } from "../../utils/console";
 
 // every edge is drawn in its sockets' colors
 const edgeTypes = { default: TypedEdge };
@@ -136,6 +137,46 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
         if (changes.length > 0) triggerNodeChanges(changes);
     });
     return null;
+}
+
+// the frame rate over the last half second and the slowest frame in it, a hitch the rate alone would hide, shown
+// fresh every frame. under the minimap while the console's FPS counter setting is on, it only counts while it's shown
+function FpsCounter() {
+    const { fps_counter } = useConsoleSettings();
+    return fps_counter ? <FpsReadout /> : null;
+}
+
+// how far back the rate and the slowest frame look
+const FPS_WINDOW_MS = 500;
+
+function FpsReadout() {
+    const fpsRef = useRef<HTMLSpanElement>(null);
+    const worstRef = useRef<HTMLSpanElement>(null);
+    useEffect(() => {
+        let request = 0;
+        // the recent frames' times, oldest first
+        const times: number[] = [];
+        // written straight into the text every frame, a render each frame would cost more than it measures
+        const tick = (now: number) => {
+            times.push(now);
+            while (times.length > 2 && now - times[0] > FPS_WINDOW_MS) times.shift();
+            if (times.length > 1) {
+                let worst = 0;
+                for (let i = 1; i < times.length; i++) worst = Math.max(worst, times[i] - times[i - 1]);
+                if (fpsRef.current) fpsRef.current.textContent = `${Math.round(((times.length - 1) * 1000) / (now - times[0]))} fps`;
+                if (worstRef.current) worstRef.current.textContent = `${Math.round(worst)} ms`;
+            }
+            request = requestAnimationFrame(tick);
+        };
+        request = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(request);
+    }, []);
+    return (
+        <Panel position="top-right" className="fps-counter">
+            <span ref={fpsRef} />
+            <span ref={worstRef} />
+        </Panel>
+    );
 }
 
 // the wheel over a graph. react flow pans for a scroll and zooms for a pinch (a wheel event with ctrl), this takes the
@@ -324,6 +365,7 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
                     <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
                     <Controls />
                     <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
+                    <FpsCounter />
                 </>
             )}
             {frozen && <Background variant={BackgroundVariant.Dots} gap={12} size={1} />}

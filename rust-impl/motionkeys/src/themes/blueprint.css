@@ -163,7 +163,8 @@ img[src="logo.webp"] {
 
 /* a darker, outlined minimap and controls so they don't melt into the canvas */
 .react-flow__minimap,
-.react-flow__controls {
+.react-flow__controls,
+.react-flow__panel.fps-counter {
     border: 1px solid var(--blueprint-line);
 }
 

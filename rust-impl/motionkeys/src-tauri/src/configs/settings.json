@@ -37,6 +37,7 @@
         "fade_seconds": 10,
         "profiler": false,
         "profiler_medium_ms": 4,
-        "profiler_slow_ms": 16
+        "profiler_slow_ms": 16,
+        "fps_counter": false
     }
 }

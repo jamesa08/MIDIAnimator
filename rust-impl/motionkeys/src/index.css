@@ -1309,6 +1309,22 @@ input.value-slider,
     margin-right: calc(15px + var(--panel-right, 0px));
 }
 
+/* the fps counter under the minimap (NodeGraphCanvas.tsx), as wide as it */
+.react-flow__panel.fps-counter {
+    margin-top: calc(15px + 75px + 6px);
+    width: 100px;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 6px;
+    background: var(--xy-minimap-background-color, #fff);
+    color: var(--xy-controls-button-color, #000);
+    font-family: Arial, sans-serif;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
 /* the group breadcrumbs and buttons in the canvas' top left corner */
 .graph-overlay {
     left: calc(8px + var(--panel-left, 0px));

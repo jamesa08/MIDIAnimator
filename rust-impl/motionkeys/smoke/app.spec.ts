@@ -35,6 +35,27 @@ test("main window", async ({ page }) => {
     await settle(page);
 });
 
+test("the fps counter shows under the minimap while it's on", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await expect(page.locator(".react-flow__node").first()).toBeVisible();
+    await expect(page.locator(".fps-counter")).toHaveCount(0);
+
+    // turned on in the settings, it counts frames under the minimap
+    const on = { ...backend.get_settings, console: { ...backend.get_settings.console, fps_counter: true } };
+    await emitEvent(page, "settings_changed", on);
+    const counter = page.locator(".fps-counter");
+    await expect(counter).toContainText(/\d+ fps/);
+    await expect(counter).toContainText(/\d+ ms/);
+    const minimap = (await page.locator(".react-flow__minimap").boundingBox())!;
+    const box = (await counter.boundingBox())!;
+    expect(box.y).toBeGreaterThan(minimap.y + minimap.height);
+    expect(Math.abs(box.x + box.width - (minimap.x + minimap.width))).toBeLessThan(2);
+
+    await emitEvent(page, "settings_changed", backend.get_settings);
+    await expect(counter).toHaveCount(0);
+    await settle(page);
+});
+
 test("toolbar adds a node and fades what can't run", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await expect(page.locator(".react-flow__node").first()).toBeVisible();
