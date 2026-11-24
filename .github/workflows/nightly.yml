@@ -45,19 +45,16 @@ jobs:
             echo "tested=false" >> $GITHUB_OUTPUT
           fi
 
-  # on nights without changes test and build only restore their rust caches, so a quiet week doesn't let github evict them
+  # skipped when the push already passed the tests on this commit
   test:
     needs: check
-    if: needs.check.outputs.changed == 'false' || needs.check.outputs.tested != 'true'
+    if: needs.check.outputs.changed == 'true' && needs.check.outputs.tested != 'true'
     uses: ./.github/workflows/test.yml
-    with:
-      keepalive: ${{ needs.check.outputs.changed == 'false' }}
 
   build:
     needs: check
+    if: needs.check.outputs.changed == 'true'
     uses: ./.github/workflows/build.yml
-    with:
-      keepalive: ${{ needs.check.outputs.changed == 'false' }}
 
   addon:
     needs: check
