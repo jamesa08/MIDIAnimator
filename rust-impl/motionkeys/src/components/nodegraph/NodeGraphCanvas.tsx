@@ -1,5 +1,5 @@
 import { CSSProperties, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { ReactFlow, MiniMap, Controls, Panel, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
+import { ReactFlow, MiniMap, Controls, Panel, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeChange, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
 import ConnectionLine from "../ConnectionLine";
@@ -83,10 +83,15 @@ function edgeCrosses(path: SVGPathElement | undefined, box: Box): boolean {
     return false;
 }
 
+// while a box is dragged BoxSelect picks the edges alone (`active`), react flow's own pick, the edges on the nodes inside,
+// is dropped. both picking undid the edges the box crosses and put them back on every mouse move, hundreds of edges
+// redrawn each time in a big graph. `writing` while BoxSelect's own changes go through
+type BoxEdges = { active: boolean; writing: boolean };
+
 // box select takes the edges the box crosses too, not only the ones on the nodes inside it (react flow's), and in a
 // graph that has `onBoxSockets` (the editor) the sockets inside it. not the sockets of a node wholly inside it, that node
 // is selected. each change goes through the graph's onEdgesChange like react flow's own
-function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edge[]; onBoxSockets?: (sockets: SocketRef[]) => void }) {
+function BoxSelect({ nodes, edges, onBoxSockets, owns }: { nodes?: Node[]; edges?: Edge[]; onBoxSockets?: (sockets: SocketRef[]) => void; owns: BoxEdges }) {
     const store = useStoreApi();
     const selectionRect = useStore((s) => s.userSelectionRect);
     const latest = useRef({ nodes, edges, onBoxSockets });
@@ -94,6 +99,7 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
     useEffect(() => {
         const { userSelectionActive, transform, domNode, nodeLookup, triggerEdgeChanges } = store.getState();
         // not yet dragged, a press on the graph sets an empty box
+        owns.active = !!selectionRect && userSelectionActive;
         if (!selectionRect || !userSelectionActive) return;
         const { nodes, edges, onBoxSockets } = latest.current;
         const [tx, ty, zoom] = transform;
@@ -117,8 +123,15 @@ function BoxSelect({ nodes, edges, onBoxSockets }: { nodes?: Node[]; edges?: Edg
             const selected = inside.has(edge.source) || inside.has(edge.target) || edgeCrosses(paths.get(edge.id), box);
             if (selected !== !!edge.selected) changes.push({ id: edge.id, type: "select", selected });
         }
-        if (changes.length > 0) triggerEdgeChanges(changes);
-    }, [selectionRect, store]);
+        if (changes.length > 0) {
+            owns.writing = true;
+            try {
+                triggerEdgeChanges(changes);
+            } finally {
+                owns.writing = false;
+            }
+        }
+    }, [selectionRect, store, owns]);
 
     // react flow leaves frames out (they aren't selectable to it), the box takes one like blender (boxTakesFrame). before
     // the box is drawn, react flow's own selection deselects them as it goes
@@ -324,6 +337,9 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
     const picked = useCanvasTool();
     const tool = frozen ? "select" : picked;
     const panHeld = props.panOnDrag === true;
+    const boxEdges = useRef<BoxEdges>({ active: false, writing: false }).current;
+    const { onEdgesChange } = props;
+    const edgesChange = useMemo(() => onEdgesChange && ((changes: EdgeChange[]) => onEdgesChange(boxEdges.active && !boxEdges.writing ? changes.filter((c) => c.type !== "select") : changes)), [onEdgesChange, boxEdges]);
     const toolProps = tool === "select" ? {} : { ...TOOL_PROPS[tool], className: `${props.className ?? ""} canvas-tool tool-${tool}` };
     return (
         <ReactFlow
@@ -353,11 +369,12 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
             nodes={shownNodes}
             edges={shown}
             {...props}
+            onEdgesChange={edgesChange}
             {...toolProps}
         >
             <ZoneFrames />
             <CanvasPaper />
-            {!frozen && <BoxSelect nodes={shownNodes} edges={shown} onBoxSockets={onBoxSockets} />}
+            {!frozen && <BoxSelect nodes={shownNodes} edges={shown} onBoxSockets={onBoxSockets} owns={boxEdges} />}
             {!frozen && <WheelNavigation />}
             {tool === "zoom" && !panHeld && <ZoomDrag />}
             {!frozen && (
