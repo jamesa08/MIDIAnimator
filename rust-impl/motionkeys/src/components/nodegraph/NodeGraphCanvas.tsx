@@ -1,4 +1,5 @@
 import { CSSProperties, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { ReactFlow, MiniMap, Controls, Panel, Background, BackgroundVariant, SelectionMode, ReactFlowProps, Edge, EdgeChange, EdgeSelectionChange, InternalNode, Node, NodeSelectionChange, useStore, useStoreApi } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import nodeTypes from "../../nodes/NodeTypes";
@@ -104,6 +105,7 @@ type BoxEdges = { active: boolean; writing: boolean };
 function BoxSelect({ nodes, edges, onBoxSockets, owns }: { nodes?: Node[]; edges?: Edge[]; onBoxSockets?: (sockets: SocketRef[]) => void; owns: BoxEdges }) {
     const store = useStoreApi();
     const selectionRect = useStore((s) => s.userSelectionRect);
+    const selecting = useStore((s) => s.userSelectionActive);
     const latest = useRef({ nodes, edges, onBoxSockets });
     latest.current = { nodes, edges, onBoxSockets };
     useEffect(() => {
@@ -159,7 +161,17 @@ function BoxSelect({ nodes, edges, onBoxSockets, owns }: { nodes?: Node[]; edges
         }
         if (changes.length > 0) triggerNodeChanges(changes);
     });
-    return null;
+
+    // the box itself, drawn on the body over the docked panels (react flow's own is hidden, index.css). it stays inside
+    // the canvas and under menus and modals
+    const canvas = selectionRect && selecting ? store.getState().domNode?.getBoundingClientRect() : undefined;
+    if (!selectionRect || !canvas) return null;
+    return createPortal(
+        <div className="box-select-layer" style={{ left: canvas.left, top: canvas.top, width: canvas.width, height: canvas.height }}>
+            <div className="box-select-rect" style={{ width: selectionRect.width, height: selectionRect.height, transform: `translate(${selectionRect.x}px, ${selectionRect.y}px)` }} />
+        </div>,
+        document.body
+    );
 }
 
 // the frame rate over the last half second and the slowest frame in it, a hitch the rate alone would hide, shown

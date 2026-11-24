@@ -1481,7 +1481,7 @@ test("frames", async ({ page }) => {
     await page.mouse.move(inside.x, inside.y);
     await page.mouse.down();
     await page.mouse.move(inside.x + 4, inside.y + 4, { steps: 3 });
-    await expect(page.locator(".react-flow__selection")).toHaveCount(1);
+    await expect(page.locator(".box-select-rect")).toHaveCount(1);
     await page.mouse.up();
     await expect(frame).not.toHaveClass(/selected/);
 
@@ -1611,7 +1611,7 @@ test("right click cancels a modal and opens no menu", async ({ page }) => {
     await page.mouse.down();
     await page.mouse.move(empty.x + 300, empty.y + 300, { steps: 8 });
     await page.mouse.down({ button: "right" });
-    await expect(page.locator(".react-flow__selection")).toHaveCount(0);
+    await expect(page.locator(".box-select-rect")).toHaveCount(0);
     await page.mouse.up({ button: "right" });
     await page.mouse.move(empty.x + 320, empty.y + 320, { steps: 2 });
     await page.mouse.up();

@@ -1238,6 +1238,27 @@ input.value-slider,
     isolation: isolate;
 }
 
+/* the box select's box (NodeGraphCanvas.tsx BoxSelect) on the body, over the docked panels and console but under menus
+   (1000) and modals (9999). react flow's own is stuck under them in the canvas */
+.react-flow__selection {
+    display: none;
+}
+
+.box-select-layer {
+    position: fixed;
+    z-index: 900;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.box-select-rect {
+    position: absolute;
+    top: 0;
+    left: 0;
+    background: var(--xy-selection-background-color, rgba(0, 89, 220, 0.08));
+    border: var(--xy-selection-border, 1px dotted rgba(0, 89, 220, 0.8));
+}
+
 /* docked panels float over the canvas in a column on each side, inset from its edges (the content's padding plus 8px).
    panels docked on the same side share its height. the column itself lets clicks through to the canvas */
 .content > .dock-column {

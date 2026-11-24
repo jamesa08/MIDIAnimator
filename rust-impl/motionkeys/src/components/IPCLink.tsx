@@ -203,9 +203,10 @@ function IPCLink() {
                 link so clicks inside it don't toggle the menu */}
             {menuShown && createPortal(floatingPanel, document.body)}
 
-            {showDiffModal && <SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={closeReview} />}
+            {/* the modals on the body too, so nothing over the canvas (the box select's box) draws on top of them */}
+            {showDiffModal && createPortal(<SceneDiffModal diff={sceneDiff} onAccept={handleAccept} onReject={handleReject} onClose={closeReview} />, document.body)}
 
-            {state.pending_curve_import && <CurveImportModal objects={state.pending_curve_import} onImport={importCurves} onCancel={skipCurves} />}
+            {state.pending_curve_import && createPortal(<CurveImportModal objects={state.pending_curve_import} onImport={importCurves} onCancel={skipCurves} />, document.body)}
         </>
     );
 }
