@@ -486,7 +486,8 @@ fn edit_graph(project: &mut Graph, scope: Option<&str>, op: &Op, ctx: &Ctx, spec
         } => {
             let node = target(project, scope)?.node_mut(node).ok_or_else(|| format!("no node '{}'", node))?;
             node.extra.insert("width".to_string(), json!(width));
-            match height {
+            // only nodes that can be dragged taller have a height, the others are as tall as what they draw
+            match height.filter(|_| node.keeps_height()) {
                 Some(height) => node.extra.insert("height".to_string(), json!(height)),
                 None => node.extra.remove("height"),
             };

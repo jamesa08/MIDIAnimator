@@ -402,6 +402,12 @@ impl RfNode {
         self.resolved_node_type() == super::run::FRAME
     }
 
+    /// whether the node's height can be dragged (frames and the viewer), every other node's height comes from what it
+    /// draws and only its width is stored
+    pub fn keeps_height(&self) -> bool {
+        self.is_frame() || self.resolved_node_type() == "viewer"
+    }
+
     /// the frame the node is in
     pub fn frame(&self) -> Option<&str> {
         self.extra.get("frame").and_then(|v| v.as_str())
@@ -540,13 +546,15 @@ impl Graph {
     }
 
     /// drops what react flow measured or was doing to the nodes (sizes, drags, resizes), here and inside every group.
-    /// only the canvas knows those and a saved one goes stale as soon as a node draws differently
+    /// only the canvas knows those and a saved one goes stale as soon as a node draws differently. a height older
+    /// versions stored on a node that can't be dragged taller goes too
     pub fn strip_measured(&mut self) {
         for group in self.groups.values_mut() {
             group.graph.strip_measured();
         }
         for node in &mut self.nodes {
-            node.extra.retain(|k, _| !super::history::UI_NODE_KEYS.contains(&k.as_str()));
+            let keeps_height = node.keeps_height();
+            node.extra.retain(|k, _| !super::history::UI_NODE_KEYS.contains(&k.as_str()) && (keeps_height || k != "height"));
         }
     }
 
@@ -742,20 +750,24 @@ mod tests {
         assert_eq!(graph.next_node_id("viewer"), "viewer-4");
     }
 
-    // checks that measured sizes go from the nodes and the nodes inside groups, and a size set by resizing stays
+    // checks that measured sizes go from the nodes and the nodes inside groups, and a size set by resizing stays. a
+    // node that only resizes sideways keeps its width but not a height
     #[test]
     fn strip_measured_keeps_resized_sizes() {
         let node = serde_json::json!({ "id": "viewer-1", "type": "viewer", "position": { "x": 0, "y": 0 }, "measured": { "width": 200, "height": 16 }, "width": 300, "height": 400, "selected": true });
+        let sideways = serde_json::json!({ "id": "assign_notes_to_objects-1", "type": "assign_notes_to_objects", "position": { "x": 0, "y": 0 }, "width": 270, "height": 380 });
         let mut rf: HashMap<String, Value> = HashMap::new();
-        rf.insert("nodes".to_string(), Value::Array(vec![node.clone()]));
-        rf.insert("groups".to_string(), serde_json::json!({ "group_1": { "name": "Group", "nodes": [node] } }));
+        rf.insert("nodes".to_string(), Value::Array(vec![node.clone(), sideways.clone()]));
+        rf.insert("groups".to_string(), serde_json::json!({ "group_1": { "name": "Group", "nodes": [node, sideways] } }));
         let mut graph = Graph::from_rf(&rf).unwrap();
         graph.strip_measured();
-        for node in [&graph.nodes[0], &graph.groups["group_1"].graph.nodes[0]] {
-            assert!(!node.extra.contains_key("measured"));
-            assert_eq!(node.extra["width"], 300);
-            assert_eq!(node.extra["height"], 400);
-            assert_eq!(node.extra["selected"], true);
+        for nodes in [&graph.nodes, &graph.groups["group_1"].graph.nodes] {
+            assert!(!nodes[0].extra.contains_key("measured"));
+            assert_eq!(nodes[0].extra["width"], 300);
+            assert_eq!(nodes[0].extra["height"], 400);
+            assert_eq!(nodes[0].extra["selected"], true);
+            assert_eq!(nodes[1].extra["width"], 270);
+            assert!(!nodes[1].extra.contains_key("height"));
         }
     }
 }

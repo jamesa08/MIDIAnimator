@@ -85,7 +85,7 @@ const carriedChanges = (session: MoveSession, changes: any[]) => {
 // the right click menu: where it opened (a screen position), what was right clicked, and whether the clipboard had nodes
 type ContextMenuState = { at: { x: number; y: number }; target: "nodes" | "edge" | "pane"; canPaste: boolean };
 
-// the node whose height can be dragged too (BaseNode's minHeight)
+// the node whose height can be dragged too (BaseNode's minHeight), frames are the others
 const VIEWER = "viewer";
 
 // ids of the selected nodes or edges
@@ -1558,7 +1558,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                 // collapsed node keeps the height it had, it's drawn as tall as its header
                 const stored = (storedRef.current.nodes ?? []).find((n: any) => n.id === node.id);
                 const widthOnly = node.type === VIEWER && stored?.height === undefined && start !== undefined && height !== undefined && Math.abs(height - start) < 1;
-                const kept = (node.data as any)?.collapsed ? (stored?.height ?? null) : widthOnly ? null : height;
+                // only frames and the viewer can be dragged taller, every other node is as tall as what it draws (a stored
+                // height would stop react flow seeing it grow, its edges would stay where its sockets were)
+                const keepsHeight = isFrame(node) || node.type === VIEWER;
+                const kept = !keepsHeight ? null : (node.data as any)?.collapsed ? (stored?.height ?? null) : widthOnly ? null : height;
                 if (width && height) hold(sizingRef.current, [node.id], apply([{ op: "resize", node: node.id, width, height: kept, position }]));
             }
         },

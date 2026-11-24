@@ -278,7 +278,7 @@ pub fn paste(project: &mut Graph, scope: Option<&str>, specs: &[NodeSpec], text:
             },
             data: clean_data(&node, spec.as_deref()),
             // a resized node keeps its size
-            extra: node.extra.iter().filter(|(k, v)| (k.as_str() == "width" || k.as_str() == "height") && v.is_number()).map(|(k, v)| (k.clone(), v.clone())).collect(),
+            extra: node.extra.iter().filter(|(k, v)| (k.as_str() == "width" || (k.as_str() == "height" && node.keeps_height())) && v.is_number()).map(|(k, v)| (k.clone(), v.clone())).collect(),
         };
         ids.insert(node.id.clone(), pasted.id.clone());
         if let Some(frame) = node.frame() {
