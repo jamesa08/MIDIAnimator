@@ -67,6 +67,16 @@ function cubicCrosses([x0, y0, x1, y1, x2, y2, x3, y3]: number[], box: Box): boo
     return false;
 }
 
+// the canvas' dots, react flow draws them closer together as it zooms out. once they'd be under MIN_DOT_SPACING apart
+// on screen they're left out: they only read as a faint haze by then, and webkit drawing hundreds of thousands of them
+// again on every frame of a pan or zoom cost more than the rest of the graph
+const DOT_GAP = 12;
+const MIN_DOT_SPACING = 4;
+function Dots() {
+    const shown = useStore((s) => s.transform[2] * DOT_GAP >= MIN_DOT_SPACING);
+    return shown ? <Background variant={BackgroundVariant.Dots} gap={DOT_GAP} size={1} /> : null;
+}
+
 // whether an edge's path passes through a box (flow coordinates), sampled along the path as it's drawn
 function edgeCrosses(path: SVGPathElement | undefined, box: Box): boolean {
     if (!path) return false;
@@ -400,13 +410,13 @@ function NodeGraphCanvas({ frozen = false, children, nodes, edges, onBoxSockets,
             {tool === "zoom" && !panHeld && <ZoomDrag />}
             {!frozen && (
                 <>
-                    <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
+                    <Dots />
                     <Controls />
                     <MiniMap position="top-right" style={{ width: 100, height: 75 }} />
                     <FpsCounter />
                 </>
             )}
-            {frozen && <Background variant={BackgroundVariant.Dots} gap={12} size={1} />}
+            {frozen && <Dots />}
             {children}
         </ReactFlow>
     );
