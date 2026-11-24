@@ -48,11 +48,39 @@ export const TabContext = createContext<string>("");
 // sizes on screen, frames fit around them
 export type ApplyOptions = { txn?: string; commitToHistory?: boolean; sizes?: Record<string, { width: number; height: number }> };
 
+// `next` with every part that's the same as in `prev` taken from `prev`, so what didn't change keeps its identity and
+// nothing drawn from it is redone (memos, react flow's nodes). items of an array are paired by id when they have one
+export function share<T>(prev: any, next: T): T {
+    if (prev === next || typeof prev !== "object" || typeof next !== "object" || prev === null || next === null) return next;
+    if (Array.isArray(prev) !== Array.isArray(next)) return next;
+    if (Array.isArray(next)) {
+        const key = (item: any, i: number) => (item && typeof item === "object" && "id" in item ? item.id : i);
+        const before = new Map(prev.map((item: any, i: number) => [key(item, i), item]));
+        let same = prev.length === next.length;
+        const items = next.map((item, i) => {
+            const shared = share(before.get(key(item, i)), item);
+            if (shared !== prev[i]) same = false;
+            return shared;
+        });
+        return (same ? prev : items) as T;
+    }
+    const keys = Object.keys(next);
+    let same = keys.length === Object.keys(prev).length;
+    const shared: any = {};
+    for (const key of keys) {
+        shared[key] = share(prev[key], (next as any)[key]);
+        if (shared[key] !== prev[key] || !(key in prev)) same = false;
+    }
+    return same ? prev : shared;
+}
+
 // the state with a tab's graph from the backend: only the tab on screen's, and not if the state already has a newer one
-// (graph_rev only goes up)
+// (graph_rev only goes up) or this same one: an edit's graph comes twice, as graph_changed and as its reply
 export function takeGraph(state: any, graph: { tab: string; graph_rev?: number; rf_instance: any }): any {
     if (graph.tab !== state.active_tab || (graph.graph_rev ?? 0) < (state.graph_rev ?? 0)) return state;
-    return { ...state, graph_rev: graph.graph_rev, rf_instance: graph.rf_instance };
+    const rf_instance = share(state.rf_instance, graph.rf_instance);
+    if (rf_instance === state.rf_instance && graph.graph_rev === state.graph_rev) return state;
+    return { ...state, graph_rev: graph.graph_rev, rf_instance };
 }
 
 // a whole state from the backend unless the state is newer (state_rev only goes up), keeping the graph the state has if
@@ -60,7 +88,7 @@ export function takeGraph(state: any, graph: { tab: string; graph_rev?: number; 
 export function takeState(state: any, next: any): any {
     if ((next.state_rev ?? 0) < (state.state_rev ?? 0)) return state;
     if (next.active_tab === state.active_tab && (next.graph_rev ?? 0) < (state.graph_rev ?? 0)) return { ...next, graph_rev: state.graph_rev, rf_instance: state.rf_instance };
-    return next;
+    return { ...next, rf_instance: share(state.rf_instance, next.rf_instance) };
 }
 
 // keeps the state of a window other than the main one (a floating panel) up to date, App does it for the main window

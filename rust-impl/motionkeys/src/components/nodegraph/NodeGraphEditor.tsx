@@ -68,6 +68,18 @@ type Sending = { cancelled: boolean; end: () => void };
 // a drag or grab under way: what's moved, the frames' rects when it started (for dropping nodes in them, dropFrames), and for a drag where each dragged node started and which dragged frame carries each node in one
 type MoveSession = { moved: string[]; frames: Map<string, Rect>; starts: Map<string, { x: number; y: number }>; carriedBy: Map<string, string> };
 
+// `prev` when `next` has the same fields with the same values, else `next`
+const sameFields = (prev: any, next: any) => {
+    const keys = Object.keys(next);
+    return keys.length === Object.keys(prev).length && keys.every((key) => key in prev && prev[key] === next[key]) ? prev : next;
+};
+
+// `prev` when `next` holds the same items in the same order, else `next`
+const sameItems = <T,>(prev: T[] | undefined, next: T[]) => (prev && prev.length === next.length && next.every((item, i) => item === prev[i]) ? prev : next);
+
+// the same place, whether or not it's the same object
+const samePosition = (a: { x: number; y: number } | undefined, b: { x: number; y: number }) => !!a && a.x === b.x && a.y === b.y;
+
 // a move op, with the frames nodes were dropped in
 const moveOp = (positions: Record<string, { x: number; y: number }>, frames: Record<string, string>): Op => ({ op: "move", positions, ...(Object.keys(frames).length > 0 ? { frames } : {}) });
 
@@ -149,6 +161,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // the backend's latest graph, for callbacks
     const storedRef = useRef(level.graph);
     storedRef.current = level.graph;
+    // which of the backend's graphs that is (graph_rev only goes up)
+    const storedRevRef = useRef(state.graph_rev ?? 0);
+    storedRevRef.current = state.graph_rev ?? 0;
 
     // the nodes that can be added here, groups on the way down to this graph are left out so none contains itself
     const groups = project.groups();
@@ -161,8 +176,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     // edits in a read-only graph (an unedited built-in group) don't happen
     const canEdit = useCallback(() => editable, [editable]);
 
-    // bumped when an edit failed, so what was shown ahead of it stops being ahead of the backend's graph: the graph on
-    // screen is shown from the backend's again (below)
+    // bumped when an edit failed, or a move or resize is back, so what was shown ahead of it stops being ahead of the
+    // backend's graph: the graph on screen is shown from the backend's again (below)
     const [resync, setResync] = useState(0);
 
     // an edit on its way to the backend, a failed one changed nothing. what was shown ahead of it (nodes where they were
@@ -190,14 +205,16 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
     const resizeLastRef = useRef(new Map<string, { width?: number; height?: number; position?: { x: number; y: number } }>());
     const hold = useCallback((held: Map<string, number>, ids: string[], sent: Promise<unknown>) => {
         for (const id of ids) held.set(id, (held.get(id) ?? 0) + 1);
-        // let go once it's back, before its graph is shown. a reply older than the graph shown is dropped, that graph came
-        // after the move and already has it, so nothing on screen has to change. a failed one is put back by `track`
-        sent.then(() => {
+        // let go once it's back, before its graph is shown. graph_changed usually brought that graph while the nodes were
+        // still held, and the reply with the same graph isn't taken again, so it's shown once more. a reply older than the
+        // graph shown is dropped, that graph came after the move and already has it. a failed one is put back by `track`
+        sent.then((applied: any) => {
             for (const id of ids) {
                 const left = (held.get(id) ?? 1) - 1;
                 if (left > 0) held.set(id, left);
                 else held.delete(id);
             }
+            if (applied && (applied.graph_rev ?? 0) >= storedRevRef.current) setResync((n) => n + 1);
         });
     }, []);
 
@@ -1187,26 +1204,30 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             // sizes only ever come from what react flow measured on screen. the backend's are whatever was measured when
             // it was last told (a saved project keeps them), and react flow doesn't measure a node again until its size
             // changes, so a stale one would stick (framing and edges going by the wrong size)
-            return stored.nodes.map(({ measured, ...node }: any) => {
+            const shown = stored.nodes.map(({ measured, ...node }: any) => {
                 const prev: any = current.get(node.id);
                 if (!prev) return node;
                 const sized = prev.resizing || resizing.has(node.id) || sizing.has(node.id);
                 const placed = prev.dragging || grabbed.has(node.id) || !!carried?.has(node.id) || moving.has(node.id) || sized;
-                const position = placed ? prev.position : node.position;
+                const position = placed || samePosition(prev.position, node.position) ? prev.position : node.position;
                 const { selectedSockets, ...stored } = node;
                 const sockets = keepSelection ? prev.selectedSockets : selectedSockets;
                 const size = sized ? { width: prev.width, height: prev.height, ...(prev.resizing ? { resizing: true } : {}) } : {};
-                return { ...stored, position, ...size, measured: prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) };
+                // a node nothing changed on stays the same object, react flow only redraws the ones that did
+                return sameFields(prev, { ...stored, position, ...size, measured: prev.measured, selected: keepSelection ? prev.selected : !!node.selected, dragging: prev.dragging, ...(sockets ? { selectedSockets: sockets } : {}) });
             });
+            return sameItems(nds, shown);
         });
         setEdges((eds) => {
             const current = new Map((eds ?? []).map((edge: any) => [edge.id, edge]));
-            return stored.edges.map((edge: any) => {
+            const shown = stored.edges.map((edge: any) => {
                 const prev: any = current.get(edge.id);
                 // a link being picked up stays hidden while it's dragged
                 const picked = edge.id === pickedRef.current ? { hidden: true } : {};
-                return { ...edge, selected: keepSelection && prev ? prev.selected : !!edge.selected, ...picked };
+                const next = { ...edge, selected: keepSelection && prev ? prev.selected : !!edge.selected, ...picked };
+                return prev ? sameFields(prev, next) : next;
             });
+            return sameItems(eds, shown);
         });
     }, [stored, state.ready, rfInstance, resync]);
 
