@@ -1030,6 +1030,42 @@ test("dragging off a connected input picks up its link", async ({ page }) => {
     await settle(page);
 });
 
+test("keyframes from object lists the object's channels when a picked one is gone", async ({ page }) => {
+    // the fixture after the scene changed: the picked channel isn't on the object anymore, so the node failed
+    const state = structuredClone(backend.get_state);
+    const node = state.rf_instance.nodes.find((n: any) => n.id === "keyframes_from_object-1");
+    node.data.inputs = { ...node.data.inputs, channels: ["rotation_euler[0]"] };
+    state.executed_inputs["keyframes_from_object-1"].channels = ["rotation_euler[0]"];
+    state.executed_results["keyframes_from_object-1"] = { motionkeys_error: "'rotation_euler[0]' has no keyframes on 'ANIM_bounce'" };
+    await openWindow(page, { ...backend, get_state: state }, "/#/");
+
+    // the row keeps the gone pick and offers the object's keyframed channel
+    const kfo = page.locator(".react-flow__node", { hasText: "Keyframes from Object" });
+    const row = kfo.locator(".channel-row select").first();
+    await expect(row).toHaveValue("rotation_euler[0]");
+    await expect(row.locator("option")).toHaveText(["rotation_euler[0]", "Location Z"]);
+
+    // location[2] isn't picked but is still wired, its dropdown shows its id
+    const edge = "xy-edge__animation_generator-1note_on_keyframes-keyframes_from_object-1location[2]";
+    const leftover = kfo.locator(".channel-row", { hasText: "location[2]" });
+    await expect(leftover.locator("select option:checked")).toHaveText("location[2]");
+
+    // both rows output nothing, so they're red. the empty dropdown isn't
+    await expect(kfo.locator(".channel-row select.channel-orphan")).toHaveCount(2);
+    await expect(row).toHaveClass(/channel-orphan/);
+
+    // picking a channel in either adds it and keeps them (with their wires), only their × removes them
+    const picks = { op: "set_inputs", node: "keyframes_from_object-1", inputs: { channels: ["rotation_euler[0]", "location[2]"] } };
+    await row.selectOption({ label: "Location Z" });
+    expect((await applied(page)).at(-1)).toEqual([picks]);
+    await leftover.locator("select").selectOption({ label: "Location Z" });
+    expect((await applied(page)).at(-1)).toEqual([picks]);
+    await leftover.hover();
+    await leftover.locator(".channel-remove").click();
+    expect(await applied(page)).toContainEqual([{ op: "delete", edges: [edge] }]);
+    await settle(page);
+});
+
 test("a multi input takes a link dropped anywhere along it", async ({ page }) => {
     // five links into the generator's note on keyframes make its socket tall
     const tall = JSON.parse(JSON.stringify(backend));

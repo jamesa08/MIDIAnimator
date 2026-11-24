@@ -6,7 +6,7 @@ import CurvePreview from "../components/graph/CurvePreview";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
-import { findGroup, findObject, groupKey, groupOptions, objectOptions } from "../utils/objectGroups";
+import { findGroup, findObject, groupKey, groupOptions, objectChannels, objectOptions } from "../utils/objectGroups";
 import { Op, useGraphOps, useSetInputs } from "../utils/graphOps";
 
 // a channel of the object with keyframes, see ChannelOption in src-tauri/src/graph/executors/animation.rs. `name`: in its
@@ -52,10 +52,12 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
     // the picked channels, one output each
     const channels: string[] = Array.isArray(data.inputs?.channels) ? data.inputs.channels : [];
 
-    // the object's channels from the last run that got here. a failed run (or one that stopped before this node) keeps them,
-    // so the dropdowns keep their names and the node can still be edited
+    // the object's channels from the last run that got here. a run this node failed in (a picked channel the new scene's
+    // object doesn't have) lists the channels of the object it got. a run that stopped before this node, or one where the
+    // object is gone, keeps them, so the dropdowns keep their names and the node can still be edited
     const lastAvailable = useRef<Channel[]>([]);
     if (Array.isArray(executedResults?.available_channels)) lastAvailable.current = executedResults.available_channels;
+    else if (pickedObject) lastAvailable.current = objectChannels(pickedObject);
     const available = lastAvailable.current;
 
     // a picked channel the object doesn't have (anymore) shows its id
@@ -109,6 +111,10 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         pickChannels([...channels, channel], {});
     };
 
+    const insertChannel = (index: number, channel: string) => {
+        pickChannels([...channels.slice(0, index), channel, ...channels.slice(index)], {});
+    };
+
     const changeChannel = (index: number, channel: string) => {
         const next = [...channels];
         next[index] = channel;
@@ -141,16 +147,18 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
             );
         });
 
-    // a row's dropdown: the object's channels, without the ones other rows picked
+    // a row's dropdown: the object's channels, without the ones other rows picked. a pick the object doesn't have stays
+    // until its × removes it, picking a channel in its dropdown adds a row under it
     const channelSelect = (channel: string, index: number) => {
         const options = available.filter((c) => c.id === channel || !channels.includes(c.id));
-        if (!options.some((c) => c.id === channel)) options.unshift(channelFor(channel));
+        const orphan = !options.some((c) => c.id === channel);
+        if (orphan) options.unshift(channelFor(channel));
         return (
             <div className="channel-row" style={{ width: "100%" }}>
                 <button className="channel-remove nodrag nopan" onClick={() => removeChannel(index)}>
                     ×
                 </button>
-                <select className="nodrag nopan" value={channel} onChange={(e) => changeChannel(index, e.target.value)}>
+                <select className={`nodrag nopan${orphan ? " channel-orphan" : ""}`} value={channel} onChange={(e) => (orphan ? insertChannel(index + 1, e.target.value) : changeChannel(index, e.target.value))}>
                     {channelOptions(options)}
                 </select>
             </div>
@@ -159,6 +167,25 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     // the channels no row picked yet. picking one in the empty dropdown at the end adds its row, like a free socket
     const unpickedChannels = available.filter((c) => !channels.includes(c.id));
+
+    // an output only kept for its connections shows its id and stays until its × deletes them (the socket goes with them).
+    // picking a channel in its dropdown adds its row, its own channel makes it a row again
+    const removeUnpicked = (output: string) => {
+        if (!editable) return;
+        apply([{ op: "delete", edges: connections.filter((c) => c.output === output).map((c) => c.edge) }]).catch((e) => console.error(`remove ${output} on ${id}: ${e}`));
+    };
+
+    const unpickedRow = (output: string) => (
+        <div className="channel-row" style={{ width: "100%" }}>
+            <button className="channel-remove nodrag nopan" onClick={() => removeUnpicked(output)}>
+                ×
+            </button>
+            <select className="nodrag nopan channel-orphan" value="" onChange={(e) => addChannel(e.target.value)}>
+                <option value="">{output}</option>
+                {channelOptions(unpickedChannels)}
+            </select>
+        </div>
+    );
     const emptySelect = editable && unpickedChannels.length > 0 && (
         <div className="node-field channel-row">
             {/* keeps the dropdown in line with the rows' */}
@@ -224,8 +251,8 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
         outputs: outputs,
     };
 
-    // each picked channel's name is its dropdown
-    const labels = Object.fromEntries(channels.map((channel, i) => [channel, channelSelect(channel, i)]));
+    // each picked channel's name is its dropdown, an unpicked output's has its ×
+    const labels = Object.fromEntries([...channels.map((channel, i) => [channel, channelSelect(channel, i)]), ...unpicked.map((output) => [output, unpickedRow(output)])]);
 
     // the picked channels' curves, under the inputs
     return (

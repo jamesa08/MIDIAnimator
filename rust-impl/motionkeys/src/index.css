@@ -1581,6 +1581,11 @@ input.value-slider,
     min-width: 0;
 }
 
+/* a row that outputs nothing: a pick the object doesn't have, or an output only kept for its connections */
+.channel-row select.channel-orphan {
+    color: var(--error);
+}
+
 .interface-socket .interface-rename {
     width: 100%;
     font-size: 12px;

@@ -26,3 +26,13 @@ export function channelLabel(object: any, id: string): string {
     if (!channel) return id;
     return !channel.group || channel.group === channels[0]?.group ? channelTitle(channel) : `${channel.group} › ${channelTitle(channel)}`;
 }
+
+// the channels of an object that have curves, as Keyframes from Object's dropdowns list them: in the order the bridge
+// lists them, then curves on channels it doesn't list by their ids, like object_channels in executors/animation.rs
+export function objectChannels(object: any): { id: string; group: string; name: string; label: string }[] {
+    const channels: any[] = Array.isArray(object?.channels) ? object.channels : [];
+    const curves: string[] = (Array.isArray(object?.anim_curves) ? object.anim_curves : []).map((c: any) => c?.channel).filter((c: any) => typeof c === "string");
+    const listed = channels.filter((c) => curves.includes(c?.id)).map((c) => ({ id: c.id, group: `${c.group ?? ""}`, name: channelTitle(c), label: channelLabel(object, c.id) }));
+    const unlisted = curves.filter((id) => !channels.some((c) => c?.id === id)).map((id) => ({ id, group: "", name: id, label: id }));
+    return [...listed, ...unlisted];
+}
