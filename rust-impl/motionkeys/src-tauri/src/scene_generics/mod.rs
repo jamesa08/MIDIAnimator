@@ -4,7 +4,7 @@ use crate::utils::curve::Key;
 
 // MARK: - Scene
 /// the scene the user is working in, as the bridge sends it
-#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 pub struct Scene {
     /// the bridge's id for the scene. empty in scene data saved before scenes had ids
     #[serde(default)]
@@ -63,7 +63,7 @@ pub struct Axes {
 }
 
 // MARK: - ObjectGroup
-#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 pub struct ObjectGroup {
     /// the bridge's id for the group, stable while it exists. Blender's is `collection:` and the collection's name, or
     /// `scene` for the objects outside every collection. none in scene data saved before groups had ids
@@ -91,7 +91,7 @@ pub fn find_group<'a>(groups: &'a [ObjectGroup], pick: &str) -> Option<&'a Objec
 }
 
 // MARK: - Object
-#[derive(Serialize, Deserialize, Clone, Debug, schemars::JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, schemars::JsonSchema)]
 pub struct Object {
     /// the bridge's id for the object, stable while it exists. Blender's is the object's name
     pub id: String,

@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, static_property, targets_for_note};
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data, note_frequency};
+use motionkeys::graph::executors::scene::{scene_link, with_scene};
+use motionkeys::scene_generics::Scene;
+use std::collections::BTreeSet;
 
 const TYPE_1: &str = "./tests/test_midi_type_1_rs_4_14_24.mid";
 
@@ -637,4 +640,37 @@ fn merge_object_maps_takes_any_number_of_maps() {
 
     // nothing connected is an empty map
     assert_eq!(merge_object_maps(&Inputs::default()).unwrap().to_json()["object_map"], json!({ "animations": {}, "objects": {} }));
+}
+
+#[test]
+fn get_midi_file_gives_the_same_values_until_the_file_changes() {
+    // a copy of the file to rewrite
+    let dir = std::env::temp_dir().join(format!("motionkeys_midi_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("song.mid");
+    std::fs::copy(TYPE_1, &path).unwrap();
+    let inputs = Inputs::from([("file_path", json!(path.to_str().unwrap()))]);
+    let first = get_midi_file(&inputs).unwrap();
+    let again = get_midi_file(&inputs).unwrap();
+    assert!(first.get("tracks").unwrap().same(again.get("tracks").unwrap()));
+
+    // another file in its place is read again
+    std::fs::copy("./tests/test_midi_type_0_rs_4_14_24.mid", &path).unwrap();
+    let changed = get_midi_file(&inputs).unwrap();
+    assert!(!first.get("tracks").unwrap().same(changed.get("tracks").unwrap()));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn scene_link_gives_the_same_values_for_the_same_scene() {
+    let scene = |name: &str| -> Scene { serde_json::from_value(json!({ "name": name, "object_groups": [{ "id": "collection:Cubes", "name": "Cubes", "objects": [] }] })).unwrap() };
+    let run = |scene: Scene| with_scene(Some(scene), BTreeSet::new(), || scene_link(&Inputs::default()).unwrap());
+    let first = run(scene("A"));
+    let again = run(scene("A"));
+    assert!(first.get("object_groups").unwrap().same(again.get("object_groups").unwrap()));
+
+    // a scene that changed gives new values
+    let changed = run(scene("B"));
+    assert!(!first.get("object_groups").unwrap().same(changed.get("object_groups").unwrap()));
+    assert_eq!(changed.to_json()["name"], json!("B"));
 }

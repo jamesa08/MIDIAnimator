@@ -1058,9 +1058,10 @@ impl<'a, 'c> Runner<'a, 'c> {
 
         if !in_item {
             let mut memo = self.ctx.memo.borrow_mut();
-            // a node bringing in the outside world keeps its old values when they come out the same, so the nodes after it don't run again
+            // a node bringing in the outside world keeps its old values when they come out the same, so the nodes after it don't run again.
+            // a source that gave back the very values it gave last time (the scene, a file that didn't change) needs no comparing
             if let (true, Ok(outputs), Some(Ok(old))) = (source, &outcome, memo.nodes.get(&path).map(|m| &m.outputs)) {
-                let unchanged = old.iter().count() == outputs.iter().count() && outputs.iter().all(|(k, v)| old.get(k).is_some_and(|o| o.to_json() == v.to_json()));
+                let unchanged = old.iter().count() == outputs.iter().count() && outputs.iter().all(|(k, v)| old.get(k).is_some_and(|o| o.same(v) || o.to_json() == v.to_json()));
                 if unchanged {
                     outcome = Ok(old.clone());
                 }

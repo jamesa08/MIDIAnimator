@@ -1,7 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Mutex, PoisonError};
+use std::time::SystemTime;
 
 use super::io::{NodeResult, Outputs};
 use crate::midi::{MIDIFile, MIDINote, MIDITrack};
+
+// what each file gave and when it was last changed and how long it was then: a file that didn't change isn't read again
+// and gives back the same values, which the run sees didn't change without comparing them
+lazy_static::lazy_static! {
+    static ref READ: Mutex<HashMap<String, (SystemTime, u64, Outputs)>> = Mutex::new(HashMap::new());
+}
 
 pub fn get_midi_file_statistics(midi_file: &MIDIFile) -> String {
     let track_count = midi_file.get_midi_tracks().len();
@@ -59,12 +67,24 @@ pub fn get_midi_file(file_path: Option<&String>) -> NodeResult {
         return Ok(outputs);
     }
 
+    // the file as it was read last time, when it hasn't changed since
+    let changed = std::fs::metadata(file_path).ok().and_then(|meta| Some((meta.modified().ok()?, meta.len())));
+    if let Some((modified, len)) = changed {
+        let read = READ.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, _, given)) = read.get(file_path).filter(|(m, l, _)| *m == modified && *l == len) {
+            return Ok(given.clone());
+        }
+    }
+
     // read the file, a missing or broken file is an error on the node
     let midi_file = MIDIFile::new(file_path).map_err(|e| format!("could not read MIDI file '{}': {}", file_path, e))?;
     let midi_file_statistics = get_midi_file_statistics(&midi_file);
     outputs.set("tracks", midi_file.get_midi_tracks().clone());
     outputs.set("tempo", midi_file.get_tempo().clone());
     outputs.set("stats", midi_file_statistics);
+    if let Some((modified, len)) = changed {
+        READ.lock().unwrap_or_else(PoisonError::into_inner).insert(file_path.to_string(), (modified, len, outputs.clone()));
+    }
     Ok(outputs)
 }
 

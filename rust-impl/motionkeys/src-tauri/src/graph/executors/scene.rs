@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::{Mutex, PoisonError};
 
 use super::io::{NodeResult, Outputs};
 use crate::bridge::scene_data::write_scene_data;
@@ -23,6 +24,10 @@ thread_local! {
     // the objects the run's scene writers sent keyframes to, whether or not Blender said they went through
     static WRITTEN_TO: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
+
+// the scene `scene_link` last gave and what it gave, so the same scene gives back the same values: the run sees they
+// didn't change without comparing them
+static LAST_SCENE: Mutex<Option<(Scene, Outputs)>> = Mutex::new(None);
 
 /// runs `f` with `scene` as the scene `scene_link` gives, a run of a tab runs on that tab's scene. `curve_sources` are
 /// the objects its graph reads keyframes from (`bridge::curves::curve_sources`)
@@ -64,22 +69,30 @@ pub fn written_objects() -> BTreeSet<String> {
 /// "object_groups": `Array<ObjectGroup>`
 #[node_registry::node]
 pub fn scene_link() -> NodeResult {
-    let mut outputs = Outputs::new();
-
     // the scene of the tab being run
-    let scene = SCENE.with(|scene| scene.borrow().clone());
+    SCENE.with(|scene| {
+        let mut outputs = Outputs::new();
 
-    // no scene yet (Blender hasn't sent one), empty outputs
-    let Some(scene) = scene else {
-        println!("NO SCENE DATA");
-        outputs.set("name", String::new());
-        outputs.set("object_groups", Vec::<ObjectGroup>::new());
-        return Ok(outputs);
-    };
+        // no scene yet (Blender hasn't sent one), empty outputs
+        let scene = scene.borrow();
+        let Some(scene) = scene.as_ref() else {
+            println!("NO SCENE DATA");
+            outputs.set("name", String::new());
+            outputs.set("object_groups", Vec::<ObjectGroup>::new());
+            return Ok(outputs);
+        };
 
-    outputs.set("name", scene.name);
-    outputs.set("object_groups", scene.object_groups);
-    Ok(outputs)
+        // the scene it gave last time, the same values again
+        let mut last = LAST_SCENE.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, given)) = last.as_ref().filter(|(seen, _)| seen == scene) {
+            return Ok(given.clone());
+        }
+
+        outputs.set("name", scene.name.clone());
+        outputs.set("object_groups", scene.object_groups.clone());
+        *last = Some((scene.clone(), outputs.clone()));
+        Ok(outputs)
+    })
 }
 
 /// Node: scene_writer
