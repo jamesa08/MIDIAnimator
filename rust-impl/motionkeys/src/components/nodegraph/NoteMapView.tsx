@@ -142,6 +142,9 @@ function MapWire({ id, source, target, sourceX, sourceY, targetX, targetY, sourc
 }
 
 const nodeTypes = { map_note: NoteNode, map_animation: AnimationNode, map_object: ObjectNode };
+// the canvas' props that are objects, made once so react flow doesn't take a new one on every render
+const MIDDLE_BUTTON = [1];
+const FIT_VIEW = { maxZoom: 1, padding: 0.2 };
 const edgeTypes = { default: MapWire };
 
 type Props = {
@@ -366,8 +369,21 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     }, [wiresKey]);
     const nodesRef = useRef(nodes);
     nodesRef.current = nodes;
-    // what's drawn: a selected node's socket is selected too
-    const shownNodes = useMemo(() => nodes.map((n) => ({ ...n, selectedSockets: n.selected ? (isObject(n.id) ? { inputs: [IN], outputs: [] } : { inputs: [], outputs: [OUT] }) : undefined })), [nodes]);
+    // what's drawn: a selected node's socket is selected too. a node that didn't change keeps the copy it had, so a box
+    // select only redraws the nodes it takes or lets go of, not all of them on every mouse move
+    const shownCache = useRef(new WeakMap<Node, Node>());
+    const shownNodes = useMemo(
+        () =>
+            nodes.map((n) => {
+                let shown = shownCache.current.get(n);
+                if (!shown) {
+                    shown = { ...n, selectedSockets: n.selected ? (isObject(n.id) ? { inputs: [IN], outputs: [] } : { inputs: [], outputs: [OUT] }) : undefined } as Node;
+                    shownCache.current.set(n, shown);
+                }
+                return shown;
+            }),
+        [nodes]
+    );
 
     // a drag that finished stores where the moved nodes are, in either mode (it doesn't change the map)
     const onNodesChange = useCallback(
@@ -448,7 +464,8 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     // MARK: - Tools
 
     const selectedNotes = () => nodes.filter((n) => n.selected && isNote(n.id)).map((n) => n.data.note as number);
-    const selectedObjects = () => objects.filter((o) => nodes.some((n) => n.selected && n.id === objectKey(o)));
+    const selectedIds = useMemo(() => new Set(nodes.filter((n) => n.selected).map((n) => n.id)), [nodes]);
+    const selectedObjects = () => objects.filter((o) => selectedIds.has(objectKey(o)));
     const wiredNote = (n: number) => isLinked(map, objects, n);
     const wiredObject = (o: string) => !!map.objects[o]?.length;
     const [listText, setListText] = useState("");
@@ -508,7 +525,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
 
     // the selected animations (or every connected one) to the selected objects (or every object), next to the wires they
     // have. the toolbar's Assign Animation and the right click menu's
-    const selectedAnimations = () => animations.filter((a) => nodes.some((n) => n.selected && n.id === animationKey(a)));
+    const selectedAnimations = () => animations.filter((a) => selectedIds.has(animationKey(a)));
     const assign = () => {
         const as = selectedAnimations().length ? selectedAnimations() : info.animations;
         const os = selectedObjects().length ? selectedObjects() : objects;
@@ -772,11 +789,12 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     // in the combined view the type the cursor was last over, a note or an animation (or their wires), stays in front and
     // the other is dimmed. the notes are in front to begin with, objects change nothing
     const [front, setFront] = useState<"notes" | "animations">("notes");
-    const bringForward = (id: string) => {
+    // the handlers react flow hands every node and wire stay the same between renders, a new one redraws all of them
+    const bringForward = useCallback((_: any, { id }: { id: string }) => {
         if (grabRef.current) return;
         if (isNote(id)) setFront("notes");
         else if (isAnimation(id)) setFront("animations");
-    };
+    }, []);
     const startConnect = useCallback(
         (_: any, { nodeId, handleId, handleType }: { nodeId: string | null; handleId: string | null; handleType: "source" | "target" | null }) => {
             blockKeys();
@@ -791,17 +809,23 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     // works on every animation and object, a selection's on what's selected
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
     const closeContextMenu = useCallback(() => setContextMenu(null), []);
-    const openContextMenu = (event: MouseEvent | React.MouseEvent) => {
-        event.preventDefault();
-        if (editable) setContextMenu({ x: event.clientX, y: event.clientY });
-    };
-    const onNodeContextMenu = (event: React.MouseEvent, clicked: Node) => {
-        if (!clicked.selected && editable) {
-            setNodes((current) => current.map((n) => ({ ...n, selected: n.id === clicked.id })));
-            setWires((current) => current.map((w) => ({ ...w, selected: false })));
-        }
-        openContextMenu(event);
-    };
+    const openContextMenu = useCallback(
+        (event: MouseEvent | React.MouseEvent) => {
+            event.preventDefault();
+            if (editable) setContextMenu({ x: event.clientX, y: event.clientY });
+        },
+        [editable]
+    );
+    const onNodeContextMenu = useCallback(
+        (event: React.MouseEvent, clicked: Node) => {
+            if (!clicked.selected && editable) {
+                setNodes((current) => current.map((n) => ({ ...n, selected: n.id === clicked.id })));
+                setWires((current) => current.map((w) => ({ ...w, selected: false })));
+            }
+            openContextMenu(event);
+        },
+        [editable, openContextMenu]
+    );
     // named for where it goes, the selected objects or all of them
     const assignLabel = selectedObjects().length ? "Assign Animation To Selected Objects" : "Assign Animation To All Objects";
     const contextSections: ContextEntry[][] = [[{ id: "assign_animation", label: assignLabel, run: assign }]];
@@ -839,16 +863,16 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
                 onNodeDragStart={blockKeys}
                 onSelectionDragStart={blockKeys}
                 onNodeContextMenu={onNodeContextMenu}
-                onNodeMouseEnter={(_, entered) => bringForward(entered.id)}
-                onEdgeMouseEnter={(_, wire) => bringForward(wire.id)}
+                onNodeMouseEnter={bringForward}
+                onEdgeMouseEnter={bringForward}
                 onSelectionContextMenu={openContextMenu}
                 onPaneContextMenu={openContextMenu}
                 onContextMenu={(event) => event.preventDefault()}
-                panOnDrag={panHeld ? true : [1]}
+                panOnDrag={panHeld ? true : MIDDLE_BUTTON}
                 nodesDraggable={editable}
                 nodesConnectable={editable}
                 fitView
-                fitViewOptions={{ maxZoom: 1, padding: 0.2 }}
+                fitViewOptions={FIT_VIEW}
             />
             {menu && <NoteAddBox position={menu} onAdd={addFromMenu} onClose={closeMenu} />}
             {contextMenu && <ContextMenu position={contextMenu} sections={contextSections} onClose={closeContextMenu} />}
