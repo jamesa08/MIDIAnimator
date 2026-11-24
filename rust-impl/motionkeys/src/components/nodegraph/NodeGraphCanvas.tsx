@@ -192,38 +192,59 @@ function FpsReadout() {
     );
 }
 
-// the wheel over a graph. react flow pans for a scroll and zooms for a pinch (a wheel event with ctrl), this takes the
-// scrolls that zoom instead: a mouse wheel (scrollPans), and cmd with a swipe like blender's ctrl. nothing moves while a
-// modal takes the input
+// the wheel over a graph. react flow pans for a scroll, this takes the scrolls that zoom instead: a mouse wheel
+// (scrollPans), cmd with a swipe like blender's ctrl, and a trackpad pinch (macos sends it as a wheel event with ctrl).
+// the zooms asked for since the last frame are put together and drawn once in the next one: a pinch sends several wheel
+// events a frame, and react flow's own pinch redrew the graph for each of them. nothing moves while a modal takes the
+// input
 function WheelNavigation() {
     const store = useStoreApi();
     const domNode = useStore((s) => s.domNode);
     useEffect(() => {
         if (!domNode) return;
+        // the zoom asked for since the last frame, as a factor, around the last event's point
+        let pending: { factor: number; x: number; y: number } | null = null;
+        let request = 0;
+        const zoomBy = (x: number, y: number, factor: number) => {
+            pending = { factor: (pending?.factor ?? 1) * factor, x, y };
+            if (request) return;
+            request = requestAnimationFrame(() => {
+                request = 0;
+                const zoom = pending!;
+                pending = null;
+                zoomAround(store, zoom.x, zoom.y, store.getState().transform[2] * zoom.factor);
+            });
+        };
         const handleWheel = (event: WheelEvent) => {
             // only over the graph itself like react flow's (not the controls or minimap), and not over a part that
             // scrolls itself (a viewer's text)
             const target = event.target as Element;
             if (!target.closest?.(".react-flow__renderer") || target.closest(".nowheel")) return;
             const stopped = modalOpen();
-            if (!stopped && event.ctrlKey && !event.metaKey) return;
-            if (!stopped && !event.metaKey && scrollPans(event)) return;
+            const pinch = event.ctrlKey && !event.metaKey;
+            if (!stopped && !pinch && !event.metaKey && scrollPans(event)) return;
             // react flow never sees it
             event.preventDefault();
             event.stopPropagation();
             if (stopped) return;
 
-            // zoom around the cursor, as fast as react flow's zoom on scroll
+            // zoom around the cursor, as fast as react flow's zoom on scroll, and a pinch as fast as its pinch
             const speed = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 0.05 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 1 : 0.002;
             const rect = domNode.getBoundingClientRect();
-            zoomAround(store, event.clientX - rect.left, event.clientY - rect.top, store.getState().transform[2] * 2 ** (-event.deltaY * speed));
+            zoomBy(event.clientX - rect.left, event.clientY - rect.top, 2 ** (-event.deltaY * speed * (pinch ? PINCH_SPEED : 1)));
         };
         // capture, so it runs before react flow's
         domNode.addEventListener("wheel", handleWheel, { capture: true, passive: false });
-        return () => domNode.removeEventListener("wheel", handleWheel, { capture: true });
+        return () => {
+            domNode.removeEventListener("wheel", handleWheel, { capture: true });
+            cancelAnimationFrame(request);
+        };
     }, [domNode, store]);
     return null;
 }
+
+// how much faster a pinch zooms than a scroll, react flow's
+const PINCH_SPEED = 10;
 
 // the view zoomed to `zoom` (kept within the canvas's limits) with the point (px, py) on the canvas staying put
 function zoomAround(store: ReturnType<typeof useStoreApi>, px: number, py: number, zoom: number) {
