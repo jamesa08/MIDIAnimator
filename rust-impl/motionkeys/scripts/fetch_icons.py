@@ -9,6 +9,7 @@ Silk icon and one of Silk's badges (its decorators), the icon cut away around th
 run from anywhere: python3 scripts/fetch_icons.py
 """
 
+import random
 import re
 import struct
 import urllib.parse
@@ -74,6 +75,10 @@ COMPOSED = [
     ("shape_group_magnifier", "Shape group", "magnifier", 7, 7, 1),
     ("shape_handles_magnifier", "Shape handles", "magnifier", 7, 7, 1),
 ]
+
+# Silk's Picture with its left half as noise in the picture's own colours and a white seam down the middle, a picture
+# being simplified (the simplified view, user's pick 2026-11-24). the noise is seeded, the same every run
+NOISY_PICTURE = ("picture_simplified", "Picture", ["#799ED7", "#9BCB67", "#5E9A45", "#AF863F", "#D39F54", "#C2DCBF", "#93AACE", "#4F7BC0"], 4)
 
 # where the corner handles path starts, and where its bottom right handle does
 CORNER_HANDLES = {
@@ -186,6 +191,17 @@ def compose(icon, badge, x, y, scale):
     return f'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><defs>{mask}</defs><g mask="url(#cut)">{icon_inner}</g><g transform="{place}">{badge_inner}</g></svg>\n'
 
 
+# the icon's left half replaced by noise, a pixel square of `colours` each, inside the picture's frame
+def noisy_half(svg, colours, seed):
+    pick = random.Random(seed)
+    noise = "".join(f'<rect x="{x}" y="{y}" width="1" height="1" fill="{pick.choice(colours)}"/>' for x in range(2, 8) for y in range(2, 14))
+    frame = '<rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke="#93AACE"/>'
+    _, _, inner = svg_parts(svg, "p_")
+    halves = '<clipPath id="left"><rect width="8" height="16"/></clipPath><clipPath id="right"><rect x="8" width="8" height="16"/></clipPath>'
+    seam = '<line x1="8" y1="0.5" x2="8" y2="15.5" stroke="white" stroke-width="1"/>'
+    return f'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><defs>{halves}</defs><g clip-path="url(#left)">{noise}{frame}</g><g clip-path="url(#right)">{inner}</g>{seam}</svg>\n'
+
+
 # everything in the 16px svg flipped left to right
 def mirror(svg):
     return re.sub(r"(<svg[^>]*>)(.*)(</svg>)", r'\1<g transform="translate(16 0) scale(-1 1)">\2</g>\3', svg, flags=re.S)
@@ -231,6 +247,10 @@ def main():
             icon = without_corner_handle(icon, *CORNER_HANDLES[name])
         (ICONS / "silk" / f"{file}.svg").write_text(compose(icon, fetch(DECORATOR_URL.format(badge)).decode(), x, y, scale))
         print(f"silk/{file}.svg")
+
+    file, name, colours, seed = NOISY_PICTURE
+    (ICONS / "silk" / f"{file}.svg").write_text(noisy_half(fetch(SILK_URL.format(name)).decode(), colours, seed))
+    print(f"silk/{file}.svg")
 
 
 if __name__ == "__main__":

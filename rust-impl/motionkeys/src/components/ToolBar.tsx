@@ -90,6 +90,7 @@ function MenuBar() {
             <div className="inline-flex">
                 <CommandTool icon="frame_all" command="area.frame_all" />
                 <CommandTool icon="frame_selected" command="area.frame_selected" />
+                <CommandTool icon="simplified_view" command="area.simplified_view" active={editor.simplified === true} disabled={editor.simplified === null} />
             </div>
             <div className="spacer h-5 w-[1px] bg-black mx-1" />
             <CommandTool icon="profiler" command="profiler" active={profiler} />

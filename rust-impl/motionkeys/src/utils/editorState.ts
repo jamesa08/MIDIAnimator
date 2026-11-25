@@ -6,10 +6,11 @@ import { pushMode } from "./keymap";
 // the editor shown says so (NodeGraphEditor), the note map while it covers the editor (NoteMapView)
 
 // `selected` nodes, `groups` the selected group nodes, `openable` the selected groups and note maps. `entries` are the nodes
-// that can be added here, none in the note map
-export type EditorState = { editable: boolean; selected: number; groups: number; openable: number; inGroup: boolean; entries: NodeEntry[] | null };
+// that can be added here, none in the note map. `simplified` whether the graph is shown simplified, null in the note map,
+// which has no simplified view
+export type EditorState = { editable: boolean; selected: number; groups: number; openable: number; inGroup: boolean; entries: NodeEntry[] | null; simplified: boolean | null };
 
-let state: EditorState = { editable: false, selected: 0, groups: 0, openable: 0, inGroup: false, entries: null };
+let state: EditorState = { editable: false, selected: 0, groups: 0, openable: 0, inGroup: false, entries: null, simplified: null };
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
     listeners.add(listener);

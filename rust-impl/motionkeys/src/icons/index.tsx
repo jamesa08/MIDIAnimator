@@ -31,6 +31,7 @@ import shapeGroupMagnifier from "./silk/shape_group_magnifier.svg?raw";
 import shapeHandlesMagnifier from "./silk/shape_handles_magnifier.svg?raw";
 import controlPlayGreen from "./silk/control_play_green.svg?raw";
 import time from "./silk/time.svg?raw";
+import pictureSimplified from "./silk/picture_simplified.svg?raw";
 
 const ICONS = {
     scene: sceneData,
@@ -62,6 +63,7 @@ const ICONS = {
     zoom_tool: viewzoom,
     frame_all: shapeGroupMagnifier,
     frame_selected: shapeHandlesMagnifier,
+    simplified_view: pictureSimplified,
     run: controlPlayGreen,
     profiler: time,
 };

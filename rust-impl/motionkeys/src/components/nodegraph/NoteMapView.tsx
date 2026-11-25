@@ -802,7 +802,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     }, [builtKey, landed, startGrab, undoAdd]);
 
     // the toolbar's group buttons only leave the map, nothing is added from its add menu
-    useEffect(() => setEditorState({ editable, selected: 0, groups: 0, openable: 0, inGroup: true, entries: null }), [editable]);
+    useEffect(() => setEditorState({ editable, selected: 0, groups: 0, openable: 0, inGroup: true, entries: null, simplified: null }), [editable]);
 
     // the node editor's keys, its own commands are off while the map covers it
     useKeymap("node_editor", {

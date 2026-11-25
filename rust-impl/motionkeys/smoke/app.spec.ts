@@ -418,6 +418,15 @@ test("the simplified view draws every node as a tile and goes back", async ({ pa
     await page.keyboard.press("V");
     await expect(page.locator(".node-tile")).toHaveCount(0);
     await expect(nodes).toHaveCount(count);
+
+    // the toolbar's button does the same, pressed in while the view is simplified
+    const button = page.locator('.toolbar [data-command="area.simplified_view"]');
+    await button.click();
+    await expect(page.locator(".node-tile")).toHaveCount(count);
+    await expect(button).toHaveClass(/active/);
+    await button.click();
+    await expect(page.locator(".node-tile")).toHaveCount(0);
+    await expect(button).not.toHaveClass(/active/);
     await settle(page);
 });
 

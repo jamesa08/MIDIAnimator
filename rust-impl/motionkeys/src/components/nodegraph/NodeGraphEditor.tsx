@@ -799,8 +799,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
     const groupCount = selectedNodes.filter((n) => n.type === GROUP).length;
     const openableCount = selectedNodes.filter((n) => n.type === GROUP || n.type === NOTE_MAP_NODE).length;
     useEffect(() => {
-        if (shown) setEditorState({ editable, selected: selectedCount, groups: groupCount, openable: openableCount, inGroup: !isRoot, entries });
-    }, [shown, editable, selectedCount, groupCount, openableCount, isRoot, entries]);
+        if (shown) setEditorState({ editable, selected: selectedCount, groups: groupCount, openable: openableCount, inGroup: !isRoot, entries, simplified });
+    }, [shown, editable, selectedCount, groupCount, openableCount, isRoot, entries, simplified]);
 
     // renames or removes a socket of the group being edited (from the group input and output nodes)
     useEffect(() => {
