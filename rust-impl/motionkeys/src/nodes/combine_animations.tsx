@@ -4,7 +4,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { overlapModes } from "./animation_generator";
 
-// how the generators combine, unset is the default, add
+// how the generators combine, unset is the default, add. the note map's combine (NoteMapView.tsx) uses it too
 export function OverlapSelect({ value, onChange, bare }: { value: string | undefined; onChange: (overlap: string) => void; bare?: boolean }) {
     return (
         <select className={bare ? "nodrag nopan" : "node-field nodrag nopan"} style={bare ? { flex: 1, minWidth: 0 } : undefined} value={value || "add"} onChange={(e) => onChange(e.target.value)}>

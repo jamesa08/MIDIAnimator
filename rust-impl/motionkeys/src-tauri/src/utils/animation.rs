@@ -141,7 +141,8 @@ impl ObjectMap {
 }
 
 /// a generator that plays `layers`: each builds its own curve with its own overlap, then they go into the first in order
-/// with `animation_overlap` (empty is add). named after them, "spring + cymbal". one is passed on as it is
+/// with `animation_overlap` (empty is add). named after them, "spring + cymbal". one is passed on as it is. Combine
+/// Animations and the note map's combines both make theirs with it
 pub fn combine_generators(mut layers: Vec<AnimationGenerator>, animation_overlap: &str) -> Result<AnimationGenerator, String> {
     let animation_overlap = if animation_overlap.is_empty() {
         ANIMATION_OVERLAPS[0]

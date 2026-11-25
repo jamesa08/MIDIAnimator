@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BaseEdge, Connection, Edge, EdgeProps, Handle, Node, NodeProps, Position, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, getBezierPath, useReactFlow, useStoreApi } from "@xyflow/react";
 import { blockUntilRelease, isHeld, pushModal, useHold, useKeymap, useModal } from "../../utils/keymap";
@@ -9,7 +9,10 @@ import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
 import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
 import { EdgeRing, lighter } from "./TypedEdge";
-import { MapData, MapView, NoteMap, isAnimationLinked, isLinked, mapView, shownAnimations, shownMap, unique } from "../../utils/noteMap";
+import { MapData, MapView, NoteMap, goesInto, isAnimationLinked, isLinked, isPlaying, mapView, newCombineKey, shownAnimations, shownMap, unique } from "../../utils/noteMap";
+import BaseNode from "../../nodes/BaseNode";
+import { OverlapSelect } from "../../nodes/combine_animations";
+import { useNodeSpec } from "../../utils/nodeEntries";
 import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { useFrameView } from "./frameView";
 import { canvasToolCommands, setEditorState } from "../../utils/editorState";
@@ -38,7 +41,7 @@ function readLayout(value: any): Layout {
 }
 
 // the map as it's stored: notes sorted, objects and animations without wires left out. the animations are always
-// stored, a map without them plays every animation on every object
+// stored, a map without them plays every animation on every object. combines are kept wired or not, like added notes
 function cleanMap(map: NoteMap): NoteMap {
     const objects: Record<string, number[]> = {};
     for (const [name, notes] of Object.entries(map.objects)) {
@@ -48,11 +51,15 @@ function cleanMap(map: NoteMap): NoteMap {
     for (const [name, on] of Object.entries(map.animations)) {
         if (on.length) animations[name] = [...new Set(on)];
     }
-    return { objects, notes: unique(map.notes), animations };
+    const stored: any = { objects, notes: unique(map.notes), animations };
+    if (Object.keys(map.combines).length) {
+        stored.combines = Object.fromEntries(Object.entries(map.combines).map(([key, c]) => [key, { ...c, inputs: [...new Set(c.inputs)] }]));
+    }
+    return stored;
 }
 
 const copyLists = <T,>(lists: Record<string, T[]>): Record<string, T[]> => Object.fromEntries(Object.entries(lists).map(([name, items]) => [name, [...items]]));
-const copyMap = (map: NoteMap): NoteMap => ({ objects: copyLists(map.objects), notes: [...map.notes], animations: copyLists(map.animations) });
+const copyMap = (map: NoteMap): NoteMap => ({ objects: copyLists(map.objects), notes: [...map.notes], animations: copyLists(map.animations), combines: Object.fromEntries(Object.entries(map.combines).map(([key, c]) => [key, { ...c, inputs: [...c.inputs] }])) });
 
 // node ids: a note, an animation and an object
 const noteKey = (note: number) => `n:${note}`;
@@ -73,6 +80,9 @@ const socket = (dataType: string) => ({ width: 14, height: 14, ...socketStyle(da
 // connect to the socket it's dropped on with Connect All to One held or when it's the only one in reach (takes_all)
 const OUT = "out";
 const IN = "in";
+// a combine's sockets, Combine Animations' own
+const COMBINE_OUT = "generator";
+const COMBINE_IN = "generators";
 
 const NoteNode = memo(({ data }: NodeProps) => (
     // notes the MIDI doesn't play are paler and in italics
@@ -141,7 +151,17 @@ function MapWire({ id, source, target, sourceX, sourceY, targetX, targetY, sourc
     );
 }
 
-const nodeTypes = { map_note: NoteNode, map_animation: AnimationNode, map_object: ObjectNode };
+// a combine drawn in the map, Combine Animations bare: one row with the animations going in, how they combine and the
+// socket to the objects. its dropdown sets the map
+const SetCombineOverlap = createContext<(key: string, overlap: string) => void>(() => {});
+const CombineNode = memo(({ data }: NodeProps) => {
+    const spec = useNodeSpec("combine_animations");
+    const setOverlap = useContext(SetCombineOverlap);
+    const overlap = <OverlapSelect bare value={data.overlap as string | undefined} onChange={(value) => setOverlap(data.name as string, value)} />;
+    return <BaseNode nodeData={spec} labels={{ generators: overlap }} hidden={{ animation_overlap: true }} data={{}} bare />;
+});
+
+const nodeTypes = { map_note: NoteNode, map_animation: AnimationNode, map_object: ObjectNode, map_combine: CombineNode };
 // the canvas' props that are objects, made once so react flow doesn't take a new one on every render
 const MIDDLE_BUTTON = [1];
 const FIT_VIEW = { maxZoom: 1, padding: 0.2 };
@@ -270,6 +290,8 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         for (const a of animations) if (isAnimationLinked(map, objects, a)) keptAnimationsRef.current.add(a);
         return animations.filter((a) => keptAnimationsRef.current.has(a));
     }, [showAnimations, linkedOnly, animations, map, objects]);
+    // a node's output socket, a combine's is its own
+    const outOf = useCallback((id: string) => (isAnimation(id) && map.combines[id.slice(2)] ? COMBINE_OUT : OUT), [map]);
     const keep = (ns: number[]) => {
         if (!linkedOnly) return;
         ns.forEach((n) => keptRef.current.add(n));
@@ -282,7 +304,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         (next: NoteMap, extra: Record<string, any> = {}, options?: ApplyOptions) => {
             if (!editable) return Promise.resolve();
             const stored = cleanMap(next);
-            const kept = new Set([...[...midiNotes, ...stored.notes, ...objects.flatMap((o) => stored.objects[o] ?? [])].map(noteKey), ...[...info.animations, ...Object.keys(stored.animations)].map(animationKey)]);
+            const kept = new Set([...[...midiNotes, ...stored.notes, ...objects.flatMap((o) => stored.objects[o] ?? [])].map(noteKey), ...[...info.animations, ...Object.keys(stored.animations), ...Object.keys(next.combines)].map(animationKey)]);
             const saved: Layout = extra.map_layout ?? layout;
             const gone = Object.keys(saved).filter((id) => (isNote(id) || isAnimation(id)) && !kept.has(id));
             if (gone.length) extra = { ...extra, map_layout: Object.fromEntries(Object.entries(saved).filter(([id]) => !gone.includes(id))) };
@@ -326,17 +348,19 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         const at = place(layout);
         return [
             ...visible.map((n) => ({ id: noteKey(n), type: "map_note", position: at.get(noteKey(n))!, data: { note: n, added: !midiNotes.includes(n), takes_all: true } })),
-            ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !info.animations.includes(a), takes_all: true } })),
+            ...shownAnimationNodes.map((a) => ({ id: animationKey(a), type: map.combines[a] ? "map_combine" : "map_animation", position: at.get(animationKey(a))!, data: { name: a, stale: !isPlaying(map, info, a), overlap: map.combines[a]?.animation_overlap, takes_all: true } })),
             ...objects.map((o) => ({ id: objectKey(o), type: "map_object", position: at.get(objectKey(o))!, data: { name: info.objectNames[o] ?? o, takes_all: true } })),
         ];
-    }, [place, visible, shownAnimationNodes, objects, info.objectNames, midiNotes, info.animations, layout]);
+    }, [place, visible, shownAnimationNodes, objects, info.objectNames, midiNotes, info.animations, map, layout]);
     // the notes' and the animations' wires to the objects, the view's. objects that aren't in the group aren't drawn
     const builtWires = useMemo<Edge[]>(
         () => [
             ...(showNotes ? objects.flatMap((o) => unique(map.objects[o] ?? []).map((n) => ({ id: `${noteKey(n)}>${objectKey(o)}`, source: objectKey(o), sourceHandle: IN, target: noteKey(n), targetHandle: OUT }))) : []),
-            ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), sourceHandle: IN, target: animationKey(a), targetHandle: OUT }))),
+            ...shownAnimationNodes.flatMap((a) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => ({ id: `${animationKey(a)}>${objectKey(o)}`, source: objectKey(o), sourceHandle: IN, target: animationKey(a), targetHandle: outOf(animationKey(a)) }))),
+            // the animations going into each combine, stored like the graph's edges: the source is the combine taking them
+            ...shownAnimationNodes.flatMap((c) => (map.combines[c]?.inputs ?? []).filter((a) => shownAnimationNodes.includes(a)).map((a) => ({ id: `${animationKey(a)}>${animationKey(c)}`, source: animationKey(c), sourceHandle: COMBINE_IN, target: animationKey(a), targetHandle: outOf(animationKey(a)) }))),
         ],
-        [showNotes, objects, map, shownAnimationNodes]
+        [showNotes, objects, map, shownAnimationNodes, outOf]
     );
 
     // react flow's copies, they keep the selection and positions mid drag. a tool can ask for what's selected after its edit
@@ -377,12 +401,12 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
             nodes.map((n) => {
                 let shown = shownCache.current.get(n);
                 if (!shown) {
-                    shown = { ...n, selectedSockets: n.selected ? (isObject(n.id) ? { inputs: [IN], outputs: [] } : { inputs: [], outputs: [OUT] }) : undefined } as Node;
+                    shown = { ...n, selectedSockets: n.selected ? (isObject(n.id) ? { inputs: [IN], outputs: [] } : { inputs: [], outputs: [outOf(n.id)] }) : undefined } as Node;
                     shownCache.current.set(n, shown);
                 }
                 return shown;
             }),
-        [nodes]
+        [nodes, outOf]
     );
 
     // a drag that finished stores where the moved nodes are, in either mode (it doesn't change the map)
@@ -417,9 +441,14 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         []
     );
 
-    // a note's or an animation's socket dragged to an object's (or back) connects them. stored like the graph's edges,
-    // the source is the object taking them
+    // a note's or an animation's socket dragged to an object's (or back) connects them, an animation's to a combine's
+    // puts it last into it. stored like the graph's edges, the source is the object or combine taking them
     const wire = (next: NoteMap, source: string, target: string) => {
+        const combine = isAnimation(source) ? next.combines[source.slice(2)] : undefined;
+        if (combine && isAnimation(target) && !goesInto(next, source.slice(2), target.slice(2))) {
+            if (!combine.inputs.includes(target.slice(2))) combine.inputs.push(target.slice(2));
+            return;
+        }
         if (!isObject(source)) return;
         const object = source.slice(2);
         if (isNote(target)) {
@@ -452,14 +481,15 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         droppedRef.current = null;
         if (!dropped) return;
         const { nodeLookup, edges } = store.getState();
-        const output = { node: dropped.target, side: "outputs" as const, socket: OUT };
-        const input = { node: dropped.source, side: "inputs" as const, socket: IN };
+        const output = { node: dropped.target, side: "outputs" as const, socket: dropped.targetHandle ?? OUT };
+        const input = { node: dropped.source, side: "inputs" as const, socket: dropped.sourceHandle ?? IN };
         const next = copyMap(map);
         wire(next, dropped.source, dropped.target);
         for (const link of connectAlong(nodeLookup, edges, output, input, along, isHeld("node_editor", "connect_to_one"))) wire(next, link.input.node, link.output.node);
         commit(next);
     }, [map, commit, store]);
-    const isValidConnection = useCallback((c: Edge | Connection) => isObject(c.source) && (isNote(c.target) || isAnimation(c.target)), []);
+    // an object takes notes and animations, a combine animations that it isn't inside of
+    const isValidConnection = useCallback((c: Edge | Connection) => (isObject(c.source) && (isNote(c.target) || isAnimation(c.target))) || (c.sourceHandle === COMBINE_IN && isAnimation(c.target) && !goesInto(map, c.source.slice(2), c.target.slice(2))), [map]);
 
     // MARK: - Tools
 
@@ -535,6 +565,25 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
         commit(next);
     };
 
+    // a combine where the menu was opened, the selected animations going into it
+    const addCombine = (at: { x: number; y: number }) => {
+        const next = copyMap(map);
+        const key = newCombineKey(next, info);
+        next.combines[key] = { inputs: selectedAnimations() };
+        const p = screenToFlowPosition(at, { snapToGrid: false });
+        selectNext.current = new Set([animationKey(key)]);
+        commit(next, { map_layout: { ...layout, [animationKey(key)]: [Math.round(p.x), Math.round(p.y)] } });
+    };
+    const setCombineOverlap = useCallback(
+        (key: string, overlap: string) => {
+            if (!map.combines[key]) return;
+            const next = copyMap(map);
+            next.combines[key] = { ...next.combines[key], animation_overlap: overlap };
+            commit(next);
+        },
+        [map, commit]
+    );
+
     // the selected wires and everything connected to the selected notes, animations and objects. added notes that are
     // selected go too, and animations whose generator isn't connected
     const removeSelected = () => {
@@ -550,6 +599,13 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
             const key = animationKey(a);
             next.animations[a] = nodeIds.has(key) ? [] : on.filter((o) => !wireIds.has(`${key}>${objectKey(o)}`) && !nodeIds.has(objectKey(o)));
         }
+        // a selected combine goes, and what goes into the combines from the selected wires and animations
+        for (const c of Object.keys(next.combines)) {
+            if (nodeIds.has(animationKey(c))) delete next.combines[c];
+        }
+        for (const [c, combine] of Object.entries(next.combines)) {
+            combine.inputs = combine.inputs.filter((a) => !wireIds.has(`${animationKey(a)}>${animationKey(c)}`) && !nodeIds.has(animationKey(a)));
+        }
         selectNext.current = new Set();
         commit(next);
     };
@@ -562,7 +618,10 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
             next.objects = {};
             next.notes = [];
         }
-        if (showAnimations) next.animations = {};
+        if (showAnimations) {
+            next.animations = {};
+            next.combines = {};
+        }
         commit(next);
     };
 
@@ -828,7 +887,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     );
     // named for where it goes, the selected objects or all of them
     const assignLabel = selectedObjects().length ? "Assign Animation To Selected Objects" : "Assign Animation To All Objects";
-    const contextSections: ContextEntry[][] = [[{ id: "assign_animation", label: assignLabel, run: assign }]];
+    const contextSections: ContextEntry[][] = [[{ id: "assign_animation", label: assignLabel, run: assign }], ...(showAnimations && contextMenu ? [[{ id: "combine_animations", label: "Combine Animations", run: () => addCombine(contextMenu) }]] : [])];
 
     const tool = "px-3 h-6 border border-black bg-white hover:bg-zinc-100";
     // a button that's black while it's on
@@ -845,7 +904,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     );
 
     return (
-        <>
+        <SetCombineOverlap.Provider value={setCombineOverlap}>
             <NodeGraphCanvas
                 className={`group-canvas${view === "combined" ? ` note-map-front-${front}` : ""}`}
                 nodes={shownNodes}
@@ -909,7 +968,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
                     {assignLabel}
                 </button>
             </div>
-        </>
+        </SetCombineOverlap.Provider>
     );
 }
 

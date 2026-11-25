@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -779,7 +779,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
 
     // the generators connected, by name in connect order. the same one twice is fine, two different ones can't share
     // a name
-    let mut animations: Vec<&str> = Vec::new();
+    let mut animations: Vec<String> = Vec::new();
     for generator in generator.map(Vec::as_slice).unwrap_or(&[]) {
         match object_map.animations.get(&generator.name) {
             Some(existing) if existing != generator => {
@@ -792,7 +792,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
             Some(_) => {}
             None => {
                 object_map.animations.insert(generator.name.clone(), generator.clone());
-                animations.push(&generator.name);
+                animations.push(generator.name.clone());
             }
         }
     }
@@ -808,6 +808,18 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     } else {
         None
     };
+
+    // the combines drawn in the note map play like the generators, under their own names
+    if let Some(saved) = &saved {
+        for key in saved.combines.keys() {
+            if object_map.animations.contains_key(key) {
+                return Err(format!("an animation generator is named '{}' like one of the note map's combines, rename it", key));
+            }
+            let combined = map_combine(key, saved, &object_map.animations, &mut Vec::new())?;
+            object_map.animations.insert(key.clone(), combined);
+            animations.push(key.clone());
+        }
+    }
     let pairs: Vec<(&Object, u8)> = match &saved {
         Some(saved) => objects.iter().flat_map(|object| saved.objects.get(&object.id).into_iter().flatten().map(move |note| (*object, *note))).collect(),
         None => rule_pairs(&objects, object_group_name, &all_used_notes_from_array(midi_notes), &note_list_entries(note_numbers))?,
@@ -826,9 +838,9 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     for (object, note_number) in &pairs {
         let entry = object_map.objects.entry(object.id.clone()).or_default();
         for name in &animations {
-            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(*name).is_some_and(|objects| objects.contains(&object.id)));
+            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(name).is_some_and(|objects| objects.contains(&object.id)));
             if wired {
-                add_note(entry.entry(name.to_string()).or_default(), *note_number);
+                add_note(entry.entry(name.clone()).or_default(), *note_number);
             }
         }
     }
@@ -891,6 +903,41 @@ pub struct NoteMap {
     pub notes: Vec<u8>,
     #[serde(default)]
     pub animations: Option<BTreeMap<String, Vec<String>>>,
+    /// combines drawn in the map by their keys, wired to objects in `animations` like the generators
+    #[serde(default)]
+    pub combines: BTreeMap<String, MapCombine>,
+}
+
+/// a combine drawn in the note map: the animations going into it in order (generators' names or other combines' keys)
+/// and how they combine, like Combine Animations
+#[derive(Deserialize, Default, Debug)]
+pub struct MapCombine {
+    #[serde(default)]
+    pub inputs: Vec<String>,
+    #[serde(default)]
+    pub animation_overlap: String,
+}
+
+/// the generator a note map combine plays. an input whose generator isn't connected any more is left out, like it plays
+/// on no object in the map. `seen` are the combines it's inside, one inside itself is an error
+fn map_combine(key: &str, map: &NoteMap, generators: &HashMap<String, AnimationGenerator>, seen: &mut Vec<String>) -> Result<AnimationGenerator, String> {
+    if seen.iter().any(|s| s == key) {
+        return Err(format!("the note map's combine '{}' goes into itself", key));
+    }
+    let Some(combine) = map.combines.get(key) else {
+        return Err(format!("the note map has no combine '{}'", key));
+    };
+    seen.push(key.to_string());
+    let mut layers = Vec::new();
+    for input in &combine.inputs {
+        if map.combines.contains_key(input) {
+            layers.push(map_combine(input, map, generators, seen)?);
+        } else if let Some(generator) = generators.get(input) {
+            layers.push(generator.clone());
+        }
+    }
+    seen.pop();
+    combine_generators(layers, &combine.animation_overlap)
 }
 
 fn parse_note_map(value: Option<&Value>) -> Result<NoteMap, String> {

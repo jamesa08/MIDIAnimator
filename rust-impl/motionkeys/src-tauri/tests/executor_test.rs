@@ -755,6 +755,55 @@ fn combine_animations_plays_every_overlap_mode() {
     }
 }
 
+// Assign in map mode on one object "Cube" playing note 60, with generators a (peak 1) and b (peak 2) connected and
+// `combines` drawn in the note map. Cube plays the animations `wired` to it
+fn assign_with_map_combines(combines: serde_json::Value, wired: &[&str]) -> Result<serde_json::Value, String> {
+    let notes = json!([{ "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 }]);
+    let animations: serde_json::Map<_, _> = wired.iter().map(|name| (name.to_string(), json!(["Cube"]))).collect();
+    let map = json!({ "objects": { "Cube": [60] }, "animations": animations, "combines": combines });
+    let inputs = Inputs::from([("object_groups", group(&["Cube"])), ("object_group_name", json!("Cubes")), ("midi_notes", notes), ("generator", json!([bump("a", 1.0, "add"), bump("b", 2.0, "add")])), ("mode", json!("map")), ("note_map", map)]);
+    Ok(assign_notes_to_objects(&inputs)?.to_json()["object_map"].clone())
+}
+
+fn map_combine_peak(object_map: serde_json::Value) -> f64 {
+    let keys = evaluate(object_map, one_note())["keyframes"]["Cube"].as_array().unwrap().iter().map(|k| (k["key"][0].as_f64().unwrap(), k["key"][1].as_f64().unwrap())).collect::<Vec<_>>();
+    value_at(&keys, 0.5)
+}
+
+#[test]
+fn note_map_combines_play_like_combine_animations() {
+    // a combine in the map plays on the objects wired to it, under its key, the same as the graph node with that overlap
+    for overlap in ["add", "max", "min", "next"] {
+        let object_map = assign_with_map_combines(json!({ "combine_1": { "inputs": ["a", "b"], "animation_overlap": overlap } }), &["combine_1"]).unwrap();
+        assert_eq!(object_map["objects"]["Cube"], json!({ "combine_1": [60] }), "{}", overlap);
+        let graph = value_at(&play_on_cube(&[combine(&[bump("a", 1.0, "add"), bump("b", 2.0, "add")], overlap)], one_note()), 0.5);
+        assert!((map_combine_peak(object_map) - graph).abs() < 1e-9, "{}", overlap);
+    }
+}
+
+#[test]
+fn note_map_combines_nest_and_skip_missing_inputs() {
+    // a combine can go into another, max(1, 2) + 2
+    let combines = json!({ "combine_1": { "inputs": ["a", "b"], "animation_overlap": "max" }, "combine_2": { "inputs": ["combine_1", "b"] } });
+    assert!((map_combine_peak(assign_with_map_combines(combines, &["combine_2"]).unwrap()) - 4.0).abs() < 1e-9);
+    // an input whose generator isn't connected is left out
+    let combines = json!({ "combine_1": { "inputs": ["a", "gone"] } });
+    assert!((map_combine_peak(assign_with_map_combines(combines, &["combine_1"]).unwrap()) - 1.0).abs() < 1e-9);
+    // a combine wired to nothing plays nowhere, the generators wired straight to Cube still play
+    let object_map = assign_with_map_combines(json!({ "combine_1": { "inputs": ["a", "b"] } }), &["a"]).unwrap();
+    assert_eq!(object_map["objects"]["Cube"], json!({ "a": [60] }));
+}
+
+#[test]
+fn note_map_combines_errors() {
+    let error = assign_with_map_combines(json!({ "combine_1": { "inputs": ["combine_2"] }, "combine_2": { "inputs": ["combine_1"] } }), &["combine_1"]).unwrap_err();
+    assert!(error.contains("goes into itself"), "{}", error);
+    let error = assign_with_map_combines(json!({ "a": { "inputs": ["b"] } }), &["a"]).unwrap_err();
+    assert!(error.contains("named 'a' like one of the note map's combines"), "{}", error);
+    let error = assign_with_map_combines(json!({ "combine_1": { "inputs": ["a", "b"], "animation_overlap": "blend" } }), &["combine_1"]).unwrap_err();
+    assert!(error.contains("unknown animation overlap 'blend'"), "{}", error);
+}
+
 #[test]
 fn combine_animations_nests() {
     let inner = combine(&[bump("a", 1.0, "add"), bump("b", 2.0, "add")], "max");

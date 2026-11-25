@@ -3,9 +3,12 @@ import { findGroup } from "./objectGroups";
 // components here, the node's preview (NoteMapPreview.tsx) and the map (NoteMapView.tsx) both read it. keep in sync with
 // assign_notes_to_objects and NoteMap in src-tauri/src/graph/executors/animation.rs
 
-// each object's notes, the objects each animation plays on (by the generator's name), and notes added that nothing is
-// connected to yet
-export type NoteMap = { objects: Record<string, number[]>; notes: number[]; animations: Record<string, string[]> };
+// each object's notes, the objects each animation plays on (by the generator's name, or a combine's key), notes added
+// that nothing is connected to yet, and the combines drawn in the map by their keys
+export type NoteMap = { objects: Record<string, number[]>; notes: number[]; animations: Record<string, string[]>; combines: Record<string, MapCombine> };
+// a combine drawn in the map, like Combine Animations: the animations going into it in order (generators' names or
+// other combines' keys) and how they combine, unset is add
+export type MapCombine = { inputs: string[]; animation_overlap?: string };
 // what the map shows from the node's last run: its object group's objects (their ids) in name order with their names,
 // the MIDI's notes, the connected animations' names in connect order, and each object's notes the node gave (what the
 // rules gave, in rules mode). objects are kept by id everywhere, the map too, and shown by name
@@ -71,12 +74,43 @@ export function shownMap(mode: string, info: MapData, noteMap: any): { map: Note
 
 // the animation nodes the map shows: every connected animation in connect order, then the ones wired in the map whose
 // generator isn't connected any more
-export const shownAnimations = (map: NoteMap, info: MapData): string[] => [...info.animations, ...Object.keys(map.animations).filter((name) => !info.animations.includes(name))];
+export const shownAnimations = (map: NoteMap, info: MapData): string[] => {
+    const combines = Object.keys(map.combines).filter((key) => !info.animations.includes(key));
+    return [...info.animations, ...combines, ...Object.keys(map.animations).filter((name) => !info.animations.includes(name) && !combines.includes(name))];
+};
+
+// whether an animation the map shows plays: its generator is connected, or it's a combine drawn in the map
+export const isPlaying = (map: NoteMap, info: MapData, name: string) => info.animations.includes(name) || name in map.combines;
+
+// what an animation is called: a generator's name, a combine is named after what goes into it ("spring + cymbal") like
+// the backend names it
+export function animationLabel(map: NoteMap, name: string, seen: string[] = []): string {
+    const combine = map.combines[name];
+    if (!combine || seen.includes(name)) return name;
+    return combine.inputs
+        .map((input) => animationLabel(map, input, [...seen, name]))
+        .filter((label) => label)
+        .join(" + ");
+}
+
+// a key for a new combine, one no animation has
+export function newCombineKey(map: NoteMap, info: MapData): string {
+    let n = 1;
+    while (`combine_${n}` in map.combines || `combine_${n}` in map.animations || info.animations.includes(`combine_${n}`)) n++;
+    return `combine_${n}`;
+}
+
+// whether `inner` is `outer` or goes into it, a combine can't go into itself
+export function goesInto(map: NoteMap, inner: string, outer: string): boolean {
+    if (inner === outer) return true;
+    return (map.combines[outer]?.inputs ?? []).some((input) => input in map.combines && goesInto(map, inner, input));
+}
 
 // true if `note` is wired to one of `objects`. with linked only (the node's `linked_only`) the map and its preview show
 // only these, and the animations `isAnimationLinked` says are
 export const isLinked = (map: NoteMap, objects: string[], note: number) => objects.some((o) => map.objects[o]?.includes(note));
-export const isAnimationLinked = (map: NoteMap, objects: string[], name: string) => (map.animations[name] ?? []).some((o) => objects.includes(o));
+// an animation going into a combine that's linked is linked too
+export const isAnimationLinked = (map: NoteMap, objects: string[], name: string, seen: string[] = []): boolean => (map.animations[name] ?? []).some((o) => objects.includes(o)) || Object.entries(map.combines).some(([key, combine]) => combine.inputs.includes(name) && !seen.includes(key) && isAnimationLinked(map, objects, key, [...seen, name]));
 
 // a stored map as given, anything that isn't one is empty. one without animations gets `animations()`'s
 export function readMap(value: any, animations: () => Record<string, string[]> = () => ({})): NoteMap {
@@ -91,5 +125,12 @@ export function readMap(value: any, animations: () => Record<string, string[]> =
     } else {
         wired = animations();
     }
-    return { objects, notes: notesIn(value?.notes), animations: wired };
+    const combines: Record<string, MapCombine> = {};
+    if (value?.combines && typeof value.combines === "object" && !Array.isArray(value.combines)) {
+        for (const [key, combine] of Object.entries<any>(value.combines)) {
+            const inputs = list(combine?.inputs).filter((i) => typeof i === "string");
+            combines[key] = typeof combine?.animation_overlap === "string" ? { inputs, animation_overlap: combine.animation_overlap } : { inputs };
+        }
+    }
+    return { objects, notes: notesIn(value?.notes), animations: wired, combines };
 }

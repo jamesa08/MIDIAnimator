@@ -35,7 +35,9 @@ const handleStyle = {
 /// @param children: shown under the handles, e.g. the curve preview on Animation Generator
 /// @param minHeight: the node's height can be dragged from its bottom edge and corner too, down to this, e.g. the viewer
 /// @param fill: the node has a height of its own, its inside takes what's left of it
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children, minHeight, fill }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode; minHeight?: number; fill?: boolean }) {
+/// @param bare: no header, one row: the first input's socket on the left, the first output's on the right and the
+/// input's `labels` entry between them, e.g. Combine Animations in the note map. it can't be collapsed or resized
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children, minHeight, fill, bare }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode; minHeight?: number; fill?: boolean; bare?: boolean }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -47,7 +49,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     // Blender doesn't have what it would write now, its title is italic until it writes
     const stale = useStale() && !preview;
     // collapsed to its header (the caret, H), its sockets are drawn down the header's ends
-    const collapsed = !preview && data?.collapsed === true;
+    const collapsed = !preview && !bare && data?.collapsed === true;
     const { editable } = useGroupContext();
     const setCollapsed = useCollapse();
 
@@ -70,6 +72,23 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     // the sockets drawn on the expanded node, a collapsed one draws them on its ends
     const visibleHandles = (side: string) => (nodeData == null ? [] : [...nodeData["handles"][side], ...(dynamicHandles?.[side] ?? [])].filter((handle) => !hidden?.[handle["id"]]));
 
+    // a socket on its row's left (input) or right (output) end, with its signal tag
+    const drawSocket = (handle: any, input: boolean, multi: any) => {
+        const side = input ? "inputs" : "outputs";
+        const tag = preview ? undefined : data?.[input ? "input_tags" : "output_tags"]?.[handle["id"]];
+        const style = { ...(input ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi };
+        return (
+            <>
+                {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
+                {preview ? <div className={`react-flow__handle react-flow__handle-${input ? "left" : "right"}`} style={style}></div> : <SocketHandle id={handle["id"]} side={side} multi={!!multi} type={input ? "source" : "target"} position={input ? Position.Left : Position.Right} style={style} />}
+                {tag && <SocketTag side={side} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
+            </>
+        );
+    };
+    // a bare node's output shares its first input's row
+    const bareInput = bare ? visibleHandles("inputs")[0] : undefined;
+    const bareOutput = bare ? visibleHandles("outputs")[0] : undefined;
+
     if (nodeData != null && !collapsed) {
         const handleTypes = ["outputs", "inputs"];
         for (let handleType of handleTypes) {
@@ -81,6 +100,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
             let dynHandleArray = dynamicHandles == null || dynamicHandles[handleType] == undefined ? [] : dynamicHandles[handleType];
 
             for (let handle of [...nodeData["handles"][handleType], ...dynHandleArray]) {
+                if (bare && !rfHandleType) continue;
                 let uiInject = <></>;
                 let uiHidden = false;
 
@@ -96,22 +116,19 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                 // connection's value is used instead or it's the input's default
                 let value = rfHandleType && !preview && !uiHidden && !hideValues?.[handle["id"]] && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
                 if (value === handle["default"]) value = undefined;
-                const tag = preview ? undefined : data?.[rfHandleType ? "input_tags" : "output_tags"]?.[handle["id"]];
                 // a multi input's socket is a pill as tall as its links need, its row makes room for it
                 const multi = rfHandleType && handle["multi"] ? multiSocketStyle(preview ? 0 : connected.filter((c) => c === handle["id"]).length) : null;
                 const rowStyle = multi ? { minHeight: multi.height, alignItems: "center" } : {};
+                // a bare node's row holds its output too, and its error badge since it has no header
+                const bareRow = handle === bareInput;
 
                 const buildHandle = (
                     <>
-                        <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : "inherit", ...rowStyle }}>
+                        <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : bareRow ? "flex" : "inherit", ...(bareRow ? { alignItems: "center", gap: "4px" } : {}), ...rowStyle }}>
                             {labels?.[handle["id"]] ?? <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>}
-                            {/* previews live outside a flow, Handle needs its store so draw a look alike with the same classes */}
-                            {preview ? (
-                                <div className={`react-flow__handle react-flow__handle-${rfHandleType ? "left" : "right"}`} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }}></div>
-                            ) : (
-                                <SocketHandle id={handle["id"]} side={handleType} multi={!!multi} type={rfHandleType ? "source" : "target"} position={rfHandleType ? Position.Left : Position.Right} style={{ ...(rfHandleType ? { ...handleStyle, left: "-13px" } : { ...handleStyle, right: "-13px" }), ...socketStyle(handle["data_type"]), ...multi }} />
-                            )}
-                            {tag && <SocketTag side={handleType} socket={handle["id"]} name={tag} dataType={handle["data_type"]} />}
+                            {drawSocket(handle, rfHandleType, multi)}
+                            {bareRow && error && !preview && <ErrorBadge message={error} size={16} />}
+                            {bareRow && bareOutput && drawSocket(bareOutput, false, null)}
                         </div>
                         {value != null && (typeof value === "object" ? <div className="node-field node-value node-value-json">{JSON.stringify(value)}</div> : <div className="node-field node-value">{String(value)}</div>)}
                         {uiInject}
@@ -124,12 +141,14 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
 
     return (
         <div className={`node${preview ? " preview" : ""}${error && !preview ? " node-error" : ""}${fill && !collapsed ? " node-fill" : ""}${collapsed ? " node-collapsed" : ""}`} style={{ ...nodeColors(nodeData?.category), ...(collapsed ? { minHeight: collapsedHeight(visibleHandles("inputs"), visibleHandles("outputs")) } : {}) }}>
-            <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale} collapsed={collapsed} onToggle={!preview && editable && nodeId ? () => setCollapsed(nodeId, !collapsed) : undefined}>
-                {error && !preview && <ErrorBadge message={error} size={16} />}
-                {!error && write.written && !stale && !preview && <SuccessBadge size={16} />}
-                {headerExtra}
-            </NodeHeader>
-            <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />
+            {!bare && (
+                <NodeHeader label={nodeData == null ? "" : (!preview && data?.label) || nodeData["name"]} italic={stale} collapsed={collapsed} onToggle={!preview && editable && nodeId ? () => setCollapsed(nodeId, !collapsed) : undefined}>
+                    {error && !preview && <ErrorBadge message={error} size={16} />}
+                    {!error && write.written && !stale && !preview && <SuccessBadge size={16} />}
+                    {headerExtra}
+                </NodeHeader>
+            )}
+            {!bare && <NodeResizeControl minWidth={200} maxWidth={1000} variant="line" />}
             {minHeight !== undefined && !collapsed && (
                 <>
                     <NodeResizeControl minWidth={200} maxWidth={1000} minHeight={minHeight} position="bottom" variant="line" />

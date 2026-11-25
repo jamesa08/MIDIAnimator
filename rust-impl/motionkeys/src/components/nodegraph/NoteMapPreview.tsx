@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { HEADER_COLORS, SOCKET_COLORS } from "../../styles";
-import { MapView, isAnimationLinked, isLinked, noteMapData, shownAnimations, shownMap } from "../../utils/noteMap";
+import { MapView, animationLabel, isAnimationLinked, isLinked, isPlaying, noteMapData, shownAnimations, shownMap } from "../../utils/noteMap";
 
 // how wide the notes' bars are (the objects' and animations' take a share of the preview for their names), and the
 // smallest their text is drawn (rows too thin for it get none)
@@ -95,11 +95,11 @@ function NoteMapPreview({ inputs, results, nodeInputs, linkedOnly = false, view 
                     {animations.flatMap((a, ai) => (map.animations[a] ?? []).filter((o) => objects.includes(o)).map((o) => wire(`a:${a}>${o}`, animationRight, animationY(ai), objectLeft, objectY(objects.indexOf(o)), SOCKET_COLORS.generator, ANIMATION_WIRE_END)))}
                     {/* animations whose generator isn't connected are paler, like in the map */}
                     {animations.map((a, i) => (
-                        <g key={a} opacity={info.animations.includes(a) ? 1 : 0.45}>
+                        <g key={a} opacity={isPlaying(map, info, a) ? 1 : 0.45}>
                             <rect x={INSET} y={(notes.length + i) * noteRow + noteRow * 0.15} width={animationBar} height={noteRow * 0.7} fill={HEADER_COLORS.animation} />
                             {textSize >= MIN_TEXT && (
                                 <text x={INSET + TEXT_PAD} y={animationY(i)} fontSize={textSize} fill="#fff" dominantBaseline="central" fontFamily="Arial, sans-serif">
-                                    {fitText(a, animationBar - TEXT_PAD * 2, textSize)}
+                                    {fitText(animationLabel(map, a), animationBar - TEXT_PAD * 2, textSize)}
                                 </text>
                             )}
                         </g>
