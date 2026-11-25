@@ -1,4 +1,5 @@
-// where the drawn edges go, in flow coordinates: what box select takes (NodeGraphCanvas)
+// where the drawn edges go, in flow coordinates: what box select takes (NodeGraphCanvas) and the link a dragged node is
+// put into (insertOnLink)
 
 export type Box = { x0: number; y0: number; x1: number; y1: number };
 type XY = { x: number; y: number };
@@ -59,4 +60,9 @@ export function edgeCrosses(path: SVGPathElement | undefined, box: Box): boolean
         if (bounds.x > box.x1 || bounds.x + bounds.width < box.x0 || bounds.y > box.y1 || bounds.y + bounds.height < box.y0) return false;
     }
     return pathPoints(path, 4).some((p) => p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1);
+}
+
+// how far an edge's path comes to a point (flow coordinates)
+export function edgeDistance(path: SVGPathElement, point: XY): number {
+    return Math.min(...pathPoints(path, 4).map((p) => Math.hypot(p.x - point.x, p.y - point.y)));
 }

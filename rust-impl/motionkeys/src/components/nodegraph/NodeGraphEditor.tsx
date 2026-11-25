@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useNodesState, useEdgesState, Connection, Edge, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
+import { useNodesState, useEdgesState, Connection, Edge, Node, ReactFlowInstance, applyNodeChanges, applyEdgeChanges, useReactFlow, useOnViewportChange, useStoreApi, useNodesInitialized, useUpdateNodeInternals, FinalConnectionState } from "@xyflow/react";
 import { XYHandle } from "@xyflow/system";
 import { useStateContext } from "../../contexts/StateContext";
 import { NODE_DROP_EVENT } from "../../utils/node";
@@ -22,6 +22,7 @@ import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
+import { InsertLinkContext, glideEase, insertSockets, insertable, linkUnder, makeRoom } from "./insertOnLink";
 import { useFrameView } from "./frameView";
 import { TOOLBAR_ADD_EVENT, canvasToolCommands, setEditorState } from "../../utils/editorState";
 import { Rect, apart, bounds, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, nodeRect, withContents } from "../../utils/frames";
@@ -334,6 +335,108 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         [getNodes, screenToFlowPosition]
     );
 
+    // MARK: - Insert On Link
+
+    // a single node with nothing connected to it, dragged or grabbed, goes into the link it's dropped on (insertOnLink.ts).
+    // the link it would go into is ringed while it's over it
+    const [insertEdge, setInsertEdge] = useState<string | null>(null);
+    const insertRef = useRef<{ node: string; edge: string | null } | null>(null);
+    const beginInsert = useCallback((moved: string[]) => {
+        insertRef.current = moved.length === 1 ? { node: moved[0], edge: null } : null;
+        setInsertEdge(null);
+    }, []);
+    // the node is at `position`, the link it covers nearest the cursor is the one it would go into if it fits
+    const updateInsert = useCallback(
+        (position: { x: number; y: number }) => {
+            const insert = insertRef.current;
+            if (!insert) return;
+            const { nodeLookup, domNode } = store.getState();
+            const node = nodeLookup.get(insert.node);
+            const edges = getEdges();
+            let edge: string | null = null;
+            if (editable && node && insertable(node, edges)) {
+                const cursor = screenToFlowPosition(mousePositionRef.current, { snapToGrid: false });
+                const under = linkUnder(domNode, edges, { ...nodeRect(node), ...position }, cursor);
+                if (under && insertSockets(lookup, level.def, nodeLookup, node, under)) edge = under.id;
+            }
+            if (edge === insert.edge) return;
+            insert.edge = edge;
+            setInsertEdge(edge);
+        },
+        [store, getEdges, editable, screenToFlowPosition, lookup, level.def]
+    );
+    // the move is over with the nodes at `positions`: the ops that put the node into its link and where the nodes moved to
+    // make room for it go, nothing when it isn't over one
+    const endInsert = useCallback(
+        (positions: Record<string, { x: number; y: number }>): { ops: Op[]; room: Record<string, { x: number; y: number }> } => {
+            const insert = insertRef.current;
+            insertRef.current = null;
+            setInsertEdge(null);
+            const none = { ops: [], room: {} };
+            const position = insert && positions[insert.node];
+            const edge = insert?.edge ? getEdges().find((e) => e.id === insert.edge) : undefined;
+            const { nodeLookup } = store.getState();
+            const node = insert && nodeLookup.get(insert.node);
+            if (!position || !edge || !node || !insertable(node, getEdges())) return none;
+            const sockets = insertSockets(lookup, level.def, nodeLookup, node, edge);
+            if (!sockets) return none;
+            // stored edges are reversed: `target` gives the value, `source` takes it. the first op names the undo step
+            const ops: Op[] = [
+                { op: "connect", from_node: edge.target, from_output: edge.targetHandle ?? "", to_node: node.id, to_input: sockets.input },
+                { op: "delete", edges: [edge.id] },
+                { op: "connect", from_node: node.id, from_output: sockets.output, to_node: edge.source, to_input: edge.sourceHandle ?? "" },
+            ];
+            return { ops, room: makeRoom(getNodes(), getEdges(), node.id, { ...nodeRect(node), ...position }, edge.target, edge.source) };
+        },
+        [getEdges, getNodes, store, lookup, level.def]
+    );
+    // nodes glide from where they are (or `from`) to `to` like the simplified view's, their links along with them.
+    // resolves once they're there
+    const glide = useCallback(
+        (to: Record<string, { x: number; y: number }>, from: Record<string, { x: number; y: number }>) => {
+            const starts = new Map(
+                getNodes()
+                    .filter((n) => to[n.id])
+                    .map((n) => [n.id, from[n.id] ?? n.position])
+            );
+            if (starts.size === 0) return Promise.resolve();
+            return new Promise<void>((resolve) => {
+                const start = performance.now();
+                const step = (now: number) => {
+                    const t = Math.min(1, (now - start) / SWITCH_MS);
+                    const along = glideEase(t);
+                    setNodes((nds) =>
+                        nds.map((node) => {
+                            const [a, b] = [starts.get(node.id), to[node.id]];
+                            return a && b ? { ...node, position: { x: a.x + (b.x - a.x) * along, y: a.y + (b.y - a.y) * along } } : node;
+                        })
+                    );
+                    if (t < 1) requestAnimationFrame(step);
+                    else resolve();
+                };
+                requestAnimationFrame(step);
+            });
+        },
+        [getNodes, setNodes]
+    );
+    // a move with the node put into its link, all of it one undo step: the nodes moved to make room glide there and stay
+    // put until they're there and the move is back
+    const sendMove = useCallback(
+        (positions: Record<string, { x: number; y: number }>, frames: Record<string, string>, options: ApplyOptions = {}) => {
+            const { ops, room } = endInsert(positions);
+            const all = { ...positions, ...room };
+            const sent = apply([...ops, moveOp(all, frames)], options);
+            const glided = glide(room, positions);
+            hold(
+                movingRef.current,
+                Object.keys(all),
+                Promise.all([sent, glided]).then(([applied]) => applied)
+            );
+            return sent;
+        },
+        [endInsert, apply, glide, hold]
+    );
+
     // MARK: - Grab
 
     // the nodes follow the cursor from `cursor` (flow position) until a click places them, a frame takes what's in it along
@@ -345,9 +448,10 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
             const ids = [...new Set([...moved, ...withContents(nodes, moved)])].filter((id) => at.has(id));
             grabRef.current = { txn, cursorX: cursor.x, cursorY: cursor.y, nodes: ids.map((id) => ({ id, x: at.get(id)!.x, y: at.get(id)!.y })), added: txn ? moved : [] };
             beginMove(moved);
+            beginInsert(moved);
             setGrabbing(true);
         },
-        [getNodes, beginMove]
+        [getNodes, beginMove, beginInsert]
     );
 
     // places the grabbed nodes where they are: one move (into frames they land in), ending the add or duplicate it belongs to
@@ -358,10 +462,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         if (!grab) return;
         const placed = new Map(getNodes().map((n) => [n.id, n.position]));
         const positions = Object.fromEntries(grab.nodes.filter((n) => placed.has(n.id)).map((n) => [n.id, placed.get(n.id)!]));
-        const sent = apply([moveOp(positions, endMove(positions))], grab.txn ? { txn: grab.txn } : {});
-        hold(movingRef.current, Object.keys(positions), sent);
+        const sent = sendMove(positions, endMove(positions), grab.txn ? { txn: grab.txn } : {});
         sent.then(() => grab.txn && ops.end(grab.txn));
-    }, [getNodes, apply, ops, endMove, hold]);
+    }, [getNodes, ops, endMove, sendMove]);
 
     // nodes back where the backend's graph has them
     const showStored = useCallback(
@@ -396,6 +499,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         setGrabbing(false);
         setMenuOpen(false);
         moveRef.current = null;
+        beginInsert([]);
         if (!grab) return;
         if (grab.txn) {
             undoAdd(grab.txn, grab.added);
@@ -404,7 +508,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
             const start = new Map(grab.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
             setNodes((nds) => nds.map((node) => (start.has(node.id) ? { ...node, position: start.get(node.id)! } : node)));
         }
-    }, [undoAdd, showStored, setNodes]);
+    }, [undoAdd, showStored, setNodes, beginInsert]);
 
     // adds and duplicates on their way, and the one whose grab is starting: its modal is let go once the grab's has
     // taken over (after the grab's modal below)
@@ -552,11 +656,13 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
             const start = new Map(grab.nodes.map((n) => [n.id, n]));
 
             setNodes((nds) => nds.map((node) => (start.has(node.id) ? { ...node, position: { x: start.get(node.id)!.x + dx, y: start.get(node.id)!.y + dy } } : node)));
+            const inserted = insertRef.current && start.get(insertRef.current.node);
+            if (inserted) updateInsert({ x: inserted.x + dx, y: inserted.y + dy });
         };
 
         window.addEventListener("mousemove", handleMouseMove);
         return () => window.removeEventListener("mousemove", handleMouseMove);
-    }, [grabbing, screenToFlowPosition, setNodes]);
+    }, [grabbing, screenToFlowPosition, setNodes, updateInsert]);
 
     // a grab takes every key and click until it's confirmed or cancelled (left click and right click by default). like
     // blender the confirming click only confirms, react flow never sees it (src/utils/keymap.ts swallows it)
@@ -1024,8 +1130,9 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         (_event: unknown, _node: unknown, dragged: { id: string }[]) => {
             blockUntilRelease();
             beginMove(dragged.map((n) => n.id));
+            beginInsert(dragged.map((n) => n.id));
         },
-        [beginMove]
+        [beginMove, beginInsert]
     );
     const onSelectionDragStart = useCallback((event: unknown, dragged: { id: string }[]) => onNodeDragStart(event, null, dragged), [onNodeDragStart]);
     // a link drag cancelled partway through (a right click) drops nowhere: nothing connects and a picked up link goes
@@ -1427,12 +1534,14 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
 
     // react flow's drag keeps mouse moves from the window, the cursor is taken from the drag (where it drops, dropFrames)
     const handleNodeDrag = useCallback(
-        (event: React.MouseEvent | MouseEvent) => {
+        (event: React.MouseEvent | MouseEvent, _node: unknown, dragged: Node[]) => {
             mousePositionRef.current = { x: event.clientX, y: event.clientY };
             if (grabRef.current) confirmGrab();
+            if (dragged.length === 1) updateInsert(dragged[0].position);
         },
-        [confirmGrab]
+        [confirmGrab, updateInsert]
     );
+    const handleSelectionDrag = useCallback((event: React.MouseEvent | MouseEvent, dragged: Node[]) => handleNodeDrag(event, null, dragged), [handleNodeDrag]);
 
     // no browser context menu on the graph
     const handleContextMenu = useCallback((event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
@@ -1639,7 +1748,8 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
                 const positions = Object.fromEntries([...moved, ...carried].map((c) => [c.id, c.position ?? current.get(c.id)]));
                 for (const id of session?.carriedBy.keys() ?? []) positions[id] ??= current.get(id);
                 const frames = endMove(positions);
-                if (canEdit()) hold(movingRef.current, Object.keys(positions), apply([moveOp(positions, frames)]));
+                if (canEdit()) sendMove(positions, frames);
+                else beginInsert([]);
             }
             // a resize finished with the size and place it last gave, a frame keeps the size it was given
             for (const change of changes.filter((c) => c.type === "dimensions" && c.resizing === false)) {
@@ -1664,7 +1774,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
                 if (width && height) hold(sizingRef.current, [node.id], apply([{ op: "resize", node: node.id, width, height: kept, position }]));
             }
         },
-        [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove, hold]
+        [setNodes, canEdit, apply, scheduleSelection, getNodes, endMove, hold, sendMove, beginInsert]
     );
 
     const onEdgesChange = useCallback(
@@ -1713,38 +1823,40 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
     return (
         <>
             <SimplifiedContext.Provider value={simplified && !!tiles}>
-                <NodeGraphCanvas
-                    nodes={canvasNodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onConnectStart={onConnectStart}
-                    onConnectEnd={onConnectEnd}
-                    onSelectionStart={onSelectionStart}
-                    onSelectionEnd={onSelectionEnd}
-                    onBoxSockets={onBoxSockets}
-                    onNodeDragStart={onNodeDragStart}
-                    onSelectionDragStart={onSelectionDragStart}
-                    onNodeClick={handleNodeClickStop}
-                    onNodeDoubleClick={handleNodeDoubleClick}
-                    onEdgeClick={handleEdgeClick}
-                    onPaneClick={handlePaneClick}
-                    onNodeDrag={handleNodeDrag}
-                    onSelectionDrag={handleNodeDrag}
-                    onPaneContextMenu={handlePaneContextMenu}
-                    onNodeContextMenu={handleNodeContextMenu}
-                    onContextMenu={handleContextMenu}
-                    onSelectionContextMenu={handleSelectionContextMenu}
-                    onEdgeContextMenu={handleEdgeContextMenu}
-                    onInit={onInit}
-                    isValidConnection={isValidConnection}
-                    panOnDrag={panHeld ? true : [1]}
-                    nodesDraggable={editable}
-                    nodesConnectable={editable}
-                    className={`${isRoot ? "" : "group-canvas"}${moving ? " simplify-moving" : ""}`}
-                    style={{ "--simplify-switch": `${SWITCH_MS}ms` } as CSSProperties}
-                />
+                <InsertLinkContext.Provider value={insertEdge}>
+                    <NodeGraphCanvas
+                        nodes={canvasNodes}
+                        edges={edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onConnectStart={onConnectStart}
+                        onConnectEnd={onConnectEnd}
+                        onSelectionStart={onSelectionStart}
+                        onSelectionEnd={onSelectionEnd}
+                        onBoxSockets={onBoxSockets}
+                        onNodeDragStart={onNodeDragStart}
+                        onSelectionDragStart={onSelectionDragStart}
+                        onNodeClick={handleNodeClickStop}
+                        onNodeDoubleClick={handleNodeDoubleClick}
+                        onEdgeClick={handleEdgeClick}
+                        onPaneClick={handlePaneClick}
+                        onNodeDrag={handleNodeDrag}
+                        onSelectionDrag={handleSelectionDrag}
+                        onPaneContextMenu={handlePaneContextMenu}
+                        onNodeContextMenu={handleNodeContextMenu}
+                        onContextMenu={handleContextMenu}
+                        onSelectionContextMenu={handleSelectionContextMenu}
+                        onEdgeContextMenu={handleEdgeContextMenu}
+                        onInit={onInit}
+                        isValidConnection={isValidConnection}
+                        panOnDrag={panHeld ? true : [1]}
+                        nodesDraggable={editable}
+                        nodesConnectable={editable}
+                        className={`${isRoot ? "" : "group-canvas"}${moving ? " simplify-moving" : ""}`}
+                        style={{ "--simplify-switch": `${SWITCH_MS}ms` } as CSSProperties}
+                    />
+                </InsertLinkContext.Provider>
             </SimplifiedContext.Provider>
             <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
             {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}

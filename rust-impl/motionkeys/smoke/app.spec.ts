@@ -1132,6 +1132,71 @@ test("a multi input takes a link dropped anywhere along it", async ({ page }) =>
     await settle(page);
 });
 
+test("a node dropped on a link goes into it and the nodes after it make room", async ({ page }) => {
+    // a combine animations with nothing connected to it, below the graph
+    const loose = structuredClone(backend);
+    loose.get_state.rf_instance.nodes.push({ id: "combine_animations-1", type: "combine_animations", position: { x: 600, y: 760 }, data: { inputs: {} }, selected: false });
+    await openWindow(page, loose, "/#/");
+    await graphReady(page);
+    await settle(page);
+    await frameNodes(page, ["animation_generator-1", "assign_notes_to_objects-1", "combine_animations-1"]);
+    const link = page.locator('.react-flow__edge[data-id="xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator"]');
+    // framing selected all three, a drag of several nodes doesn't go into a link
+    await page.locator('.react-flow__node[data-id="combine_animations-1"] .node-header').click();
+    const header = (await page.locator('.react-flow__node[data-id="combine_animations-1"] .node-header').boundingBox())!;
+    const to = await edgeMiddle(link);
+    const before = (await applied(page)).length;
+    // what the drop sent, not the selection or where the graph is looked at
+    const edits = async () => (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op !== "select" && op.op !== "viewport"));
+
+    // ringed while the node is over it, with the cursor on it
+    await page.mouse.move(header.x + 20, header.y + header.height / 2);
+    await page.mouse.down();
+    // react flow's drag takes up the mouse from the move that starts it, the node trails the first step behind the cursor
+    await page.mouse.move(header.x + 20, header.y + header.height / 2 - 5, { steps: 2 });
+    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await expect(link.locator(".edge-ring")).toHaveCount(2);
+    // the assign's x on screen each frame from the drop on (in flow units)
+    await page.evaluate(() => {
+        const xs: number[] = ((window as any).__glide = []);
+        const sample = () => {
+            const node = document.querySelector<HTMLElement>('.react-flow__node[data-id="assign_notes_to_objects-1"]')!;
+            xs.push(new DOMMatrix(getComputedStyle(node).transform).e);
+            if (xs.length < 60) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+    });
+    await page.mouse.up();
+    await expect(link.locator(".edge-ring")).toHaveCount(0);
+
+    // one edit: the link's output into the node, the node into the link's input, the node and the assign pushed right
+    await expect.poll(async () => (await edits()).length).toBe(1);
+    const [ops] = await edits();
+    expect(ops.slice(0, 3)).toEqual([
+        { op: "connect", from_node: "animation_generator-1", from_output: "generator", to_node: "combine_animations-1", to_input: "generators" },
+        { op: "delete", edges: ["xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator"] },
+        { op: "connect", from_node: "combine_animations-1", from_output: "generator", to_node: "assign_notes_to_objects-1", to_input: "generator" },
+    ]);
+    const { positions } = ops[3];
+    expect(Object.keys(positions).sort()).toEqual(["assign_notes_to_objects-1", "combine_animations-1", "evaluate_instrument-1", "viewer-1"]);
+    // the node clear of the generator, the assign clear of the node, what the assign feeds moved as far as it
+    const width = async (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`).evaluate((n: HTMLElement) => n.offsetWidth);
+    expect(positions["combine_animations-1"].x).toBeCloseTo(437.5554033362751 + (await width("animation_generator-1")) + 80, 0);
+    expect(positions["assign_notes_to_objects-1"].x).toBeCloseTo(positions["combine_animations-1"].x + (await width("combine_animations-1")) + 80, 0);
+    expect(positions["assign_notes_to_objects-1"].x - 741.5256924616973).toBeCloseTo(positions["viewer-1"].x - 1300.065279381486, 3);
+
+    // the assign glides there, its x each frame going up from where it was to where it goes (the fixture's backend
+    // never moves it, it's put back once it's there)
+    await page.waitForFunction(() => (window as any).__glide.length >= 60);
+    const glide: number[] = await page.evaluate(() => (window as any).__glide);
+    const target = positions["assign_notes_to_objects-1"].x;
+    const reached = glide.findIndex((x) => Math.abs(x - target) < 1);
+    expect(reached).toBeGreaterThan(1);
+    expect(glide.slice(0, reached).filter((x) => x > 741.6 && x < target - 1).length).toBeGreaterThan(0);
+    expect(glide.slice(0, reached + 1)).toEqual([...glide.slice(0, reached + 1)].sort((a, b) => a - b));
+    await settle(page);
+});
+
 test("a note table can be wired into the generator its note map comes from", async ({ page }) => {
     // assign › note map › table, then the table into the generator assign uses: not a cycle, the note map doesn't read it
     const state = withNoteTable();

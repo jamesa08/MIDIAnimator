@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo } from "react";
+import { useCallback, useContext, useId, useMemo } from "react";
 import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath, ReactFlowState, useInternalNode, useStore } from "@xyflow/react";
 import { useGroupContext } from "../../contexts/GroupContext";
 import { inputHandle, outputHandle, specLookup } from "../../utils/groups";
@@ -6,6 +6,7 @@ import { useNodeSpecs } from "../../utils/nodeEntries";
 import { SOCKET_COLORS } from "../../styles";
 import { multiSlotOffset, socketCategory } from "../../utils/sockets";
 import ErrorBadge, { useBadInput } from "./ErrorBadge";
+import { InsertLinkContext } from "./insertOnLink";
 
 // a lighter shade of a color, what a selection is drawn in (a selected node's ring in index.css)
 export const lighter = (color: string) => `color-mix(in srgb, ${color} 50%, white)`;
@@ -22,8 +23,11 @@ export function EdgeRing({ path, stroke, width = 3 }: { path: string; stroke: st
 }
 
 // an edge in the color of the sockets it connects, fading from one to the other when their types differ.
-// one whose value was the wrong type for its input in the last run is drawn red with a warning sign on it
-function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY: socketY, targetX, targetY, sourcePosition, targetPosition, selected, style, interactionWidth }: EdgeProps) {
+// one whose value was the wrong type for its input in the last run is drawn red with a warning sign on it. the link a
+// dragged node would go into is ringed like a selected one
+function TypedEdge({ id, source, target, sourceHandleId, targetHandleId, sourceX, sourceY: socketY, targetX, targetY, sourcePosition, targetPosition, selected: picked, style, interactionWidth }: EdgeProps) {
+    const inserting = useContext(InsertLinkContext) === id;
+    const selected = picked || inserting;
     const { groups, scope } = useGroupContext();
     const specs = useNodeSpecs();
     const lookup = useMemo(() => specLookup(Object.fromEntries(specs.map((spec: any) => [spec.id, spec])), groups), [specs, groups]);
