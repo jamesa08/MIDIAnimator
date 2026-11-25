@@ -964,6 +964,18 @@ img {
     display: none;
 }
 
+/* selectable, like the error popover */
+.properties-viewer {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+    margin: 0;
+    padding: 4px 6px;
+    font-family: monospace;
+    white-space: pre;
+    background-color: var(--properties-background);
+}
+
 /* fields fill their cell and draw nothing of their own */
 .properties-row input,
 .properties-row select,

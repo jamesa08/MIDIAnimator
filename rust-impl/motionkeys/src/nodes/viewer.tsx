@@ -94,6 +94,15 @@ export function customStringify(obj: any, options: StringifyOptions = {}): strin
     return renderPretty(obj, 0, new Set());
 }
 
+// how much of the value a viewer shows, set from the properties panel. a whole number of at least 0, else the default
+export function viewerOptions(data: any, spec: any): StringifyOptions {
+    const option = (input: string) => {
+        const value = data?.inputs?.[input] ?? spec?.handles.inputs.find((h: any) => h.id === input)?.default;
+        return typeof value === "number" ? Math.max(0, Math.floor(value)) : undefined;
+    };
+    return { maxDepth: option("max_depth"), maxKeysPerObject: option("max_keys"), maxArrayItems: option("max_items"), maxStringLength: option("max_string_length"), compactThreshold: option("compact_width") };
+}
+
 function viewer({ id, data, height }: { id: any; data: any; height?: number }) {
     const { updateNodeData } = useReactFlow();
     const { backEndState: state, setBackEndState: setState } = useStateContext();
@@ -108,12 +117,7 @@ function viewer({ id, data, height }: { id: any; data: any; height?: number }) {
         setTimeout(() => setCopied(false), 1000);
     };
 
-    // how much of the value is shown, set from the properties panel. a whole number of at least 0, else the default
-    const option = (input: string) => {
-        const value = data.inputs?.[input] ?? nodeData?.handles.inputs.find((h: any) => h.id === input)?.default;
-        return typeof value === "number" ? Math.max(0, Math.floor(value)) : undefined;
-    };
-    const options = { maxDepth: option("max_depth"), maxKeysPerObject: option("max_keys"), maxArrayItems: option("max_items"), maxStringLength: option("max_string_length"), compactThreshold: option("compact_width") };
+    const options = viewerOptions(data, nodeData);
     const optionsKey = JSON.stringify(options);
 
     useEffect(() => {

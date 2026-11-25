@@ -286,6 +286,19 @@ test("properties panel shows the notes each object got", async ({ page }) => {
     await settle(page);
 });
 
+test("properties panel shows the viewer's text", async ({ page }) => {
+    await openWindow(page, withSelected("viewer-1"), "/#/");
+    const text = page.locator(".properties .properties-viewer");
+    // the same text the node shows
+    await expect(text).toHaveText((await page.locator('.react-flow__node[data-id="viewer-1"] .node-viewer').innerText()).trim());
+    await expect(text).toContainText("more items");
+    expect(await text.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("pre");
+    // it can be selected, the panel around it can't
+    await text.dblclick();
+    expect(await page.evaluate(() => window.getSelection()?.toString().trim())).not.toBe("");
+    await settle(page);
+});
+
 test("note numbers field keeps what's typed", async ({ page }) => {
     await openWindow(page, withLayout(ALL_DOCKED), "/#/");
     // the node's only text box, under Note Numbers (Object Group Name and Mode are dropdowns)

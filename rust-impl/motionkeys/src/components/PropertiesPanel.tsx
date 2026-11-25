@@ -10,6 +10,7 @@ import { overlapModes } from "../nodes/animation_generator";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import { groupPick } from "../nodes/keyframes_from_object";
 import SceneTree from "./SceneTree";
+import { customStringify, viewerOptions } from "../nodes/viewer";
 import ExpressionField from "./ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
 import { ColorField } from "./ColorPicker";
@@ -160,6 +161,14 @@ function MidiFileField({ value, onCommit, readOnly }: { value: string | undefine
             {value ? value.split("/").pop() : "Pick MIDI File"}
         </button>
     );
+}
+
+// what a viewer got on the last run, the same text the node shows
+function ViewerText({ value, node, spec }: { value: any; node: any; spec: any }) {
+    const options = viewerOptions(node.data, spec);
+    const optionsKey = JSON.stringify(options);
+    const text = useMemo(() => customStringify(value, options), [value, optionsKey]);
+    return <pre className="properties-viewer properties-scroll">{text}</pre>;
 }
 
 // MARK: - Layout
@@ -492,6 +501,7 @@ function Properties() {
                         ))
                     )}
                 {single?.type === "scene_link" && scene && section("Scene", <SceneTree scene={scene} expanded={expanded} onToggle={toggleRow} />)}
+                {single?.type === "viewer" && executedInputs[single.id] && "data" in executedInputs[single.id] && section("Viewer", <ViewerText value={executedInputs[single.id].data} node={single} spec={spec} />)}
                 {type === FRAME &&
                     section(
                         "Frame",
