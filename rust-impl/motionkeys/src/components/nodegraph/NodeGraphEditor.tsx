@@ -22,6 +22,7 @@ import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { PICK_UP_EVENT, PickUp, SOCKET_SELECT_EVENT, SocketPoint, SocketSelect, TAG_EDIT_EVENT, TagEdit, draggedAlong, handleSide, sameSocket, sameSockets, selectedSockets, socketPoints } from "./SocketHandle";
 import { multiSlotOffset } from "../../utils/sockets";
 import { connectAlong } from "./connectAlong";
+import { deleteReconnect } from "./deleteReconnect";
 import { InsertLinkContext, glideEase, insertSockets, insertable, linkUnder, makeRoom } from "./insertOnLink";
 import { useFrameView } from "./frameView";
 import { TOOLBAR_ADD_EVENT, canvasToolCommands, setEditorState } from "../../utils/editorState";
@@ -333,6 +334,17 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
             return dropFrames(nodes, session.moved, session.frames, screenToFlowPosition(mousePositionRef.current, { snapToGrid: false }));
         },
         [getNodes, screenToFlowPosition]
+    );
+
+    // the inputs a node's output reads when it's a partial output (`reads` in default_nodes.json), null for one that reads
+    // them all
+    const outputReads = useCallback(
+        (id: string, output: string): string[] | null => {
+            const node = getNodes().find((n) => n.id === id);
+            const handle = node && (lookup(node, level.def) as any)?.handles?.outputs?.find((h: any) => h.id === output);
+            return Array.isArray(handle?.reads) ? handle.reads : null;
+        },
+        [getNodes, lookup, level.def]
     );
 
     // MARK: - Insert On Link
@@ -1077,6 +1089,12 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
                 if (nodes.length === 0 && edges.length === 0 && sockets.length === 0) return;
                 apply([{ op: "delete", nodes, edges, sockets }]);
             },
+            // the selected nodes, with what went through them wired around them (deleteReconnect.ts)
+            delete_reconnect: () => {
+                const nodes = selectedIds(getNodes());
+                if (!canEdit() || nodes.length === 0) return;
+                apply(deleteReconnect(lookup, level.def, store.getState().nodeLookup, getEdges(), nodes, outputReads));
+            },
             // nothing unused, nothing asked
             delete_unused: async () => {
                 if (!canEdit()) return;
@@ -1634,7 +1652,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
                 ? [[entry("node_editor", "delete")]]
                 : menu.target === "nodes"
                   ? [
-                        [editable && entry("app", "cut", cut), entry("app", "copy", copy), pasteHere, editable && entry("node_editor", "duplicate"), editable && entry("node_editor", "delete")],
+                        [editable && entry("app", "cut", cut), entry("app", "copy", copy), pasteHere, editable && entry("node_editor", "duplicate"), editable && entry("node_editor", "delete"), editable && entry("node_editor", "delete_reconnect")],
                         [editable && entry("node_editor", "join_in_frame"), editable && inFrame && entry("node_editor", "remove_from_frame")],
                         [editable && entry("node_editor", "collapse_all"), editable && entry("node_editor", "expand_all")],
                         [editable && entry("node_editor", "group"), editable && groupCount > 0 && entry("node_editor", "ungroup"), openableCount === 1 && entry("node_editor", "edit_group")],
@@ -1807,17 +1825,11 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         (connection: { target: string; source: string; targetHandle?: string | null; sourceHandle?: string | null }) => {
             // we are using getNodes and getEdges helpers here
             // to make sure we create isValidConnection function only once
-            const nodes = getNodes();
             // stored edges are reversed: `target` is the node giving the value, `source` the one taking it
             const links = getEdges().map((e) => ({ from: e.target, output: e.targetHandle ?? "", to: e.source, input: e.sourceHandle ?? "" }));
-            const reads = (id: string, output: string): string[] | null => {
-                const node = nodes.find((n) => n.id === id);
-                const handle = node && (lookup(node, level.def) as any)?.handles?.outputs?.find((h: any) => h.id === output);
-                return Array.isArray(handle?.reads) ? handle.reads : null;
-            };
-            return !wouldCycle(links, reads, connection.target, connection.targetHandle ?? "", connection.source, connection.sourceHandle ?? "");
+            return !wouldCycle(links, outputReads, connection.target, connection.targetHandle ?? "", connection.source, connection.sourceHandle ?? "");
         },
-        [getNodes, getEdges, lookup, level.def]
+        [getEdges, outputReads]
     );
 
     return (

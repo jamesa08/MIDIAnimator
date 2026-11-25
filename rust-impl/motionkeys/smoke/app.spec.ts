@@ -1197,6 +1197,93 @@ test("a node dropped on a link goes into it and the nodes after it make room", a
     await settle(page);
 });
 
+test("delete with reconnect wires around the deleted nodes", async ({ page }) => {
+    // a combine animations between the generator and the assign
+    const between = structuredClone(backend);
+    const graph = between.get_state.rf_instance;
+    graph.nodes.push({ id: "combine_animations-1", type: "combine_animations", position: { x: 600, y: 760 }, data: { inputs: {} }, selected: false });
+    graph.edges = graph.edges.filter((e: any) => e.id !== "xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator");
+    graph.edges.push({ id: "in", source: "combine_animations-1", sourceHandle: "generators", target: "animation_generator-1", targetHandle: "generator" });
+    graph.edges.push({ id: "out", source: "assign_notes_to_objects-1", sourceHandle: "generator", target: "combine_animations-1", targetHandle: "generator" });
+    await openWindow(page, between, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const edits = async (run: () => Promise<void>) => {
+        const before = (await applied(page)).length;
+        await run();
+        await page.waitForTimeout(300);
+        return (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op !== "select" && op.op !== "viewport"));
+    };
+    const deleting = (id: string) =>
+        edits(async () => {
+            await page.locator(`.react-flow__node[data-id="${id}"] .node-header`).click();
+            await page.keyboard.press("Shift+X");
+        });
+
+    // the generator goes straight into the assign
+    expect(await deleting("combine_animations-1")).toEqual([
+        [
+            { op: "delete", nodes: ["combine_animations-1"] },
+            { op: "connect", from_node: "animation_generator-1", from_output: "generator", to_node: "assign_notes_to_objects-1", to_input: "generator" },
+        ],
+    ]);
+    // tracks don't go into notes, it's only deleted
+    expect(await deleting("get_midi_track_data-1")).toEqual([[{ op: "delete", nodes: ["get_midi_track_data-1"] }]]);
+    await settle(page);
+});
+
+test("delete with reconnect bridges a chain and keeps a multi input's order", async ({ page }) => {
+    // generator -> combine 1 -> combine 2 -> assign, combine 2 also taking a second generator after combine 1
+    const chain = structuredClone(backend);
+    const graph = chain.get_state.rf_instance;
+    graph.nodes.push({ id: "combine_animations-1", type: "combine_animations", position: { x: 600, y: 760 }, data: { inputs: {} }, selected: false });
+    graph.nodes.push({ id: "combine_animations-2", type: "combine_animations", position: { x: 900, y: 760 }, data: { inputs: {} }, selected: false });
+    graph.nodes.push({ id: "animation_generator-2", type: "animation_generator", position: { x: 300, y: 1000 }, data: { inputs: {} }, selected: false });
+    graph.edges = graph.edges.filter((e: any) => e.id !== "xy-edge__assign_notes_to_objects-1generator-animation_generator-1generator");
+    graph.edges.push({ id: "a", source: "combine_animations-1", sourceHandle: "generators", target: "animation_generator-1", targetHandle: "generator" });
+    graph.edges.push({ id: "b", source: "combine_animations-2", sourceHandle: "generators", target: "combine_animations-1", targetHandle: "generator" });
+    graph.edges.push({ id: "c", source: "combine_animations-2", sourceHandle: "generators", target: "animation_generator-2", targetHandle: "generator" });
+    graph.edges.push({ id: "d", source: "assign_notes_to_objects-1", sourceHandle: "generator", target: "combine_animations-2", targetHandle: "generator" });
+    await openWindow(page, chain, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const edits = async (run: () => Promise<void>) => {
+        const before = (await applied(page)).length;
+        await run();
+        await page.waitForTimeout(300);
+        return (await applied(page)).slice(before).filter((ops) => ops.some((op) => op.op !== "select" && op.op !== "viewport"));
+    };
+    const header = (id: string) => page.locator(`.react-flow__node[data-id="${id}"] .node-header`);
+
+    // combine 1 alone: the generator takes its place first in combine 2, the second generator stays after it
+    expect(
+        await edits(async () => {
+            await header("combine_animations-1").click();
+            await page.keyboard.press("Shift+X");
+        })
+    ).toEqual([
+        [
+            { op: "delete", nodes: ["combine_animations-1"], edges: ["c"] },
+            { op: "connect", from_node: "animation_generator-1", from_output: "generator", to_node: "combine_animations-2", to_input: "generators" },
+            { op: "connect", from_node: "animation_generator-2", from_output: "generator", to_node: "combine_animations-2", to_input: "generators" },
+        ],
+    ]);
+    // both: the generator goes into the assign, the first of what combine 2 took
+    expect(
+        await edits(async () => {
+            await header("combine_animations-1").click();
+            await header("combine_animations-2").click({ modifiers: ["Shift"] });
+            await page.keyboard.press("Shift+X");
+        })
+    ).toEqual([
+        [
+            { op: "delete", nodes: ["combine_animations-1", "combine_animations-2"] },
+            { op: "connect", from_node: "animation_generator-1", from_output: "generator", to_node: "assign_notes_to_objects-1", to_input: "generator" },
+        ],
+    ]);
+    await settle(page);
+});
+
 test("a note table can be wired into the generator its note map comes from", async ({ page }) => {
     // assign › note map › table, then the table into the generator assign uses: not a cycle, the note map doesn't read it
     const state = withNoteTable();
@@ -1434,7 +1521,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a node outside the selection is selected alone, then it's the node's entries. delete runs the editor's delete
     await page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Delete with Reconnect", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
     await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["get_midi_track_data-1"], edges: [] });
     await rows.getByText("Delete", { exact: true }).click();
     await expect(menu).toHaveCount(0);
@@ -1442,7 +1529,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
 
     // a group node can be ungrouped and opened, escape closes the menu
     await page.locator('.react-flow__node[data-id="evaluate_instrument-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group", "Ungroup", "Edit Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Delete with Reconnect", "Join in New Frame", "Collapse All", "Expand All", "Make Group", "Ungroup", "Edit Group"]);
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 
@@ -1507,7 +1594,7 @@ test("frames", async ({ page }) => {
     await expect(frame).toHaveClass(/selected/);
     await expect.poll(async () => (await sentOps(page)).filter((op: any) => op.op === "select").at(-1)).toMatchObject({ nodes: ["frame-1"] });
     await page.mouse.click(inside.x, inside.y, { button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Delete with Reconnect", "Join in New Frame", "Collapse All", "Expand All", "Make Group"]);
     await page.keyboard.press("Escape");
 
     // a click that moves a pixel selects it too
@@ -1522,7 +1609,7 @@ test("frames", async ({ page }) => {
 
     // a node in it can be taken out, alt+p does the same
     await page.locator('.react-flow__node[data-id="get_midi_file-1"] .node-header').click({ button: "right" });
-    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Join in New Frame", "Remove from Frame", "Collapse All", "Expand All", "Make Group"]);
+    await expect(rows).toHaveText(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Delete with Reconnect", "Join in New Frame", "Remove from Frame", "Collapse All", "Expand All", "Make Group"]);
     await rows.getByText("Remove from Frame", { exact: true }).click();
     await expect.poll(async () => lastOp(page, "remove_from_frame")).toEqual({ op: "remove_from_frame", nodes: ["get_midi_file-1"] });
     await page.mouse.move(inside.x, inside.y);
