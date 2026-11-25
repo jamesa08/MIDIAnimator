@@ -751,10 +751,10 @@ test("animations wire to objects in the note map", async ({ page }) => {
 
 test("linked only hides the notes and animations nothing is wired to", async ({ page }) => {
     // the fixture in map mode with two of its five notes wired, an animation whose generator isn't connected wired and
-    // the generator's not, and linked only on
+    // the generator's (test) stored wired to nothing, and linked only on
     const state = structuredClone(backend.get_state);
     const assign = () => state.rf_instance.nodes.find((n: any) => n.id === "assign_notes_to_objects-1");
-    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.002": [62], "Cube.004": [70] }, notes: [65], animations: { old: ["Cube.004"] } } };
+    assign().data.inputs = { ...assign().data.inputs, mode: "map", note_map: { objects: { "Cube.002": [62], "Cube.004": [70] }, notes: [65], animations: { test: [], old: ["Cube.004"] } } };
     assign().data.linked_only = true;
     await openWindow(page, { ...backend, get_state: state }, "/#/");
 
@@ -786,7 +786,7 @@ test("linked only hides the notes and animations nothing is wired to", async ({ 
 
     // an animation shows once it's wired, and stays when its last wire goes like a note
     await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
-    assign().data.inputs.note_map.animations = { old: ["Cube.004"] };
+    assign().data.inputs.note_map.animations = { test: [], old: ["Cube.004"] };
     await send();
     await expect(map.locator('.react-flow__edge[data-id^="a:"]')).toHaveCount(1);
     await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(2);
@@ -807,6 +807,12 @@ test("linked only hides the notes and animations nothing is wired to", async ({ 
     await expect(map.locator('.react-flow__node[data-id="n:70"]')).toBeVisible();
     await expect(map.locator('.react-flow__node[data-id^="a:"]')).toHaveCount(1);
     await expect(map.locator('.react-flow__node[data-id="a:old"]')).toBeVisible();
+
+    // a generator the map doesn't have (connected after it was drawn) is wired to every object, so it shows
+    assign().data.inputs.note_map.animations = { old: ["Cube.004"] };
+    await send();
+    await expect(map.locator('.react-flow__node[data-id="a:test"]')).toBeVisible();
+    await expect(map.locator('.react-flow__edge[data-id^="a:test>"]')).toHaveCount(6);
     await settle(page);
 });
 

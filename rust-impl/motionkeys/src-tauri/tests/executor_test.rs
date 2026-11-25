@@ -235,6 +235,14 @@ fn assign_notes_plays_several_generators() {
     let outputs = assign_notes_to_objects(&inputs(json!([hit, glow]), "map", map)).unwrap().to_json();
     assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60], "glow": [60] }, "Cube.001": { "hit": [61], "glow": [61] } }));
 
+    // a generator connected after the map was drawn (glow) plays on every object, one wired to none plays nowhere
+    let map = json!({ "objects": { "Cube.000": [60], "Cube.001": [61] }, "animations": { "hit": ["Cube.000"] } });
+    let outputs = assign_notes_to_objects(&inputs(json!([hit, glow]), "map", map)).unwrap().to_json();
+    assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60], "glow": [60] }, "Cube.001": { "glow": [61] } }));
+    let map = json!({ "objects": { "Cube.000": [60], "Cube.001": [61] }, "animations": { "hit": ["Cube.000"], "glow": [] } });
+    let outputs = assign_notes_to_objects(&inputs(json!([hit, glow]), "map", map)).unwrap().to_json();
+    assert_eq!(objects(&outputs), json!({ "Cube.000": { "hit": [60] }, "Cube.001": {} }));
+
     // two different generators can't share a name, unnamed ones included
     let error = assign_notes_to_objects(&inputs(json!([hit, generator("hit", 3.0)]), "rules", json!(null))).unwrap_err();
     assert!(error.contains("two different animation generators are named 'hit'"), "{}", error);
@@ -759,7 +767,8 @@ fn combine_animations_plays_every_overlap_mode() {
 // `combines` drawn in the note map. Cube plays the animations `wired` to it
 fn assign_with_map_combines(combines: serde_json::Value, wired: &[&str]) -> Result<serde_json::Value, String> {
     let notes = json!([{ "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 }]);
-    let animations: serde_json::Map<_, _> = wired.iter().map(|name| (name.to_string(), json!(["Cube"]))).collect();
+    // the connected generators are stored wired or not, like the app does (one the map doesn't have plays everywhere)
+    let animations: serde_json::Map<_, _> = ["a", "b"].iter().map(|name| (name.to_string(), json!([]))).chain(wired.iter().map(|name| (name.to_string(), json!(["Cube"])))).collect();
     let map = json!({ "objects": { "Cube": [60] }, "animations": animations, "combines": combines });
     let inputs = Inputs::from([("object_groups", group(&["Cube"])), ("object_group_name", json!("Cubes")), ("midi_notes", notes), ("generator", json!([bump("a", 1.0, "add"), bump("b", 2.0, "add")])), ("mode", json!("map")), ("note_map", map)]);
     Ok(assign_notes_to_objects(&inputs)?.to_json()["object_map"].clone())

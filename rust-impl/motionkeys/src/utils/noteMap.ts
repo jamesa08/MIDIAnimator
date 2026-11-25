@@ -54,8 +54,8 @@ export function noteMapData(inputs: any, results: any, groupName: string | undef
 }
 
 // what the map shows: the rules' result in rules mode, the stored map (`noteMap`, the node's note_map) in map mode, and
-// every note in it in order. the rules play every animation on every object, and so does a map from before animations
-// were wired in it. the node's preview (NoteMapPreview.tsx) shows the same
+// every note in it in order. the rules play every animation on every object, and so does a map on a generator it has no
+// wires for (connected after the map was drawn). the node's preview (NoteMapPreview.tsx) shows the same
 export function shownMap(mode: string, info: MapData, noteMap: any): { map: NoteMap; notes: number[] } {
     const everywhere = () => Object.fromEntries(info.animations.map((name) => [name, [...info.objects]]));
     let map: NoteMap;
@@ -112,18 +112,12 @@ export const isLinked = (map: NoteMap, objects: string[], note: number) => objec
 // an animation going into a combine that's linked is linked too
 export const isAnimationLinked = (map: NoteMap, objects: string[], name: string, seen: string[] = []): boolean => (map.animations[name] ?? []).some((o) => objects.includes(o)) || Object.entries(map.combines).some(([key, combine]) => combine.inputs.includes(name) && !seen.includes(key) && isAnimationLinked(map, objects, key, [...seen, name]));
 
-// a stored map as given, anything that isn't one is empty. one without animations gets `animations()`'s
+// a stored map as given, anything that isn't one is empty. `animations()` gives the wires of the animations it doesn't
+// have (no wires, going into no combine), so a generator connected after the map was drawn plays on every object
 export function readMap(value: any, animations: () => Record<string, string[]> = () => ({})): NoteMap {
     const objects: Record<string, number[]> = {};
     for (const [name, notes] of Object.entries(value?.objects ?? {})) {
         if (Array.isArray(notes)) objects[name] = notesIn(notes);
-    }
-    let wired: Record<string, string[]>;
-    if (value?.animations && typeof value.animations === "object" && !Array.isArray(value.animations)) {
-        wired = {};
-        for (const [name, on] of Object.entries(value.animations)) wired[name] = list(on).filter((o) => typeof o === "string");
-    } else {
-        wired = animations();
     }
     const combines: Record<string, MapCombine> = {};
     if (value?.combines && typeof value.combines === "object" && !Array.isArray(value.combines)) {
@@ -131,6 +125,10 @@ export function readMap(value: any, animations: () => Record<string, string[]> =
             const inputs = list(combine?.inputs).filter((i) => typeof i === "string");
             combines[key] = typeof combine?.animation_overlap === "string" ? { inputs, animation_overlap: combine.animation_overlap } : { inputs };
         }
+    }
+    const wired = Object.fromEntries(Object.entries(animations()).filter(([name]) => !Object.values(combines).some((c) => c.inputs.includes(name))));
+    if (value?.animations && typeof value.animations === "object" && !Array.isArray(value.animations)) {
+        for (const [name, on] of Object.entries(value.animations)) wired[name] = list(on).filter((o) => typeof o === "string");
     }
     return { objects, notes: notesIn(value?.notes), animations: wired, combines };
 }

@@ -630,7 +630,7 @@
                         "name": "Note Map",
                         "data_type": "Any",
                         "hidden": true,
-                        "description": "Each object's notes and animations in map mode, drawn by pressing Tab on the node: { \"objects\": { \"Cube\": [60, 62] }, \"animations\": { \"Hit\": [\"Cube\"] }, \"notes\": [65] }. \"animations\" are the objects each animation (a generator's name) plays on, for every note the object has. A map without \"animations\" plays every animation on every object. \"notes\" are added notes nothing is connected to yet."
+                        "description": "Each object's notes and animations in map mode, drawn by pressing Tab on the node: { \"objects\": { \"Cube\": [60, 62] }, \"animations\": { \"Hit\": [\"Cube\"] }, \"notes\": [65] }. \"animations\" are the objects each animation (a generator's name) plays on, for every note the object has. A generator it has no animations entry for (connected after the map was drawn, going into no combine) plays on every object. \"notes\" are added notes nothing is connected to yet."
                     },
                     {
                         "id": "map_layout",

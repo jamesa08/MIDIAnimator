@@ -810,6 +810,7 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     };
 
     // the combines drawn in the note map play like the generators, under their own names
+    let generators = animations.clone();
     if let Some(saved) = &saved {
         for key in saved.combines.keys() {
             if object_map.animations.contains_key(key) {
@@ -833,12 +834,13 @@ pub fn assign_notes_to_objects(object_groups: Option<&Vec<ObjectGroup>>, object_
     }
     outputs.set("object_notes", object_notes);
 
-    // extra objects (not enough notes) are left out. in map mode an object plays the animations wired to it, a map from
-    // before they were wired plays every animation on every object
+    // extra objects (not enough notes) are left out. in map mode an object plays the animations wired to it, a generator
+    // the map doesn't have (connected after it was drawn: no wires, going into no combine) plays on every object
+    let unmapped = |name: &String| generators.contains(name) && saved.as_ref().is_some_and(|s| s.combines.values().all(|c| !c.inputs.contains(name)));
     for (object, note_number) in &pairs {
         let entry = object_map.objects.entry(object.id.clone()).or_default();
         for name in &animations {
-            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(name).is_some_and(|objects| objects.contains(&object.id)));
+            let wired = saved.as_ref().and_then(|s| s.animations.as_ref()).map_or(true, |wired| wired.get(name).map_or(unmapped(name), |objects| objects.contains(&object.id)));
             if wired {
                 add_note(entry.entry(name.clone()).or_default(), *note_number);
             }
@@ -893,8 +895,8 @@ pub fn rule_pairs<'a>(objects: &[&'a Object], object_group_name: &str, used_note
 }
 
 /// the note map drawn in the app (src/components/nodegraph/NoteMapView.tsx): each object's notes, the objects each
-/// animation is wired to (by the generator's name), and notes added that nothing is connected to yet. a map without
-/// animations is from before they were wired in the map, every animation plays on every object
+/// animation is wired to (by the generator's name), and notes added that nothing is connected to yet. a generator it
+/// has no wires for plays on every object (a map from before animations were wired in it has none)
 #[derive(Deserialize, Default, Debug)]
 pub struct NoteMap {
     #[serde(default)]

@@ -40,14 +40,15 @@ function readLayout(value: any): Layout {
     return layout;
 }
 
-// the map as it's stored: notes sorted, objects and animations without wires left out. the animations are always
-// stored, a map without them plays every animation on every object. combines are kept wired or not, like added notes
-function cleanMap(map: NoteMap): NoteMap {
+// the map as it's stored: notes sorted, objects and animations without wires left out. the connected generators
+// (`connected`) are always stored, wired or not, one the map doesn't have plays on every object. combines are kept wired
+// or not, like added notes
+function cleanMap(map: NoteMap, connected: string[]): NoteMap {
     const objects: Record<string, number[]> = {};
     for (const [name, notes] of Object.entries(map.objects)) {
         if (notes.length) objects[name] = unique(notes);
     }
-    const animations: Record<string, string[]> = {};
+    const animations: Record<string, string[]> = Object.fromEntries(connected.map((name) => [name, [...new Set(map.animations[name] ?? [])]]));
     for (const [name, on] of Object.entries(map.animations)) {
         if (on.length) animations[name] = [...new Set(on)];
     }
@@ -303,7 +304,7 @@ function NoteMapCanvas({ node, info, editable, setInputs, setLinkedOnly, setView
     const commit = useCallback(
         (next: NoteMap, extra: Record<string, any> = {}, options?: ApplyOptions) => {
             if (!editable) return Promise.resolve();
-            const stored = cleanMap(next);
+            const stored = cleanMap(next, info.animations);
             const kept = new Set([...[...midiNotes, ...stored.notes, ...objects.flatMap((o) => stored.objects[o] ?? [])].map(noteKey), ...[...info.animations, ...Object.keys(stored.animations), ...Object.keys(next.combines)].map(animationKey)]);
             const saved: Layout = extra.map_layout ?? layout;
             const gone = Object.keys(saved).filter((id) => (isNote(id) || isAnimation(id)) && !kept.has(id));
