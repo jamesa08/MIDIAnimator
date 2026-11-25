@@ -8,7 +8,7 @@ use crate::midi::MIDINote;
 use crate::scene_generics::AnimCurve;
 use crate::utils::curve::{auto_handles, evaluate, slope, sort_keys, Key};
 use crate::utils::mapper::{Mappers, NoteContext, NoteVars};
-use crate::utils::momentum::{momentum_keys, MomentumNote};
+use crate::utils::momentum::{momentum_keys, MomentumNote, SAME_HIT};
 
 pub fn sec_to_frames(seconds: f64, fps: f64) -> f64 {
     seconds * fps
@@ -58,6 +58,10 @@ pub struct AnimationGenerator {
     pub overlap_windup: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overlap_recoil: Option<f64>,
+    /// a combined generator (Combine Animations): the generators it plays, in input order. each builds its own curve,
+    /// then they go into each other with `animation_overlap` and `overlap_blend`. empty for any other generator
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<AnimationGenerator>,
     /// the mappers compiled, once for every copy of the generator
     #[serde(skip)]
     #[schemars(skip)]
@@ -136,6 +140,31 @@ impl ObjectMap {
     }
 }
 
+/// a generator that plays `layers`: each builds its own curve with its own overlap, then they go into the first in order
+/// with `animation_overlap` (empty is add). named after them, "spring + cymbal". one is passed on as it is
+pub fn combine_generators(mut layers: Vec<AnimationGenerator>, animation_overlap: &str) -> Result<AnimationGenerator, String> {
+    let animation_overlap = if animation_overlap.is_empty() {
+        ANIMATION_OVERLAPS[0]
+    } else {
+        animation_overlap
+    };
+    if !ANIMATION_OVERLAPS.contains(&animation_overlap) {
+        return Err(format!("unknown animation overlap '{}', expected one of: {}", animation_overlap, ANIMATION_OVERLAPS.join(", ")));
+    }
+    if layers.len() == 1 {
+        return Ok(layers.remove(0));
+    }
+    let names: Vec<&str> = layers.iter().map(|layer| layer.name.as_str()).filter(|name| !name.is_empty()).collect();
+    Ok(AnimationGenerator {
+        name: names.join(" + "),
+        animation_overlap: animation_overlap.to_string(),
+        overlap_blend: DEFAULT_OVERLAP_BLEND,
+        overlap_use_anchor_value: true,
+        layers,
+        ..Default::default()
+    })
+}
+
 /// the keys at the end of `key_list1` that come after `key_list2` starts, plus the last one before it
 pub fn find_overlap(key_list1: &[Key], key_list2: &[Key]) -> Vec<Key> {
     if key_list1.is_empty() || key_list2.is_empty() {
@@ -208,6 +237,14 @@ pub struct NoteTarget {
     pub animation: String,
 }
 
+/// one level of a combined generator a note's keys came through: which of its inputs, and how its inputs combine
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct LayerStep {
+    pub index: usize,
+    pub animation_overlap: String,
+    pub overlap_blend: f64,
+}
+
 /// the keyframes one note adds to one curve of an object, before overlapping notes are combined
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CurveKeys {
@@ -231,6 +268,9 @@ pub struct CurveKeys {
     /// and those are added
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub animation: String,
+    /// where the keys are inside a combined generator: the input they came from at each level, outermost first
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<LayerStep>,
     /// in the wire form, `[time, value, interpolation]` or with the handles
     #[serde(with = "crate::utils::curve::wire_keys")]
     #[schemars(with = "Vec<Vec<serde_json::Value>>")]
@@ -268,6 +308,23 @@ impl ObjectMap {
 /// velocity. one per channel the generator's curves are on, in channel order, channels with no keys are left out.
 /// `ctx` is the track around the note and the fps, for the mappers
 pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, ctx: &NoteContext) -> Result<Vec<CurveKeys>, String> {
+    // a combined generator plays each of its generators, the keys remember which one so they can build its curve apart
+    if !gen.layers.is_empty() {
+        let mut out = Vec::new();
+        for (index, layer) in gen.layers.iter().enumerate() {
+            for mut keys in note_curve_keys(object, layer, note, ctx)? {
+                let step = LayerStep {
+                    index,
+                    animation_overlap: gen.animation_overlap.clone(),
+                    overlap_blend: gen.overlap_blend,
+                };
+                keys.layers.insert(0, step);
+                out.push(keys);
+            }
+        }
+        return Ok(out);
+    }
+
     let mappers = gen.mappers()?;
     // the note's mapper variables, held looks at the whole track so it's only counted when it's used
     let mut vars = (!mappers.is_identity()).then(|| NoteVars::new(note, ctx, mappers.uses("held")));
@@ -316,6 +373,7 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
                 overlap_use_anchor_value: gen.overlap_use_anchor_value,
                 phases: phases.get(channel).copied(),
                 animation: String::new(),
+                layers: Vec::new(),
                 keyframes,
             }
         })
@@ -347,11 +405,11 @@ fn note_keyframes(curve: &AnimCurve, offset: f64, velocity: u8, velocity_intensi
 }
 
 /// combines each curve's keys and flattens them to one list per object. every object in `objects` is in the result, ones
-/// with no keys stay empty so the writer still clears them. each animation on a curve builds its own curve and those are
-/// added, in name order
+/// with no keys stay empty so the writer still clears them. each animation on a curve builds its own curve (`Layered`)
+/// and those are added, in name order
 pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks: impl IntoIterator<Item = CurveKeys>) -> Result<HashMap<String, Vec<BlendKeyframe>>, String> {
     // keys per object, then per channel, then per animation. overlap only combines keys on the same curve
-    let mut obj_curves: HashMap<String, BTreeMap<String, BTreeMap<String, Vec<CurveKeys>>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
+    let mut obj_curves: HashMap<String, BTreeMap<String, BTreeMap<String, Layered>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
     for chunk in chunks {
         let animations = obj_curves.entry(chunk.object.clone()).or_default().entry(chunk.channel.clone()).or_default();
         animations.entry(chunk.animation.clone()).or_default().push(chunk);
@@ -362,8 +420,8 @@ pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks:
         let mut written = Vec::new();
         for (channel, animations) in curves {
             let mut keys = Vec::new();
-            for notes in animations.into_values() {
-                go_into(&mut keys, play_notes(notes)?, "add", &OverlapSettings::default())?;
+            for animation in animations.into_values() {
+                go_into(&mut keys, animation.play()?, "add", &OverlapSettings::default())?;
             }
             finish_keys(&mut keys);
             written.extend(keys.into_iter().map(|key| BlendKeyframe {
@@ -374,6 +432,85 @@ pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks:
         out.insert(name, written);
     }
     Ok(out)
+}
+
+/// one animation's keys on a curve, sorted by where they came from: a generator's own notes, or a combined generator's
+/// inputs by index with how they combine
+#[derive(Default)]
+struct Layered {
+    notes: Vec<CurveKeys>,
+    inputs: BTreeMap<usize, Layered>,
+    overlap: String,
+    blend: f64,
+}
+
+impl Layered {
+    fn push(&mut self, mut chunk: CurveKeys) {
+        let mut at = self;
+        for step in std::mem::take(&mut chunk.layers) {
+            at.overlap = step.animation_overlap;
+            at.blend = step.overlap_blend;
+            at = at.inputs.entry(step.index).or_default();
+        }
+        at.notes.push(chunk);
+    }
+
+    /// the curve. a generator's notes go into it in order with their own overlap mode, a combined generator's inputs
+    /// each build theirs and go into the first in input order with its overlap mode
+    fn play(self) -> Result<Vec<Key>, String> {
+        if self.inputs.is_empty() {
+            return play_notes(self.notes);
+        }
+        // momentum needs every note's neighbors, every input's notes are one run
+        if self.overlap == "momentum" {
+            return Ok(momentum_keys(self.momentum_notes()));
+        }
+        let settings = OverlapSettings {
+            blend: self.blend,
+        };
+        let mut curve = Vec::new();
+        for input in self.inputs.into_values() {
+            go_into(&mut curve, input.play()?, &self.overlap, &settings)?;
+        }
+        Ok(curve)
+    }
+
+    /// the notes of every input as one momentum run. notes from different inputs that hit together are added into one,
+    /// so one input can't drop another's like a chord's repeats are
+    fn momentum_notes(self) -> Vec<MomentumNote> {
+        let mut notes: Vec<(usize, MomentumNote)> = Vec::new();
+        for (index, input) in self.inputs {
+            let mut chunks = Vec::new();
+            input.all_notes(&mut chunks);
+            notes.extend(chunks.into_iter().map(|chunk| (index, momentum_note(chunk))));
+        }
+        notes.sort_by(|a, b| a.1.hit.total_cmp(&b.1.hit));
+
+        let mut run: Vec<MomentumNote> = Vec::new();
+        let mut together: Vec<usize> = Vec::new();
+        for (index, mut note) in notes {
+            match run.last_mut() {
+                Some(last) if note.hit - last.hit < SAME_HIT => {
+                    if !together.contains(&index) {
+                        together.push(index);
+                        add_keyframes(&mut last.keys, &mut note.keys);
+                    }
+                }
+                _ => {
+                    together = vec![index];
+                    run.push(note);
+                }
+            }
+        }
+        run
+    }
+
+    fn all_notes(self, out: &mut Vec<CurveKeys>) {
+        out.extend(self.notes);
+        for input in self.inputs.into_values() {
+            input.all_notes(out);
+        }
+    }
 }
 
 /// one generator's notes on a curve, each going into it in order with its overlap mode. momentum looks at a note's

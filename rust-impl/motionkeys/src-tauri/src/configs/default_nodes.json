@@ -623,7 +623,7 @@
                         "name": "Animation Generator",
                         "data_type": "AnimationGenerator",
                         "multi": true,
-                        "description": "Animation generators, any number of them, each with its own name. In rules mode every object plays all of them on its notes. In map mode each object plays the ones wired to it in the note map. Several on one curve each build their own curve and those add."
+                        "description": "Animation generators, any number of them, each with its own name. In rules mode every object plays all of them on its notes. In map mode each object plays the ones wired to it in the note map. Several on one curve each build their own curve and those add, Combine Animations combines them another way."
                     },
                     {
                         "id": "note_map",
@@ -767,6 +767,42 @@
                         "name": "Object Map",
                         "data_type": "ObjectMap",
                         "description": "The merged object map, connect to Evaluate Instrument."
+                    }
+                ]
+            }
+        },
+
+        {
+            "id": "combine_animations",
+            "name": "Combine Animations",
+            "category": "animation",
+            "description": "Plays several animation generators as one. Each builds its own curve with its own Animation Overlap, then they go into the first one in input order with this node's overlap, the way a note goes into a curve.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "generators",
+                        "name": "Animation Generators",
+                        "data_type": "AnimationGenerator",
+                        "multi": true,
+                        "description": "The generators to combine, in connect order. The first is the base, each next one goes into it."
+                    },
+                    {
+                        "id": "animation_overlap",
+                        "default": "add",
+                        "name": "Animation Overlap",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "How the generators combine where they overlap on the same curve, the same modes as Animation Generator's: add, min, max, prev (the earlier input keeps playing), next (a later input cuts in), rvc, prune, crossfade, or momentum (every input's notes in one momentum run, notes hitting together add). Empty = add."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "generator",
+                        "name": "Animation Generator",
+                        "data_type": "AnimationGenerator",
+                        "description": "One generator playing all of them, named after them (\"spring + cymbal\"). Connect to Assign Notes to Objects or another Combine Animations."
                     }
                 ]
             }

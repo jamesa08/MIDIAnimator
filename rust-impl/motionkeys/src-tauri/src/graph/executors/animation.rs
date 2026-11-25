@@ -9,7 +9,7 @@ use crate::scene_generics::{find_group, find_object, AnimCurve, Channel, Object,
 use crate::utils::note_to_name;
 
 use super::scene::scene_fps;
-use crate::utils::animation::{combine_curve_keys, note_curve_keys, AnimationGenerator, BlendKeyframe, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
+use crate::utils::animation::{combine_curve_keys, combine_generators, note_curve_keys, AnimationGenerator, BlendKeyframe, CurveKeys, NoteTarget, ObjectMap, ANIMATION_OVERLAPS, DEFAULT_OVERLAP_BLEND};
 use crate::utils::curve::{Interpolation, Key};
 use crate::utils::console::{self, Level, Source};
 use crate::utils::mapper::{NoteContext, DEFAULT_FPS};
@@ -221,6 +221,7 @@ pub fn animation_generator(name: Option<String>, note_on_keyframes: Option<&Vec<
         overlap_use_anchor_value: overlap_use_anchor_value.unwrap_or(true),
         overlap_windup,
         overlap_recoil,
+        layers: Vec::new(),
         compiled: Default::default(),
     };
 
@@ -922,6 +923,22 @@ pub fn merge_object_maps(inputs: &Inputs) -> NodeResult {
 
     let mut outputs = Outputs::new();
     outputs.set("object_map", object_map);
+    Ok(outputs)
+}
+
+/// Node: combine_animations
+///
+/// inputs:
+/// "generators": `Array<AnimationGenerator>`, multi, in connect order,
+/// "animation_overlap": `String`, how the generators combine, one of ANIMATION_OVERLAPS
+///
+/// outputs:
+/// "generator": `AnimationGenerator`, a generator that plays all of them. each builds its own curve with its own
+/// overlap, then they go into the first in input order with this overlap. named after them, "spring + cymbal"
+#[node_registry::node]
+pub fn combine_animations(generators: Option<&Vec<AnimationGenerator>>, animation_overlap: Option<String>) -> NodeResult {
+    let mut outputs = Outputs::new();
+    outputs.set("generator", combine_generators(generators.cloned().unwrap_or_default(), animation_overlap.as_deref().unwrap_or_default())?);
     Ok(outputs)
 }
 

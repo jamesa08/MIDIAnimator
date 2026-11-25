@@ -30,8 +30,8 @@ pub struct MomentumNote {
 // which would take one's handles with it, so this stays well clear of that at any frame rate from 5 up
 const EDGE: f64 = 0.05 / 24.0;
 
-// how close two hits are to count as one (a chord on one curve), seconds
-const SAME_HIT: f64 = 2.0 * EDGE;
+/// how close two hits are to count as one (a chord on one curve), seconds
+pub const SAME_HIT: f64 = 2.0 * EDGE;
 
 // keys this close are one key when the curve is written (`finish_keys`), seconds
 const SAME_KEY: f64 = 1e-6;

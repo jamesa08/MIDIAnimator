@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::collections::BTreeMap;
-use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, static_property, targets_for_note};
+use motionkeys::graph::executors::animation::{animation_generator, assign_notes_to_objects, combine_animations, combine_keyframes, keyframes_from_object, merge_object_maps, natural_cmp, note_in_name, note_keyframes, note_targets, pad_nums, set_channel, static_property, targets_for_note};
 use motionkeys::graph::executors::io::Inputs;
 use motionkeys::graph::executors::midi::{get_midi_file, get_midi_track_data, note_frequency};
 use motionkeys::graph::executors::scene::{scene_link, with_scene};
@@ -651,6 +651,10 @@ fn bump(name: &str, peak: f64, overlap: &str) -> serde_json::Value {
     gen
 }
 
+fn combine(generators: &[serde_json::Value], overlap: &str) -> serde_json::Value {
+    combine_animations(&Inputs::from([("generators", json!(generators)), ("animation_overlap", json!(overlap))])).unwrap().to_json()["generator"].clone()
+}
+
 // Cube's location[2] keys as (time, value), playing each generator on note 60
 fn play_on_cube(generators: &[serde_json::Value], notes: serde_json::Value) -> Vec<(f64, f64)> {
     let animations: serde_json::Map<_, _> = generators.iter().map(|g| (g["name"].as_str().unwrap().to_string(), g.clone())).collect();
@@ -683,6 +687,81 @@ fn two_momentum_generators_on_one_curve_both_play() {
     let keys = play_on_cube(&[bump("a", 1.0, "momentum"), bump("b", 2.0, "momentum")], one_note());
     let peak = keys.iter().map(|(_, v)| *v).fold(0.0, f64::max);
     assert!((peak - 3.0).abs() < 1e-6, "{:?}", keys);
+}
+
+#[test]
+fn combine_animations_names_and_passes_one_through() {
+    let a = bump("spring", 1.0, "add");
+    let b = bump("cymbal", 2.0, "add");
+    assert_eq!(combine(&[a.clone(), b.clone()], "max")["name"], "spring + cymbal");
+    assert_eq!(combine(&[a.clone(), b.clone()], "max")["animation_overlap"], "max");
+    assert_eq!(combine(&[a.clone(), b.clone()], "")["animation_overlap"], "add");
+    // one generator is passed on as it is
+    assert_eq!(combine(&[a.clone()], "max"), a);
+    // an unknown mode fails the node
+    let error = combine_animations(&Inputs::from([("generators", json!([a, b])), ("animation_overlap", json!("blend"))])).unwrap_err();
+    assert!(error.contains("unknown animation overlap 'blend'"), "{}", error);
+}
+
+#[test]
+fn combine_animations_combines_with_its_overlap() {
+    let a = bump("a", 1.0, "add");
+    let b = bump("b", 2.0, "add");
+    let peak = |overlap: &str| value_at(&play_on_cube(&[combine(&[a.clone(), b.clone()], overlap)], one_note()), 0.5);
+    assert!((peak("add") - 3.0).abs() < 1e-9);
+    assert!((peak("max") - 2.0).abs() < 1e-9);
+    assert!((peak("min") - 1.0).abs() < 1e-9);
+    // next: the later input cuts the first off where it starts, here at once
+    assert!((peak("next") - 2.0).abs() < 1e-9);
+    // the same as playing both straight into the object map, add is the default
+    assert_eq!(play_on_cube(&[combine(&[a.clone(), b.clone()], "add")], one_note()), play_on_cube(&[a.clone(), b.clone()], one_note()));
+}
+
+#[test]
+fn combine_animations_keeps_each_inputs_own_overlap() {
+    // a's notes overlap each other with max inside it, then b adds on top
+    let notes = json!([
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 },
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.25, "time_off": 0.35 }
+    ]);
+    let a = bump("a", 1.0, "max");
+    let b = bump("b", 2.0, "add");
+    let combined = play_on_cube(&[combine(&[a.clone(), b.clone()], "add")], notes.clone());
+    let alone = |gen: &serde_json::Value| play_on_cube(&[gen.clone()], notes.clone());
+    let (a_alone, b_alone) = (alone(&a), alone(&b));
+    // every key of the combined curve is the sum of the two curves built alone
+    let at = |keys: &[(f64, f64)], time: f64| {
+        let curve: Vec<motionkeys::utils::curve::Key> = keys.iter().map(|(t, v)| motionkeys::utils::curve::Key::linear(*t, *v)).collect();
+        motionkeys::utils::curve::evaluate(&curve, time).unwrap_or(0.0)
+    };
+    for (time, value) in &combined {
+        assert!((value - at(&a_alone, *time) - at(&b_alone, *time)).abs() < 1e-6, "at {}: {:?}", time, combined);
+    }
+}
+
+#[test]
+fn combine_animations_plays_every_overlap_mode() {
+    // two notes so the inputs' stretches overlap partway
+    let notes = json!([
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 },
+        { "channel": 0, "note_number": 60, "velocity": 127, "time_on": 1.5, "time_off": 1.6 }
+    ]);
+    let mut late = bump("b", 2.0, "add");
+    late["note_on_anchor_point"] = json!(6.0);
+    for overlap in motionkeys::utils::animation::ANIMATION_OVERLAPS {
+        let keys = play_on_cube(&[combine(&[bump("a", 1.0, "add"), late.clone()], overlap)], notes.clone());
+        assert!(!keys.is_empty() && keys.iter().all(|(t, v)| t.is_finite() && v.is_finite()), "{}: {:?}", overlap, keys);
+        assert!(keys.windows(2).all(|w| w[0].0 < w[1].0), "{}: {:?}", overlap, keys);
+    }
+}
+
+#[test]
+fn combine_animations_nests() {
+    let inner = combine(&[bump("a", 1.0, "add"), bump("b", 2.0, "add")], "max");
+    let outer = combine(&[inner, bump("c", 4.0, "add")], "add");
+    assert_eq!(outer["name"], "a + b + c");
+    // max(1, 2) + 4
+    assert!((value_at(&play_on_cube(&[outer], one_note()), 0.5) - 6.0).abs() < 1e-9);
 }
 
 #[test]

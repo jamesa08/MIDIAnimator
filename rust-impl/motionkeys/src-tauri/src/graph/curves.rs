@@ -208,6 +208,20 @@ fn handle_curves(scene: &SceneChannels, values: &Value) -> Vec<CurveChannel> {
     channels
 }
 
+/// a generator's curves, each under its side and named after its channel. a combined generator's are its inputs', each
+/// grouped under its input's name
+fn generator_curves(scene: &SceneChannels, handle: &str, generator: &AnimationGenerator, out: &mut Vec<CurveChannel>) {
+    for (index, layer) in generator.layers.iter().enumerate() {
+        generator_curves(scene, &format!("{}/{}", handle, index), layer, out);
+    }
+    for (id, side, curves) in [("note_on", "Note On", &generator.note_on_keyframes), ("note_off", "Note Off", &generator.note_off_keyframes)] {
+        for curve in curves {
+            let name = format!("{} › {}", side, scene.describe(None, &curve.channel).name);
+            out.push(scene.channel(format!("{}/{}/{}", handle, id, curve.channel), generator.name.clone(), Some(name), None, &curve.channel, true, vec![drawing(&curve.keys)]));
+        }
+    }
+}
+
 fn parse<'a, T: Deserialize<'a>>(value: &'a Value) -> Option<T> {
     T::deserialize(value).ok()
 }
@@ -222,13 +236,7 @@ fn curves_in(scene: &SceneChannels, value: &Value, handle: &str, label: Option<&
         }
     } else if has("note_on_keyframes") {
         if let Some(generator) = parse::<AnimationGenerator>(value) {
-            // each curve under its side, named after its channel
-            for (id, side, curves) in [("note_on", "Note On", &generator.note_on_keyframes), ("note_off", "Note Off", &generator.note_off_keyframes)] {
-                for curve in curves {
-                    let name = format!("{} › {}", side, scene.describe(None, &curve.channel).name);
-                    out.push(scene.channel(format!("{}/{}/{}", handle, id, curve.channel), generator.name.clone(), Some(name), None, &curve.channel, true, vec![drawing(&curve.keys)]));
-                }
-            }
+            generator_curves(scene, handle, &generator, out);
         }
     } else if has("keyframes") && has("object") {
         if let Some(keys) = parse::<CurveKeys>(value) {
