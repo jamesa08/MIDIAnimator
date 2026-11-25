@@ -67,6 +67,14 @@ export function compatible(outType: string, inType: string): boolean {
     return outInner !== null && inInner !== null && compatible(outInner, inInner);
 }
 
+// how well an output's type goes into an input's, lower is better: the same type, then ones that convert, then Any.
+// Infinity when it can't
+export function linkRank(outType: string, inType: string): number {
+    if (!compatible(outType, inType)) return Infinity;
+    if (outType === inType) return 0;
+    return outType.includes("Any") || inType.includes("Any") ? 2 : 1;
+}
+
 // whether connecting `fromOutput` on `fromNode` to `toInput` on `toNode` makes a cycle, socket by socket like the backend
 // (Graph::would_cycle in model.rs). `reads` gives the inputs an output reads when it's a partial output (`reads` in
 // default_nodes.json), null for one that reads them all: it only carries on from those, so a loop back into an input it

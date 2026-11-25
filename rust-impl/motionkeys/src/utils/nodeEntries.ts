@@ -6,7 +6,7 @@ import { CATEGORY_ORDER } from "../styles";
 import { StateContext } from "../contexts/StateContext";
 import { loadedNodeSpecs, loadNodeSpecs } from "./node";
 import { FOR_EACH_INPUT, FOR_EACH_OUTPUT, GROUP, GROUP_INPUT, GROUP_OUTPUT, GroupDef, Handle, NEW_SOCKET } from "./groups";
-import { compatible } from "./sockets";
+import { linkRank } from "./sockets";
 import { FRAME } from "./frames";
 
 // `key` is what the menus and drops pass around: a node type, or a group id for a group node
@@ -87,12 +87,7 @@ export function linkSocket(entry: NodeEntry, from: LinkFrom, specs: any[], group
     // parameters and dynamic outputs can't be connected, a dynamic input is connected through its first numbered one
     const sockets = candidates.filter(({ handle }) => !handle.hidden && !(side === "outputs" && handle.data_type.startsWith("Dyn<"))).map(({ node, handle }) => (handle.data_type.startsWith("Dyn<") ? { node, id: `${handle.id}_0`, type: handle.data_type.slice(4, -1) } : { node, id: handle.id, type: handle.data_type }));
 
-    const rank = (type: string) => {
-        const [outType, inType] = from.isOutput ? [from.dataType, type] : [type, from.dataType];
-        if (!compatible(outType, inType)) return Infinity;
-        if (outType === inType) return 0;
-        return outType.includes("Any") || inType.includes("Any") ? 2 : 1;
-    };
+    const rank = (type: string) => (from.isOutput ? linkRank(from.dataType, type) : linkRank(type, from.dataType));
     let best: { node: number; handle: string } | null = null;
     let bestRank = Infinity;
     for (const socket of sockets) {
