@@ -5,6 +5,7 @@
   "windows": [
     "main",
     "splash",
+    "about",
     "Settings",
     "Graph",
     "Console",

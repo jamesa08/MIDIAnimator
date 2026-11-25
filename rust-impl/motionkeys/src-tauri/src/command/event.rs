@@ -57,3 +57,32 @@ pub fn open_console<R: Runtime>(app: &AppHandle<R>) {
         eprintln!("Error creating console window: {:?}", e);
     }
 }
+
+/// the about window, the splash screen (splash.html) again, closed with a click. focused if it's already open
+pub fn open_about<R: Runtime>(app: &AppHandle<R>) {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window(crate::ui::windows::ABOUT_LABEL) {
+        window.set_focus().ok();
+        return;
+    }
+    // the splash window's options (tauri.conf.json), its page shows it once the image has loaded
+    fn builder<R: Runtime>(app: &AppHandle<R>) -> WebviewWindowBuilder<'_, R, AppHandle<R>> {
+        WebviewWindowBuilder::new(app, crate::ui::windows::ABOUT_LABEL, WebviewUrl::App("splash.html".into())).title(format!("About {}", app.package_info().name)).inner_size(400.0, 300.0).decorations(false).resizable(false).visible(false).center()
+    }
+
+    #[cfg(target_os = "macos")]
+    match builder(app).build() {
+        Ok(window) => crate::ui::windows::center_on_mouse_screen(&window),
+        Err(e) => eprintln!("Error creating about window: {:?}", e),
+    }
+    // built from a thread of its own, webview2 deadlocks building a window on the main thread (open_window)
+    #[cfg(not(target_os = "macos"))]
+    {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = builder(&app).build() {
+                eprintln!("Error creating about window: {:?}", e);
+            }
+        });
+    }
+}

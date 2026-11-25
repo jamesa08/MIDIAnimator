@@ -63,14 +63,15 @@ fn area_item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str) -> tauri::Re
 }
 
 pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let about = item(app, "about", &format!("About {}", app.package_info().name))?;
     let settings = item(app, "settings", "Settings")?;
 
     // quit closes the main window so it can ask to save first, the app exits once it's gone
     let quit = item(app, "quit", &format!("Quit {}", app.package_info().name))?;
     let close = item(app, "close", "Close Window")?;
 
-    // recreate the app submenu with the settings item inserted
-    let app_submenu = SubmenuBuilder::new(app, app.package_info().name.as_str()).about(None).separator().item(&settings).separator().item(&quit).build()?;
+    // recreate the app submenu with the settings item inserted, about opens the splash screen
+    let app_submenu = SubmenuBuilder::new(app, app.package_info().name.as_str()).item(&about).separator().item(&settings).separator().item(&quit).build()?;
     let new_tab = item(app, "new_tab", "New Tab")?;
     let open = item(app, "open", "Open...")?;
     let save = item(app, "save", "Save")?;
@@ -130,7 +131,8 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: &tauri::menu::Me
     if id == "profiler" {
         set_checked(app, id, crate::settings::get_setting(PROFILER_SETTING).as_bool().unwrap_or(false));
     }
-    match app.webview_windows().into_values().find(|window| window.is_focused().unwrap_or(false)) {
+    // the splash and about windows don't run commands, the app does them as when no window is focused
+    match app.webview_windows().into_values().find(|window| window.is_focused().unwrap_or(false) && !crate::ui::windows::is_splash(window.label())) {
         Some(window) => {
             window.emit_to(window.label(), APP_COMMAND_EVENT, id).ok();
         }
@@ -146,6 +148,9 @@ pub fn run_command<R: Runtime>(app: &AppHandle<R>, window: Option<&WebviewWindow
         return;
     }
     match id {
+        "about" => {
+            event::open_about(app);
+        }
         "settings" => {
             event::open_settings(app);
         }

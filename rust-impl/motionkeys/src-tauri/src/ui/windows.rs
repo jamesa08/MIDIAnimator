@@ -205,9 +205,17 @@ fn zoom() -> f64 {
     crate::settings::get_setting("appearance.zoom").as_f64().unwrap_or(1.0)
 }
 
+/// the about window's label, the splash screen opened from the app menu
+pub const ABOUT_LABEL: &str = "about";
+
+/// whether a window shows the splash screen, at launch or as the about window
+pub fn is_splash(label: &str) -> bool {
+    label == "splash" || label == ABOUT_LABEL
+}
+
 // gives a page the saved zoom, the splash keeps its own size
 pub fn apply_zoom<R: Runtime>(webview: &tauri::Webview<R>) {
-    if webview.label() != "splash" {
+    if !is_splash(webview.label()) {
         webview.set_zoom(zoom()).ok();
     }
 }

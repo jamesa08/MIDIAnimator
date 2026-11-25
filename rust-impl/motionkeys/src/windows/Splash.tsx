@@ -10,6 +10,13 @@ const setup = async () => {
     // set the splash image as the background and wait for the image to load before showing the window to avoid white
     document.body.style.backgroundImage = `url("splash.png")`;
     
+    // opened from the app menu as the about window: nothing is loading, a click anywhere closes it
+    if (appWindow.label === "about") {
+        document.querySelectorAll("[data-tauri-drag-region]").forEach((el) => el.removeAttribute("data-tauri-drag-region"));
+        document.getElementById("status")!.textContent = "";
+        document.addEventListener("click", () => appWindow.close());
+    }
+
     await appWindow.show();
     
     listen("splash_progress", (event: any) => {
