@@ -10,6 +10,7 @@ import { addsToSelection, modalOpen, useHoldCodes } from "../../utils/keymap";
 import { scrollPans } from "../../utils/scroll";
 import { SocketRef } from "../../utils/graphOps";
 import { socketPoints } from "./SocketHandle";
+import { edgeCrosses, edgePaths } from "./edgeGeometry";
 import { boxTakesFrame, isFrame, layoutFrames } from "../../utils/frames";
 import { CanvasTool, useCanvasTool } from "../../utils/editorState";
 import { useConsoleSettings } from "../../utils/console";
@@ -29,45 +30,6 @@ function CanvasPaper() {
     return <div className="canvas-paper" style={{ "--viewport-x": `${x}px`, "--viewport-y": `${y}px`, "--viewport-zoom": zoom } as CSSProperties} />;
 }
 
-type Box = { x0: number; y0: number; x1: number; y1: number };
-
-// every drawn edge's path by its id, looked up once per box move instead of once per edge
-function edgePaths(root: Element | null | undefined): Map<string, SVGPathElement> {
-    const paths = new Map<string, SVGPathElement>();
-    root?.querySelectorAll<SVGPathElement>(".react-flow__edge .react-flow__edge-path").forEach((path) => {
-        const id = path.closest(".react-flow__edge")?.getAttribute("data-id");
-        if (id) paths.set(id, path);
-    });
-    return paths;
-}
-
-// a bezier edge's path (getBezierPath's "M x,y C x,y x,y x,y") as its 8 numbers, null for any other shape
-const CUBIC = /^\s*M[\d\s.,eE+-]*C[\d\s.,eE+-]*$/;
-function cubicOf(d: string | null): number[] | null {
-    if (!d || !CUBIC.test(d)) return null;
-    const numbers = d.match(/-?[\d.]+(?:e[+-]?\d+)?/gi)?.map(Number) ?? [];
-    return numbers.length === 8 && numbers.every(Number.isFinite) ? numbers : null;
-}
-
-// whether a cubic bezier passes through a box, sampled about every 4px with plain math. the browser's
-// getPointAtLength walks the path from its start on every call (WebKit's especially), a box over hundreds of long
-// wires took seconds per mouse move
-function cubicCrosses([x0, y0, x1, y1, x2, y2, x3, y3]: number[], box: Box): boolean {
-    // a bezier stays inside its control points
-    if (Math.min(x0, x1, x2, x3) > box.x1 || Math.max(x0, x1, x2, x3) < box.x0 || Math.min(y0, y1, y2, y3) > box.y1 || Math.max(y0, y1, y2, y3) < box.y0) return false;
-    const reach = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2);
-    const steps = Math.max(1, Math.ceil(reach / 4));
-    for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const u = 1 - t;
-        const [a, b, c, e] = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
-        const x = a * x0 + b * x1 + c * x2 + e * x3;
-        const y = a * y0 + b * y1 + c * y2 + e * y3;
-        if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) return true;
-    }
-    return false;
-}
-
 // the canvas' dots, react flow draws them closer together as it zooms out. once they'd be under MIN_DOT_SPACING apart
 // on screen they're left out: they only read as a faint haze by then, and webkit drawing hundreds of thousands of them
 // again on every frame of a pan or zoom cost more than the rest of the graph
@@ -76,22 +38,6 @@ const MIN_DOT_SPACING = 4;
 function Dots() {
     const shown = useStore((s) => s.transform[2] * DOT_GAP >= MIN_DOT_SPACING);
     return shown ? <Background variant={BackgroundVariant.Dots} gap={DOT_GAP} size={1} /> : null;
-}
-
-// whether an edge's path passes through a box (flow coordinates), sampled along the path as it's drawn
-function edgeCrosses(path: SVGPathElement | undefined, box: Box): boolean {
-    if (!path) return false;
-    const cubic = cubicOf(path.getAttribute("d"));
-    if (cubic) return cubicCrosses(cubic, box);
-    // nowhere near the box, no need to walk it
-    const bounds = path.getBBox();
-    if (bounds.x > box.x1 || bounds.x + bounds.width < box.x0 || bounds.y > box.y1 || bounds.y + bounds.height < box.y0) return false;
-    const length = path.getTotalLength();
-    for (let at = 0; at <= length; at += 4) {
-        const p = path.getPointAtLength(at);
-        if (p.x >= box.x0 && p.x <= box.x1 && p.y >= box.y0 && p.y <= box.y1) return true;
-    }
-    return false;
 }
 
 // while a box is dragged BoxSelect picks the edges alone (`active`), react flow's own pick, the edges on the nodes inside,
