@@ -973,8 +973,13 @@ pub fn note_keyframes(object_map: &ObjectMap, target: &NoteTarget, note: &MIDINo
         index: index.filter(|i| *i >= 0.0).map(|i| i as usize),
         fps: scene_fps(),
     };
+    // tagged with the animation, so each one on a curve builds its own curve before they're added
+    let mut keys = note_curve_keys(&target.object, generator, note, &ctx)?;
+    for chunk in &mut keys {
+        chunk.animation = target.animation.clone();
+    }
     let mut outputs = Outputs::new();
-    outputs.set("keys", note_curve_keys(&target.object, generator, note, &ctx)?);
+    outputs.set("keys", keys);
     Ok(outputs)
 }
 

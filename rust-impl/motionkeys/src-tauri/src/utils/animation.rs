@@ -227,6 +227,10 @@ pub struct CurveKeys {
     /// momentum: when the note's windup peaks and its recoil is, seconds. unset finds them on the keys
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phases: Option<[f64; 2]>,
+    /// the animation the keys are from, its name in the object map. on one curve each animation builds its own curve
+    /// and those are added
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub animation: String,
     /// in the wire form, `[time, value, interpolation]` or with the handles
     #[serde(with = "crate::utils::curve::wire_keys")]
     #[schemars(with = "Vec<Vec<serde_json::Value>>")]
@@ -311,6 +315,7 @@ pub fn note_curve_keys(object: &str, gen: &AnimationGenerator, note: &MIDINote, 
                 overlap_dampen: gen.overlap_dampen,
                 overlap_use_anchor_value: gen.overlap_use_anchor_value,
                 phases: phases.get(channel).copied(),
+                animation: String::new(),
                 keyframes,
             }
         })
@@ -341,57 +346,114 @@ fn note_keyframes(curve: &AnimCurve, offset: f64, velocity: u8, velocity_intensi
     Ok(keys)
 }
 
-/// combines each note's keys into its curve in order with the curve's overlap mode, then flattens to one list per object.
-/// every object in `objects` is in the result, ones with no keys stay empty so the writer still clears them.
-/// momentum looks at a note's neighbors on both sides, so a curve's momentum notes in a row are collected and combined
-/// together, then added to the curve like one note
+/// combines each curve's keys and flattens them to one list per object. every object in `objects` is in the result, ones
+/// with no keys stay empty so the writer still clears them. each animation on a curve builds its own curve and those are
+/// added, in name order
 pub fn combine_curve_keys<'a>(objects: impl Iterator<Item = &'a String>, chunks: impl IntoIterator<Item = CurveKeys>) -> Result<HashMap<String, Vec<BlendKeyframe>>, String> {
-    // keyframes per object, then per channel. overlap only combines keys on the same curve
-    let mut obj_curves: HashMap<String, BTreeMap<String, Vec<Key>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
-    // each curve's momentum notes waiting to be combined
-    let mut runs: HashMap<(String, String), Vec<MomentumNote>> = HashMap::new();
-    let flush = |obj_curves: &mut HashMap<String, BTreeMap<String, Vec<Key>>>, (object, channel): (String, String), run: Vec<MomentumNote>| {
-        let inserted = obj_curves.entry(object).or_default().entry(channel).or_default();
-        add_keyframes(inserted, &mut momentum_keys(run));
-    };
-    for mut chunk in chunks {
-        let curve = (chunk.object, chunk.channel);
+    // keys per object, then per channel, then per animation. overlap only combines keys on the same curve
+    let mut obj_curves: HashMap<String, BTreeMap<String, BTreeMap<String, Vec<CurveKeys>>>> = objects.map(|name| (name.clone(), BTreeMap::new())).collect();
+    for chunk in chunks {
+        let animations = obj_curves.entry(chunk.object.clone()).or_default().entry(chunk.channel.clone()).or_default();
+        animations.entry(chunk.animation.clone()).or_default().push(chunk);
+    }
+
+    let mut out = HashMap::new();
+    for (name, curves) in obj_curves {
+        let mut written = Vec::new();
+        for (channel, animations) in curves {
+            let mut keys = Vec::new();
+            for notes in animations.into_values() {
+                go_into(&mut keys, play_notes(notes)?, "add", &OverlapSettings::default())?;
+            }
+            finish_keys(&mut keys);
+            written.extend(keys.into_iter().map(|key| BlendKeyframe {
+                channel: channel.clone(),
+                key,
+            }));
+        }
+        out.insert(name, written);
+    }
+    Ok(out)
+}
+
+/// one generator's notes on a curve, each going into it in order with its overlap mode. momentum looks at a note's
+/// neighbors on both sides, so momentum notes in a row are collected and combined together, then added to the curve
+/// like one note
+fn play_notes(notes: Vec<CurveKeys>) -> Result<Vec<Key>, String> {
+    let mut curve = Vec::new();
+    let mut run = Vec::new();
+    for mut chunk in notes {
         if chunk.animation_overlap == "momentum" {
-            let hit = chunk.hit.or(chunk.keyframes.first().map(|key| key.time)).unwrap_or_default();
-            runs.entry(curve).or_default().push(MomentumNote {
-                hit,
-                keys: chunk.keyframes,
-                dampen: chunk.overlap_dampen,
-                use_anchor_value: chunk.overlap_use_anchor_value,
-                phases: chunk.phases,
-            });
+            run.push(momentum_note(chunk));
             continue;
         }
-        if let Some(run) = runs.remove(&curve) {
-            flush(&mut obj_curves, curve.clone(), run);
+        if !run.is_empty() {
+            add_keyframes(&mut curve, &mut momentum_keys(std::mem::take(&mut run)));
         }
-        let inserted = obj_curves.entry(curve.0).or_default().entry(curve.1).or_default();
         let settings = OverlapSettings {
             blend: chunk.overlap_blend,
         };
-        combine_keyframes(&chunk.animation_overlap, &settings, inserted, &mut chunk.keyframes)?;
+        combine_keyframes(&chunk.animation_overlap, &settings, &mut curve, &mut chunk.keyframes)?;
     }
-    for (curve, run) in runs {
-        flush(&mut obj_curves, curve, run);
+    if !run.is_empty() {
+        add_keyframes(&mut curve, &mut momentum_keys(run));
     }
-    Ok(obj_curves
-        .into_iter()
-        .map(|(name, curves)| {
-            let keys = curves.into_iter().flat_map(|(channel, mut keys)| {
-                finish_keys(&mut keys);
-                keys.into_iter().map(move |key| BlendKeyframe {
-                    channel: channel.clone(),
-                    key,
-                })
-            });
-            (name, keys.collect())
-        })
-        .collect())
+    Ok(curve)
+}
+
+fn momentum_note(chunk: CurveKeys) -> MomentumNote {
+    let hit = chunk.hit.or(chunk.keyframes.first().map(|key| key.time)).unwrap_or_default();
+    MomentumNote {
+        hit,
+        keys: chunk.keyframes,
+        dampen: chunk.overlap_dampen,
+        use_anchor_value: chunk.overlap_use_anchor_value,
+        phases: chunk.phases,
+    }
+}
+
+/// puts another animation's curve into a curve with an overlap mode, one stretch where it moves at a time, the way a
+/// note goes in. the first one in is the curve as it is
+fn go_into(curve: &mut Vec<Key>, mut other: Vec<Key>, mode: &str, settings: &OverlapSettings) -> Result<(), String> {
+    if curve.is_empty() {
+        *curve = other;
+        return Ok(());
+    }
+    sort_keys(curve, TIME_EPSILON);
+    sort_keys(&mut other, TIME_EPSILON);
+    for mut stretch in moving_stretches(other) {
+        combine_keyframes(mode, settings, curve, &mut stretch)?;
+    }
+    Ok(())
+}
+
+/// a curve cut where it rests into the stretches it moves in, each with the rest key on both ends like a note's keys.
+/// one key that isn't at rest is a stretch of its own
+fn moving_stretches(keys: Vec<Key>) -> Vec<Vec<Key>> {
+    if keys.len() == 1 {
+        return if is_rest(keys[0].value) {
+            vec![]
+        } else {
+            vec![keys]
+        };
+    }
+    let mut stretches = Vec::new();
+    let mut start = None;
+    for i in 0..keys.len().saturating_sub(1) {
+        let moving = !(is_rest(keys[i].value) && is_rest(keys[i + 1].value));
+        match (moving, start) {
+            (true, None) => start = Some(i),
+            (false, Some(from)) => {
+                stretches.push(keys[from..=i].to_vec());
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(from) = start {
+        stretches.push(keys[from..].to_vec());
+    }
+    stretches
 }
 
 /// a combined curve ready to write: in time order with no two keys at the same time, and handles on the keys made

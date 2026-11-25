@@ -464,6 +464,7 @@ fn chunk(object: &str, channel: &str, overlap: &str, hit: Option<f64>, keys: Vec
         overlap_dampen: 0.0,
         overlap_use_anchor_value: true,
         phases: None,
+        animation: String::new(),
         keyframes: keys,
     }
 }

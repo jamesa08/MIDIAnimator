@@ -642,6 +642,49 @@ fn merge_object_maps_takes_any_number_of_maps() {
     assert_eq!(merge_object_maps(&Inputs::default()).unwrap().to_json()["object_map"], json!({ "animations": {}, "objects": {} }));
 }
 
+// a generator named `name` playing a bump on location[2]: at rest, `peak` half a second in, at rest again a second in
+fn bump(name: &str, peak: f64, overlap: &str) -> serde_json::Value {
+    let mut gen = generator("location[2]", 0.0);
+    gen["name"] = json!(name);
+    gen["note_on_keyframes"] = json!([curve("location[2]", vec![key(0.0, 0.0), key(0.5, peak), key(1.0, 0.0)])]);
+    gen["animation_overlap"] = json!(overlap);
+    gen
+}
+
+// Cube's location[2] keys as (time, value), playing each generator on note 60
+fn play_on_cube(generators: &[serde_json::Value], notes: serde_json::Value) -> Vec<(f64, f64)> {
+    let animations: serde_json::Map<_, _> = generators.iter().map(|g| (g["name"].as_str().unwrap().to_string(), g.clone())).collect();
+    let cube: serde_json::Map<_, _> = animations.keys().map(|name| (name.clone(), json!([60]))).collect();
+    let outputs = evaluate(json!({ "animations": animations, "objects": { "Cube": cube } }), notes);
+    outputs["keyframes"]["Cube"].as_array().unwrap().iter().filter(|k| k["channel"] == "location[2]").map(|k| (k["key"][0].as_f64().unwrap(), k["key"][1].as_f64().unwrap())).collect()
+}
+
+fn one_note() -> serde_json::Value {
+    json!([{ "channel": 0, "note_number": 60, "velocity": 127, "time_on": 0.0, "time_off": 0.1 }])
+}
+
+fn value_at(keys: &[(f64, f64)], time: f64) -> f64 {
+    keys.iter().find(|(t, _)| (t - time).abs() < 1e-9).unwrap_or_else(|| panic!("no key at {} in {:?}", time, keys)).1
+}
+
+#[test]
+fn generators_on_one_curve_build_apart_and_add() {
+    // b's own overlap is next, it used to cut a off. each builds its own curve now and those add, in either name order
+    for (first, second) in [("a", "b"), ("b", "a")] {
+        let keys = play_on_cube(&[bump(first, 1.0, "add"), bump(second, 2.0, "next")], one_note());
+        assert_eq!(keys.len(), 3, "{:?}", keys);
+        assert!((value_at(&keys, 0.5) - 3.0).abs() < 1e-9, "{:?}", keys);
+    }
+}
+
+#[test]
+fn two_momentum_generators_on_one_curve_both_play() {
+    // their notes hit together, one used to drop the other's as a repeat
+    let keys = play_on_cube(&[bump("a", 1.0, "momentum"), bump("b", 2.0, "momentum")], one_note());
+    let peak = keys.iter().map(|(_, v)| *v).fold(0.0, f64::max);
+    assert!((peak - 3.0).abs() < 1e-6, "{:?}", keys);
+}
+
 #[test]
 fn get_midi_file_gives_the_same_values_until_the_file_changes() {
     // a copy of the file to rewrite

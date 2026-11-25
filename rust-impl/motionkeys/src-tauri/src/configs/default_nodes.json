@@ -623,7 +623,7 @@
                         "name": "Animation Generator",
                         "data_type": "AnimationGenerator",
                         "multi": true,
-                        "description": "Animation generators, any number of them, each with its own name. In rules mode every object plays all of them on its notes. In map mode each object plays the ones wired to it in the note map."
+                        "description": "Animation generators, any number of them, each with its own name. In rules mode every object plays all of them on its notes. In map mode each object plays the ones wired to it in the note map. Several on one curve each build their own curve and those add."
                     },
                     {
                         "id": "note_map",
