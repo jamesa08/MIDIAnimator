@@ -41,7 +41,7 @@ export function tileTitle(type: string | undefined, inputs: any, connected: stri
 }
 
 // the nodes that always picture their result on a tile
-const PICTURED = new Set(["get_midi_track_data", "keyframes_from_object", "animation_generator", "preset_animation", "assign_notes_to_objects"]);
+const PICTURED = new Set(["get_midi_track_data", "keyframes_from_object", "animation_generator", "preset_animation", "assign_notes_to_objects", "combine_animations"]);
 
 // whether a value is keyframes by object (what Evaluate Instrument and Combine Keyframes give)
 const isKeyframeMap = (value: any) => !!value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0 && Object.values(value).every((keys: any) => Array.isArray(keys) && (keys.length === 0 || (keys[0]?.key !== undefined && keys[0]?.channel !== undefined)));
