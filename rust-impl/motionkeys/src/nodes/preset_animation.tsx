@@ -7,6 +7,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import CurvePreview from "../components/graph/CurvePreview";
+import { TILE_PICTURE } from "../components/nodegraph/simplified";
 import { ValueSlider } from "../components/ValueSlider";
 import { CurveChannel } from "../utils/curves";
 
@@ -175,7 +176,7 @@ function preset_animation({ id, data, isConnectable }: { id: any; data: any; isC
 
     // the curves from the last run under the settings, or the draft's while a value is dragged or typed
     return (
-        <BaseNode nodeData={nodeData} inject={inject} hidden={hidden} labels={labels} data={data}>
+        <BaseNode nodeData={nodeData} inject={inject} hidden={hidden} labels={labels} data={data} tile={<CurvePreview outputs={results} curves={draft.curves} height={TILE_PICTURE} />}>
             <CurvePreview outputs={results} curves={draft.curves} />
         </BaseNode>
     );

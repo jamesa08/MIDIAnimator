@@ -3,6 +3,9 @@ import { useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useGroupContext } from "../contexts/GroupContext";
+import { useStateContext } from "../contexts/StateContext";
+import ObjectCurvesPreview from "../components/graph/ObjectCurvesPreview";
+import { TILE_PICTURE, keyframesByObject } from "../components/nodegraph/simplified";
 
 // runs a node group, its sockets are the group's interface. Tab (or the button in the header) opens it
 function group({ id, data }: { id: any; data: any }) {
@@ -34,7 +37,12 @@ function group({ id, data }: { id: any; data: any }) {
         </button>
     );
 
-    return <BaseNode nodeData={nodeData} data={data} headerExtra={openButton} />;
+    // a group that gives keyframes by object (Evaluate Instrument) pictures a curve per object from its last run on its
+    // tile in the simplified view
+    const { backEndState: state } = useStateContext();
+    const results = preview ? undefined : state?.executed_results?.[id];
+    const keyframes = keyframesByObject(results) ? results : undefined;
+    return <BaseNode nodeData={nodeData} data={data} headerExtra={openButton} tile={keyframes && <ObjectCurvesPreview outputs={keyframes} height={TILE_PICTURE} />} />;
 }
 
 export default group;

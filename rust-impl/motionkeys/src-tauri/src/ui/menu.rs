@@ -100,8 +100,9 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let actual_size = item(app, "actual_size", "Actual Size")?;
     let frame_all = area_item(app, "frame_all", "Frame All")?;
     let frame_selected = area_item(app, "frame_selected", "Frame Selected")?;
+    let simplified_view = area_item(app, "simplified_view", "Simplified View")?;
     let profiler = check_item(app, "profiler", "Profiler", crate::settings::get_setting(PROFILER_SETTING).as_bool().unwrap_or(false))?;
-    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).separator().item(&frame_all).item(&frame_selected).separator().item(&profiler).build()?;
+    let view_submenu = SubmenuBuilder::new(app, "View").item(&actual_size).item(&zoom_in).item(&zoom_out).separator().item(&frame_all).item(&frame_selected).item(&simplified_view).separator().item(&profiler).build()?;
 
     let group = area_item(app, "group", "Make Group")?;
     let ungroup = area_item(app, "ungroup", "Ungroup")?;

@@ -15,13 +15,16 @@ type Socket = { id: string; data_type: string };
 // how tall a collapsed node with these sockets is at least
 export const collapsedHeight = (inputs: Socket[], outputs: Socket[]) => Math.max(inputs.length, outputs.length) * STEP + PAD;
 
+// how far from the node's middle the `index`th of `count` sockets down an end is
+export const socketOffset = (index: number, count: number) => (index - (count - 1) / 2) * STEP;
+
 // one end's sockets, centered on the node's middle
 function End({ sockets, side }: { sockets: Socket[]; side: "inputs" | "outputs" }) {
     const input = side === "inputs";
     return (
         <>
             {sockets.map((h, i) => (
-                <SocketHandle key={h.id} id={h.id} side={side} type={input ? "source" : "target"} position={input ? Position.Left : Position.Right} style={{ width: `${SIZE}px`, height: `${SIZE}px`, top: `calc(50% + ${(i - (sockets.length - 1) / 2) * STEP}px)`, ...socketStyle(h.data_type) }} />
+                <SocketHandle key={h.id} id={h.id} side={side} type={input ? "source" : "target"} position={input ? Position.Left : Position.Right} style={{ width: `${SIZE}px`, height: `${SIZE}px`, top: `calc(50% + ${socketOffset(i, sockets.length)}px)`, ...socketStyle(h.data_type) }} />
             ))}
         </>
     );

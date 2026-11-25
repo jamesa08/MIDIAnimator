@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import BaseNode from "./BaseNode";
 import CurvePreview from "../components/graph/CurvePreview";
+import { TILE_PICTURE } from "../components/nodegraph/simplified";
 import { useNodeSpec } from "../utils/nodeEntries";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
@@ -256,7 +257,7 @@ function keyframes_from_object({ id, data, isConnectable }: { id: any; data: any
 
     // the picked channels' curves, under the inputs
     return (
-        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} labels={labels} data={data}>
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} dynamicHandles={dynamicHandles} labels={labels} data={data} tile={<CurvePreview outputs={executedResults} height={TILE_PICTURE} />}>
             <CurvePreview outputs={executedResults} />
         </BaseNode>
     );

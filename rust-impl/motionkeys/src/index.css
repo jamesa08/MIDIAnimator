@@ -404,6 +404,60 @@ img {
     cursor: pointer;
 }
 
+/* a tile in the simplified view (simplified.ts sizes): its name over a picture of its result, or its name alone */
+.node.node-tile {
+    width: 220px;
+    min-width: 220px;
+    height: 136px;
+    display: flex;
+    flex-direction: column;
+}
+
+.node-tile .node-header {
+    height: 28px;
+    flex: none;
+    font-size: 15px;
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.node-tile .node-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.node-tile-picture {
+    flex: 1;
+    padding: 6px;
+    min-height: 0;
+}
+
+.node-tile-picture > .node-field {
+    margin: 0;
+}
+
+.node-tile.node-tile-name .node-header {
+    height: 100%;
+    border-bottom: none;
+    border-radius: 5px;
+}
+
+/* the simplified view coming or going: the nodes glide to where they're drawn next. the wires are already drawn there,
+   so they're gone at once and fade back in when the nodes arrive */
+.simplify-moving .react-flow__node {
+    transition: transform var(--simplify-switch) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.react-flow__edges {
+    transition: opacity 0.2s;
+}
+
+.simplify-moving .react-flow__edges {
+    opacity: 0;
+    transition: none;
+}
+
 /* a collapsed node is only its header, as tall as its sockets need */
 .node-collapsed {
     display: flex;

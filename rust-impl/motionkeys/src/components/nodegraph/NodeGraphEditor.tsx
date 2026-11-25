@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { CSSProperties, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 
 import { invoke } from "@tauri-apps/api/core";
@@ -27,6 +27,7 @@ import { TOOLBAR_ADD_EVENT, canvasToolCommands, setEditorState } from "../../uti
 import { Rect, apart, bounds, drawnFrames, dropFrames, frameAncestors, frameAt, isFrame, isLocked, nodeRect, withContents } from "../../utils/frames";
 import { ArrangeMode, arrange } from "../../utils/arrange";
 import { uncoveredRect } from "../../utils/panels";
+import { SWITCH_MS, SimplifiedContext, TILE_HEADER, TILE_HEIGHT, TILE_WIDTH, hasPicture, tileLayout } from "./simplified";
 
 // how the editor reads the project, owned by NodeGraph. edits go to the backend as ops (utils/graphOps.ts)
 export type ProjectAccess = {
@@ -80,6 +81,13 @@ const sameItems = <T,>(prev: T[] | undefined, next: T[]) => (prev && prev.length
 // the same place, whether or not it's the same object
 const samePosition = (a: { x: number; y: number } | undefined, b: { x: number; y: number }) => !!a && a.x === b.x && a.y === b.y;
 
+// how Arrange places nodes in their columns (the node_editor.arrange setting), the simplified view's tiles too
+const arrangeMode = () =>
+    invoke<any>("get_settings").then(
+        (settings) => settings?.node_editor?.arrange as ArrangeMode,
+        () => undefined
+    );
+
 // a move op, with the frames nodes were dropped in
 const moveOp = (positions: Record<string, { x: number; y: number }>, frames: Record<string, string>): Op => ({ op: "move", positions, ...(Object.keys(frames).length > 0 ? { frames } : {}) });
 
@@ -122,12 +130,20 @@ const connectOp = (params: Edge | Connection): Op => ({ op: "connect", from_node
 // edits one graph: selection, adding, grabbing, duplicating, deleting, connecting, grouping. every edit is sent to the
 // backend as an op and the graph it sends back is shown, only selection and positions mid drag are ahead of it.
 // NodeGraph mounts a fresh one (in its own ReactFlowProvider) for each graph that's opened
-function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup, exitGroup, onReady, shown, fitOnOpen }: EditorProps) {
+function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, project, openGroup, exitGroup, onReady, shown, fitOnOpen }: EditorProps) {
     // start with the graph already there, the selection is part of it
     const [nodes, setNodes] = useNodesState((level.graph.nodes ?? []).map(({ dragging, measured, resizing, ...node }: any) => node));
     const [edges, setEdges] = useEdgesState(level.graph.edges ?? []);
 
-    const { getNodes, getEdges, screenToFlowPosition } = useReactFlow();
+    // the simplified view (simplified.ts): every node a tile where `tiles` puts it, for looking the graph over. nothing
+    // can be edited in it, the graph's own positions are kept for when it goes
+    const [simplified, setSimplified] = useState(false);
+    const [tiles, setTiles] = useState<Record<string, { x: number; y: number }> | null>(null);
+    // the nodes gliding between the two, wires are hidden meanwhile
+    const [moving, setMoving] = useState(false);
+    const editable = levelEditable && !simplified;
+
+    const { getNodes, getEdges, screenToFlowPosition, setViewport } = useReactFlow();
     const store = useStoreApi();
     const frameView = useFrameView();
 
@@ -679,11 +695,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         const nodes = (storedRef.current.nodes ?? []).map((n: any) => ({ ...n, measured: measured.get(n.id) }));
         const selected = selectedIds(shownNodes);
         const sockets = Object.fromEntries([...store.getState().nodeLookup.values()].map((node) => [node.id, socketPoints(node).map((p) => ({ side: p.side, socket: p.socket, y: p.y - node.internals.positionAbsolute.y }))]));
-        const mode = await invoke<any>("get_settings").then(
-            (settings) => settings?.node_editor?.arrange as ArrangeMode,
-            () => undefined
-        );
-        const positions = await arrange(nodes, getEdges(), selected, sockets, mode).catch((e): Record<string, { x: number; y: number }> => {
+        const positions = await arrange(nodes, getEdges(), selected, sockets, await arrangeMode()).catch((e): Record<string, { x: number; y: number }> => {
             console.error(`arrange: ${e}`);
             return {};
         });
@@ -698,6 +710,71 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
         if (!apart(box, { ...topLeft, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y })) return;
         requestAnimationFrame(() => requestAnimationFrame(() => frameView(selected.length > 0 ? getNodes().filter((n) => n.selected) : undefined)));
     }, [getNodes, getEdges, store, apply, screenToFlowPosition, frameView]);
+
+    // whether a node's tile pictures its result (the rest are their name alone), from the last run
+    const pictured = useCallback((node: any) => hasPicture(node.type, state.executed_results?.[node.id]), [state.executed_results]);
+
+    // the nodes as tiles laid out (simplified.ts), or nothing if they couldn't be
+    const layTiles = useCallback(
+        async () =>
+            tileLayout(storedRef.current.nodes ?? [], getEdges(), pictured, await arrangeMode()).catch((e) => {
+                console.error(`simplified view: ${e}`);
+                return null;
+            }),
+        [getEdges, pictured]
+    );
+
+    // into the simplified view or back out. the node nearest the middle of the view stays where it is on screen while the
+    // others glide to where they're drawn next, so what was looked at is still there
+    const fullSizesRef = useRef(new Map<string, { width: number; height: number }>());
+    const toggleSimplified = useCallback(async () => {
+        const { domNode, transform } = store.getState();
+        const shownNodes = getNodes().filter((n) => !isFrame(n) && !n.hidden);
+        const next = !simplified;
+        let positions = tiles;
+        if (next) {
+            positions = await layTiles();
+            if (!positions) return;
+            fullSizesRef.current = new Map(shownNodes.map((n) => [n.id, { width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 }]));
+        }
+        const center = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+        const tileRect = (n: any) => ({ ...(positions?.[n.id] ?? n.position), width: TILE_WIDTH, height: pictured(n) ? TILE_HEIGHT : TILE_HEADER });
+        const fullRect = (n: any) => ({ ...n.position, ...(fullSizesRef.current.get(n.id) ?? { width: 0, height: 0 }) });
+        // the stored positions, what's drawn can be the tiles'
+        const stored = new Map<string, any>((storedRef.current.nodes ?? []).map((n: any) => [n.id, n]));
+        const drawnRect = (n: any) => (simplified ? tileRect(n) : { ...n.position, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 });
+        let anchor: any = null;
+        if (domNode && shownNodes.length > 0) {
+            const visible = uncoveredRect(domNode);
+            const middle = screenToFlowPosition({ x: visible.left + visible.width / 2, y: visible.top + visible.height / 2 }, { snapToGrid: false });
+            const distance = (n: any) => Math.hypot(center(drawnRect(n)).x - middle.x, center(drawnRect(n)).y - middle.y);
+            anchor = shownNodes.reduce((best, n) => (distance(n) < distance(best) ? n : best));
+        }
+
+        if (next) setTiles(positions);
+        setMoving(true);
+        setSimplified(next);
+        setTimeout(() => setMoving(false), SWITCH_MS + 30);
+        if (!anchor || !stored.has(anchor.id)) return;
+        const from = center(drawnRect(anchor));
+        const to = center(next ? tileRect(stored.get(anchor.id)) : fullRect(stored.get(anchor.id)));
+        const [x, y, zoom] = transform;
+        setViewport({ x: x + (from.x - to.x) * zoom, y: y + (from.y - to.y) * zoom, zoom }, { duration: SWITCH_MS });
+    }, [store, getNodes, simplified, tiles, layTiles, pictured, screenToFlowPosition, setViewport]);
+
+    // laid out again while it's shown when nodes or links come or go, or a node's picture does (an edit over MCP, a run)
+    const tileShape = simplified ? [...nodes.map((n) => `${n.id}${pictured(n) ? "+" : ""}`), ...edges.map((e) => e.id)].join("\n") : "";
+    useEffect(() => {
+        if (!tileShape) return;
+        let current = true;
+        layTiles().then((positions) => current && positions && setTiles(positions));
+        return () => {
+            current = false;
+        };
+    }, [tileShape]);
+
+    // what the canvas draws: the graph, or in the simplified view its nodes where their tiles go and no frames
+    const canvasNodes = useMemo(() => (simplified && tiles ? nodes.map((n: any) => (isFrame(n) ? { ...n, hidden: true } : { ...n, position: tiles[n.id] ?? n.position, width: undefined, height: undefined })) : nodes), [simplified, tiles, nodes]);
 
     // the nodes Delete Unused Nodes found, asked about before they go. frames emptied by it stay
     const [unused, setUnused] = useState<string[] | null>(null);
@@ -853,6 +930,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
             exit_group: () => exitGroup(false),
             exit_to_root: () => exitGroup(true),
             frame_all: () => frameView(),
+            simplified_view: () => toggleSimplified(),
             // frames everything when nothing is selected
             frame_selected: () => frameView(getNodes().filter((n) => n.selected)),
             ...canvasToolCommands,
@@ -1454,7 +1532,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
                     ]
                   : [
                         [editable && entry("node_editor", "add_node", () => openAddMenu(menu.at)), pasteHere],
-                        [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all")],
+                        [hasNodes && entry("node_editor", "select_all"), hasNodes && entry("node_editor", "frame_all"), hasNodes && entry("node_editor", "simplified_view")],
                         [editable && hasNodes && entry("node_editor", "arrange"), editable && hasNodes && entry("node_editor", "collapse_all"), editable && hasNodes && entry("node_editor", "expand_all")],
                         [!isRoot && entry("node_editor", "exit_group")],
                     ];
@@ -1634,37 +1712,40 @@ function NodeGraphEditor({ level, path, pathGroups, editable, project, openGroup
 
     return (
         <>
-            <NodeGraphCanvas
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onConnectStart={onConnectStart}
-                onConnectEnd={onConnectEnd}
-                onSelectionStart={onSelectionStart}
-                onSelectionEnd={onSelectionEnd}
-                onBoxSockets={onBoxSockets}
-                onNodeDragStart={onNodeDragStart}
-                onSelectionDragStart={onSelectionDragStart}
-                onNodeClick={handleNodeClickStop}
-                onNodeDoubleClick={handleNodeDoubleClick}
-                onEdgeClick={handleEdgeClick}
-                onPaneClick={handlePaneClick}
-                onNodeDrag={handleNodeDrag}
-                onSelectionDrag={handleNodeDrag}
-                onPaneContextMenu={handlePaneContextMenu}
-                onNodeContextMenu={handleNodeContextMenu}
-                onContextMenu={handleContextMenu}
-                onSelectionContextMenu={handleSelectionContextMenu}
-                onEdgeContextMenu={handleEdgeContextMenu}
-                onInit={onInit}
-                isValidConnection={isValidConnection}
-                panOnDrag={panHeld ? true : [1]}
-                nodesDraggable={editable}
-                nodesConnectable={editable}
-                className={isRoot ? "" : "group-canvas"}
-            />
+            <SimplifiedContext.Provider value={simplified && !!tiles}>
+                <NodeGraphCanvas
+                    nodes={canvasNodes}
+                    edges={edges}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onConnect={onConnect}
+                    onConnectStart={onConnectStart}
+                    onConnectEnd={onConnectEnd}
+                    onSelectionStart={onSelectionStart}
+                    onSelectionEnd={onSelectionEnd}
+                    onBoxSockets={onBoxSockets}
+                    onNodeDragStart={onNodeDragStart}
+                    onSelectionDragStart={onSelectionDragStart}
+                    onNodeClick={handleNodeClickStop}
+                    onNodeDoubleClick={handleNodeDoubleClick}
+                    onEdgeClick={handleEdgeClick}
+                    onPaneClick={handlePaneClick}
+                    onNodeDrag={handleNodeDrag}
+                    onSelectionDrag={handleNodeDrag}
+                    onPaneContextMenu={handlePaneContextMenu}
+                    onNodeContextMenu={handleNodeContextMenu}
+                    onContextMenu={handleContextMenu}
+                    onSelectionContextMenu={handleSelectionContextMenu}
+                    onEdgeContextMenu={handleEdgeContextMenu}
+                    onInit={onInit}
+                    isValidConnection={isValidConnection}
+                    panOnDrag={panHeld ? true : [1]}
+                    nodesDraggable={editable}
+                    nodesConnectable={editable}
+                    className={`${isRoot ? "" : "group-canvas"}${moving ? " simplify-moving" : ""}`}
+                    style={{ "--simplify-switch": `${SWITCH_MS}ms` } as CSSProperties}
+                />
+            </SimplifiedContext.Provider>
             <NodeAddMenu isOpen={menuOpen} entries={menuEntries} onClose={closeMenu} onSelect={addNode} position={menuPosition} />
             {tagEdit && <TagMenu key={`${tagEdit.node}\n${tagEdit.side}\n${tagEdit.socket}`} current={currentTag} names={tagNames} position={{ x: tagEdit.x, y: tagEdit.y }} onClose={closeTagMenu} onSubmit={setTag} />}
             {unused && createPortal(<DeleteUnusedModal count={unused.length} onDelete={deleteUnused} onCancel={cancelUnused} />, document.body)}

@@ -50,6 +50,7 @@
             { "id": "exit_to_root", "name": "Exit All Groups", "keys": ["Ctrl+Tab"] },
             { "id": "frame_all", "name": "Frame All", "keys": ["Home"] },
             { "id": "frame_selected", "name": "Frame Selected", "keys": ["NumDecimal", "."] },
+            { "id": "simplified_view", "name": "Simplified View", "keys": ["V"] },
             { "id": "select_tool", "name": "Select Tool", "keys": [] },
             { "id": "box_select_tool", "name": "Box Select Tool", "keys": [] },
             { "id": "pan_tool", "name": "Pan Tool", "keys": [] },

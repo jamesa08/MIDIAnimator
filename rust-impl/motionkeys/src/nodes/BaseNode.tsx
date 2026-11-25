@@ -12,6 +12,7 @@ import SocketHandle from "../components/nodegraph/SocketHandle";
 import CollapsedSockets, { collapsedHeight } from "../components/nodegraph/CollapsedSockets";
 import { useCollapse } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
+import { TILE_HEADER, tileTitle, useSimplified } from "../components/nodegraph/simplified";
 
 const handleStyle = {
     width: "14px",
@@ -37,7 +38,9 @@ const handleStyle = {
 /// @param fill: the node has a height of its own, its inside takes what's left of it
 /// @param bare: no header, one row: the first input's socket on the left, the first output's on the right and the
 /// input's `labels` entry between them, e.g. Combine Animations in the note map. it can't be collapsed or resized
-function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children, minHeight, fill, bare }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode; minHeight?: number; fill?: boolean; bare?: boolean }) {
+/// @param tile: the picture of its result the node shows in the simplified view, e.g. its curve preview. without one
+/// it's its name alone there
+function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, data, headerExtra, hideValues, children, minHeight, fill, bare, tile }: { nodeData: any; inject?: any; executor?: any; hidden?: any; dynamicHandles?: any; labels?: any; data: any; headerExtra?: ReactNode; hideValues?: any; children?: ReactNode; minHeight?: number; fill?: boolean; bare?: boolean; tile?: ReactNode }) {
     // iterate over handles
     let handleObjects = [];
 
@@ -58,6 +61,10 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     const nodeId = useNodeId();
     const connectedInputs = useCallback((s) => s.edges.flatMap((e) => (e.source === nodeId ? [e.sourceHandle] : [])).join("\n"), [nodeId]);
     const connected = useStore(connectedInputs).split("\n");
+    // and the outputs, which a tile in the simplified view draws alone
+    const connectedOutputs = useCallback((s) => s.edges.flatMap((e) => (e.target === nodeId ? [e.targetHandle] : [])).join("\n"), [nodeId]);
+    const connectedOut = useStore(connectedOutputs).split("\n");
+    const simplified = useSimplified() && !preview && !bare;
 
     // a multi input's socket grows with its links, react flow has to measure it again to put their ends in place
     const multiInputs = (nodeData?.handles?.inputs ?? [])
@@ -88,6 +95,24 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     // a bare node's output shares its first input's row
     const bareInput = bare ? visibleHandles("inputs")[0] : undefined;
     const bareOutput = bare ? visibleHandles("outputs")[0] : undefined;
+
+    // the simplified view's tile: the node's own name (its label, else what it holds, else its type) over its picture,
+    // only its connected sockets down its ends. tiles are all one size (simplified.ts), the ones with no picture are
+    // their name alone
+    if (simplified) {
+        const ins = visibleHandles("inputs").filter((h) => connected.includes(h.id));
+        const outs = visibleHandles("outputs").filter((h) => connectedOut.includes(h.id));
+        const title = data?.label || tileTitle(nodeData?.id, data?.inputs, connected) || nodeData?.name || "";
+        return (
+            <div className={`node node-tile${tile ? "" : " node-tile-name"}${error ? " node-error" : ""}`} style={{ ...nodeColors(nodeData?.category), ...(tile ? {} : { height: Math.max(TILE_HEADER, collapsedHeight(ins, outs)) }) }}>
+                <NodeHeader label={title} italic={stale}>
+                    {error && <ErrorBadge message={error} size={16} />}
+                </NodeHeader>
+                {tile && <div className="node-tile-picture">{tile}</div>}
+                <CollapsedSockets inputs={ins} outputs={outs} />
+            </div>
+        );
+    }
 
     if (nodeData != null && !collapsed) {
         const handleTypes = ["outputs", "inputs"];

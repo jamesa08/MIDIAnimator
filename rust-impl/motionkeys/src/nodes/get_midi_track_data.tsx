@@ -6,6 +6,8 @@ import { useStateContext } from "../contexts/StateContext";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import { withSelected } from "./keyframes_from_object";
+import NoteRollPreview from "../components/graph/NoteRollPreview";
+import { TILE_PICTURE } from "../components/nodegraph/simplified";
 
 function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
@@ -65,7 +67,9 @@ function get_midi_track_data({ id, data, isConnectable }: { id: any; data: any; 
         track_name: true,
     };
 
-    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} executor={execute} data={data} />;
+    // its tile in the simplified view is a piano roll of the notes from the last run
+    const notes = state?.executed_results?.[id]?.notes;
+    return <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} executor={execute} data={data} tile={<NoteRollPreview notes={notes} height={TILE_PICTURE} />} />;
 }
 
 // takes in a hashmap and returns a hashmap of the output keys filled

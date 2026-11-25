@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useInputDrag, useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";
+import { TILE_PICTURE } from "../components/nodegraph/simplified";
 import PhaseEditor from "../components/graph/PhaseEditor";
 import { useStore } from "@xyflow/react";
 import ExpressionField from "../components/ExpressionField";
@@ -205,7 +206,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
 
     // the generator's curves from the last run, under the inputs
     return (
-        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data}>
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} tile={<CurvePreview outputs={state?.executed_results?.[id]} height={TILE_PICTURE} />}>
             <CurvePreview outputs={state?.executed_results?.[id]} />
         </BaseNode>
     );

@@ -7,6 +7,7 @@ import { useNodeSpec } from "../utils/nodeEntries";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";
+import { TILE_PICTURE } from "../components/nodegraph/simplified";
 import { findGroup, groupKey, groupOptions } from "../utils/objectGroups";
 import { mapView } from "../utils/noteMap";
 import { withSelected } from "./keyframes_from_object";
@@ -127,7 +128,7 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     // the note map, small, under the inputs
     return (
-        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton}>
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton} tile={<NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} height={TILE_PICTURE} />}>
             <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} />
         </BaseNode>
     );

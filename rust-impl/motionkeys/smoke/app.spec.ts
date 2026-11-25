@@ -397,6 +397,30 @@ test("note map opens over the graph and closes", async ({ page }) => {
     await settle(page);
 });
 
+test("the simplified view draws every node as a tile and goes back", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    const nodes = page.locator(".react-flow__node .node");
+    await expect(nodes.first()).toBeVisible();
+    await settle(page);
+    const count = await nodes.count();
+    await page.mouse.move(640, 600);
+
+    // V: every node a tile named by what it holds, the ones with a result to picture pictured
+    await page.keyboard.press("V");
+    await expect(page.locator(".node-tile")).toHaveCount(count);
+    await expect(page.locator(".node-tile .node-label", { hasText: "Studio Grand" })).toBeVisible();
+    await expect(page.locator(".node-tile .node-label", { hasText: "ANIM_bounce" })).toBeVisible();
+    await expect(page.locator('.react-flow__node[data-id="get_midi_track_data-1"] .node-tile-picture canvas')).toBeVisible();
+    await expect(page.locator('.react-flow__node[data-id="scene_link-1"] .node-tile-name')).toBeVisible();
+    await settle(page);
+
+    // and back, every node as it was
+    await page.keyboard.press("V");
+    await expect(page.locator(".node-tile")).toHaveCount(0);
+    await expect(nodes).toHaveCount(count);
+    await settle(page);
+});
+
 test("a reload keeps the open note map and collapsed sections", async ({ page }) => {
     await openWindow(page, backend, "/#/");
     await page.locator(".react-flow__node", { hasText: "Assign Notes to Objects" }).locator(".group-open").click();
@@ -1351,7 +1375,7 @@ test("context menu on an edge, a node and the empty graph", async ({ page }) => 
     // the empty graph, add node opens the add menu where it was right clicked
     const empty = await panePoint(page);
     await page.mouse.click(empty.x, empty.y, { button: "right" });
-    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All", "Arrange", "Collapse All", "Expand All"]);
+    await expect(rows).toHaveText(["Add Node", "Paste", "Select All", "Frame All", "Simplified View", "Arrange", "Collapse All", "Expand All"]);
     await rows.getByText("Add Node", { exact: true }).click();
     const search = page.getByPlaceholder("Search nodes...");
     await expect(search).toBeFocused();
