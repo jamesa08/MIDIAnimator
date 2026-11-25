@@ -490,6 +490,13 @@ img {
     pointer-events: none;
 }
 
+/* each edge's svg is react flow's default 300x150 at the canvas origin and the edge is drawn outside it. webkit doesn't
+   always repaint that when a selected edge's ring is added or taken away, it came out cut off or left behind. sized
+   differently while it has a ring, the svg is laid out again each time */
+.react-flow__edges svg:has(.edge-ring) {
+    width: 1px;
+}
+
 /* what's wrong, shown while hovering the warning sign. it's fixed to the screen so it stays readable at any zoom */
 .error-popover {
     position: fixed;
