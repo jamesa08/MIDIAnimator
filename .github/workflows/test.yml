@@ -57,3 +57,12 @@ jobs:
         run: |
           npx playwright install --only-shell chromium
           npx playwright test -c smoke
+
+      # a failed test's page (error context, screenshot), the runner draws it differently than a mac does
+      - name: Upload smoke test results
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: smoke-test-results
+          path: rust-impl/motionkeys/test-results
+          retention-days: 7

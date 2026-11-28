@@ -8,7 +8,7 @@ export default defineConfig({
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     reporter: process.env.CI ? "github" : "list",
-    use: { baseURL: `http://localhost:${PORT}`, viewport: { width: 1280, height: 800 } },
+    use: { baseURL: `http://localhost:${PORT}`, viewport: { width: 1280, height: 800 }, screenshot: "only-on-failure" },
     projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } }],
     // the dev server, so react runs in dev mode (strict mode's double effects, its warnings)
     webServer: { command: `npx vite --port ${PORT} --strictPort`, cwd: "..", url: `http://localhost:${PORT}`, reuseExistingServer: !process.env.CI },
