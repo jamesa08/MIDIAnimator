@@ -2314,3 +2314,95 @@ test("a preset animation previews a value while it's typed and sets it once", as
     await settle(page);
 });
 
+
+test("the primitive nodes draw their fields, and a connected input's goes away", async ({ page }, info) => {
+    const state = backend.get_state;
+    const at = (column: number, row: number) => ({ x: 40 + column * 260, y: 40 + row * 300 });
+    const node = (id: string, position: any, inputs: any = {}) => ({ id, type: id.split("-")[0], position, data: { inputs } });
+    const nodes = [
+        node("value-1", at(0, 0), { value: 2 }),
+        node("boolean-1", at(0, 1), { boolean: true }),
+        node("string-1", at(0, 2), { string: "Drum" }),
+        node("math-1", at(1, 0)),
+        { ...node("math-2", at(1, 1), { operation: "floor" }), selected: true },
+        node("map_range-1", at(2, 0)),
+        node("compare-1", at(3, 0), { operation: "equal" }),
+        node("boolean_math-1", at(3, 1), { operation: "not" }),
+        node("switch-1", at(4, 0)),
+    ];
+    // stored edges are reversed: `source` takes the value into `sourceHandle`
+    const edge = (to: string, input: string, from: string, output: string) => ({ id: `${to}${input}-${from}${output}`, source: to, sourceHandle: input, target: from, targetHandle: output });
+    const edges = [edge("math-1", "a", "value-1", "result"), edge("switch-1", "switch", "boolean-1", "result"), edge("switch-1", "true", "string-1", "result")];
+    await openWindow(page, { ...backend, get_state: { ...state, executed_results: {}, executed_inputs: {}, rf_instance: { ...state.rf_instance, nodes, edges } } }, "/#/");
+    const fields = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    await expect(fields("switch-1")).toBeVisible();
+
+    // value: its number in a box with its name. math: a is connected so it's its name alone, b's box is beside its
+    // socket. floor has no b
+    await expect(fields("value-1").locator(".number-box")).toHaveText("Value2.000");
+    await expect(fields("math-1").locator(".field-inputs .number-box")).toHaveText(["Value0.500"]);
+    await expect(fields("math-1").locator("select")).toHaveValue("add");
+    await expect(fields("math-2").locator(".number-box")).toHaveCount(1);
+    await expect(fields("math-2").locator(".field-inputs:visible", { hasText: "Value" })).toHaveCount(1);
+    // map range: all five with their defaults, clamp on
+    await expect(fields("map_range-1").locator(".field-inputs .number-box")).toHaveText(["Value1.000", "From Min0.000", "From Max1.000", "To Min0.000", "To Max1.000"]);
+    await expect(fields("map_range-1").locator("input[type=checkbox]")).toBeChecked();
+    // compare: equal shows epsilon. not shows one box. a connected switch has no box
+    await expect(fields("compare-1").locator(".field-inputs .number-box")).toHaveCount(3);
+    await expect(fields("boolean_math-1").locator("input[type=checkbox]")).toHaveCount(1);
+    await expect(fields("switch-1").locator("input[type=checkbox]")).toHaveCount(0);
+    await expect(fields("string-1").locator("input[type=text]")).toHaveValue("Drum");
+
+    // the selected floor node's panel: its operation, its clamp, no second value
+    const panel = page.locator(".properties-row");
+    await expect(panel.filter({ hasText: "Operation" }).locator("select")).toHaveValue("floor");
+    await expect(panel.filter({ hasText: "Clamp" }).locator(".properties-check")).toBeVisible();
+    await expect(panel.filter({ hasText: /^Value/ })).toHaveCount(2);
+
+    // a click types a number in, enter sets it
+    await fields("math-1").locator(".number-box").click();
+    await fields("math-1").locator("input.number-box-typing").fill("3");
+    await fields("math-1").locator("input.number-box-typing").press("Enter");
+    const sets = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(sets).toContainEqual({ op: "set_inputs", node: "math-1", inputs: { b: 3 } });
+
+    // the boolean socket has a color of its own
+    const boolSocket = fields("boolean-1").locator(".react-flow__handle").first();
+    expect(await boolSocket.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(204, 166, 214)");
+
+    // pressing on a field and dragging moves its node like the rest of it, nothing is typed in or ticked. a click edits
+    const place = (id: string) => fields(id).evaluate((el) => (el as HTMLElement).style.transform);
+    const focused = () => page.evaluate(() => document.activeElement?.tagName);
+    const drag = async (locator: any) => {
+        const box = (await locator.boundingBox())!;
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 60, { steps: 8 });
+        await page.mouse.up();
+    };
+    for (const [id, field] of [
+        ["math-1", ".number-box"],
+        ["value-1", ".number-box"],
+        ["string-1", ".text-box"],
+        ["map_range-1", "label"],
+    ]) {
+        const before = await place(id);
+        await drag(fields(id).locator(field).first());
+        expect(await place(id), `${id} ${field}`).not.toBe(before);
+        expect(await focused(), `${id} ${field}`).not.toBe("INPUT");
+    }
+    await expect(fields("map_range-1").locator("input[type=checkbox]")).toBeChecked();
+    // a click on the text box types in it, the checkbox's name ticks it
+    await fields("string-1").locator(".text-box").click();
+    expect(await focused()).toBe("INPUT");
+    await page.keyboard.type("s");
+    await page.keyboard.press("Enter");
+    // the fixture backend sends the graph back as it was, what was set is in the edits the page sent
+    const ops = () => page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops));
+    expect(await ops()).toContainEqual({ op: "set_inputs", node: "string-1", inputs: { string: "Drums" } });
+    expect((await ops()).some((op: any) => op.node === "map_range-1" && "clamp" in (op.inputs ?? {}))).toBe(false);
+    await fields("map_range-1").locator("label").click();
+    expect(await ops()).toContainEqual({ op: "set_inputs", node: "map_range-1", inputs: { clamp: false } });
+    await settle(page);
+    if (process.env.SMOKE_SHOTS) await page.screenshot({ path: `${process.env.SMOKE_SHOTS}/primitives.png` });
+});

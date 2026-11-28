@@ -17,6 +17,7 @@ const CATEGORIES: Record<string, keyof typeof SOCKET_COLORS> = {
     f64: "number",
     u8: "number",
     String: "string",
+    bool: "boolean",
     Any: "any",
 };
 

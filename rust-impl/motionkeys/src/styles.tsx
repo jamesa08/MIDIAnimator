@@ -23,6 +23,7 @@ export const SOCKET_COLORS = {
     keyframes: "#C2577F",
     number: "var(--socket-number)",
     string: "var(--socket-string)",
+    boolean: "#CCA6D6",
     any: "#A1A1A1",
 };
 
@@ -33,6 +34,8 @@ export const HEADER_COLORS = {
     scene: "#3E9E72",
     animation: "#C95B6A",
     animation_group: "#A8434F",
+    input: "#3A9AA8",
+    utility: "#3D7FB8",
     viewer: "#8A6BBE",
     group: "#6FA83E",
     interface: "#5A5A5A",
@@ -45,6 +48,8 @@ export const BORDER_COLORS = {
     scene: "#1F8055",
     animation: "#B02A3E",
     animation_group: "#8E1C2A",
+    input: "#147A88",
+    utility: "#1F5E9A",
     viewer: "#6437B0",
     group: "#4E8A17",
     interface: "#3A3A3A",
@@ -64,10 +69,10 @@ export function nodeColors(category: string | undefined): Record<string, string>
 }
 
 // order categories are listed in (add menu, nodes panel)
-export const CATEGORY_ORDER = ["midi", "scene", "animation", "viewer", "zone", "group"];
+export const CATEGORY_ORDER = ["midi", "scene", "animation", "input", "utility", "viewer", "zone", "group"];
 
 // a category's name in the nodes panel
-export const CATEGORY_LABELS: Record<string, string> = { midi: "MIDI", scene: "Scene", animation: "Animation", viewer: "Viewer", zone: "Zone", group: "Groups" };
+export const CATEGORY_LABELS: Record<string, string> = { midi: "MIDI", scene: "Scene", animation: "Animation", input: "Input", utility: "Utilities", viewer: "Viewer", zone: "Zone", group: "Groups" };
 
 export const SOCKET_SHAPES = {
     CIRCLE: {},

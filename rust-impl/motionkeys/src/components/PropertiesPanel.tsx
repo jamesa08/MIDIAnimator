@@ -6,6 +6,9 @@ import { Handle, PATH_SEP, outputHandle, resolvePath, scopedValues, specLookup, 
 import { useNodeSpecs } from "../utils/node";
 import { ERROR_KEY } from "./nodegraph/ErrorBadge";
 import { overlapModes } from "../nodes/animation_generator";
+import { mathOperations, UNARY_MATH } from "../nodes/math";
+import { compareOperations, EPSILON_COMPARES } from "../nodes/compare";
+import { booleanOperations } from "../nodes/boolean_math";
 import { noteNumbersText, noteToName } from "../nodes/assign_notes_to_objects";
 import { groupPick } from "../nodes/keyframes_from_object";
 import SceneTree from "./SceneTree";
@@ -29,6 +32,8 @@ type Param = { id: string; shown?: (node: any) => boolean } & ({ kind: "text" } 
 
 // the names of a list of named things, a mistyped connection can hand over anything
 const list = (items: any): any[] => (Array.isArray(items) ? items : []);
+// a node's operations as options
+const operationOptions = (operations: { id: string; name: string }[]): Option[] => operations.map((operation) => ({ value: operation.id, label: operation.name }));
 const names = (items: any): Option[] => (Array.isArray(items) ? items.map((item) => item?.name).filter((name) => typeof name === "string") : []).map((name) => ({ value: name, label: name }));
 
 // each node type's inputs with an editor of their own (src/nodes), the rest get one by their type
@@ -65,13 +70,26 @@ const PARAMS: Record<string, Param[]> = {
         { id: "overlap_windup", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
         { id: "overlap_recoil", kind: "number", shown: (node) => node.data?.inputs?.animation_overlap === "momentum" },
     ],
+    // the second value and epsilon only for the operations that use them, like on the node
+    math: [
+        { id: "operation", kind: "select", options: () => operationOptions(mathOperations) },
+        { id: "b", kind: "number", shown: (node) => !UNARY_MATH.has(node.data?.inputs?.operation ?? "add") },
+    ],
+    compare: [
+        { id: "operation", kind: "select", options: () => operationOptions(compareOperations) },
+        { id: "epsilon", kind: "number", shown: (node) => EPSILON_COMPARES.has(node.data?.inputs?.operation ?? "greater_than") },
+    ],
+    boolean_math: [
+        { id: "operation", kind: "select", options: () => operationOptions(booleanOperations) },
+        { id: "b", kind: "checkbox", shown: (node) => (node.data?.inputs?.operation ?? "and") !== "not" },
+    ],
 };
 
 // input types that can be typed in, the others only come from a connection
-const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number", "Array<u8>": "number_list" };
+const TYPED: Record<string, Param["kind"]> = { String: "text", f64: "number", bool: "checkbox", "Array<u8>": "number_list" };
 
 // output types plain enough to show as text, alone or in a list
-const PLAIN = ["String", "f64", "u8"];
+const PLAIN = ["String", "f64", "u8", "bool"];
 const plain = (dataType: string) => PLAIN.includes(dataType.startsWith("Array<") ? dataType.slice(6, -1) : dataType);
 // where a frame's label goes along its top
 const LABEL_ALIGNS: Option[] = [
