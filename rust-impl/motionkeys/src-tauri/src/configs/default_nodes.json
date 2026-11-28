@@ -1163,6 +1163,333 @@
                     }
                 ]
             }
+        },
+        {
+            "id": "value",
+            "name": "Value",
+            "category": "input",
+            "description": "A number typed in once, to connect to every input that should use it.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "value",
+                        "default": 0.5,
+                        "name": "Value",
+                        "data_type": "f64",
+                        "hidden": true,
+                        "description": "The number."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Value",
+                        "data_type": "f64",
+                        "description": "The number."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "boolean",
+            "name": "Boolean",
+            "category": "input",
+            "description": "An on/off value set once, to connect to every input that should use it.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "boolean",
+                        "default": false,
+                        "name": "Boolean",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "On or off."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Boolean",
+                        "data_type": "bool",
+                        "description": "On or off."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "string",
+            "name": "String",
+            "category": "input",
+            "description": "Text typed in once, to connect to every input that should use it.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "string",
+                        "default": "",
+                        "name": "String",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The text."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "String",
+                        "data_type": "String",
+                        "description": "The text."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "math",
+            "name": "Math",
+            "category": "utility",
+            "description": "One math operation on numbers, like Blender's Math node.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "operation",
+                        "default": "add",
+                        "name": "Operation",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The operation: add, subtract, multiply, divide, power, minimum, maximum, modulo (truncated, keeps A's sign), floored_modulo (keeps B's sign, like Python's %), absolute, round (to the nearest whole number, halves up), floor, ceil, sine, cosine (radians)."
+                    },
+                    {
+                        "id": "clamp",
+                        "default": false,
+                        "name": "Clamp",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "On clamps the result between 0 and 1."
+                    },
+                    {
+                        "id": "a",
+                        "default": 0.5,
+                        "name": "Value",
+                        "data_type": "f64",
+                        "description": "The first number."
+                    },
+                    {
+                        "id": "b",
+                        "default": 0.5,
+                        "name": "Value",
+                        "data_type": "f64",
+                        "description": "The second number, unused by absolute, round, floor, ceil, sine and cosine."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Value",
+                        "data_type": "f64",
+                        "description": "The result. An operation with no real result (dividing by zero, a negative number to a fractional power) is an error."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "map_range",
+            "name": "Map Range",
+            "category": "utility",
+            "description": "Remaps a number from one range to another, e.g. velocity 0 to 127 onto 0 to 1, like Blender's Map Range node.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "clamp",
+                        "default": true,
+                        "name": "Clamp",
+                        "data_type": "bool",
+                        "hidden": true,
+                        "description": "On keeps the result inside the To range."
+                    },
+                    {
+                        "id": "value",
+                        "default": 1.0,
+                        "name": "Value",
+                        "data_type": "f64",
+                        "description": "The number to remap."
+                    },
+                    {
+                        "id": "from_min",
+                        "default": 0.0,
+                        "name": "From Min",
+                        "data_type": "f64",
+                        "description": "The low end of the range the number is in."
+                    },
+                    {
+                        "id": "from_max",
+                        "default": 1.0,
+                        "name": "From Max",
+                        "data_type": "f64",
+                        "description": "The high end of the range the number is in. Equal to From Min gives To Min."
+                    },
+                    {
+                        "id": "to_min",
+                        "default": 0.0,
+                        "name": "To Min",
+                        "data_type": "f64",
+                        "description": "What From Min becomes."
+                    },
+                    {
+                        "id": "to_max",
+                        "default": 1.0,
+                        "name": "To Max",
+                        "data_type": "f64",
+                        "description": "What From Max becomes."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Result",
+                        "data_type": "f64",
+                        "description": "The remapped number."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "compare",
+            "name": "Compare",
+            "category": "utility",
+            "description": "Compares two numbers, like Blender's Compare node.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "operation",
+                        "default": "greater_than",
+                        "name": "Operation",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The comparison: less_than, less_equal, greater_than, greater_equal, equal, not_equal."
+                    },
+                    {
+                        "id": "a",
+                        "default": 0.0,
+                        "name": "A",
+                        "data_type": "f64",
+                        "description": "The first number."
+                    },
+                    {
+                        "id": "b",
+                        "default": 0.0,
+                        "name": "B",
+                        "data_type": "f64",
+                        "description": "The second number."
+                    },
+                    {
+                        "id": "epsilon",
+                        "default": 0.001,
+                        "name": "Epsilon",
+                        "data_type": "f64",
+                        "description": "How far apart A and B can be and still be equal, for equal and not_equal."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Result",
+                        "data_type": "bool",
+                        "description": "Whether the comparison holds."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "boolean_math",
+            "name": "Boolean Math",
+            "category": "utility",
+            "description": "One logic operation on on/off values, like Blender's Boolean Math node.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "operation",
+                        "default": "and",
+                        "name": "Operation",
+                        "data_type": "String",
+                        "hidden": true,
+                        "description": "The operation: and, or, not (A only), nand, nor, equal, not_equal."
+                    },
+                    {
+                        "id": "a",
+                        "default": false,
+                        "name": "Boolean",
+                        "data_type": "bool",
+                        "description": "The first value."
+                    },
+                    {
+                        "id": "b",
+                        "default": false,
+                        "name": "Boolean",
+                        "data_type": "bool",
+                        "description": "The second value, unused by not."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "result",
+                        "name": "Boolean",
+                        "data_type": "bool",
+                        "description": "The result."
+                    }
+                ]
+            }
+        },
+        {
+            "id": "switch",
+            "name": "Switch",
+            "category": "utility",
+            "description": "Passes on one of two values of any type, picked by an on/off value, like Blender's Switch node.",
+            "executor": "rust",
+            "realtime": true,
+            "handles": {
+                "inputs": [
+                    {
+                        "id": "switch",
+                        "default": false,
+                        "name": "Switch",
+                        "data_type": "bool",
+                        "description": "Off passes on False, on passes on True."
+                    },
+                    {
+                        "id": "false",
+                        "name": "False",
+                        "data_type": "Any",
+                        "description": "Passed on while Switch is off."
+                    },
+                    {
+                        "id": "true",
+                        "name": "True",
+                        "data_type": "Any",
+                        "description": "Passed on while Switch is on."
+                    }
+                ],
+                "outputs": [
+                    {
+                        "id": "output",
+                        "name": "Output",
+                        "data_type": "Any",
+                        "description": "The picked value, nothing when its input isn't connected."
+                    }
+                ]
+            }
         }
     ]
 }

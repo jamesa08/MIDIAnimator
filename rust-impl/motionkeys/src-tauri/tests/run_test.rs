@@ -750,3 +750,22 @@ fn a_skipped_writer_and_a_waiting_node_are_timed() {
     assert_eq!(timing(&record, "scene_writer-1").status, Status::Skipped);
     assert_eq!(timing(&record, "targets_for_note-1").status, Status::Waiting);
 }
+
+#[test]
+fn primitives_run_with_their_defaults() {
+    // value 0.5 › math (multiply by its default 0.5) › compare (above its default 0) › switch between two strings
+    let root = graph(vec![node("value-1", json!({})), node("math-1", json!({ "inputs": { "operation": "multiply" } })), node("compare-1", json!({})), node("string-1", json!({ "inputs": { "string": "low" } })), node("string-2", json!({ "inputs": { "string": "high" } })), node("switch-1", json!({}))], &[("value-1", "result", "math-1", "a"), ("math-1", "result", "compare-1", "a"), ("compare-1", "result", "switch-1", "switch"), ("string-1", "result", "switch-1", "false"), ("string-2", "result", "switch-1", "true")]);
+    let (record, error) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(error, None);
+    assert_eq!(record.results["math-1"]["result"], json!(0.25));
+    assert_eq!(record.results["compare-1"]["result"], json!(true));
+    assert_eq!(record.results["switch-1"]["output"], json!("high"));
+}
+
+#[test]
+fn a_primitive_error_stops_what_follows() {
+    let root = graph(vec![node("math-1", json!({ "inputs": { "operation": "divide", "b": 0.0 } })), node("map_range-1", json!({}))], &[("math-1", "result", "map_range-1", "value")]);
+    let (record, _) = run_graph(&root, &BTreeMap::new(), true);
+    assert_eq!(node_error(&record.results["math-1"]), Some("division by zero"));
+    assert!(record.results.get("map_range-1").and_then(|r| r.get("result")).is_none());
+}
