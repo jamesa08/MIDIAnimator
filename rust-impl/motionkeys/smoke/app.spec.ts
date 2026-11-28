@@ -1365,7 +1365,11 @@ test("tagging several sockets at once", async ({ page }) => {
 });
 
 test("box select takes nodes, edges and sockets", async ({ page }) => {
-    await openWindow(page, backend, "/#/");
+    // evaluate instrument raised clear of Assign Notes to Objects, whose outputs reach under its left side when the font
+    // is wider (linux has no san francisco)
+    const state = backend.get_state;
+    const nodes = state.rf_instance.nodes.map((n: any) => (n.id === "evaluate_instrument-1" ? { ...n, position: { ...n.position, y: n.position.y - 200 } } : n));
+    await openWindow(page, { ...backend, get_state: { ...state, rf_instance: { ...state.rf_instance, nodes } } }, "/#/");
     const node = page.locator('.react-flow__node[data-id="get_midi_track_data-1"]');
     await expect(node).toBeVisible();
     await graphReady(page);
@@ -1394,19 +1398,12 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"), start)).toBe(true);
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    // its left side ends halfway to what's past it (Assign Notes to Objects' outputs), how close that is depends on the font
-    const bottom = wholeBounds.y + wholeBounds.height + 20;
-    const left = await page.evaluate(
-        ({ x, top, bottom }) => {
-            const past = [...document.querySelectorAll(".react-flow__node:not([data-id='evaluate_instrument-1']), .react-flow__node:not([data-id='evaluate_instrument-1']) .react-flow__handle")].map((el) => el.getBoundingClientRect()).filter((r) => r.right <= x && r.bottom >= top && r.top <= bottom);
-            return (x + Math.max(x - 50, ...past.map((r) => r.right))) / 2;
-        },
-        { x: wholeBounds.x, top: start.y, bottom }
-    );
-    await page.mouse.move(left, bottom, { steps: 8 });
+    await page.mouse.move(wholeBounds.x - 25, wholeBounds.y + wholeBounds.height + 20, { steps: 8 });
     await page.mouse.up();
     await expect(whole).toHaveClass(/selected/);
-    await expect(page.locator(".socket-selected")).toHaveCount(0);
+    // named, so a failure says whose
+    const selectedSockets = () => page.evaluate(() => [...document.querySelectorAll(".socket-selected")].map((el) => `${el.closest(".react-flow__node")?.getAttribute("data-id")} ${el.getAttribute("data-handleid")}`));
+    await expect.poll(selectedSockets).toEqual([]);
     await settle(page);
 });
 
