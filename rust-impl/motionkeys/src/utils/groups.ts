@@ -5,6 +5,8 @@
 // node that CONSUMES the value (and its input), `target`/`targetHandle` is the node that PRODUCES it (and its output)
 
 import { invoke } from "@tauri-apps/api/core";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { StateContext } from "../contexts/StateContext";
 
 export type Handle = { id: string; name: string; data_type: string; description?: string; hidden?: boolean; multi?: boolean; default?: any };
 export type Graph = { nodes: any[]; edges: any[]; viewport?: any; [key: string]: any };
@@ -44,6 +46,16 @@ export function loadBuiltinGroups(): Promise<Record<string, GroupDef>> {
 // the groups a project can use: the built-ins, replaced by the project's own copies
 export function allGroups(project: Project | undefined, builtin: Record<string, GroupDef>): Record<string, GroupDef> {
     return { ...builtin, ...(project?.groups ?? {}) };
+}
+
+// the built-in groups plus the project's own (when this window has the project state), for group node previews
+export function usePanelGroups(): Record<string, GroupDef> {
+    const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
+    useEffect(() => {
+        loadBuiltinGroups().then(setBuiltin);
+    }, []);
+    const project = useContext(StateContext)?.backEndState?.rf_instance;
+    return useMemo(() => allGroups(project, builtin), [project, builtin]);
 }
 
 // MARK: - Paths

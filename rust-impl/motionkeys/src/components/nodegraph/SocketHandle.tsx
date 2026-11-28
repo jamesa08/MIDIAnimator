@@ -4,7 +4,7 @@ import { useGroupContext } from "../../contexts/GroupContext";
 import { SocketRef } from "../../utils/graphOps";
 import { NEW_SOCKET } from "../../utils/groups";
 import { addsToSelection } from "../../utils/keymap";
-import { CLICK_DISTANCE } from "./NodeGraphCanvas";
+import { CLICK_DISTANCE } from "./canvasInput";
 
 // a socket is selected on its own like an edge (src-tauri/src/graph/sockets.rs): a click on it or its tag, or a box
 // around sockets only. the selected ones are tagged together and a link dragged off one of them brings the others

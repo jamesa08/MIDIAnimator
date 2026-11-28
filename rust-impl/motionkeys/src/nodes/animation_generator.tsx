@@ -3,7 +3,7 @@ import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useInputDrag, useSetInputs } from "../utils/graphOps";
 import { invoke } from "@tauri-apps/api/core";
 import CurvePreview from "../components/graph/CurvePreview";

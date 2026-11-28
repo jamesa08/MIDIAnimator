@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 
 function static_property({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {

@@ -2,14 +2,12 @@ import { useCallback, useContext, useId, useMemo } from "react";
 import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath, ReactFlowState, useInternalNode, useStore } from "@xyflow/react";
 import { useGroupContext } from "../../contexts/GroupContext";
 import { inputHandle, outputHandle, specLookup } from "../../utils/groups";
-import { useNodeSpecs } from "../../utils/nodeEntries";
+import { useNodeSpecs } from "../../utils/node";
 import { SOCKET_COLORS } from "../../styles";
 import { multiSlotOffset, socketCategory } from "../../utils/sockets";
 import ErrorBadge, { useBadInput } from "./ErrorBadge";
 import { InsertLinkContext } from "./insertOnLink";
-
-// a lighter shade of a color, what a selection is drawn in (a selected node's ring in index.css)
-export const lighter = (color: string) => `color-mix(in srgb, ${color} 50%, white)`;
+import { lighter } from "../../utils/sockets";
 
 // a selected edge's ring and glow, like a selected node's: a lighter shade of its own color drawn wider under it.
 // `stroke` is a color or a gradient's url, `width` the edge's own stroke width

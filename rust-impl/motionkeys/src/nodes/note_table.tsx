@@ -3,14 +3,14 @@ import { useStore } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import ExpressionField from "../components/ExpressionField";
 import { noteToName } from "./assign_notes_to_objects";
 
 // the curve presets, an expression in t (0 at the first note, 1 at the last). picking one fills in the curve, changing
 // the curve picks the preset it matches or custom
-export const SHAPES: { id: string; name: string; curve: string | null }[] = [
+const SHAPES: { id: string; name: string; curve: string | null }[] = [
     { id: "constant", name: "Constant", curve: "" },
     { id: "linear", name: "Linear", curve: "t" },
     { id: "ease_in", name: "Ease In", curve: "t ** 2" },

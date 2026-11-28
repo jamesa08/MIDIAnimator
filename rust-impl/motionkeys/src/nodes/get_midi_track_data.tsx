@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";

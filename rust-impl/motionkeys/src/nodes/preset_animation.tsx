@@ -4,7 +4,7 @@ import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { NumberField, useSliderInput } from "./animation_generator";
 import { useStateContext } from "../contexts/StateContext";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import CurvePreview from "../components/graph/CurvePreview";
 import { TILE_PICTURE } from "../components/nodegraph/simplified";
@@ -12,7 +12,7 @@ import { ValueSlider } from "../components/ValueSlider";
 import { CurveChannel } from "../utils/curves";
 
 // the shapes, same order and ids as PRESET_ANIMATION_MODES in the backend
-export const modes = [
+const modes = [
     { id: "spring", name: "Spring" },
     { id: "drumstick", name: "Drumstick" },
     { id: "cymbal", name: "Cymbal" },

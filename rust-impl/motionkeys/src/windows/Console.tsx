@@ -5,7 +5,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { useStateSync } from "../utils/graphOps";
 import { isTextField, useKeymap, useModal } from "../utils/keymap";
 import { usePersistedSet, usePersistedState } from "../utils/persist";
-import { useNodeSpecs } from "../utils/nodeEntries";
+import { useNodeSpecs } from "../utils/node";
 import { ConsoleEntry, LEVELS, Level, NodeTiming, SOURCES, Source, duration, revealNode, useConsoleEntries, useConsoleSettings, useRunTimings } from "../utils/console";
 import { TRAFFIC_LIGHTS_WIDTH } from "./Graph";
 

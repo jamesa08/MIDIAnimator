@@ -7,12 +7,14 @@ import { ApplyOptions } from "../../utils/graphOps";
 import { socketStyle } from "../../utils/sockets";
 import { SOCKET_COLORS, nodeColors } from "../../styles";
 import { noteToName } from "../../nodes/assign_notes_to_objects";
-import NodeGraphCanvas, { useMultiSelection } from "./NodeGraphCanvas";
-import { EdgeRing, lighter } from "./TypedEdge";
+import NodeGraphCanvas from "./NodeGraphCanvas";
+import { useMultiSelection } from "./canvasInput";
+import { EdgeRing } from "./TypedEdge";
+import { lighter } from "../../utils/sockets";
 import { MapData, MapView, NoteMap, goesInto, isAnimationLinked, isLinked, isPlaying, mapView, newCombineKey, shownAnimations, shownMap, unique } from "../../utils/noteMap";
 import BaseNode from "../../nodes/BaseNode";
 import { OverlapSelect } from "../../nodes/combine_animations";
-import { useNodeSpec } from "../../utils/nodeEntries";
+import { useNodeSpec } from "../../utils/node";
 import ContextMenu, { ContextEntry } from "./ContextMenu";
 import { useFrameView } from "./frameView";
 import { canvasToolCommands, setEditorState } from "../../utils/editorState";
@@ -185,7 +187,7 @@ type Props = {
 };
 
 // a note typed as its number (60) or its name like noteToName gives it (C3, c#3), flats too (Db3). null when it isn't one
-export function parseNote(text: string): number | null {
+function parseNote(text: string): number | null {
     const typed = text.trim();
     if (/^\d+$/.test(typed)) return Number(typed) <= 127 ? Number(typed) : null;
     const name = typed.match(/^([a-gA-G])([#b]?)(-?\d+)$/);

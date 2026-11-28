@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useEdges, useUpdateNodeInternals } from "@xyflow/react";
 
 function merge_object_maps({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {

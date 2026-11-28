@@ -5,8 +5,9 @@ import { invoke } from "@tauri-apps/api/core";
 import nodeTypes from "../nodes/NodeTypes";
 import { DRAG_GHOST_PAD, DRAG_GHOST_SET_EVENT } from "../utils/panels";
 import { GroupContext } from "../contexts/GroupContext";
-import { usePanelGroups } from "../components/PanelBody";
-import { nodeEntries, previewData, useNodeSpecs } from "../utils/nodeEntries";
+import { usePanelGroups } from "../utils/groups";
+import { nodeEntries, previewData } from "../utils/nodeEntries";
+import { useNodeSpecs } from "../utils/node";
 
 // transparent click through window that shows the node being dragged out of a floating panel.
 // every node is rendered up front, their data loads async and would pop in if rendered on demand

@@ -4,7 +4,7 @@ import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import BaseNode from "./BaseNode";
 import CurvePreview from "../components/graph/CurvePreview";
 import { TILE_PICTURE } from "../components/nodegraph/simplified";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 import { useGroupContext } from "../contexts/GroupContext";
 import { findGroup, findObject, groupKey, groupOptions, objectChannels, objectOptions } from "../utils/objectGroups";

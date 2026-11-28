@@ -1,13 +1,13 @@
-import React, { useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import React, { useMemo, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import nodeTypes from "../nodes/NodeTypes";
 import { ReactFlowProvider } from "@xyflow/react";
 import { PANELS, startDragGhost } from "../utils/panels";
-import { StateContext } from "../contexts/StateContext";
 import { GroupContext } from "../contexts/GroupContext";
-import { GroupDef, allGroups, loadBuiltinGroups } from "../utils/groups";
-import { NodeEntry, nodeEntries, previewData, useNodeSpecs } from "../utils/nodeEntries";
+import { usePanelGroups } from "../utils/groups";
+import { NodeEntry, nodeEntries, previewData } from "../utils/nodeEntries";
+import { useNodeSpecs } from "../utils/node";
 import HistoryList from "./HistoryList";
 import PropertiesPanel, { SectionHeader } from "./PropertiesPanel";
 import { CATEGORY_LABELS, nodeColors } from "../styles";
@@ -50,7 +50,7 @@ const subscribeNodesView = (listener: () => void) => {
     };
 };
 
-export function useNodesView(): [NodesView, (view: NodesView) => void] {
+function useNodesView(): [NodesView, (view: NodesView) => void] {
     const view = useSyncExternalStore(subscribeNodesView, () => nodesView);
     const set = (next: NodesView) => {
         setNodesViewHere(next);
@@ -123,16 +123,6 @@ const NodeRow: React.FC<{ entry: NodeEntry; color: string; Node: any; data: any;
         </div>
     </div>
 );
-
-// the built-in groups plus the project's own (when this window has the project state), for group node previews
-export function usePanelGroups(): Record<string, GroupDef> {
-    const [builtin, setBuiltin] = useState<Record<string, GroupDef>>({});
-    useEffect(() => {
-        loadBuiltinGroups().then(setBuiltin);
-    }, []);
-    const project = useContext(StateContext)?.backEndState?.rf_instance;
-    return useMemo(() => allGroups(project, builtin), [project, builtin]);
-}
 
 // panel contents, shared by the docked panel and its popped out window
 const PanelBody: React.FC<PanelBodyProps> = ({ id, onNodeDrop, ghostWindow = false }) => {

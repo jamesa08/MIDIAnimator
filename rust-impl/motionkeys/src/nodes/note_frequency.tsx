@@ -1,6 +1,6 @@
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 
 function note_frequency({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const nodeData = useNodeSpec("note_frequency");

@@ -1,7 +1,7 @@
 import "@xyflow/react/dist/base.css";
 import { useNodeId } from "@xyflow/react";
 import BaseNode from "./BaseNode";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useStateContext } from "../contexts/StateContext";
 import ObjectCurvesPreview from "../components/graph/ObjectCurvesPreview";
 import { TILE_PICTURE, keyframesByObject } from "../components/nodegraph/simplified";

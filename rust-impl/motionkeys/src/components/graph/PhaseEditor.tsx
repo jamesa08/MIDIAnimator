@@ -4,7 +4,7 @@ import { useStore } from "@xyflow/react";
 import { CurveChannel, colorChannels } from "../../utils/curves";
 import { drawCurves, drawGrid, fitCanvas, framed, toPixels } from "../../utils/curveDrawing";
 import { useInputDrag } from "../../utils/graphOps";
-import { CLICK_DISTANCE } from "../nodegraph/NodeGraphCanvas";
+import { CLICK_DISTANCE } from "../nodegraph/canvasInput";
 
 type Point = "windup" | "hit" | "recoil";
 type Points = Record<Point, number>;

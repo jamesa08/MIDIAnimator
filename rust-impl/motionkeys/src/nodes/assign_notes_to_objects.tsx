@@ -3,7 +3,7 @@ import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import { useGroupContext } from "../contexts/GroupContext";
 import NoteMapPreview from "../components/nodegraph/NoteMapPreview";

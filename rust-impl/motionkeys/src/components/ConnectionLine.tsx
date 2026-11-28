@@ -4,7 +4,7 @@ import { useGroupContext } from "../contexts/GroupContext";
 import { SOCKET_COLORS } from "../styles";
 import { SocketRef } from "../utils/graphOps";
 import { inputHandle, outputHandle, specLookup } from "../utils/groups";
-import { useNodeSpecs } from "../utils/nodeEntries";
+import { useNodeSpecs } from "../utils/node";
 import { multiSlotOffset, socketCategory } from "../utils/sockets";
 import { draggedAlong, handleSide, sameSocket, socketPoints, takesAll } from "./nodegraph/SocketHandle";
 import { useHold } from "../utils/keymap";
@@ -29,7 +29,7 @@ function Wire({ x, y, endX, endY, start, end, opacity }: { x: number; y: number;
     );
 }
 
-export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle, connectionStatus, connectionLineStyle }: ConnectionLineComponentProps) => {
+const ConnectionLine = ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle, connectionStatus, connectionLineStyle }: ConnectionLineComponentProps) => {
     const [isHovering, setIsHovering] = useState(true);
 
     // the other selected sockets come along. over a socket the link can connect to, each goes into the socket it will
@@ -97,3 +97,5 @@ export default ({ fromX, fromY, toX, toY, fromNode, fromHandle, toNode, toHandle
         </g>
     );
 };
+
+export default ConnectionLine;

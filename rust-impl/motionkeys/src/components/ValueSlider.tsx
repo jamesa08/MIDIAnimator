@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CLICK_DISTANCE } from "./nodegraph/NodeGraphCanvas";
+import { CLICK_DISTANCE } from "./nodegraph/canvasInput";
 
 // a value from 0 to 1 as a bar filled that far, its name on the left and the number on the right. dragging across it
 // sets it, a double click types it in. `onStart` and `onEnd` are called when a drag starts and ends

@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useStateContext } from "../contexts/StateContext";
-import { useNodeSpec } from "../utils/nodeEntries";
+import { useNodeSpec } from "../utils/node";
 import { useReactFlow } from "@xyflow/react";
 
 function scene_link({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {

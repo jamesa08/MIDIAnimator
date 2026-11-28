@@ -38,6 +38,9 @@ export function socketCategory(dataType: string): keyof typeof SOCKET_COLORS {
     return CATEGORIES[elementType(dataType)] ?? "any";
 }
 
+// a lighter shade of a color, what a selection is drawn in (a selected node's ring in index.css)
+export const lighter = (color: string) => `color-mix(in srgb, ${color} 50%, white)`;
+
 // style for a handle carrying `dataType`, merged over the handle's position style
 export function socketStyle(dataType: string | undefined): Record<string, any> {
     return dataType ? { background: SOCKET_COLORS[socketCategory(dataType)] } : {};
