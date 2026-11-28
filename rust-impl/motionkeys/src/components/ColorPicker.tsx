@@ -4,7 +4,7 @@ import Wheel from "@uiw/react-color-wheel";
 import ShadeSlider from "@uiw/react-color-shade-slider";
 import { HsvaColor, hexToHsva, hsvaToHex, hsvaToRgba, rgbaToHsva } from "@uiw/color-convert";
 import { useModal } from "../utils/keymap";
-import { ValueSlider } from "./ValueSlider";
+import { NumberBox } from "./NumberBox";
 
 // a color picker like Blender's: a hue and saturation wheel with the value beside it (@uiw/react-color), the color's
 // three channels below as sliders (RGB or HSV), and its hex code. `value` and what `onChange` gets are hex codes (#rrggbb)
@@ -85,7 +85,7 @@ export function ColorPicker({ value, onChange, size = 160 }: { value: string; on
             </div>
             <div className="color-picker-sliders">
                 {CHANNELS[mode].map((channel) => (
-                    <ValueSlider key={channel.label} label={channel.label} value={channel.get(hsva)} onChange={(v) => pick(channel.set(hsva, v))} />
+                    <NumberBox slider key={channel.label} label={channel.label} value={channel.get(hsva)} onChange={(v) => pick(channel.set(hsva, v))} />
                 ))}
             </div>
             <div className="color-picker-hex">

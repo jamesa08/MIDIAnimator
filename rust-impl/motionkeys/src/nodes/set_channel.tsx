@@ -1,30 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
+import { TextBox } from "../components/TextBox";
+import { useConnectedInputs } from "../components/nodegraph/NodeFields";
 
 function set_channel({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const nodeData = useNodeSpec("set_channel");
-    const [channel, setChannel] = useState(data.inputs?.channel || "");
+    const connected = useConnectedInputs(id);
 
-    useEffect(() => {
-        setChannel(data.inputs?.channel || "");
-    }, [data.inputs?.channel]);
+    // typed in beside its socket unless something is connected to it. empty leaves the curve on its own channel,
+    // emptied unsets it
+    const channelComponent = connected.includes("channel") ? undefined : <TextBox label="Channel" value={data.inputs?.channel ?? ""} readOnly={data === "preview"} onCommit={(text) => setInputs(id, { channel: text === "" ? null : text })} />;
 
-    // empty leaves the curve on its own channel. only a change is sent, emptied unsets it
-    const handleUpdate = useCallback(() => {
-        if (channel !== (data.inputs?.channel || "")) setInputs(id, { channel: channel === "" ? null : channel });
-    }, [id, channel, data.inputs?.channel, setInputs]);
-
-    const channelComponent = (
-        <div>
-            <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" value={channel} onChange={(e) => setChannel(e.target.value)} onBlur={handleUpdate} />
-        </div>
-    );
-
-    return <BaseNode nodeData={nodeData} inject={{ channel: channelComponent }} hidden={{}} data={data} />;
+    return <BaseNode nodeData={nodeData} inject={{}} labels={{ channel: channelComponent }} hidden={{}} data={data} />;
 }
 
 export default set_channel;

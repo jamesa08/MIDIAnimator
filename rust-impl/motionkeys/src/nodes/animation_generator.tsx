@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
@@ -12,7 +12,9 @@ import PhaseEditor from "../components/graph/PhaseEditor";
 import { useStore } from "@xyflow/react";
 import ExpressionField from "../components/ExpressionField";
 import { mapperText, useMapperVariables } from "../utils/mapper";
-import { ValueSlider } from "../components/ValueSlider";
+import { NumberBox } from "../components/NumberBox";
+import { TextBox } from "../components/TextBox";
+import { CheckboxRow, NumberInput } from "../components/nodegraph/NodeFields";
 
 // the animation overlap modes, same order and ids as ANIMATION_OVERLAPS in the backend
 export const overlapModes = [
@@ -26,43 +28,6 @@ export const overlapModes = [
     { id: "crossfade", name: "Crossfade" },
     { id: "momentum", name: "Momentum" },
 ];
-
-// a number box for an input, set when it's left or on enter. empty unsets it so the backend default is used, anything
-// that isn't a number is put back. `onDraft` hears each number as it's typed (null while it isn't one), before it's set
-export function NumberField({ value, onCommit, onDraft, ...props }: { value: number | undefined; onCommit: (value: number | null) => void; onDraft?: (value: number | null) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
-    const [text, setText] = useState<string | number>(value ?? "");
-    useEffect(() => setText(value ?? ""), [value]);
-    const commit = (e: React.FocusEvent<HTMLInputElement>) => {
-        // a number half typed ("-", "1e", ".") reads as empty, it's put back instead of unsetting
-        if (e.currentTarget.validity.badInput) {
-            e.currentTarget.value = String(value ?? "");
-            setText(value ?? "");
-        } else if (text === "") {
-            onCommit(null);
-        } else if (!isNaN(Number(text))) {
-            onCommit(Number(text));
-        } else {
-            setText(value ?? "");
-        }
-    };
-    return (
-        <input
-            type="number"
-            className="node-field nodrag border border-gray-400 rounded px-2 py-1"
-            {...props}
-            value={text}
-            onChange={(e) => {
-                setText(e.target.value);
-                const typed = e.target.value;
-                onDraft?.(typed === "" || isNaN(Number(typed)) ? null : Number(typed));
-            }}
-            onBlur={commit}
-            onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-            }}
-        />
-    );
-}
 
 // a slider for an input from 0 to 1. a drag is one undo step, it sends its value at most once a frame and shows where
 // it's dragged to, not what comes back from the backend on the way
@@ -84,24 +49,6 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     const { backEndState: state, setBackEndState: setState } = useStateContext();
 
     const nodeData = useNodeSpec("animation_generator");
-    const [name, setName] = useState(data.inputs?.name || ""); 
-
-    useEffect(() => {
-        setName(data.inputs?.name || "");
-    }, [data.inputs?.name]);
-
-    // only a change is sent, emptied unsets it
-    const handleUpdate = useCallback(() => {
-        if (name !== (data.inputs?.name || "")) setInputs(id, { name: name === "" ? null : name });
-    }, [id, name, data.inputs?.name, setInputs]);
-
-    const nameComponent = (
-        <>
-            <div>
-                <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} onBlur={handleUpdate} />
-            </div>
-        </>
-    );
 
     // unset is the default, add
     const overlapComponent = (
@@ -120,56 +67,31 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     );
 
     // only crossfade uses the blend time
-    const blendComponent =
-        data.inputs?.animation_overlap === "crossfade" ? (
-            <>
-                <div className="node-field field-inputs">
-                    <span>Blend (s)</span>
-                </div>
-                <NumberField min="0" step="0.05" placeholder="0.1" value={data.inputs?.overlap_blend} onCommit={(value) => setInputs(id, { overlap_blend: value })} />
-            </>
-        ) : (
-            <></>
-        );
+    const blendComponent = data.inputs?.animation_overlap === "crossfade" ? <NumberInput id={id} input="overlap_blend" label="Blend (s)" data={data} nodeData={nodeData} /> : <></>;
 
-    // a mapper is typed in unless something (a Note Table) is connected to it. stored edges are reversed, `source` is the
-    // node taking the value
+    // the name and the mappers are typed in beside their sockets unless something (a Note Table) is connected to them,
+    // emptied unsets them. stored edges are reversed, `source` is the node taking the value
     const vars = useMapperVariables();
     const connected = useStore((s) => s.edges.flatMap((e) => (e.source === id ? [e.sourceHandle] : [])).join("\n")).split("\n");
-    const mapperComponent = (input: "time_mapper" | "amplitude_mapper") =>
-        connected.includes(input) ? (
-            <></>
-        ) : (
-            <div style={{ position: "relative" }}>
-                <ExpressionField className="node-field border border-gray-400 rounded px-2 py-1" value={mapperText(data.inputs?.[input])} vars={vars} onCommit={(text) => setInputs(id, { [input]: text === "" ? null : text })} />
-            </div>
+    const nameComponent = connected.includes("name") ? undefined : <TextBox label="Name" value={data.inputs?.name ?? ""} readOnly={data === "preview"} onCommit={(text) => setInputs(id, { name: text === "" ? null : text })} />;
+    const mapperComponent = (input: "time_mapper" | "amplitude_mapper", label: string) =>
+        connected.includes(input) ? undefined : (
+            <TextBox label={label}>
+                <ExpressionField className="text-box-input" value={mapperText(data.inputs?.[input])} vars={vars} onCommit={(text) => setInputs(id, { [input]: text === "" ? null : text })} />
+            </TextBox>
         );
 
-    // an anchor point is typed in unless something is connected to it, in frames from the note on or off
-    const anchorComponent = (input: "note_on_anchor_point" | "note_off_anchor_point") => (connected.includes(input) ? <></> : <NumberField step="1" placeholder="0" value={data.inputs?.[input]} onCommit={(value) => setInputs(id, { [input]: value })} />);
-
-    // velocity intensity from 0 to 1
+    // velocity intensity from 0 to 1, a slider beside its socket unless something is connected to it. the anchor points
+    // are BaseNode's number boxes
     const intensity = useSliderInput(id, "velocity_intensity", data.inputs?.velocity_intensity);
-    const intensityComponent = connected.includes("velocity_intensity") ? <></> : <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" {...intensity} />;
+    const intensityComponent = connected.includes("velocity_intensity") ? undefined : <NumberBox slider label="Velocity Intensity" className="border border-gray-400 rounded" {...intensity} />;
 
     // only momentum uses dampen and use anchor point value. unset is on, the spec's default
     const momentum = data.inputs?.animation_overlap === "momentum";
     const dampen = useSliderInput(id, "overlap_dampen", data.inputs?.overlap_dampen);
-    const dampenComponent = momentum ? (
-        <>
-            <div className="node-field field-inputs">
-                <span>Dampen</span>
-            </div>
-            <ValueSlider className="node-field nodrag nopan border border-gray-400 rounded" {...dampen} />
-        </>
-    ) : (
-        <></>
-    );
+    const dampenComponent = momentum ? <NumberBox slider label="Dampen" className="node-field border border-gray-400 rounded" {...dampen} /> : <></>;
     const anchorValueComponent = momentum ? (
-        <label className="node-field flex items-center gap-1">
-            <input type="checkbox" checked={data.inputs?.overlap_use_anchor_value ?? true} onChange={(e) => setInputs(id, { overlap_use_anchor_value: e.target.checked })} />
-            Use Anchor Point Value
-        </label>
+        <CheckboxRow label="Use Anchor Point Value" checked={data.inputs?.overlap_use_anchor_value ?? true} onChange={(checked) => setInputs(id, { overlap_use_anchor_value: checked })} />
     ) : (
         <></>
     );
@@ -181,12 +103,6 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
     const phaseComponent = momentum && generator?.overlap_windup != null && generator?.overlap_recoil != null ? <PhaseEditor id={id} generator={generator} fps={fps} anchorConnected={connected.includes("note_on_anchor_point")} set={{ windup: data.inputs?.overlap_windup != null, recoil: data.inputs?.overlap_recoil != null }} /> : <></>;
 
     const uiInject = {
-        name: nameComponent,
-        note_on_anchor_point: anchorComponent("note_on_anchor_point"),
-        note_off_anchor_point: anchorComponent("note_off_anchor_point"),
-        time_mapper: mapperComponent("time_mapper"),
-        amplitude_mapper: mapperComponent("amplitude_mapper"),
-        velocity_intensity: intensityComponent,
         animation_overlap: overlapComponent,
         overlap_blend: blendComponent,
         overlap_dampen: dampenComponent,
@@ -206,7 +122,7 @@ function animation_generator({ id, data, isConnectable }: { id: any; data: any; 
 
     // the generator's curves from the last run, under the inputs
     return (
-        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} tile={<CurvePreview outputs={state?.executed_results?.[id]} height={TILE_PICTURE} />}>
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} labels={{ name: nameComponent, time_mapper: mapperComponent("time_mapper", "Time Mapper"), amplitude_mapper: mapperComponent("amplitude_mapper", "Amplitude Mapper"), velocity_intensity: intensityComponent }} hideValues={{ velocity_intensity: true }} data={data} tile={<CurvePreview outputs={state?.executed_results?.[id]} height={TILE_PICTURE} />}>
             <CurvePreview outputs={state?.executed_results?.[id]} />
         </BaseNode>
     );

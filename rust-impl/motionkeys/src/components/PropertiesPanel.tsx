@@ -401,7 +401,7 @@ function Properties() {
                     break;
                 case "checkbox":
                     // mixed shows unchecked, ticking sets them all
-                    field = <input type="checkbox" checked={value === true} disabled={!editable} onChange={(e) => set(e.target.checked)} />;
+                    field = <Check checked={value === true} onToggle={editable ? () => set(value !== true) : undefined} />;
                     break;
                 case "expression":
                     field = (

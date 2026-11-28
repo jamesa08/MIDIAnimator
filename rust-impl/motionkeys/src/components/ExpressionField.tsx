@@ -44,6 +44,7 @@ function ExpressionField({ value, vars, onCommit, readOnly, className, style }: 
             letterSpacing: s.letterSpacing,
             paddingLeft: s.paddingLeft,
             paddingRight: s.paddingRight,
+            textAlign: s.textAlign,
             borderLeft: `${s.borderLeftWidth} solid transparent`,
             borderRight: `${s.borderRightWidth} solid transparent`,
             lineHeight: `${input.clientHeight}px`,
@@ -77,6 +78,7 @@ function ExpressionField({ value, vars, onCommit, readOnly, className, style }: 
                 autoComplete="off"
                 className={`${className ?? ""} nodrag font-mono`}
                 style={{ ...style, ...(error ? { borderColor: "#dc2626", outlineColor: "#dc2626" } : {}) }}
+                aria-invalid={error ? true : undefined}
                 value={text}
                 readOnly={readOnly}
                 onChange={(e) => setText(e.target.value)}

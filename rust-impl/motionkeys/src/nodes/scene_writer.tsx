@@ -1,5 +1,6 @@
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
+import { CheckboxRow } from "../components/nodegraph/NodeFields";
 import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 
@@ -10,12 +11,7 @@ function scene_writer({ id, data, isConnectable }: { id: any; data: any; isConne
     // unset is on, the spec's default
     const cleanKeyframes = data.inputs?.clean_keyframes ?? true;
 
-    const cleanKeyframesComponent = (
-        <label className="node-field flex items-center gap-1">
-            <input type="checkbox" checked={cleanKeyframes} onChange={(e) => setInputs(id, { clean_keyframes: e.target.checked })} />
-            Clean Keyframes
-        </label>
-    );
+    const cleanKeyframesComponent = <CheckboxRow label="Clean Keyframes" checked={cleanKeyframes} onChange={(checked) => setInputs(id, { clean_keyframes: checked })} />;
 
     const uiInject = {
         clean_keyframes: cleanKeyframesComponent,

@@ -1,48 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
 import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
+import { TextBox } from "../components/TextBox";
+import { CheckboxRow, useConnectedInputs } from "../components/nodegraph/NodeFields";
 
 function static_property({ id, data, isConnectable }: { id: any; data: any; isConnectable: any }) {
     const setInputs = useSetInputs();
     const nodeData = useNodeSpec("static_property");
-    const [channel, setChannel] = useState(data.inputs?.channel || "");
+    const connected = useConnectedInputs(id);
 
-    useEffect(() => {
-        setChannel(data.inputs?.channel || "");
-    }, [data.inputs?.channel]);
-
-    // a custom property's name, or a bridge channel id with Custom Property off. only a change is sent, emptied unsets it
-    const handleUpdate = useCallback(() => {
-        if (channel !== (data.inputs?.channel || "")) setInputs(id, { channel: channel === "" ? null : channel });
-    }, [id, channel, data.inputs?.channel, setInputs]);
-
-    const channelComponent = (
-        <div>
-            <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" value={channel} onChange={(e) => setChannel(e.target.value)} onBlur={handleUpdate} />
-        </div>
-    );
+    // a custom property's name, or a bridge channel id with Custom Property off, typed in beside its socket unless
+    // something is connected to it. emptied unsets it
+    const channelComponent = connected.includes("channel") ? undefined : <TextBox label="Channel" value={data.inputs?.channel ?? ""} readOnly={data === "preview"} onCommit={(text) => setInputs(id, { channel: text === "" ? null : text })} />;
 
     // unset is on, the spec's default
     const customProperty = data.inputs?.custom_property ?? true;
     const rescale = data.inputs?.rescale ?? true;
 
-    const customPropertyComponent = (
-        <label className="node-field flex items-center gap-1">
-            <input type="checkbox" checked={customProperty} onChange={(e) => setInputs(id, { custom_property: e.target.checked })} />
-            Custom Property
-        </label>
-    );
+    const customPropertyComponent = <CheckboxRow label="Custom Property" checked={customProperty} onChange={(checked) => setInputs(id, { custom_property: checked })} />;
 
-    const rescaleComponent = (
-        <label className="node-field flex items-center gap-1">
-            <input type="checkbox" checked={rescale} onChange={(e) => setInputs(id, { rescale: e.target.checked })} />
-            Rescale
-        </label>
-    );
+    const rescaleComponent = <CheckboxRow label="Rescale" checked={rescale} onChange={(checked) => setInputs(id, { rescale: checked })} />;
 
-    return <BaseNode nodeData={nodeData} inject={{ channel: channelComponent, custom_property: customPropertyComponent, rescale: rescaleComponent }} hidden={{ custom_property: true, rescale: true }} data={data} />;
+    return <BaseNode nodeData={nodeData} inject={{ custom_property: customPropertyComponent, rescale: rescaleComponent }} labels={{ channel: channelComponent }} hidden={{ custom_property: true, rescale: true }} data={data} />;
 }
 
 export default static_property;

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect } from "react";
 import { useStore, useUpdateNodeInternals } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
@@ -11,6 +11,7 @@ import { TILE_PICTURE } from "../components/nodegraph/simplified";
 import { findGroup, groupKey, groupOptions } from "../utils/objectGroups";
 import { mapView } from "../utils/noteMap";
 import { withSelected } from "./keyframes_from_object";
+import { TextBox } from "../components/TextBox";
 
 // the note list as text: what was typed in as it is, a list set another way (MCP) comma separated.
 // the node reads the numbers out of it when it runs (note_list_entries in executors/animation.rs)
@@ -48,18 +49,6 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     // the note list, typed in unless a connection gives it. stored edges are reversed, `source` is the node taking the value
     const notesConnected = useStore((s) => s.edges.some((e) => e.source === id && e.sourceHandle === "note_numbers"));
     const mapMode = data.inputs?.mode === "map";
-    const [notesText, setNotesText] = useState(noteNumbersText(data.inputs?.note_numbers));
-
-    useEffect(() => {
-        setNotesText(noteNumbersText(data.inputs?.note_numbers));
-    }, [data.inputs?.note_numbers]);
-
-    // kept as typed, emptied unsets it
-    const handleNotesUpdate = useCallback(() => {
-        if (notesText !== noteNumbersText(data.inputs?.note_numbers)) {
-            setInputs(id, { note_numbers: notesText === "" ? null : notesText });
-        }
-    }, [id, notesText, data.inputs?.note_numbers, setInputs]);
 
     const objectGroupNameComponent = (
         <select className="node-field nodrag nopan" value={selectedGroupName} onChange={(e) => setInputs(id, { object_group_name: e.target.value })}>
@@ -86,11 +75,8 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
         </>
     );
 
-    const noteNumbersComponent = !notesConnected && !mapMode && (
-        <div>
-            <input type="text" className="node-field border border-gray-400 rounded px-2 py-1" value={notesText} onChange={(e) => setNotesText(e.target.value)} onBlur={handleNotesUpdate} />
-        </div>
-    );
+    // typed in beside its socket, kept as typed. emptied unsets it
+    const noteNumbersComponent = notesConnected || mapMode ? undefined : <TextBox label="Note Numbers" value={noteNumbersText(data.inputs?.note_numbers)} readOnly={preview} onCommit={(text) => setInputs(id, { note_numbers: text === "" ? null : text })} />;
 
     const openButton = preview ? null : (
         <button
@@ -107,7 +93,6 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
     const uiInject = {
         object_group_name: objectGroupNameComponent,
         mode: modeComponent,
-        note_numbers: noteNumbersComponent,
     };
 
     // map mode doesn't use the note list, it's hidden unless something is connected to it (its edge needs the socket)
@@ -128,7 +113,7 @@ function assign_notes_to_objects({ id, data, isConnectable }: { id: any; data: a
 
     // the note map, small, under the inputs
     return (
-        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} data={data} headerExtra={openButton} tile={<NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} height={TILE_PICTURE} />}>
+        <BaseNode nodeData={nodeData} inject={uiInject} hidden={hiddenHandles} labels={{ note_numbers: noteNumbersComponent }} data={data} headerExtra={openButton} tile={<NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} height={TILE_PICTURE} />}>
             <NoteMapPreview inputs={state?.executed_inputs?.[id]} results={state?.executed_results?.[id]} nodeInputs={data?.inputs} linkedOnly={data?.linked_only === true} view={mapView(data?.map_view)} />
         </BaseNode>
     );

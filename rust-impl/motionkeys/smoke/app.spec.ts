@@ -352,7 +352,8 @@ test("note table shows a row per note and a typed value overrides the curve", as
     await expect(node.locator(".note-table-row").first()).toContainText("Cube.001");
     await expect(node.locator(".note-table-bar")).toHaveCount(4);
     // a value typed in for 60 is an override, the rest of the table is kept
-    const value = node.locator(".note-table-row").nth(2).locator("input");
+    await node.locator(".note-table-row").nth(2).locator(".number-box").click();
+    const value = node.locator("input.number-box-typing");
     await value.fill("0.9");
     await value.press("Enter");
     const sets = (await applied(page)).flat().filter((op: any) => op.op === "set_inputs" && op.node === "note_table-1");
@@ -1393,7 +1394,8 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"), start)).toBe(true);
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    await page.mouse.move(wholeBounds.x - 25, wholeBounds.y + wholeBounds.height + 20, { steps: 8 });
+    // close on its left, Assign Notes to Objects' outputs are just past it
+    await page.mouse.move(wholeBounds.x - 8, wholeBounds.y + wholeBounds.height + 20, { steps: 8 });
     await page.mouse.up();
     await expect(whole).toHaveClass(/selected/);
     await expect(page.locator(".socket-selected")).toHaveCount(0);
@@ -1742,7 +1744,7 @@ test("frame color picker", async ({ page }) => {
     await page.locator(".color-field .color-swatch").click();
     const picker = page.locator(".color-popover");
     await expect(picker.locator(".w-color-wheel")).toBeVisible();
-    await expect(picker.locator(".value-slider")).toHaveText(["Hue0.000", "Saturation0.000", "Value0.906"]);
+    await expect(picker.locator(".number-box")).toHaveText(["Hue0.000", "Saturation0.000", "Value0.906"]);
     await expect(picker.locator(".color-picker-hex input")).toHaveValue("#E7E7E7");
     const wheel = (await picker.locator(".w-color-wheel").boundingBox())!;
     const slider = (await picker.locator(".w-color-saturation").boundingBox())!;
@@ -1759,12 +1761,12 @@ test("frame color picker", async ({ page }) => {
     const handle = (await picker.locator(".w-color-saturation [class*=pointer]").first().boundingBox())!;
     expect(handle.y - slider.y).toBeLessThan(6);
     await picker.getByText("RGB", { exact: true }).click();
-    await expect(picker.locator(".value-slider").first()).toContainText("Red");
+    await expect(picker.locator(".number-box").first()).toContainText("Red");
     const hex = picker.locator(".color-picker-hex input");
     await hex.fill("#336699");
     await hex.press("Enter");
     await expect.poll(async () => (await colors()).at(-1)).toBe("#336699");
-    await expect(picker.locator(".value-slider")).toHaveText(["Red0.200", "Green0.400", "Blue0.600"]);
+    await expect(picker.locator(".number-box")).toHaveText(["Red0.200", "Green0.400", "Blue0.600"]);
     const txns = await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply" && c.args.ops.some((op: any) => op.op === "set_frame") && c.args.txn).map((c: any) => c.args.txn));
     expect(new Set(txns).size).toBe(1);
     expect(txns[0]).toBeTruthy();
@@ -2299,7 +2301,8 @@ test("a preset animation previews a value while it's typed and sets it once", as
     const sets = async () => (await calls("graph_apply")).flatMap((args: any) => args.ops).filter((op: any) => op.op === "set_inputs" && "windup" in op.inputs);
 
     // typing only asks for the node's own curves with the typed value, the graph isn't changed
-    const windup = node.locator(".preset-row", { hasText: "Windup" }).locator("input").first();
+    await node.locator(".preset-row", { hasText: "Windup" }).locator(".number-box").first().click();
+    const windup = node.locator("input.number-box-typing");
     await windup.fill("20");
     await expect.poll(async () => (await calls("graph_node_preview")).some((args: any) => args.nodeType === "preset_animation" && args.inputs.windup === 20 && args.inputs.hit === 5)).toBe(true);
     expect(await sets()).toHaveLength(0);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useStore } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
@@ -6,6 +6,7 @@ import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import ExpressionField from "../components/ExpressionField";
+import { NumberBox } from "../components/NumberBox";
 import { noteToName } from "./assign_notes_to_objects";
 
 // the curve presets, an expression in t (0 at the first note, 1 at the last). picking one fills in the curve, changing
@@ -39,39 +40,6 @@ const DEFAULTS: Table = { target: "amplitude", operation: "multiply", source: "m
 // what the node ran with: a row per note and the curve between them
 type Row = { note: number; objects: string[]; value: number; overridden: boolean };
 type Preview = { rows: Row[]; curve: number[] };
-
-// a number shown short, no float noise
-const short = (value: number) => String(Math.round(value * 1e4) / 1e4);
-
-// a number box that's set when it's left or on enter, escape or anything that isn't a number puts it back
-function NumberBox({ value, onCommit, width, className, readOnly, integer }: { value: number; onCommit: (value: number) => void; width: number; className?: string; readOnly?: boolean; integer?: boolean }) {
-    const [text, setText] = useState(short(value));
-    useEffect(() => setText(short(value)), [value]);
-    const commit = () => {
-        // the box shows the value rounded, left as it showed (or put back with escape) it's no edit
-        if (text === short(value)) return;
-        const n = Number(text);
-        if (text.trim() === "" || !Number.isFinite(n) || (integer && !Number.isInteger(n))) setText(short(value));
-        else if (n !== value) onCommit(n);
-    };
-    return (
-        <input
-            className={`note-table-input nodrag ${className ?? ""}`}
-            style={{ width }}
-            value={text}
-            readOnly={readOnly}
-            onChange={(e) => setText(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-                if (e.key === "Enter") e.currentTarget.blur();
-                if (e.key === "Escape") {
-                    setText(short(value));
-                    requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
-                }
-            }}
-        />
-    );
-}
 
 // the bars of the rows' values, the selected one darker, and the curve dashed over them
 function PreviewBars({ preview, selected, onSelect }: { preview: Preview; selected: number | null; onSelect: (note: number) => void }) {
@@ -144,9 +112,9 @@ function note_table({ id, data }: { id: any; data: any }) {
                 </select>
                 {source === "range" && (
                     <>
-                        <NumberBox value={table.from} width={38} integer onCommit={(from) => set({ from: Math.max(0, Math.min(127, from)) })} />
+                        <NumberBox value={table.from} style={{ width: 38 }} integer onChange={(from) => set({ from: Math.max(0, Math.min(127, from)) })} className="note-table-input" />
                         <span>–</span>
-                        <NumberBox value={table.to} width={38} integer onCommit={(to) => set({ to: Math.max(0, Math.min(127, to)) })} />
+                        <NumberBox value={table.to} style={{ width: 38 }} integer onChange={(to) => set({ to: Math.max(0, Math.min(127, to)) })} className="note-table-input" />
                     </>
                 )}
             </div>
@@ -166,11 +134,11 @@ function note_table({ id, data }: { id: any; data: any }) {
             </div>
             <div className="note-table-line">
                 <span>{constant ? "Value" : "Min"}</span>
-                <NumberBox value={table.min} width={52} onCommit={(min) => set({ min })} />
+                <NumberBox value={table.min} style={{ width: 52 }} onChange={(min) => set({ min })} className="note-table-input" />
                 {!constant && (
                     <>
                         <span style={{ marginLeft: 4 }}>Max</span>
-                        <NumberBox value={table.max} width={52} onCommit={(max) => set({ max })} />
+                        <NumberBox value={table.max} style={{ width: 52 }} onChange={(max) => set({ max })} className="note-table-input" />
                     </>
                 )}
             </div>
@@ -181,7 +149,7 @@ function note_table({ id, data }: { id: any; data: any }) {
                         <span className="note-table-note">{row.note}</span>
                         <span className="note-table-name">{noteToName(row.note)}</span>
                         <span className="note-table-objects">{row.objects.join(", ")}</span>
-                        <NumberBox value={row.value} width={60} className={row.overridden ? "" : "computed"} onCommit={(value) => setOverride(row.note, value)} />
+                        <NumberBox value={row.value} style={{ width: 60 }} className={`note-table-input${row.overridden ? "" : " computed"}`} onChange={(value) => setOverride(row.note, value)} />
                         <button className="note-table-clear nodrag" style={{ visibility: row.overridden ? "visible" : "hidden" }} onClick={(e) => (e.stopPropagation(), setOverride(row.note, null))}>
                             ×
                         </button>
@@ -195,7 +163,7 @@ function note_table({ id, data }: { id: any; data: any }) {
                     <option value="zero">Zero</option>
                     <option value="value">Value</option>
                 </select>
-                {table.fallback === "value" && <NumberBox value={table.fallback_value} width={52} onCommit={(fallback_value) => set({ fallback_value })} />}
+                {table.fallback === "value" && <NumberBox value={table.fallback_value} style={{ width: 52 }} onChange={(fallback_value) => set({ fallback_value })} className="note-table-input" />}
             </div>
         </div>
     );

@@ -1087,30 +1087,54 @@ img {
     border: 1px solid var(--properties-frame);
 }
 
-.value-slider {
+/* a number in a box (components/NumberBox.tsx), its name on the left and the number on the right like Blender's. a
+   slider is filled as far as its value */
+.number-box {
     position: relative;
     height: 22px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 6px;
     padding: 0 8px;
     background-color: var(--properties-background);
+    cursor: text;
+}
+
+.number-box-slider {
     cursor: ew-resize;
 }
 
-.color-picker-sliders .value-slider {
+.color-picker-sliders .number-box {
     border-bottom: 1px solid var(--properties-line);
 }
 
-.color-picker-sliders .value-slider:last-child {
+.color-picker-sliders .number-box:last-child {
     border-bottom: none;
 }
 
-.value-slider > span {
+.number-box > span {
     position: relative;
+    white-space: nowrap;
 }
 
-.value-slider-fill {
+/* a long name gives way to the number */
+.number-box-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.number-box-value {
+    flex: none;
+}
+
+/* a number with no name is on the right, like it is with one */
+.number-box-value:only-child {
+    margin-left: auto;
+}
+
+.number-box-fill {
     position: absolute;
     inset: 0 auto 0 0;
     background-color: var(--properties-frame);
@@ -1205,23 +1229,14 @@ img {
     flex: 1;
 }
 
-.preset-box {
-    box-sizing: border-box;
+/* a cell of the preset's table, the number alone */
+.node .number-box.preset-box {
+    flex: none;
     width: 52px;
-    padding: 1px 4px;
-    text-align: right;
-    -moz-appearance: textfield;
+    padding: 0 4px;
+    justify-content: flex-end;
 }
 
-.preset-box::-webkit-inner-spin-button,
-.preset-box::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-}
-
-.node .value-slider.preset-slider {
-    justify-content: space-between;
-}
 
 .preset-columns > span:not(:first-child) {
     width: 52px;
@@ -1229,17 +1244,69 @@ img {
     color: var(--node-value);
 }
 
-/* in a node it's outlined like the node's text boxes, the number centered with no name in it */
-.node .value-slider {
+/* in a node it's outlined like the node's text boxes and fills its row, beside its socket or on a row of its own */
+.node .number-box {
     box-sizing: border-box;
-    width: calc(100% - 24px);
-    height: 26px;
-    justify-content: center;
+    width: 100%;
     overflow: hidden;
     background-color: transparent;
 }
 
-input.value-slider,
+.node .number-box.node-field {
+    width: calc(100% - 24px);
+}
+
+/* text in a box (components/TextBox.tsx), like a number box: its name on the left, the text on the right */
+.text-box {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    cursor: text;
+}
+
+.node .text-box.node-field {
+    width: calc(100% - 24px);
+}
+
+.text-box-label {
+    flex: none;
+    white-space: nowrap;
+}
+
+.node .text-box .text-box-input {
+    flex: 1;
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: right;
+}
+
+/* the text only takes the pointer once a click has started typing in it, until then pressing on it drags the node */
+.node .text-box:not(.editing) .text-box-input {
+    pointer-events: none;
+}
+
+/* an expression that doesn't check out outlines its box red */
+.node .text-box:has([aria-invalid="true"]) {
+    border-color: #dc2626;
+}
+
+/* a number alone, typed in, is on the right like it shows */
+.node .number-box-typing {
+    text-align: right;
+}
+
+input.number-box,
 .color-picker-hex input {
     color: inherit;
     font: inherit;

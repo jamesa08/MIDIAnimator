@@ -2,13 +2,15 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "@xyflow/react/dist/base.css";
 import BaseNode from "./BaseNode";
-import { NumberField, useSliderInput } from "./animation_generator";
+import { CheckboxRow } from "../components/nodegraph/NodeFields";
+import { useSliderInput } from "./animation_generator";
 import { useStateContext } from "../contexts/StateContext";
 import { useNodeSpec } from "../utils/node";
 import { useSetInputs } from "../utils/graphOps";
 import CurvePreview from "../components/graph/CurvePreview";
 import { TILE_PICTURE } from "../components/nodegraph/simplified";
-import { ValueSlider } from "../components/ValueSlider";
+import { NumberBox } from "../components/NumberBox";
+import { TextBox } from "../components/TextBox";
 import { CurveChannel } from "../utils/curves";
 
 // the shapes, same order and ids as PRESET_ANIMATION_MODES in the backend
@@ -20,20 +22,6 @@ const modes = [
 
 // every setting, set on the node only. each mode shows its own
 const SETTINGS = ["start", "end", "period", "amplitude", "dampen", "flip", "rest", "angle", "detune", "rest_y", "windup", "windup_value", "hit", "hit_value", "recoil", "recoil_value", "rest_length"];
-
-// a text box for a channel, sent when it's left. emptied, the node puts the default back
-function ChannelField({ value, onCommit }: { value: string | undefined; onCommit: (value: string | null) => void }) {
-    const [text, setText] = useState(value ?? "");
-    useEffect(() => setText(value ?? ""), [value]);
-    const commit = () => {
-        if (text !== (value ?? "")) onCommit(text === "" ? null : text);
-    };
-    return (
-        <div>
-            <input type="text" className="node-field nodrag border border-gray-400 rounded px-2 py-1" value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
-        </div>
-    );
-}
 
 // values being dragged or typed, drawn on the preview before they're set: only the node's own function runs on them
 // (graph_node_preview), the graph runs once when they're set. new results or inputs (the value set, an undo) end the
@@ -105,9 +93,12 @@ function preset_animation({ id, data, isConnectable }: { id: any; data: any; isC
         },
     };
 
-    // a small number box, frames and degrees step by whole ones. emptied, it goes back to the default, which is kept on
-    // the node like every other value (the spec's store_defaults)
-    const box = (input: string, step = "0.05") => <NumberField className="nodrag border border-gray-400 rounded preset-box" step={step} placeholder={String(fallback(input) ?? "")} value={data.inputs?.[input]} onDraft={(value) => draft.set(input, value)} onCommit={(value) => setInputs(id, { [input]: value ?? fallback(input) ?? null })} />;
+    // a setting's number box, the curve redrawn as it's typed. emptied, it goes back to the default, which is kept on the
+    // node like every other value (the spec's store_defaults). `label` puts its name in it on a row of its own, without
+    // one it's a cell of a row
+    const box = (input: string, label?: string) => (
+        <NumberBox key={input} label={label} className={`border border-gray-400 rounded ${label ? "node-field" : "preset-box"}`} value={data.inputs?.[input] ?? fallback(input)} readOnly={data === "preview"} onDraft={(value) => draft.set(input, value)} onChange={(value) => setInputs(id, { [input]: value })} onClear={() => setInputs(id, { [input]: fallback(input) ?? null })} />
+    );
     const row = (name: string, ...boxes: JSX.Element[]) => (
         <div className="node-field preset-row" key={name}>
             <span>{name}</span>
@@ -116,7 +107,7 @@ function preset_animation({ id, data, isConnectable }: { id: any; data: any; isC
             ))}
         </div>
     );
-    const slider = (name: string, props: typeof dampen) => <ValueSlider key={name} label={name} className="node-field nodrag nopan border border-gray-400 rounded preset-slider" {...props} />;
+    const slider = (name: string, props: typeof dampen) => <NumberBox slider key={name} label={name} className="node-field border border-gray-400 rounded" {...props} />;
 
     // a drumstick's phases, how many frames each takes and the value it ends at. it starts at rest, the hit lands on the
     // note
@@ -126,22 +117,17 @@ function preset_animation({ id, data, isConnectable }: { id: any; data: any; isC
             <span>Frames</span>
             <span>Value</span>
         </div>,
-        row("Windup", box("windup", "1"), box("windup_value")),
-        row("Hit", box("hit", "1"), box("hit_value")),
-        row("Recoil", box("recoil", "1"), box("recoil_value")),
-        row("Rest", box("rest_length", "1"), box("rest")),
+        row("Windup", box("windup"), box("windup_value")),
+        row("Hit", box("hit"), box("hit_value")),
+        row("Recoil", box("recoil"), box("recoil_value")),
+        row("Rest", box("rest_length"), box("rest")),
     ];
-    const springRows = [row("Start", box("start", "1")), row("End", box("end", "1")), row("Period", box("period", "1")), row("Amplitude", box("amplitude")), slider("Dampen", dampen)];
-    const flipRow = (
-        <label className="node-field flex items-center gap-1" key="flip">
-            <input type="checkbox" checked={data.inputs?.flip ?? false} onChange={(e) => setInputs(id, { flip: e.target.checked })} />
-            Flip
-        </label>
-    );
+    const springRows = [box("start", "Start"), box("end", "End"), box("period", "Period"), box("amplitude", "Amplitude"), slider("Dampen", dampen)];
+    const flipRow = <CheckboxRow key="flip" label="Flip" checked={data.inputs?.flip ?? false} onChange={(checked) => setInputs(id, { flip: checked })} />;
     const rows: Record<string, JSX.Element[]> = {
-        spring: [...springRows, row("Rest", box("rest")), flipRow],
+        spring: [...springRows, box("rest", "Rest"), flipRow],
         drumstick: drumstickRows,
-        cymbal: [...springRows, row("Angle", box("angle", "1")), row("Detune", box("detune", "0.1")), row("Rest", box("rest"), box("rest_y"))],
+        cymbal: [...springRows, box("angle", "Angle"), box("detune", "Detune"), row("Rest", box("rest"), box("rest_y"))],
     };
 
     const modeComponent = (
@@ -158,7 +144,7 @@ function preset_animation({ id, data, isConnectable }: { id: any; data: any; isC
     );
 
     // each curve's channel under its output
-    const channel = (input: "channel" | "channel_y") => <ChannelField value={data.inputs?.[input] ?? spec(input)?.default} onCommit={(value) => setInputs(id, { [input]: value ?? spec(input)?.default ?? null })} />;
+    const channel = (input: "channel" | "channel_y") => <TextBox className="node-field" label="Channel" value={data.inputs?.[input] ?? spec(input)?.default} readOnly={data === "preview"} onCommit={(text) => setInputs(id, { [input]: text === "" ? (spec(input)?.default ?? null) : text })} />;
 
     const inject: Record<string, JSX.Element> = {
         mode: modeComponent,

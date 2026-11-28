@@ -10,7 +10,8 @@ import ErrorBadge, { SuccessBadge, useNodeError, useStale, useWriteStatus } from
 import SocketTag from "../components/nodegraph/SocketTag";
 import SocketHandle from "../components/nodegraph/SocketHandle";
 import CollapsedSockets, { collapsedHeight } from "../components/nodegraph/CollapsedSockets";
-import { useCollapse } from "../utils/graphOps";
+import { useCollapse, useSetInputs } from "../utils/graphOps";
+import { NumberBox } from "../components/NumberBox";
 import { useGroupContext } from "../contexts/GroupContext";
 import { TILE_HEADER, tileTitle, useSimplified } from "../components/nodegraph/simplified";
 
@@ -55,6 +56,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
     const collapsed = !preview && !bare && data?.collapsed === true;
     const { editable } = useGroupContext();
     const setCollapsed = useCollapse();
+    const setInputs = useSetInputs();
 
     // the inputs something is connected to, joined so the node only draws again when they change.
     // stored edges are reversed, `source`/`sourceHandle` is the node taking the value and its input
@@ -137,9 +139,15 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                     uiHidden = hidden[handle["id"]];
                 }
 
+                // a number input with a default is typed in beside its socket, like Blender's, unless something is
+                // connected to it or the node draws its own. emptied, it's back to the default
+                const numberBox =
+                    rfHandleType && !uiHidden && handle["data_type"] === "f64" && handle["default"] !== undefined && labels?.[handle["id"]] === undefined && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? (
+                        <NumberBox label={handle["name"]} value={preview ? handle["default"] : (data?.inputs?.[handle["id"]] ?? handle["default"])} readOnly={preview || !editable} onChange={(v) => setInputs(nodeId, { [handle["id"]]: v })} onClear={() => setInputs(nodeId, { [handle["id"]]: null })} className="border border-gray-400 rounded" />
+                    ) : undefined;
                 // a value typed in for an input without a widget (properties panel, MCP) shows under it, unless a
-                // connection's value is used instead or it's the input's default
-                let value = rfHandleType && !preview && !uiHidden && !hideValues?.[handle["id"]] && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
+                // connection's value is used instead or it's the input's default. a label of the node's own is its widget
+                let value = rfHandleType && !preview && !uiHidden && !numberBox && labels?.[handle["id"]] === undefined && !hideValues?.[handle["id"]] && inject?.[handle["id"]] == null && !connected.includes(handle["id"]) ? data?.inputs?.[handle["id"]] : undefined;
                 if (value === handle["default"]) value = undefined;
                 // a multi input's socket is a pill as tall as its links need, its row makes room for it
                 const multi = rfHandleType && handle["multi"] ? multiSocketStyle(preview ? 0 : connected.filter((c) => c === handle["id"]).length) : null;
@@ -150,7 +158,7 @@ function BaseNode({ nodeData, inject, hidden, executor, dynamicHandles, labels, 
                 const buildHandle = (
                     <>
                         <div className={`node-field field-${handleType}`} style={{ position: "relative", display: uiHidden ? "none" : bareRow ? "flex" : "inherit", ...(bareRow ? { alignItems: "center", gap: "4px" } : {}), ...rowStyle }}>
-                            {labels?.[handle["id"]] ?? <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>}
+                            {labels?.[handle["id"]] ?? numberBox ?? <span style={{ float: rfHandleType ? "left" : "right", marginLeft: rfHandleType ? "" : "auto" }}>{handle["name"]}</span>}
                             {drawSocket(handle, rfHandleType, multi)}
                             {bareRow && error && !preview && <ErrorBadge message={error} size={16} />}
                             {bareRow && bareOutput && drawSocket(bareOutput, false, null)}
