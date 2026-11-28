@@ -1462,6 +1462,25 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
         [setNodes, scheduleSelection]
     );
 
+    // a press on a node selects it right away, like blender, not when the mouse comes up (react flow's click). a node
+    // that's already selected keeps the selection, so it's dragged with the rest, and its click narrows it to itself.
+    // a press on a socket starts a link, one on a control of the node's own (nodrag: its caret, a dropdown, a box being
+    // typed in) selects nothing, and frames select on their own click. shift or cmd is the click's
+    const handleNodePress = useCallback(
+        (event: React.PointerEvent) => {
+            if (event.button !== 0 || addsToSelection(event)) return;
+            const target = event.target as Element;
+            if (target.closest(".react-flow__handle, .nodrag")) return;
+            const id = target.closest(".react-flow__node")?.getAttribute("data-id");
+            const node = id ? getNodes().find((n) => n.id === id) : undefined;
+            if (!node || node.selected || isFrame(node)) return;
+            setNodes((nds) => withSockets(nds, []).map((n) => (n.selected === (n.id === id) ? n : { ...n, selected: n.id === id })));
+            setEdges((eds) => eds.map((e) => (e.selected ? { ...e, selected: false } : e)));
+            scheduleSelection();
+        },
+        [getNodes, setNodes, setEdges, scheduleSelection]
+    );
+
     // clicking an edge or the empty graph, or starting a box selection, without shift or cmd leaves no socket selected.
     // react flow only deselects the nodes and edges it knows are selected
     const handleEdgeClick = useCallback((event: React.MouseEvent) => !addsToSelection(event) && clearSockets(), [clearSockets]);
@@ -1851,6 +1870,7 @@ function NodeGraphEditor({ level, path, pathGroups, editable: levelEditable, pro
                         onNodeDragStart={onNodeDragStart}
                         onSelectionDragStart={onSelectionDragStart}
                         onNodeClick={handleNodeClickStop}
+                        onPointerDownCapture={handleNodePress}
                         onNodeDoubleClick={handleNodeDoubleClick}
                         onEdgeClick={handleEdgeClick}
                         onPaneClick={handlePaneClick}

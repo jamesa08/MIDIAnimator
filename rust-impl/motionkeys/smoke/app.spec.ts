@@ -2406,3 +2406,33 @@ test("the primitive nodes draw their fields, and a connected input's goes away",
     await settle(page);
     if (process.env.SMOKE_SHOTS) await page.screenshot({ path: `${process.env.SMOKE_SHOTS}/primitives.png` });
 });
+
+test("a press on a node selects it before the mouse comes up, a selected one keeps the selection", async ({ page }) => {
+    await openWindow(page, backend, "/#/");
+    await graphReady(page);
+    await settle(page);
+    const node = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
+    const press = async (id: string) => {
+        const box = (await node(id).locator(".node-header").boundingBox())!;
+        await page.mouse.move(box.x + 30, box.y + box.height / 2);
+        await page.mouse.down();
+    };
+
+    // selected on the press alone, the rest deselected
+    await press("get_midi_track_data-1");
+    await expect(node("get_midi_track_data-1")).toHaveClass(/selected/);
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+    await page.mouse.up();
+
+    // with two selected, a press on one keeps both (to drag them together), its click narrows it to itself
+    const box = (await node("animation_generator-1").locator(".node-header").boundingBox())!;
+    await page.keyboard.down("Shift");
+    await page.mouse.click(box.x + 30, box.y + box.height / 2);
+    await page.keyboard.up("Shift");
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+    await press("get_midi_track_data-1");
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+    await page.mouse.up();
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(1);
+    await settle(page);
+});
