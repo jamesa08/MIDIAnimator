@@ -1394,8 +1394,16 @@ test("box select takes nodes, edges and sockets", async ({ page }) => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("react-flow__pane"), start)).toBe(true);
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
-    // close on its left, Assign Notes to Objects' outputs are just past it
-    await page.mouse.move(wholeBounds.x - 8, wholeBounds.y + wholeBounds.height + 20, { steps: 8 });
+    // its left side ends halfway to what's past it (Assign Notes to Objects' outputs), how close that is depends on the font
+    const bottom = wholeBounds.y + wholeBounds.height + 20;
+    const left = await page.evaluate(
+        ({ x, top, bottom }) => {
+            const past = [...document.querySelectorAll(".react-flow__node:not([data-id='evaluate_instrument-1']), .react-flow__node:not([data-id='evaluate_instrument-1']) .react-flow__handle")].map((el) => el.getBoundingClientRect()).filter((r) => r.right <= x && r.bottom >= top && r.top <= bottom);
+            return (x + Math.max(x - 50, ...past.map((r) => r.right))) / 2;
+        },
+        { x: wholeBounds.x, top: start.y, bottom }
+    );
+    await page.mouse.move(left, bottom, { steps: 8 });
     await page.mouse.up();
     await expect(whole).toHaveClass(/selected/);
     await expect(page.locator(".socket-selected")).toHaveCount(0);
@@ -2370,8 +2378,9 @@ test("the primitive nodes draw their fields, and a connected input's goes away",
     const boolSocket = fields("boolean-1").locator(".react-flow__handle").first();
     expect(await boolSocket.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(204, 166, 214)");
 
-    // pressing on a field and dragging moves its node like the rest of it, nothing is typed in or ticked. a click edits
-    const place = (id: string) => fields(id).evaluate((el) => (el as HTMLElement).style.transform);
+    // pressing on a field and dragging moves its node like the rest of it, nothing is typed in or ticked. a click edits.
+    // the fixture backend sends the graph back as it was, so the node jumps back: the move the page sent is what's checked
+    const moved = async (id: string) => (await page.evaluate(() => (window as any).__smokeCalls.filter((c: any) => c.cmd === "graph_apply").flatMap((c: any) => c.args.ops))).some((op: any) => op.op === "move" && id in op.positions);
     const focused = () => page.evaluate(() => document.activeElement?.tagName);
     const drag = async (locator: any) => {
         const box = (await locator.boundingBox())!;
@@ -2386,9 +2395,9 @@ test("the primitive nodes draw their fields, and a connected input's goes away",
         ["string-1", ".text-box"],
         ["map_range-1", "label"],
     ]) {
-        const before = await place(id);
+        expect(await moved(id), `${id} ${field}`).toBe(false);
         await drag(fields(id).locator(field).first());
-        expect(await place(id), `${id} ${field}`).not.toBe(before);
+        await expect.poll(() => moved(id), `${id} ${field}`).toBe(true);
         expect(await focused(), `${id} ${field}`).not.toBe("INPUT");
     }
     await expect(fields("map_range-1").locator("input[type=checkbox]")).toBeChecked();
